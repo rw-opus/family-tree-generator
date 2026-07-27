@@ -72,6 +72,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     fatherId: "",
     motherId: "",
     spouseIds: [],
+    siblingIds: [],
     designations: [],
     notes: "",
   }));

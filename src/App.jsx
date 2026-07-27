@@ -112,6 +112,26 @@ export function App() {
         .map((owner) => [owner.personId, owner.share]),
     );
   }, [tree]);
+  const selectedCaseDependencyLabels = useMemo(() => {
+    const labels = [];
+    if (
+      currentTree.succession.heirs.some(
+        (heir) => heir.personId === selectedPersonId,
+      )
+    ) {
+      labels.push("the linked heir record");
+    }
+    if (
+      currentTree.transfers.some(
+        (transfer) =>
+          transfer.sellerId === selectedPersonId ||
+          transfer.buyerId === selectedPersonId,
+      )
+    ) {
+      labels.push("the linked ownership transfer");
+    }
+    return labels;
+  }, [currentTree.succession.heirs, currentTree.transfers, selectedPersonId]);
 
   useEffect(() => {
     if (!currentTree.people.length) {
@@ -323,6 +343,7 @@ export function App() {
                 ownershipByPerson={ownershipByPerson}
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}
+                caseDependencyLabels={selectedCaseDependencyLabels}
                 onSelectPerson={selectPerson}
                 onChange={(people) => setTree({ ...currentTree, people })}
               />

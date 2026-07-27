@@ -312,6 +312,7 @@ textarea {
 }
 
 .relationship-actions button {
+  position: relative;
   display: grid;
   place-items: center;
   gap: 0.28rem;
@@ -328,6 +329,31 @@ textarea {
 .relationship-actions button:hover {
   border-color: #7fa48f;
   background: var(--forest-soft);
+}
+
+.relationship-actions button:disabled {
+  border-color: #d8dedb;
+  background: #f4f6f5;
+  color: #8b9690;
+  cursor: not-allowed;
+}
+
+.relationship-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--plum);
+  color: #fff;
+  padding: 0 3px;
+  font-size: 0.55rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .inspector-fields {
@@ -457,6 +483,44 @@ textarea {
   width: 1rem;
   min-height: 1rem;
   accent-color: var(--forest);
+}
+
+.person-delete-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+  border-top: 1px solid #e3e8e5;
+  padding-top: 0.55rem;
+}
+
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  border: 1px solid #b45d5d;
+  border-radius: 6px;
+  background: #fff6f6;
+  color: #922f2f;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.danger-button:disabled {
+  border-color: #d8dedb;
+  background: #f5f6f5;
+  color: #8b9690;
+  cursor: not-allowed;
+}
+
+.person-delete-control small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.35;
 }
 
 .relationship-labels {

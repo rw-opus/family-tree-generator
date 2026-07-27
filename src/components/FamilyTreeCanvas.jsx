@@ -68,22 +68,52 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
     person.fatherId ||
     person.motherId ||
     (person.spouseIds || []).length ||
+    (person.siblingIds || []).length ||
     personDesignations(person).length
   );
-  const hasRelationalLinks = relationalPeople.some((person) => person.fatherId || person.motherId);
+  const hasRelationalLinks = relationalPeople.some((person) =>
+    person.fatherId ||
+    person.motherId ||
+    (person.spouseIds || []).length ||
+    (person.siblingIds || []).length
+  );
   if (hasRelationalLinks) {
     const personMap = new Map(relationalPeople.map((person) => [person.id, person]));
-    const depthMemo = new Map();
-    const depthOf = (person, trail = new Set()) => {
-      if (depthMemo.has(person.id)) return depthMemo.get(person.id);
-      if (trail.has(person.id)) return 0;
-      const parents = [personMap.get(person.fatherId), personMap.get(person.motherId)].filter(Boolean);
-      const depth = parents.length ? Math.max(...parents.map((parent) => depthOf(parent, new Set(trail).add(person.id)))) + 1 : 0;
-      depthMemo.set(person.id, depth);
-      return depth;
-    };
+    const depths = new Map(relationalPeople.map((person) => [person.id, 0]));
+    for (let pass = 0; pass < relationalPeople.length * 2; pass += 1) {
+      let changed = false;
+      relationalPeople.forEach((person) => {
+        const parentDepths = [person.fatherId, person.motherId]
+          .filter((id) => personMap.has(id))
+          .map((id) => depths.get(id) || 0);
+        if (parentDepths.length) {
+          const nextDepth = Math.max(...parentDepths) + 1;
+          if (nextDepth > (depths.get(person.id) || 0)) {
+            depths.set(person.id, nextDepth);
+            changed = true;
+          }
+        }
+      });
+      relationalPeople.forEach((person) => {
+        const lateralIds = [
+          ...(person.spouseIds || []),
+          ...(person.siblingIds || []),
+        ].filter((id) => personMap.has(id));
+        const lateralDepth = Math.max(
+          depths.get(person.id) || 0,
+          ...lateralIds.map((id) => depths.get(id) || 0),
+        );
+        [person.id, ...lateralIds].forEach((id) => {
+          if ((depths.get(id) || 0) < lateralDepth) {
+            depths.set(id, lateralDepth);
+            changed = true;
+          }
+        });
+      });
+      if (!changed) break;
+    }
     const generations = new Map();
-    relationalPeople.forEach((person) => { const depth = depthOf(person); if (!generations.has(depth)) generations.set(depth, []); generations.get(depth).push(person); });
+    relationalPeople.forEach((person) => { const depth = depths.get(person.id) || 0; if (!generations.has(depth)) generations.set(depth, []); generations.get(depth).push(person); });
     return <section className="tree-panel">
       <header className="tree-toolbar"><div><p className="eyebrow">Relational family record</p><h2>Family tree</h2></div><button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}><Printer size={16} /> Print</button></header>
       <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2>{[...generations.entries()].sort(([a], [b]) => a - b).map(([depth, members], index) => <div className="relational-generation" key={depth}>{index > 0 && <div className="family-down-line" />}<div className="family-branch-row">{members.sort((a, b) => (a.fullName || "").localeCompare(b.fullName || "")).map((person) => <div className="family-branch-item" key={person.id}>{card(person)}</div>)}</div></div>)}</div></div>

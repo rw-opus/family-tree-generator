@@ -22,7 +22,38 @@ export function surnameFromFullName(value = "") {
 }
 
 export function createPerson(designation = "") {
-  return { id: crypto.randomUUID(), fullName: "", surnameAtBirth: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
+  return { id: crypto.randomUUID(), fullName: "", surnameAtBirth: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], siblingIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
+}
+
+export function personRelationshipCounts(people = [], person = {}) {
+  if (!person.id) return { father: 0, mother: 0, spouse: 0, child: 0, sibling: 0 };
+
+  const spouseIds = new Set(person.spouseIds || []);
+  const siblingIds = new Set(person.siblingIds || []);
+  let child = 0;
+
+  people.forEach((candidate) => {
+    if (!candidate?.id || candidate.id === person.id) return;
+    if ((candidate.spouseIds || []).includes(person.id)) spouseIds.add(candidate.id);
+    if ((candidate.siblingIds || []).includes(person.id)) siblingIds.add(candidate.id);
+    if (candidate.fatherId === person.id || candidate.motherId === person.id) child += 1;
+
+    const sharesFather =
+      person.fatherId && candidate.fatherId && person.fatherId === candidate.fatherId;
+    const sharesMother =
+      person.motherId && candidate.motherId && person.motherId === candidate.motherId;
+    if (sharesFather || sharesMother) siblingIds.add(candidate.id);
+  });
+
+  spouseIds.delete(person.id);
+  siblingIds.delete(person.id);
+  return {
+    father: person.fatherId ? 1 : 0,
+    mother: person.motherId ? 1 : 0,
+    spouse: spouseIds.size,
+    child,
+    sibling: siblingIds.size,
+  };
 }
 
 export function formattedDate(value) {

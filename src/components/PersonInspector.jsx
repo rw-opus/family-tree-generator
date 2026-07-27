@@ -12,6 +12,7 @@ import {
   DESIGNATIONS,
   createPerson,
   hasDesignation,
+  personRelationshipCounts,
   personDesignations,
   surnameFromFullName,
 } from "../domain/people.js";
@@ -23,7 +24,7 @@ const relationshipActions = [
   { key: "mother", label: "Mother", icon: UserRound },
   { key: "spouse", label: "Spouse", icon: Heart },
   { key: "child", label: "Child", icon: Baby },
-  { key: "sibling", label: "Sibling", icon: UsersRound },
+  { key: "sibling", label: "Brother / sister", icon: UsersRound },
 ];
 
 function initials(name) {
@@ -52,6 +53,7 @@ export function PersonInspector({
   ownershipByPerson = {},
   selectedPersonId,
   shareDisplay = "both",
+  caseDependencyLabels = [],
   onChange,
   onSelectPerson,
 }) {
@@ -126,6 +128,10 @@ export function PersonInspector({
 
   const addRelative = (kind) => {
     if (!selectedPerson) return;
+    const counts = personRelationshipCounts(people, selectedPerson);
+    if ((kind === "father" && counts.father) || (kind === "mother" && counts.mother)) {
+      return;
+    }
     const relative = createPerson();
     let selectedPatch = {};
 
@@ -156,18 +162,21 @@ export function PersonInspector({
         designations: ["Sibling"],
         fatherId: selectedPerson.fatherId || "",
         motherId: selectedPerson.motherId || "",
+        siblingIds: [selectedPerson.id],
       });
+      selectedPatch = {
+        siblingIds: [...new Set([...(selectedPerson.siblingIds || []), relative.id])],
+      };
     }
 
     const updatedPeople = people.map((person) =>
       person.id === selectedPerson.id ? { ...person, ...selectedPatch } : person,
     );
     onChange([...updatedPeople, relative]);
-    onSelectPerson(relative.id);
   };
 
   const removeSelected = () => {
-    if (!selectedPerson || people.length === 1) return;
+    if (!selectedPerson || people.length === 1 || deleteBlockers.length) return;
     onChange(
       people
         .filter((person) => person.id !== selectedPerson.id)
@@ -176,6 +185,7 @@ export function PersonInspector({
           fatherId: person.fatherId === selectedPerson.id ? "" : person.fatherId,
           motherId: person.motherId === selectedPerson.id ? "" : person.motherId,
           spouseIds: (person.spouseIds || []).filter((id) => id !== selectedPerson.id),
+          siblingIds: (person.siblingIds || []).filter((id) => id !== selectedPerson.id),
         })),
     );
     onSelectPerson(people.find((person) => person.id !== selectedPerson.id)?.id || "");
@@ -227,6 +237,20 @@ export function PersonInspector({
   const displayedSurnameAtBirth =
     selectedPerson.surnameAtBirth ||
     (selectedPerson.sex === "Male" ? surnameFromFullName(selectedPerson.fullName) : "");
+  const relationshipCounts = personRelationshipCounts(people, selectedPerson);
+  const deleteBlockers = [
+    ...(relationshipCounts.child
+      ? [`${relationshipCounts.child} ${relationshipCounts.child === 1 ? "child" : "children"}`]
+      : []),
+    ...caseDependencyLabels,
+  ];
+  const deleteDisabled = people.length === 1 || deleteBlockers.length > 0;
+  const deleteMessage =
+    people.length === 1
+      ? "A tree must contain at least one person."
+      : deleteBlockers.length
+        ? `Remove ${deleteBlockers.join(" and ")} first.`
+        : "Spouse and sibling links will be removed automatically.";
 
   return (
     <div className="person-inspector">
@@ -242,8 +266,8 @@ export function PersonInspector({
         <button
           type="button"
           className="icon-button"
-          title="Remove selected person"
-          disabled={people.length === 1}
+          title={deleteDisabled ? deleteMessage : "Remove selected person"}
+          disabled={deleteDisabled}
           onClick={removeSelected}
         >
           <Trash2 size={16} />
@@ -259,9 +283,24 @@ export function PersonInspector({
         </div>
         <div className="relationship-actions">
           {relationshipActions.map(({ key, label, icon: Icon }) => (
-            <button type="button" key={key} onClick={() => addRelative(key)}>
+            <button
+              type="button"
+              key={key}
+              disabled={(key === "father" || key === "mother") && relationshipCounts[key] > 0}
+              title={
+                (key === "father" || key === "mother") && relationshipCounts[key] > 0
+                  ? `${label} already added`
+                  : `Add ${label.toLowerCase()}`
+              }
+              onClick={() => addRelative(key)}
+            >
               <Icon size={16} />
               {label}
+              {relationshipCounts[key] > 0 && (
+                <span className="relationship-count" aria-label={`${relationshipCounts[key]} linked`}>
+                  {relationshipCounts[key]}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -379,6 +418,18 @@ export function PersonInspector({
             )}
           </div>
         </details>
+        <div className="person-delete-control">
+          <button
+            type="button"
+            className="danger-button"
+            disabled={deleteDisabled}
+            onClick={removeSelected}
+          >
+            <Trash2 size={15} />
+            Delete person
+          </button>
+          <small>{deleteMessage}</small>
+        </div>
       </section>
 
       <section className="inspector-section">

@@ -21,7 +21,7 @@ describe("PersonInspector", () => {
     container.remove();
   });
 
-  it("adds a father around the selected person and selects the new record", () => {
+  it("adds a father around the selected person without moving the selection", () => {
     const onChange = vi.fn();
     const onSelectPerson = vi.fn();
     const child = {
@@ -55,7 +55,103 @@ describe("PersonInspector", () => {
       designations: ["Parent"],
     });
     expect(updatedPeople[0].fatherId).toBe(updatedPeople[1].id);
-    expect(onSelectPerson).toHaveBeenCalledWith(updatedPeople[1].id);
+    expect(onSelectPerson).not.toHaveBeenCalled();
+  });
+
+  it("adds several children while keeping the relationship controls on the same person", () => {
+    let currentPeople = [{
+      id: "parent",
+      fullName: "Maria Example",
+      sex: "Female",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    }];
+    const onChange = vi.fn((nextPeople) => {
+      currentPeople = nextPeople;
+      act(() =>
+        root.render(
+          <PersonInspector
+            people={currentPeople}
+            selectedPersonId="parent"
+            onChange={onChange}
+            onSelectPerson={vi.fn()}
+          />,
+        ),
+      );
+    });
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={currentPeople}
+          selectedPersonId="parent"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const clickChild = () => {
+      const childButton = [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Child"));
+      act(() => childButton.click());
+    };
+    clickChild();
+    clickChild();
+    clickChild();
+
+    expect(currentPeople).toHaveLength(4);
+    expect(currentPeople.slice(1).every((person) => person.motherId === "parent")).toBe(true);
+    const childButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Child"));
+    expect(childButton.querySelector(".relationship-count").textContent).toBe("3");
+  });
+
+  it("locks a parent to one father and blocks deleting someone with a child", () => {
+    const people = [
+      {
+        id: "parent",
+        fullName: "Joseph Example",
+        sex: "Male",
+        designations: [],
+        spouseIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Anna Example",
+        designations: [],
+        fatherId: "parent",
+        spouseIds: [],
+      },
+      {
+        id: "father",
+        fullName: "Paul Example",
+        designations: [],
+        spouseIds: [],
+      },
+    ];
+    people[0].fatherId = "father";
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="parent"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const fatherButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Father"));
+    const deleteButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Delete person"));
+    expect(fatherButton.disabled).toBe(true);
+    expect(fatherButton.querySelector(".relationship-count").textContent).toBe("1");
+    expect(deleteButton.disabled).toBe(true);
+    expect(container.textContent).toContain("Remove 1 child first.");
   });
 
   it("requires an explicit deceased checkbox and omits date of birth", () => {
