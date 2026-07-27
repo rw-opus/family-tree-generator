@@ -36,17 +36,22 @@ function initials(name) {
     .join("");
 }
 
-function ownershipLabel(share = 0) {
+function ownershipLabel(share = 0, shareDisplay = "both") {
   const fraction = approximateFraction(share);
-  return `${fraction.numerator}/${fraction.denominator} · ${(share * 100).toLocaleString("en-MT", {
+  const fractionText = `${fraction.numerator}/${fraction.denominator}`;
+  const percentageText = `${(share * 100).toLocaleString("en-MT", {
     maximumFractionDigits: 4,
   })}%`;
+  if (shareDisplay === "fraction") return fractionText;
+  if (shareDisplay === "percentage") return percentageText;
+  return `${fractionText} · ${percentageText}`;
 }
 
 export function PersonInspector({
   people,
   ownershipByPerson = {},
   selectedPersonId,
+  shareDisplay = "both",
   onChange,
   onSelectPerson,
 }) {
@@ -232,7 +237,7 @@ export function PersonInspector({
         <div>
           <p className="eyebrow">Selected person</p>
           <h2>{selectedPerson.fullName || "Unnamed person"}</h2>
-          <span>{ownershipLabel(ownership)} ownership</span>
+          <span>{ownershipLabel(ownership, shareDisplay)} ownership</span>
         </div>
         <button
           type="button"
@@ -265,8 +270,8 @@ export function PersonInspector({
       <section className="inspector-section">
         <p className="eyebrow">Personal details</p>
         <div className="inspector-fields">
-          <label className="full-width">
-            Full name
+          <label>
+            <span>Full name</span>
             <input
               autoFocus={!selectedPerson.fullName}
               value={selectedPerson.fullName || ""}
@@ -275,7 +280,7 @@ export function PersonInspector({
             />
           </label>
           <label>
-            Sex
+            <span>Sex</span>
             <select
               value={selectedPerson.sex || ""}
               onChange={(event) => updateSex(event.target.value)}
@@ -287,24 +292,27 @@ export function PersonInspector({
             </select>
           </label>
           <label>
-            Surname at birth
+            <span>Surname at birth</span>
             <input
               value={displayedSurnameAtBirth}
               onChange={(event) => updateSelected({ surnameAtBirth: event.target.value })}
               placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
             />
           </label>
-          <label className="deceased-toggle full-width">
-            <input
-              type="checkbox"
-              checked={isDeceased}
-              onChange={(event) => setDeceased(event.target.checked)}
-            />
-            This person is deceased.
+          <label className="deceased-toggle">
+            <span>Deceased</span>
+            <span className="detail-checkbox">
+              <input
+                type="checkbox"
+                checked={isDeceased}
+                onChange={(event) => setDeceased(event.target.checked)}
+              />
+              This person is deceased.
+            </span>
           </label>
           {isDeceased && (
             <label>
-              Date of death
+              <span>Date of death</span>
               <input
                 type="date"
                 value={selectedPerson.dateOfDeath || ""}
@@ -313,7 +321,7 @@ export function PersonInspector({
             </label>
           )}
           <label>
-            Father
+            <span>Father</span>
             <select
               value={selectedPerson.fatherId || ""}
               onChange={(event) => updateSelected({ fatherId: event.target.value })}
@@ -329,7 +337,7 @@ export function PersonInspector({
             </select>
           </label>
           <label>
-            Mother
+            <span>Mother</span>
             <select
               value={selectedPerson.motherId || ""}
               onChange={(event) => updateSelected({ motherId: event.target.value })}
@@ -344,8 +352,8 @@ export function PersonInspector({
                 ))}
             </select>
           </label>
-          <label className="full-width">
-            Notes
+          <label>
+            <span>Notes</span>
             <textarea
               rows="2"
               value={selectedPerson.notes || ""}

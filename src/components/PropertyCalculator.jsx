@@ -1,10 +1,11 @@
 import { Calculator, Plus, Scale, Trash2 } from "lucide-react";
 import { allocateCurrentIntestacy, inheritanceDuty, percentageTotal, saleTaxLot, successionRuleset, suggestedIntestacyShares } from "../domain/propertyTax.js";
+import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
 import { OwnershipTransfers } from "./OwnershipTransfers.jsx";
 import { SuccessionDeclarations } from "./SuccessionDeclarations.jsx";
 
 const money = new Intl.NumberFormat("en-MT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
-const makeHeir = () => ({ id: crypto.randomUUID(), personId: "", name: "", relationship: "Child", status: "undecided", degree: 1, branchId: "", sharePercent: 0, soleResidence: false, exemption: "none" });
+const makeHeir = () => ({ id: crypto.randomUUID(), personId: "", name: "", relationship: "Child", status: "undecided", degree: 1, branchId: "", sharePercent: 0, shareNumerator: 0, shareDenominator: 1, soleResidence: false, exemption: "none" });
 const makeLot = () => ({ id: crypto.randomUUID(), ownerName: "", inheritanceDate: "", acquisitionValue: "", transferValue: "", brokerageFees: "", qualifiesFivePercent: false, ownResidenceExempt: false });
 
 export function PropertyCalculator({ caseData, onChange }) {
@@ -12,9 +13,18 @@ export function PropertyCalculator({ caseData, onChange }) {
   const heirs = succession.heirs || [];
   const familyPeople = caseData.people || [];
   const lots = caseData.saleLots || [];
+  const shareDisplay = caseData.settings?.shareDisplay || "both";
   const setProperty = (patch) => onChange({ ...caseData, property: { ...property, ...patch } });
   const setSuccession = (patch) => onChange({ ...caseData, succession: { ...succession, ...patch } });
   const updateHeir = (id, patch) => setSuccession({ heirs: heirs.map((heir) => heir.id === id ? { ...heir, ...patch } : heir) });
+  const updateHeirPercentage = (id, percentage) => updateHeir(id, shareFromPercentage(percentage));
+  const updateHeirFraction = (heir, patch) => {
+    const current = fractionForShare(heir);
+    updateHeir(heir.id, shareFromFraction(
+      patch.shareNumerator ?? current.numerator,
+      patch.shareDenominator ?? current.denominator,
+    ));
+  };
   const updateLot = (id, patch) => onChange({ ...caseData, saleLots: lots.map((lot) => lot.id === id ? { ...lot, ...patch } : lot) });
   const addToBranch = (person) => setSuccession({ heirs: [...heirs, { ...makeHeir(), relationship: ["Sibling", "Sibling descendant"].includes(person.relationship) ? "Sibling descendant" : "Descendant", branchId: person.id }] });
   const total = percentageTotal(heirs);
@@ -39,14 +49,16 @@ export function PropertyCalculator({ caseData, onChange }) {
       <div className={`ruleset-banner ${ruleset.supported ? "supported" : "attention"}`}><strong>{ruleset.label}</strong><span>{ruleset.key === "pre2005" ? "Automatic historical allocation is locked until the pre-2005 provisions are added." : ruleset.key === "undated" ? "The applicable succession law cannot be selected without this date." : "Automatic allocation uses Articles 801–816 supplied for present-day Maltese law."}</span></div>
     </section>
     <section className="editor-panel">
-      <div className="section-heading"><div><p className="eyebrow">Ownership today</p><h2>Persons called to the succession</h2></div>{succession.basis === "intestacy" && <button type="button" className="secondary-button" disabled={!ruleset.supported} onClick={() => setSuccession({ heirs: suggestedIntestacyShares(heirs, succession.dateOfDeath) })}><Scale size={16} /> Apply current intestacy</button>}</div>
+      <div className="section-heading"><div><p className="eyebrow">Ownership today</p><h2>Persons called to the succession</h2></div>{succession.basis === "intestacy" && <button type="button" className="secondary-button" disabled={!ruleset.supported} onClick={() => setSuccession({ heirs: suggestedIntestacyShares(heirs, succession.dateOfDeath).map((heir) => ({ ...heir, ...shareFromPercentage(heir.sharePercent) })) })}><Scale size={16} /> Apply current intestacy</button>}</div>
       <p className={`share-status ${Math.abs(total - 100) < .001 ? "valid" : "invalid"}`}>Allocated: {total.toFixed(2)}% {Math.abs(total - 100) < .001 ? "— valid" : "— must equal 100%"}</p>
-      <div className="people-list">{heirs.map((heir, heirIndex) => { const result = inheritanceDuty(property, heir, succession); const possibleParents = heirs.slice(0, heirIndex).filter((person) => heir.relationship === "Descendant" ? ["Child", "Descendant"].includes(person.relationship) : heir.relationship === "Sibling descendant" ? ["Sibling", "Sibling descendant"].includes(person.relationship) : false); return <article className="person-card" key={heir.id}>
+      <div className="people-list">{heirs.map((heir, heirIndex) => { const result = inheritanceDuty(property, heir, succession); const heirFraction = fractionForShare(heir); const possibleParents = heirs.slice(0, heirIndex).filter((person) => heir.relationship === "Descendant" ? ["Child", "Descendant"].includes(person.relationship) : heir.relationship === "Sibling descendant" ? ["Sibling", "Sibling descendant"].includes(person.relationship) : false); return <article className="person-card" key={heir.id}>
         <div className="person-card-heading"><strong>{heir.name || "Unnamed heir"}</strong><button type="button" className="icon-button" title="Remove heir" onClick={() => setSuccession({ heirs: heirs.filter((item) => item.id !== heir.id) })}><Trash2 size={16} /></button></div>
         <div className="form-grid"><label>Family-tree person<select value={heir.personId || ""} onChange={(e) => { const person = familyPeople.find((item) => item.id === e.target.value); updateHeir(heir.id, { personId: e.target.value, name: person?.fullName || heir.name }); }}><option value="">Not linked</option>{familyPeople.filter((person) => person.id === heir.personId || !heirs.some((item) => item.id !== heir.id && item.personId === person.id)).map((person) => <option key={person.id} value={person.id}>{person.fullName || "Unnamed person"}</option>)}</select></label><label>Name<input value={heir.name} onChange={(e) => updateHeir(heir.id, { name: e.target.value })} /></label><label>Relationship<select value={heir.relationship} onChange={(e) => updateHeir(heir.id, { relationship: e.target.value, branchId: "" })}><option>Surviving spouse</option><option>Child</option><option>Descendant</option><option>Parent</option><option>Ascendant</option><option>Sibling</option><option>Sibling descendant</option><option>Other collateral</option></select></label><label>Succession status<select value={heir.status || "undecided"} onChange={(e) => updateHeir(heir.id, { status: e.target.value })}><option value="undecided">Undecided</option><option value="accepted">Accepted</option><option value="inventory">Accepted — benefit of inventory</option><option value="renounced">Renounced</option><option value="predeceased">Predeceased</option><option value="incapable">Incapable / unworthy</option></select></label>
         {["Descendant", "Sibling descendant"].includes(heir.relationship) && <label>Parent in this family line<select value={heir.branchId || ""} onChange={(e) => updateHeir(heir.id, { branchId: e.target.value })}><option value="">No parent selected</option>{possibleParents.map((parent) => <option key={parent.id} value={parent.id}>{parent.name || `Unnamed ${parent.relationship.toLowerCase()}`}</option>)}</select></label>}
         {["Ascendant", "Other collateral"].includes(heir.relationship) && <label>Degree of relationship<input type="number" min="1" max="12" value={heir.degree || ""} onChange={(e) => updateHeir(heir.id, { degree: e.target.value })} /></label>}
-        <label>Effective property share (%)<input type="number" min="0" max="100" value={heir.sharePercent} onChange={(e) => updateHeir(heir.id, { sharePercent: e.target.value })} /></label><label>Duty treatment<select value={heir.exemption} onChange={(e) => updateHeir(heir.id, { exemption: e.target.value })}><option value="none">Standard</option><option value="full">Full exemption (confirmed)</option></select></label><label className="check-label"><input type="checkbox" checked={heir.soleResidence} onChange={(e) => updateHeir(heir.id, { soleResidence: e.target.checked })} /> Qualifying sole residence</label></div>
+        {shareDisplay !== "percentage" && <label className={shareDisplay === "both" ? "" : "full-width"}>Inheritance share (fraction)<span className="fraction-share-input"><input aria-label="Share numerator" type="number" min="0" step="1" value={heirFraction.numerator} onChange={(e) => updateHeirFraction(heir, { shareNumerator: e.target.value })} /><strong>/</strong><input aria-label="Share denominator" type="number" min="1" step="1" value={heirFraction.denominator} onChange={(e) => updateHeirFraction(heir, { shareDenominator: e.target.value })} /></span></label>}
+        {shareDisplay !== "fraction" && <label className={shareDisplay === "both" ? "" : "full-width"}>Inheritance share (%)<span className="percentage-share-input"><input type="number" min="0" max="100" step="any" value={heir.sharePercent} onChange={(e) => updateHeirPercentage(heir.id, e.target.value)} /><strong>%</strong></span></label>}
+        <label>Duty treatment<select value={heir.exemption} onChange={(e) => updateHeir(heir.id, { exemption: e.target.value })}><option value="none">Standard</option><option value="full">Full exemption (confirmed)</option></select></label><label className="check-label"><input type="checkbox" checked={heir.soleResidence} onChange={(e) => updateHeir(heir.id, { soleResidence: e.target.checked })} /> Qualifying sole residence</label></div>
         <div className="inline-result"><span>Inherited value <strong>{money.format(result.inheritedValue)}</strong></span><span>Estimated duty <strong>{money.format(result.duty)}</strong></span></div>
         {["Child", "Descendant", "Sibling", "Sibling descendant"].includes(heir.relationship) && <button type="button" className="branch-add" onClick={() => addToBranch(heir)}><Plus size={14} /> Add child to this branch</button>}
       </article>; })}</div>

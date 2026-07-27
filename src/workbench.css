@@ -192,7 +192,7 @@ textarea {
 
 .dashboard-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   border-bottom: 1px solid #dfe5e1;
   background: #f7f9f8;
   padding: 0.35rem;
@@ -332,12 +332,39 @@ textarea {
 
 .inspector-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.42rem 0.5rem;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin-top: 0.28rem;
 }
 
-.inspector-fields .full-width {
-  grid-column: 1 / -1;
+.inspector-fields > label {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.15rem;
+  border-top: 1px solid #e6ebe8;
+  color: #526158;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.inspector-fields > label:first-child {
+  border-top: 0;
+}
+
+.inspector-fields > label > input,
+.inspector-fields > label > select,
+.inspector-fields > label > textarea {
+  min-height: 1.85rem;
+  border-radius: 5px;
+  padding: 0.3rem 0.42rem;
+  font-size: 0.72rem;
+}
+
+.inspector-fields > label > textarea {
+  min-height: 2.8rem;
+  resize: vertical;
 }
 
 .inspector-designations {
@@ -347,21 +374,88 @@ textarea {
 }
 
 .deceased-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.25rem;
-  border: 1px solid #d9dfdc;
-  border-radius: 6px;
-  background: #f7f9f8;
-  padding: 0.45rem 0.55rem;
-  color: var(--ink);
+  background: #fafcfb;
 }
 
-.deceased-toggle input {
+.detail-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  color: var(--ink);
+  font-size: 0.69rem;
+  font-weight: 700;
+}
+
+.detail-checkbox input {
   width: 1rem;
   min-height: 1rem;
   margin: 0;
+  accent-color: var(--forest);
+}
+
+.fraction-share-input,
+.percentage-share-input {
+  display: grid;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.fraction-share-input {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.percentage-share-input {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.fraction-share-input input,
+.percentage-share-input input {
+  min-width: 0;
+}
+
+.fraction-share-input strong,
+.percentage-share-input strong {
+  color: var(--muted);
+}
+
+.settings-panel {
+  padding: 0.7rem;
+}
+
+.compact-settings {
+  padding: 0.75rem;
+}
+
+.settings-rows {
+  display: grid;
+  gap: 0;
+  margin-top: 0.55rem;
+  border-top: 1px solid #e1e7e3;
+}
+
+.settings-rows > label {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.7rem;
+  border-bottom: 1px solid #e1e7e3;
+  color: #526158;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.settings-check > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.settings-check input {
+  width: 1rem;
+  min-height: 1rem;
   accent-color: var(--forest);
 }
 
@@ -981,12 +1075,8 @@ textarea {
     font-size: 0.62rem;
   }
 
-  .inspector-fields {
-    grid-template-columns: 1fr;
-  }
-
-  .inspector-fields .full-width {
-    grid-column: auto;
+  .inspector-fields > label {
+    grid-template-columns: 104px minmax(0, 1fr);
   }
 
   .relationship-actions {

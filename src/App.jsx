@@ -10,6 +10,7 @@ import {
   Minus,
   Plus,
   Save,
+  Settings2,
   UserRound,
   X,
   ZoomIn,
@@ -19,6 +20,7 @@ import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PropertyCalculator } from "./components/PropertyCalculator.jsx";
+import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildOwnershipLedger } from "./domain/ownership.js";
 import { createPerson } from "./domain/people.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
@@ -48,6 +50,11 @@ const initialTree = () => ({
   outsideParties: [],
   transfers: [],
   saleLots: [],
+  settings: {
+    shareDisplay: "both",
+    showOwnershipOnTree: true,
+    treeZoom: 100,
+  },
 });
 
 const normaliseTree = (value) => {
@@ -62,6 +69,7 @@ const normaliseTree = (value) => {
     outsideParties: value.outsideParties || [],
     transfers: value.transfers || [],
     saleLots: value.saleLots || [],
+    settings: { ...defaults.settings, ...(value.settings || {}) },
   };
 };
 
@@ -69,6 +77,7 @@ const dashboardTabs = [
   { key: "person", label: "Person", icon: UserRound },
   { key: "case", label: "Property & tax", icon: Landmark },
   { key: "summary", label: "Summary", icon: FileText },
+  { key: "settings", label: "Settings", icon: Settings2 },
 ];
 
 export function App() {
@@ -141,6 +150,15 @@ export function App() {
     setSelectedPersonId(personId);
     setPanelTab("person");
     setDashboardOpen(true);
+  };
+
+  const updateZoom = (nextZoom) => {
+    const boundedZoom = Math.min(140, Math.max(65, Number(nextZoom)));
+    setZoom(boundedZoom);
+    setTree({
+      ...currentTree,
+      settings: { ...currentTree.settings, treeZoom: boundedZoom },
+    });
   };
 
   const createNewTree = () => {
@@ -304,6 +322,7 @@ export function App() {
                 people={currentTree.people}
                 ownershipByPerson={ownershipByPerson}
                 selectedPersonId={selectedPersonId}
+                shareDisplay={currentTree.settings.shareDisplay}
                 onSelectPerson={selectPerson}
                 onChange={(people) => setTree({ ...currentTree, people })}
               />
@@ -312,6 +331,14 @@ export function App() {
               <PropertyCalculator caseData={currentTree} onChange={setTree} />
             )}
             {panelTab === "summary" && <CaseSummary tree={currentTree} />}
+            {panelTab === "settings" && (
+              <SettingsPanel
+                settings={currentTree.settings}
+                zoom={zoom}
+                onZoomChange={updateZoom}
+                onChange={(settings) => setTree({ ...currentTree, settings })}
+              />
+            )}
           </div>
           <p className="dashboard-status" aria-live="polite">
             {status}
@@ -340,7 +367,7 @@ export function App() {
             <div className="zoom-controls" aria-label="Tree zoom">
               <button
                 type="button"
-                onClick={() => setZoom((value) => Math.max(65, value - 10))}
+                onClick={() => updateZoom(zoom - 10)}
                 aria-label="Zoom out"
               >
                 <Minus size={16} />
@@ -348,7 +375,7 @@ export function App() {
               <span>{zoom}%</span>
               <button
                 type="button"
-                onClick={() => setZoom((value) => Math.min(140, value + 10))}
+                onClick={() => updateZoom(zoom + 10)}
                 aria-label="Zoom in"
               >
                 <ZoomIn size={16} />
@@ -367,6 +394,8 @@ export function App() {
             ownershipByPerson={ownershipByPerson}
             selectedPersonId={selectedPersonId}
             onSelectPerson={selectPerson}
+            shareDisplay={currentTree.settings.shareDisplay}
+            showOwnership={currentTree.settings.showOwnershipOnTree}
           />
         </section>
       </div>

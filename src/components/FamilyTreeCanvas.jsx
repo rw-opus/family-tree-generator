@@ -12,7 +12,7 @@ function printTree(node) {
   popup.print();
 }
 
-export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = printTree, selectedPersonId, onSelectPerson }) {
+export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = printTree, selectedPersonId, onSelectPerson, shareDisplay = "both", showOwnership = true }) {
   const treeRef = useRef(null);
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
@@ -44,9 +44,17 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
     const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
     const ownership = ownershipByPerson[person.id] || 0;
     const ownershipFraction = approximateFraction(ownership);
+    const fractionText = `${ownershipFraction.numerator}/${ownershipFraction.denominator}`;
+    const percentageText = `${(ownership * 100).toLocaleString("en-MT", { maximumFractionDigits: 4 })}%`;
+    const ownershipText =
+      shareDisplay === "fraction"
+        ? fractionText
+        : shareDisplay === "percentage"
+          ? percentageText
+          : `${fractionText} · ${percentageText}`;
     return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${person.fullName || "unnamed person"}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
       <div className="family-node-name" title={person.fullName || "Unnamed person"}>{person.fullName || "Unnamed person"}</div>
-      {!person.isPlaceholder && <div className="family-node-ownership">{ownershipFraction.numerator}/{ownershipFraction.denominator} · {(ownership * 100).toLocaleString("en-MT", { maximumFractionDigits: 4 })}% ownership</div>}
+      {!person.isPlaceholder && showOwnership && <div className="family-node-ownership">{ownershipText} ownership</div>}
       {isDeceased && person.dateOfDeath && <div className="family-node-meta">d. {formattedDate(person.dateOfDeath)}</div>}
       {!isDeceased && !person.isPlaceholder && <div className="family-node-meta">{personDesignations(person).join(" + ") || "No relationship selected"}</div>}
       {person.isPlaceholder && <div className="family-node-meta">{personDesignations(person)[0]}</div>}
