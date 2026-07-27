@@ -1,3 +1,5 @@
+import { surnameFromFullName } from "./people.js";
+
 const MONTHS = { JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06", JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12" };
 
 function exactDate(value = "") {
@@ -8,6 +10,10 @@ function exactDate(value = "") {
 
 function cleanName(value = "") {
   return value.replace(/\//g, " ").replace(/\s+/g, " ").trim();
+}
+
+function surnameFromGedcomName(value = "") {
+  return value.match(/\/([^/]+)\//)?.[1]?.trim() || "";
 }
 
 export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
@@ -25,7 +31,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     if (level === 0) {
       event = "";
       if (tag === "INDI") {
-        record = { type: "INDI", pointer, name: "", sex: "", birthText: "", deathText: "", isDeceased: false };
+        record = { type: "INDI", pointer, name: "", surnameAtBirth: "", sex: "", birthText: "", deathText: "", isDeceased: false };
         individuals.set(pointer, record);
       } else if (tag === "FAM") {
         record = { type: "FAM", pointer, husband: "", wife: "", children: [] };
@@ -35,7 +41,10 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     }
     if (!record) return;
     if (record.type === "INDI") {
-      if (level === 1 && tag === "NAME") record.name = cleanName(value);
+      if (level === 1 && tag === "NAME") {
+        record.name = cleanName(value);
+        record.surnameAtBirth = surnameFromGedcomName(value);
+      }
       else if (level === 1 && tag === "SEX") record.sex = value === "M" ? "Male" : value === "F" ? "Female" : value || "Other";
       else if (level === 1 && ["BIRT", "DEAT"].includes(tag)) {
         event = tag;
@@ -54,6 +63,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     gedcomId: person.pointer,
     fullName: person.name,
     sex: person.sex,
+    surnameAtBirth: person.surnameAtBirth || (person.sex === "Male" ? surnameFromFullName(person.name) : ""),
     dateOfBirth: exactDate(person.birthText),
     dateOfDeath: exactDate(person.deathText),
     gedcomBirthDate: person.birthText,
@@ -85,4 +95,3 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
   });
   return { people, individualCount: people.length, familyCount: families.length };
 }
-

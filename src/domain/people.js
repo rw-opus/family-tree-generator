@@ -16,8 +16,13 @@ export function hasAnyDesignation(person, designations) {
   return designations.some((designation) => hasDesignation(person, designation));
 }
 
+export function surnameFromFullName(value = "") {
+  const parts = String(value).trim().split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts.at(-1) : "";
+}
+
 export function createPerson(designation = "") {
-  return { id: crypto.randomUUID(), fullName: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
+  return { id: crypto.randomUUID(), fullName: "", surnameAtBirth: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
 }
 
 export function formattedDate(value) {

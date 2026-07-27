@@ -89,4 +89,30 @@ describe("PersonInspector", () => {
       designations: ["Deceased"],
     });
   });
+
+  it("prefills a man's surname at birth from his full name", () => {
+    const person = {
+      id: "person",
+      fullName: "Joseph Borg",
+      surnameAtBirth: "",
+      sex: "Male",
+      designations: [],
+      spouseIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[person]}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const surnameLabel = [...container.querySelectorAll("label")]
+      .find((label) => label.textContent.includes("Surname at birth"));
+    expect(surnameLabel.querySelector("input").value).toBe("Borg");
+  });
 });

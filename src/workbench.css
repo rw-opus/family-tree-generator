@@ -703,10 +703,42 @@ textarea {
   transform: translateY(-2px);
 }
 
+.tree-stage .family-node.male {
+  border-color: #85acc9;
+  border-top-color: #4f83aa;
+  background: #e9f5ff;
+}
+
+.tree-stage .family-node.female {
+  border-color: #d6a0b2;
+  border-top-color: #b96f89;
+  background: #fff0f5;
+}
+
 .tree-stage .family-node.deceased {
-  border: 1px solid #8b6b72;
-  border-top: 4px solid #6b3f4a;
-  background: #fffafa;
+  border-color: #4a4a4a;
+  border-top-color: #171717;
+}
+
+.tree-stage .family-node.deceased:not(.male):not(.female) {
+  background: #f3f3f3;
+}
+
+.tree-stage .family-node.deceased::before {
+  position: absolute;
+  top: -11px;
+  left: -9px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  content: "✝";
+  font: 900 15px/1 Georgia, serif;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
 }
 
 .tree-stage .family-node.selected {

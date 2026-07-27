@@ -41,9 +41,10 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
   const title = deceased ? `Family Tree of ${deceased.fullName || "the deceased person"}` : "Family tree";
   const card = (person, variant = "") => {
     const isDeceased = Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
+    const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
     const ownership = ownershipByPerson[person.id] || 0;
     const ownershipFraction = approximateFraction(ownership);
-    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${person.fullName || "unnamed person"}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${isDeceased ? "deceased" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
+    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${person.fullName || "unnamed person"}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
       <div className="family-node-name" title={person.fullName || "Unnamed person"}>{person.fullName || "Unnamed person"}</div>
       {!person.isPlaceholder && <div className="family-node-ownership">{ownershipFraction.numerator}/{ownershipFraction.denominator} · {(ownership * 100).toLocaleString("en-MT", { maximumFractionDigits: 4 })}% ownership</div>}
       {isDeceased && person.dateOfDeath && <div className="family-node-meta">d. {formattedDate(person.dateOfDeath)}</div>}

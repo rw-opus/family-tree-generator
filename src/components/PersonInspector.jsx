@@ -13,6 +13,7 @@ import {
   createPerson,
   hasDesignation,
   personDesignations,
+  surnameFromFullName,
 } from "../domain/people.js";
 import { parseGedcom } from "../domain/gedcom.js";
 import { approximateFraction } from "../domain/ownership.js";
@@ -76,6 +77,27 @@ export function PersonInspector({
         person.id === selectedPerson.id ? { ...person, ...patch } : person,
       ),
     );
+  };
+
+  const updateFullName = (fullName) => {
+    const patch = { fullName };
+    const previousDerivedSurname = surnameFromFullName(selectedPerson.fullName);
+    if (
+      selectedPerson.sex === "Male" &&
+      (!selectedPerson.surnameAtBirth ||
+        selectedPerson.surnameAtBirth === previousDerivedSurname)
+    ) {
+      patch.surnameAtBirth = surnameFromFullName(fullName);
+    }
+    updateSelected(patch);
+  };
+
+  const updateSex = (sex) => {
+    const patch = { sex };
+    if (sex === "Male" && !selectedPerson.surnameAtBirth) {
+      patch.surnameAtBirth = surnameFromFullName(selectedPerson.fullName);
+    }
+    updateSelected(patch);
   };
 
   const toggleDesignation = (designation) => {
@@ -197,6 +219,9 @@ export function PersonInspector({
   const ownership = ownershipByPerson[selectedPerson.id] || 0;
   const isDeceased =
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
+  const displayedSurnameAtBirth =
+    selectedPerson.surnameAtBirth ||
+    (selectedPerson.sex === "Male" ? surnameFromFullName(selectedPerson.fullName) : "");
 
   return (
     <div className="person-inspector">
@@ -245,7 +270,7 @@ export function PersonInspector({
             <input
               autoFocus={!selectedPerson.fullName}
               value={selectedPerson.fullName || ""}
-              onChange={(event) => updateSelected({ fullName: event.target.value })}
+              onChange={(event) => updateFullName(event.target.value)}
               placeholder="Name and surname"
             />
           </label>
@@ -253,13 +278,21 @@ export function PersonInspector({
             Sex
             <select
               value={selectedPerson.sex || ""}
-              onChange={(event) => updateSelected({ sex: event.target.value })}
+              onChange={(event) => updateSex(event.target.value)}
             >
               <option value="">Not specified</option>
               <option>Female</option>
               <option>Male</option>
               <option>Other</option>
             </select>
+          </label>
+          <label>
+            Surname at birth
+            <input
+              value={displayedSurnameAtBirth}
+              onChange={(event) => updateSelected({ surnameAtBirth: event.target.value })}
+              placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
+            />
           </label>
           <label className="deceased-toggle full-width">
             <input
