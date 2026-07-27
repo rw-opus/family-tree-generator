@@ -14,6 +14,45 @@ export function approximateFraction(decimal, maxDenominator = 10000) {
   return { numerator: best.numerator * sign, denominator: best.denominator };
 }
 
+export function buildStarterOwnership(people = []) {
+  if (!people.length) return {};
+
+  const hasManualShare = (person) =>
+    person.ownershipSharePercent !== undefined &&
+    person.ownershipSharePercent !== null &&
+    person.ownershipSharePercent !== "";
+  const manualPeople = people.filter(hasManualShare);
+  if (people.length === 1 && !manualPeople.length) return {};
+
+  const parentIds = new Set();
+  people.forEach((person) => {
+    if (person.fatherId) parentIds.add(person.fatherId);
+    if (person.motherId) parentIds.add(person.motherId);
+  });
+
+  const candidateIds = new Set(
+    parentIds.size ? [...parentIds] : [people[0].id],
+  );
+  manualPeople.forEach((person) => candidateIds.add(person.id));
+  const candidates = people.filter((person) => candidateIds.has(person.id));
+  const manualTotal = candidates
+    .filter(hasManualShare)
+    .reduce((total, person) => total + value(person.ownershipSharePercent), 0);
+  const automaticPeople = candidates.filter((person) => !hasManualShare(person));
+  const automaticPercent = automaticPeople.length
+    ? Math.max(0, 100 - manualTotal) / automaticPeople.length
+    : 0;
+
+  return Object.fromEntries(
+    candidates.map((person) => [
+      person.id,
+      (hasManualShare(person)
+        ? value(person.ownershipSharePercent)
+        : automaticPercent) / 100,
+    ]),
+  );
+}
+
 export function buildOwnershipLedger(heirs = [], outsideParties = [], transfers = [], familyPeople = []) {
   const linkedPersonIds = new Set(heirs.map((heir) => heir.personId).filter(Boolean));
   const parties = [

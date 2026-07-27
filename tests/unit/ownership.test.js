@@ -1,9 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { approximateFraction, buildOwnershipLedger } from "../../src/domain/ownership.js";
+import { approximateFraction, buildOwnershipLedger, buildStarterOwnership } from "../../src/domain/ownership.js";
 
 describe("ownership transfer ledger", () => {
   it("shows useful fractional labels", () => {
     expect(approximateFraction(1 / 3)).toEqual({ numerator: 1, denominator: 3 });
+  });
+  it("leaves a lone first person without a displayed ownership share", () => {
+    expect(buildStarterOwnership([{ id: "first" }])).toEqual({});
+  });
+  it("defaults two top-level parents to one half each", () => {
+    expect(buildStarterOwnership([
+      { id: "father" },
+      { id: "mother" },
+      { id: "child", fatherId: "father", motherId: "mother" },
+    ])).toEqual({ father: .5, mother: .5 });
+  });
+  it("lets one top-level parent own the whole property", () => {
+    expect(buildStarterOwnership([
+      { id: "father", ownershipSharePercent: 100 },
+      { id: "mother" },
+      { id: "child", fatherId: "father", motherId: "mother" },
+    ])).toEqual({ father: 1, mother: 0 });
   });
   it("transfers a fraction of a seller's holding to a company", () => {
     const ledger = buildOwnershipLedger(

@@ -41,5 +41,6 @@ describe("FamilyTreeCanvas", () => {
     ));
     expect(container.querySelector('[data-person-id="parent"]')).not.toBeNull();
     expect(container.querySelector('[data-person-id="child"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("0/1");
   });
 });

@@ -21,7 +21,7 @@ import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PropertyCalculator } from "./components/PropertyCalculator.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
-import { buildOwnershipLedger } from "./domain/ownership.js";
+import { buildOwnershipLedger, buildStarterOwnership } from "./domain/ownership.js";
 import { createPerson } from "./domain/people.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
@@ -106,11 +106,14 @@ export function App() {
       normalised.transfers,
       normalised.people,
     );
-    return Object.fromEntries(
+    const recordedOwnership = Object.fromEntries(
       ledger.owners
         .filter((owner) => owner.personId)
         .map((owner) => [owner.personId, owner.share]),
     );
+    return Object.keys(recordedOwnership).length
+      ? recordedOwnership
+      : buildStarterOwnership(normalised.people);
   }, [tree]);
   const selectedCaseDependencyLabels = useMemo(() => {
     const labels = [];
