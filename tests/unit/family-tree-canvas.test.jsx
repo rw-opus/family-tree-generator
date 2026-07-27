@@ -28,4 +28,18 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector('[data-person-id="c"]').className).toContain("deceased");
     expect(container.querySelector('[data-person-id="c"]').className).toContain("selected");
   });
+
+  it("keeps an unnamed central person visible while adding unnamed relatives", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        selectedPersonId="parent"
+        people={[
+          { id: "parent", fullName: "", spouseIds: [], siblingIds: [] },
+          { id: "child", fullName: "", fatherId: "parent", spouseIds: [], siblingIds: [] },
+        ]}
+      />,
+    ));
+    expect(container.querySelector('[data-person-id="parent"]')).not.toBeNull();
+    expect(container.querySelector('[data-person-id="child"]')).not.toBeNull();
+  });
 });

@@ -64,6 +64,7 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
   const generation = (label, members) => members.length ? <><div className="family-down-line" /><div className="family-generation-label">{label}</div>{row(members)}</> : null;
   const branch = (top, lower, topLabel, lowerLabel) => (top.length || lower.length) ? <div className="family-side-branch"><div className="family-generation-label">{topLabel}</div><div className="family-row">{top.map(card)}</div>{lower.length > 0 && <><div className="family-down-line" /><div className="family-generation-label">{lowerLabel}</div>{row(lower)}</>}</div> : null;
   const relationalPeople = (people || []).filter((person) =>
+    person.id ||
     person.fullName ||
     person.fatherId ||
     person.motherId ||
