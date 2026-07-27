@@ -1,0 +1,355 @@
+import { buildStarterOwnership } from "./ownership.js";
+import { CURRENT_SUCCESSION_START } from "./propertyTax.js";
+
+const number = (input) => Math.max(0, Number(input) || 0);
+
+export function isPersonDeceased(person = {}) {
+  return Boolean(person.isDeceased) ||
+    (person.designations || []).some(
+      (designation) => String(designation).toLowerCase() === "deceased",
+    );
+}
+
+function wasAliveAt(person, date) {
+  if (!isPersonDeceased(person)) return true;
+  if (!date || !person.dateOfDeath) return false;
+  return person.dateOfDeath > date;
+}
+
+function addShare(shares, personId, amount) {
+  shares.set(personId, (shares.get(personId) || 0) + amount);
+}
+
+function familyIndex(people) {
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  const childrenByParent = new Map();
+  people.forEach((person) => {
+    [person.fatherId, person.motherId].filter(Boolean).forEach((parentId) => {
+      if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+      childrenByParent.get(parentId).push(person);
+    });
+  });
+  return { peopleById, childrenByParent };
+}
+
+function branchIsViable(person, atDate, index, trail = new Set()) {
+  if (!person || trail.has(person.id)) return false;
+  if (wasAliveAt(person, atDate)) return true;
+  const nextTrail = new Set(trail).add(person.id);
+  return (index.childrenByParent.get(person.id) || []).some((child) =>
+    branchIsViable(child, atDate, index, nextTrail)
+  );
+}
+
+function allocateBranch(person, atDate, amount, shares, index, trail = new Set()) {
+  if (!person || trail.has(person.id) || amount <= 0) return;
+  if (wasAliveAt(person, atDate)) {
+    addShare(shares, person.id, amount);
+    return;
+  }
+  const nextTrail = new Set(trail).add(person.id);
+  const viableChildren = (index.childrenByParent.get(person.id) || [])
+    .filter((child) => branchIsViable(child, atDate, index, nextTrail));
+  if (!viableChildren.length) return;
+  const perBranch = amount / viableChildren.length;
+  viableChildren.forEach((child) =>
+    allocateBranch(child, atDate, perBranch, shares, index, nextTrail)
+  );
+}
+
+function allocateBranches(roots, atDate, amount, index) {
+  const shares = new Map();
+  const viableRoots = roots.filter((person) =>
+    branchIsViable(person, atDate, index)
+  );
+  if (!viableRoots.length) return shares;
+  const perBranch = amount / viableRoots.length;
+  viableRoots.forEach((person) =>
+    allocateBranch(person, atDate, perBranch, shares, index)
+  );
+  return shares;
+}
+
+function collectBranchHeirs(person, atDate, index, depth = 1, trail = new Set()) {
+  if (!person || trail.has(person.id)) return [];
+  if (wasAliveAt(person, atDate)) return [{ person, depth }];
+  const nextTrail = new Set(trail).add(person.id);
+  return (index.childrenByParent.get(person.id) || []).flatMap((child) =>
+    collectBranchHeirs(child, atDate, index, depth + 1, nextTrail)
+  );
+}
+
+function allocateSiblingBranches(siblings, atDate, amount, index) {
+  const heirs = siblings.flatMap((sibling) =>
+    collectBranchHeirs(sibling, atDate, index)
+  );
+  const allSiblingsPredeceased = siblings.every(
+    (sibling) => !wasAliveAt(sibling, atDate),
+  );
+  const equalDegree =
+    heirs.length > 0 &&
+    heirs.every(({ depth }) => depth === heirs[0].depth);
+  if (allSiblingsPredeceased && equalDegree) {
+    const shares = new Map();
+    heirs.forEach(({ person }) => addShare(shares, person.id, amount / heirs.length));
+    return shares;
+  }
+  return allocateBranches(siblings, atDate, amount, index);
+}
+
+function linkedSpouses(person, people, peopleById) {
+  const spouseIds = new Set(person.spouseIds || []);
+  people.forEach((candidate) => {
+    if ((candidate.spouseIds || []).includes(person.id)) spouseIds.add(candidate.id);
+  });
+  return [...spouseIds].map((id) => peopleById.get(id)).filter(Boolean);
+}
+
+function linkedSiblings(person, people, peopleById) {
+  const siblingIds = new Set(person.siblingIds || []);
+  people.forEach((candidate) => {
+    if (candidate.id === person.id) return;
+    const sharesFather =
+      person.fatherId && candidate.fatherId === person.fatherId;
+    const sharesMother =
+      person.motherId && candidate.motherId === person.motherId;
+    if (
+      sharesFather ||
+      sharesMother ||
+      (candidate.siblingIds || []).includes(person.id)
+    ) {
+      siblingIds.add(candidate.id);
+    }
+  });
+  return [...siblingIds].map((id) => peopleById.get(id)).filter(Boolean);
+}
+
+function nearestLivingAscendants(person, atDate, peopleById) {
+  let current = [person.fatherId, person.motherId]
+    .map((id) => peopleById.get(id))
+    .filter(Boolean);
+  const visited = new Set([person.id]);
+  while (current.length) {
+    const unique = current.filter((candidate) => {
+      if (visited.has(candidate.id)) return false;
+      visited.add(candidate.id);
+      return true;
+    });
+    const living = unique.filter((candidate) => wasAliveAt(candidate, atDate));
+    if (living.length) return living;
+    current = unique.flatMap((candidate) =>
+      [candidate.fatherId, candidate.motherId]
+        .map((id) => peopleById.get(id))
+        .filter(Boolean)
+    );
+  }
+  return [];
+}
+
+function collateralDegree(deceasedId, candidateId, index, maxDegree = 12) {
+  const queue = [{ id: deceasedId, degree: 0 }];
+  const visited = new Set([deceasedId]);
+  while (queue.length) {
+    const current = queue.shift();
+    if (current.degree >= maxDegree) continue;
+    const person = index.peopleById.get(current.id);
+    if (!person) continue;
+    const relativeIds = new Set([
+      person.fatherId,
+      person.motherId,
+      ...(index.childrenByParent.get(person.id) || []).map((child) => child.id),
+    ]);
+    for (const relativeId of relativeIds) {
+      if (!relativeId || visited.has(relativeId)) continue;
+      const degree = current.degree + 1;
+      if (relativeId === candidateId) return degree;
+      visited.add(relativeId);
+      queue.push({ id: relativeId, degree });
+    }
+  }
+  return Infinity;
+}
+
+export function intestateAllocations(people = [], deceasedId) {
+  const index = familyIndex(people);
+  const deceased = index.peopleById.get(deceasedId);
+  const shares = new Map();
+  const warnings = [];
+  if (!deceased) return { shares, warnings: ["Deceased person not found."], destination: "unresolved" };
+  if (deceased.dateOfDeath && deceased.dateOfDeath < CURRENT_SUCCESSION_START) {
+    warnings.push("Historical intestacy rules before 1 March 2005 are not yet automated.");
+    return { shares, warnings, destination: "historical-unresolved" };
+  }
+  if (!deceased.dateOfDeath) {
+    warnings.push("Current intestacy rules are being used until a date of death is entered.");
+  }
+
+  const atDate = deceased.dateOfDeath || "";
+  const livingSpouses = linkedSpouses(deceased, people, index.peopleById)
+    .filter((person) => wasAliveAt(person, atDate));
+  const children = index.childrenByParent.get(deceased.id) || [];
+  const descendantProbe = allocateBranches(children, atDate, 1, index);
+  if (descendantProbe.size) {
+    const spouseTotal = livingSpouses.length ? 0.5 : 0;
+    const descendantShares = allocateBranches(
+      children,
+      atDate,
+      1 - spouseTotal,
+      index,
+    );
+    descendantShares.forEach((share, id) => addShare(shares, id, share));
+    livingSpouses.forEach((spouse) =>
+      addShare(shares, spouse.id, spouseTotal / livingSpouses.length)
+    );
+    return {
+      shares,
+      warnings,
+      destination: livingSpouses.length ? "spouse-and-descendants" : "descendants",
+    };
+  }
+
+  if (livingSpouses.length) {
+    livingSpouses.forEach((spouse) =>
+      addShare(shares, spouse.id, 1 / livingSpouses.length)
+    );
+    return { shares, warnings, destination: "spouse" };
+  }
+
+  const ascendants = nearestLivingAscendants(deceased, atDate, index.peopleById);
+  const siblings = linkedSiblings(deceased, people, index.peopleById);
+  const siblingProbe = allocateSiblingBranches(siblings, atDate, 1, index);
+  if (ascendants.length || siblingProbe.size) {
+    const ascendantTotal = ascendants.length ? (siblingProbe.size ? 0.5 : 1) : 0;
+    ascendants.forEach((ascendant) =>
+      addShare(shares, ascendant.id, ascendantTotal / ascendants.length)
+    );
+    const siblingShares = allocateSiblingBranches(
+      siblings,
+      atDate,
+      ascendants.length ? 0.5 : 1,
+      index,
+    );
+    siblingShares.forEach((share, id) => addShare(shares, id, share));
+    return {
+      shares,
+      warnings,
+      destination:
+        ascendants.length && siblingProbe.size
+          ? "ascendants-and-sibling-branches"
+          : ascendants.length
+            ? "ascendants"
+            : "sibling-branches",
+    };
+  }
+
+  const otherCollaterals = people
+    .filter(
+      (candidate) =>
+        candidate.id !== deceased.id &&
+        wasAliveAt(candidate, atDate) &&
+        !livingSpouses.some((spouse) => spouse.id === candidate.id),
+    )
+    .map((candidate) => ({
+      person: candidate,
+      degree: collateralDegree(deceased.id, candidate.id, index),
+    }))
+    .filter(({ degree }) => degree >= 3 && degree <= 12);
+  const nearestDegree = Math.min(
+    ...otherCollaterals.map(({ degree }) => degree),
+  );
+  const nearestCollaterals = otherCollaterals.filter(
+    ({ degree }) => degree === nearestDegree,
+  );
+  if (nearestCollaterals.length) {
+    nearestCollaterals.forEach(({ person }) =>
+      addShare(shares, person.id, 1 / nearestCollaterals.length)
+    );
+    return { shares, warnings, destination: "other-collaterals" };
+  }
+
+  warnings.push("No relative was found within twelve degrees; the succession may devolve on the Government of Malta.");
+  return { shares, warnings, destination: "government" };
+}
+
+export function willAllocations(person = {}) {
+  const shares = new Map();
+  (person.willHeirs || []).forEach((heir) => {
+    if (!heir.personId) return;
+    addShare(shares, heir.personId, number(heir.sharePercent) / 100);
+  });
+  return shares;
+}
+
+export function buildAutomaticFamilyOwnership(people = []) {
+  const startingOwnership = buildStarterOwnership(people);
+  if (!Object.keys(startingOwnership).length && people.length === 1) {
+    startingOwnership[people[0].id] = 1;
+  }
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  const ownership = new Map();
+  const transmissions = [];
+  const unresolved = [];
+
+  const distribute = (personId, amount, trail = new Set()) => {
+    if (!personId || amount <= 1e-12 || trail.has(personId)) return;
+    const person = peopleById.get(personId);
+    if (!person) return;
+    if (!isPersonDeceased(person)) {
+      addShare(ownership, personId, amount);
+      return;
+    }
+
+    const basis = person.inheritanceBasis || "intestacy";
+    const result = basis === "will"
+      ? { shares: willAllocations(person), warnings: [], destination: "will" }
+      : intestateAllocations(people, personId);
+    let allocated = [...result.shares.values()].reduce((sum, share) => sum + share, 0);
+    if (basis === "will" && Math.abs(allocated - 1) > 1e-10) {
+      result.warnings.push(`Will beneficiary shares total ${(allocated * 100).toLocaleString("en-MT", {
+        maximumFractionDigits: 4,
+      })}%, not 100%.`);
+    }
+    if (allocated > 1 + 1e-10) {
+      result.shares.forEach((share, heirId) => {
+        result.shares.set(heirId, share / allocated);
+      });
+      allocated = 1;
+    }
+    transmissions.push({
+      deceasedId: personId,
+      basis,
+      amount,
+      allocations: result.shares,
+      warnings: result.warnings,
+      destination: result.destination,
+    });
+    if (!result.shares.size || allocated <= 1e-12) {
+      addShare(ownership, personId, amount);
+      unresolved.push({ personId, amount, warnings: result.warnings });
+      return;
+    }
+
+    const nextTrail = new Set(trail).add(personId);
+    result.shares.forEach((share, heirId) =>
+      distribute(heirId, amount * share, nextTrail)
+    );
+    if (allocated < 1 - 1e-10) {
+      const remainder = amount * (1 - allocated);
+      addShare(ownership, personId, remainder);
+      unresolved.push({
+        personId,
+        amount: remainder,
+        warnings: ["Part of the estate has not been allocated."],
+      });
+    }
+  };
+
+  Object.entries(startingOwnership).forEach(([personId, share]) =>
+    distribute(personId, share)
+  );
+  return {
+    ownershipByPerson: Object.fromEntries(ownership),
+    transmissions,
+    unresolved,
+  };
+}

@@ -19,8 +19,13 @@ import {
   personDesignations,
 } from "../domain/people.js";
 import { parseGedcom } from "../domain/gedcom.js";
+import { intestateAllocations } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
-import { shareFromFraction, shareFromPercentage } from "../domain/shares.js";
+import {
+  fractionForShare,
+  shareFromFraction,
+  shareFromPercentage,
+} from "../domain/shares.js";
 
 const relationshipActions = [
   { key: "father", label: "Father", icon: UserRound },
@@ -161,6 +166,52 @@ export function PersonInspector({
       ownershipSharePercent: share.sharePercent,
       ownershipShareNumerator: share.shareNumerator,
       ownershipShareDenominator: share.shareDenominator,
+    });
+  };
+
+  const updateWillHeir = (heirId, patch) => {
+    updateSelected({
+      willHeirs: (selectedPerson.willHeirs || []).map((heir) =>
+        heir.id === heirId ? { ...heir, ...patch } : heir,
+      ),
+    });
+  };
+
+  const updateWillHeirPercentage = (heirId, percentage) => {
+    updateWillHeir(heirId, shareFromPercentage(percentage));
+  };
+
+  const updateWillHeirFraction = (heir, patch) => {
+    const current = fractionForShare(heir);
+    updateWillHeir(
+      heir.id,
+      shareFromFraction(
+        patch.numerator ?? current.numerator,
+        patch.denominator ?? current.denominator,
+      ),
+    );
+  };
+
+  const addWillHeir = () => {
+    const hasHeirs = (selectedPerson.willHeirs || []).length > 0;
+    const share = shareFromPercentage(hasHeirs ? 0 : 100);
+    updateSelected({
+      willHeirs: [
+        ...(selectedPerson.willHeirs || []),
+        {
+          id: crypto.randomUUID(),
+          personId: "",
+          ...share,
+        },
+      ],
+    });
+  };
+
+  const removeWillHeir = (heirId) => {
+    updateSelected({
+      willHeirs: (selectedPerson.willHeirs || []).filter(
+        (heir) => heir.id !== heirId,
+      ),
     });
   };
 
@@ -329,6 +380,16 @@ export function PersonInspector({
     selectedPerson.ownershipSharePercent !== "";
   const isDeceased =
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
+  const inheritanceBasis = selectedPerson.inheritanceBasis || "intestacy";
+  const willHeirs = selectedPerson.willHeirs || [];
+  const willTotal = willHeirs.reduce(
+    (total, heir) => total + (Number(heir.sharePercent) || 0),
+    0,
+  );
+  const automaticIntestacy =
+    isDeceased && inheritanceBasis === "intestacy"
+      ? intestateAllocations(people, selectedPerson.id)
+      : null;
   const displayedSurnameAtBirth =
     selectedPerson.surnameAtBirth ||
     (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
@@ -630,6 +691,162 @@ export function PersonInspector({
             </button>
           )}
         </div>
+        {isDeceased && (
+          <div className="person-succession">
+            <div className="person-succession-heading">
+              <div>
+                <strong>Ownership on death</strong>
+                <small>The deceased person's current share passes automatically.</small>
+              </div>
+              <select
+                aria-label="Inheritance basis"
+                value={inheritanceBasis}
+                onChange={(event) =>
+                  updateSelected({ inheritanceBasis: event.target.value })
+                }
+              >
+                <option value="intestacy">Intestacy</option>
+                <option value="will">Will</option>
+              </select>
+            </div>
+
+            {inheritanceBasis === "intestacy" ? (
+              <div className="automatic-heirs">
+                <strong>Calculated heirs</strong>
+                {automaticIntestacy?.shares.size ? (
+                  [...automaticIntestacy.shares.entries()].map(([personId, share]) => {
+                    const heir = peopleById.get(personId);
+                    return (
+                      <div key={personId}>
+                        <span>{heir?.fullName || "Unnamed person"}</span>
+                        <b>{ownershipLabel(share, shareDisplay)}</b>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <small>No supported heir can yet be calculated.</small>
+                )}
+                {automaticIntestacy?.warnings.map((warning) => (
+                  <small className="succession-warning" key={warning}>
+                    {warning}
+                  </small>
+                ))}
+              </div>
+            ) : (
+              <div className="will-details">
+                <label>
+                  <span>Will date</span>
+                  <input
+                    type="date"
+                    value={selectedPerson.willDate || ""}
+                    onChange={(event) => updateSelected({ willDate: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Notary</span>
+                  <input
+                    value={selectedPerson.willNotaryName || ""}
+                    onChange={(event) =>
+                      updateSelected({ willNotaryName: event.target.value })
+                    }
+                    placeholder="Notary's name"
+                  />
+                </label>
+                <div className="will-beneficiaries">
+                  <div className="will-beneficiaries-heading">
+                    <strong>Beneficiaries</strong>
+                    <button type="button" className="text-button" onClick={addWillHeir}>
+                      Add beneficiary
+                    </button>
+                  </div>
+                  {willHeirs.map((heir) => {
+                    const fraction = fractionForShare(heir);
+                    return (
+                      <div className="will-heir-row" key={heir.id}>
+                        <select
+                          aria-label="Will beneficiary"
+                          value={heir.personId || ""}
+                          onChange={(event) =>
+                            updateWillHeir(heir.id, { personId: event.target.value })
+                          }
+                        >
+                          <option value="">Choose person</option>
+                          {people
+                            .filter((person) => person.id !== selectedPerson.id)
+                            .map((person) => (
+                              <option key={person.id} value={person.id}>
+                                {person.fullName || "Unnamed person"}
+                              </option>
+                            ))}
+                        </select>
+                        <span className="will-heir-fraction">
+                          <input
+                            aria-label="Will share numerator"
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={fraction.numerator}
+                            onChange={(event) =>
+                              updateWillHeirFraction(heir, {
+                                numerator: event.target.value,
+                              })
+                            }
+                          />
+                          <b>/</b>
+                          <input
+                            aria-label="Will share denominator"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={fraction.denominator}
+                            onChange={(event) =>
+                              updateWillHeirFraction(heir, {
+                                denominator: event.target.value,
+                              })
+                            }
+                          />
+                        </span>
+                        <span className="will-heir-percent">
+                          <input
+                            aria-label="Will share percentage"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="any"
+                            value={heir.sharePercent ?? 0}
+                            onChange={(event) =>
+                              updateWillHeirPercentage(heir.id, event.target.value)
+                            }
+                          />
+                          <b>%</b>
+                        </span>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label="Remove will beneficiary"
+                          onClick={() => removeWillHeir(heir.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <small
+                    className={
+                      Math.abs(willTotal - 100) < 1e-8
+                        ? "succession-total valid"
+                        : "succession-total invalid"
+                    }
+                  >
+                    Total: {willTotal.toLocaleString("en-MT", {
+                      maximumFractionDigits: 4,
+                    })}% {Math.abs(willTotal - 100) < 1e-8 ? "✓" : "— must equal 100%"}
+                  </small>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <details className="relationship-labels">
           <summary>Succession labels</summary>
           <div className="designation-list inspector-designations">

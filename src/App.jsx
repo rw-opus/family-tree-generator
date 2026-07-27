@@ -21,7 +21,8 @@ import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PropertyCalculator } from "./components/PropertyCalculator.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
-import { buildOwnershipLedger, buildStarterOwnership } from "./domain/ownership.js";
+import { buildAutomaticFamilyOwnership } from "./domain/familyOwnership.js";
+import { buildOwnershipLedger } from "./domain/ownership.js";
 import { createPerson } from "./domain/people.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
@@ -98,6 +99,10 @@ export function App() {
   const [zoom, setZoom] = useState(100);
 
   const currentTree = normaliseTree(tree);
+  const automaticOwnership = useMemo(
+    () => buildAutomaticFamilyOwnership(currentTree.people),
+    [currentTree.people],
+  );
   const ownershipByPerson = useMemo(() => {
     const normalised = normaliseTree(tree);
     const ledger = buildOwnershipLedger(
@@ -113,8 +118,8 @@ export function App() {
     );
     return Object.keys(recordedOwnership).length
       ? recordedOwnership
-      : buildStarterOwnership(normalised.people);
-  }, [tree]);
+      : automaticOwnership.ownershipByPerson;
+  }, [automaticOwnership.ownershipByPerson, tree]);
   const selectedCaseDependencyLabels = useMemo(() => {
     const labels = [];
     if (

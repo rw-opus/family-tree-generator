@@ -491,6 +491,155 @@ textarea {
   font-size: 0.7rem;
 }
 
+.person-succession {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+  border: 1px solid #cbd9d1;
+  border-radius: 7px;
+  background: #f5f9f7;
+  padding: 0.55rem;
+}
+
+.person-succession-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.person-succession-heading > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.person-succession-heading strong,
+.automatic-heirs > strong,
+.will-beneficiaries-heading strong {
+  color: var(--ink);
+  font-size: 0.68rem;
+}
+
+.person-succession-heading small,
+.automatic-heirs small,
+.succession-total {
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.35;
+}
+
+.person-succession select,
+.person-succession input {
+  min-width: 0;
+  min-height: 1.9rem;
+  padding: 0.28rem 0.4rem;
+  font-size: 0.68rem;
+}
+
+.automatic-heirs {
+  display: grid;
+  gap: 0.28rem;
+  border-top: 1px solid #dce5e0;
+  padding-top: 0.42rem;
+}
+
+.automatic-heirs > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #425149;
+  font-size: 0.64rem;
+}
+
+.automatic-heirs b {
+  color: var(--forest);
+  font-size: 0.62rem;
+  text-align: right;
+}
+
+.succession-warning,
+.succession-total.invalid {
+  color: #9b551d !important;
+}
+
+.succession-total.valid {
+  color: #28704d;
+}
+
+.will-details {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #dce5e0;
+  padding-top: 0.28rem;
+}
+
+.will-details > label {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  color: #526158;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.will-beneficiaries {
+  display: grid;
+  gap: 0.34rem;
+  margin-top: 0.28rem;
+  border-top: 1px solid #dce5e0;
+  padding-top: 0.42rem;
+}
+
+.will-beneficiaries-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.will-heir-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) 76px 60px 28px;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.will-heir-fraction,
+.will-heir-percent {
+  display: grid;
+  align-items: center;
+  gap: 0.18rem;
+}
+
+.will-heir-fraction {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.will-heir-percent {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.will-heir-fraction input,
+.will-heir-percent input {
+  width: 100%;
+  padding-inline: 0.22rem;
+  text-align: center;
+}
+
+.will-heir-fraction b,
+.will-heir-percent b {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.will-heir-row .icon-button {
+  width: 28px;
+  min-height: 1.9rem;
+  color: #922f2f;
+}
+
 .text-button {
   justify-self: end;
   border: 0;
