@@ -1,0 +1,27 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+describe("FamilyTreeCanvas", () => {
+  let container; let root;
+  beforeEach(() => { container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container); });
+  afterEach(() => { act(() => root.unmount()); container.remove(); });
+  it("shows relations and sends the printable tree to its print handler", () => {
+    const onPrint = vi.fn();
+    act(() => root.render(<FamilyTreeCanvas onPrint={onPrint} people={[{ id: "d", fullName: "Joseph Example", designations: ["Deceased"] }, { id: "c", fullName: "Anna Example", designations: ["Child"] }, { id: "n", fullName: "Claire Example", designations: ["Nephew or Niece"] }]} />));
+    expect(container.textContent).toContain("Family Tree of Joseph Example");
+    expect(container.textContent).toContain("Children");
+    expect(container.textContent).toContain("Brother/Sister");
+    act(() => [...container.querySelectorAll("button")].find((button) => button.textContent.includes("Print")).click());
+    expect(onPrint).toHaveBeenCalledWith(expect.any(HTMLElement));
+  });
+  it("renders parent-linked people by generation and highlights the selected person", () => {
+    act(() => root.render(<FamilyTreeCanvas selectedPersonId="c" people={[{ id: "f", fullName: "Father" }, { id: "m", fullName: "Mother" }, { id: "c", fullName: "Child", fatherId: "f", motherId: "m" }]} />));
+    expect(container.textContent).toContain("Generation 1");
+    expect(container.textContent).toContain("Generation 2");
+    expect(container.querySelector('[data-person-id="c"]').className).toContain("selected");
+  });
+});

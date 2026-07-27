@@ -1,0 +1,43 @@
+const value = (input) => Math.max(0, Number(input) || 0);
+
+export function approximateFraction(decimal, maxDenominator = 10000) {
+  if (!Number.isFinite(decimal) || decimal === 0) return { numerator: 0, denominator: 1 };
+  const sign = decimal < 0 ? -1 : 1;
+  const target = Math.abs(decimal);
+  let best = { numerator: Math.round(target), denominator: 1, error: Math.abs(Math.round(target) - target) };
+  for (let denominator = 1; denominator <= maxDenominator; denominator += 1) {
+    const numerator = Math.round(target * denominator);
+    const error = Math.abs(numerator / denominator - target);
+    if (error < best.error) best = { numerator, denominator, error };
+    if (error < 1e-10) break;
+  }
+  return { numerator: best.numerator * sign, denominator: best.denominator };
+}
+
+export function buildOwnershipLedger(heirs = [], outsideParties = [], transfers = [], familyPeople = []) {
+  const linkedPersonIds = new Set(heirs.map((heir) => heir.personId).filter(Boolean));
+  const parties = [
+    ...heirs.map((heir) => ({ id: heir.id, personId: heir.personId || "", name: heir.name || "Unnamed family member", type: "individual", source: "family" })),
+    ...familyPeople.filter((person) => !linkedPersonIds.has(person.id)).map((person) => ({ id: person.id, personId: person.id, name: person.fullName || "Unnamed family member", type: "individual", source: "family-tree" })),
+    ...outsideParties.map((party) => ({ ...party, name: party.name || (party.type === "company" ? "Unnamed company" : "Unnamed individual"), source: "outside" })),
+  ];
+  const holdings = new Map(parties.map((party) => [party.id, 0]));
+  heirs.forEach((heir) => holdings.set(heir.id, value(heir.sharePercent) / 100));
+  const entries = transfers.map((transfer) => {
+    const sellerHolding = holdings.get(transfer.sellerId) || 0;
+    const numerator = value(transfer.numerator);
+    const denominator = value(transfer.denominator);
+    if (!transfer.sellerId || !transfer.buyerId) return { ...transfer, error: "Select a seller and buyer.", amount: 0 };
+    if (transfer.sellerId === transfer.buyerId) return { ...transfer, error: "Seller and buyer must be different.", amount: 0 };
+    if (!denominator) return { ...transfer, error: "The denominator must be greater than zero.", amount: 0 };
+    const fraction = numerator / denominator;
+    const amount = transfer.amountType === "whole-property" ? fraction : sellerHolding * fraction;
+    if (fraction <= 0) return { ...transfer, error: "The transferred fraction must be greater than zero.", amount: 0 };
+    if (amount > sellerHolding + 1e-10) return { ...transfer, error: "The seller does not own enough to complete this transfer.", amount: 0 };
+    holdings.set(transfer.sellerId, Math.max(0, sellerHolding - amount));
+    holdings.set(transfer.buyerId, (holdings.get(transfer.buyerId) || 0) + amount);
+    return { ...transfer, amount, sellerBefore: sellerHolding, sellerAfter: sellerHolding - amount };
+  });
+  const owners = parties.map((party) => ({ ...party, share: holdings.get(party.id) || 0 })).filter((party) => party.share > 1e-10).sort((a, b) => b.share - a.share);
+  return { parties, owners, entries, total: owners.reduce((sum, owner) => sum + owner.share, 0) };
+}
