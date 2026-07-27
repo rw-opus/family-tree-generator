@@ -18,10 +18,11 @@ describe("FamilyTreeCanvas", () => {
     act(() => [...container.querySelectorAll("button")].find((button) => button.textContent.includes("Print")).click());
     expect(onPrint).toHaveBeenCalledWith(expect.any(HTMLElement));
   });
-  it("renders parent-linked people by generation and highlights the selected person", () => {
+  it("renders parent-linked people without numbered generation captions and highlights the selected person", () => {
     act(() => root.render(<FamilyTreeCanvas selectedPersonId="c" people={[{ id: "f", fullName: "Father" }, { id: "m", fullName: "Mother" }, { id: "c", fullName: "Child", fatherId: "f", motherId: "m" }]} />));
-    expect(container.textContent).toContain("Generation 1");
-    expect(container.textContent).toContain("Generation 2");
+    expect(container.textContent).toContain("Father");
+    expect(container.textContent).toContain("Child");
+    expect(container.textContent).not.toContain("Generation");
     expect(container.querySelector('[data-person-id="c"]').className).toContain("selected");
   });
 });

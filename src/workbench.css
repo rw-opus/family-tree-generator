@@ -243,17 +243,17 @@ textarea {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.55rem;
   border-bottom: 1px solid #e3e8e5;
   background: linear-gradient(135deg, #f7faf8, #edf4f0);
-  padding: 0.9rem;
+  padding: 0.65rem 0.75rem;
 }
 
 .person-avatar {
   display: grid;
   place-items: center;
-  width: 50px;
-  height: 50px;
+  width: 42px;
+  height: 42px;
   border: 2px solid #6b8b79;
   border-radius: 50%;
   background: #fff;
@@ -289,7 +289,7 @@ textarea {
 
 .inspector-section {
   border-bottom: 1px solid #e3e8e5;
-  padding: 0.9rem;
+  padding: 0.65rem 0.75rem;
 }
 
 .inspector-section h3 {
@@ -302,7 +302,7 @@ textarea {
   justify-content: space-between;
   align-items: end;
   gap: 0.5rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.45rem;
 }
 
 .relationship-actions {
@@ -315,7 +315,7 @@ textarea {
   display: grid;
   place-items: center;
   gap: 0.28rem;
-  min-height: 3.5rem;
+  min-height: 3rem;
   border: 1px solid #cbd9d1;
   border-radius: 7px;
   background: #fff;
@@ -333,7 +333,7 @@ textarea {
 .inspector-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
+  gap: 0.42rem 0.5rem;
 }
 
 .inspector-fields .full-width {
@@ -341,9 +341,41 @@ textarea {
 }
 
 .inspector-designations {
-  margin-top: 0.75rem;
+  margin-top: 0.55rem;
   border-top: 1px dashed #d8dfda;
-  padding-top: 0.65rem;
+  padding-top: 0.5rem;
+}
+
+.deceased-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  border: 1px solid #d9dfdc;
+  border-radius: 6px;
+  background: #f7f9f8;
+  padding: 0.45rem 0.55rem;
+  color: var(--ink);
+}
+
+.deceased-toggle input {
+  width: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  accent-color: var(--forest);
+}
+
+.relationship-labels {
+  margin-top: 0.5rem;
+  border-top: 1px solid #e3e8e5;
+  padding-top: 0.45rem;
+}
+
+.relationship-labels summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .inspector-search {

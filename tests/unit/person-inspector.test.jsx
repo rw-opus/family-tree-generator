@@ -27,7 +27,7 @@ describe("PersonInspector", () => {
     const child = {
       id: "child",
       fullName: "Maria Example",
-      designations: ["Deceased"],
+      designations: [],
       spouseIds: [],
     };
 
@@ -56,5 +56,37 @@ describe("PersonInspector", () => {
     });
     expect(updatedPeople[0].fatherId).toBe(updatedPeople[1].id);
     expect(onSelectPerson).toHaveBeenCalledWith(updatedPeople[1].id);
+  });
+
+  it("requires an explicit deceased checkbox and omits date of birth", () => {
+    const onChange = vi.fn();
+    const person = {
+      id: "person",
+      fullName: "Maria Example",
+      designations: [],
+      spouseIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[person]}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).not.toContain("Date of birth");
+    const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')]
+      .find((input) => input.parentElement.textContent.includes("This person is deceased."));
+    expect(deceasedCheckbox.checked).toBe(false);
+
+    act(() => deceasedCheckbox.click());
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      isDeceased: true,
+      designations: ["Deceased"],
+    });
   });
 });

@@ -16,8 +16,8 @@ export function hasAnyDesignation(person, designations) {
   return designations.some((designation) => hasDesignation(person, designation));
 }
 
-export function createPerson(designation = "Child") {
-  return { id: crypto.randomUUID(), fullName: "", designations: [designation], sex: "", fatherId: "", motherId: "", spouseIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
+export function createPerson(designation = "") {
+  return { id: crypto.randomUUID(), fullName: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
 }
 
 export function formattedDate(value) {

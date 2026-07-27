@@ -86,6 +86,17 @@ export function PersonInspector({
     updateSelected({ designations: next });
   };
 
+  const setDeceased = (checked) => {
+    const current = personDesignations(selectedPerson).filter(
+      (designation) => designation !== "Deceased",
+    );
+    updateSelected({
+      designations: checked ? ["Deceased", ...current] : current,
+      isDeceased: checked,
+      dateOfDeath: checked ? selectedPerson.dateOfDeath || "" : "",
+    });
+  };
+
   const addRelative = (kind) => {
     if (!selectedPerson) return;
     const relative = createPerson();
@@ -172,7 +183,7 @@ export function PersonInspector({
           type="button"
           className="primary-button"
           onClick={() => {
-            const person = createPerson("Deceased");
+            const person = createPerson();
             onChange([person]);
             onSelectPerson(person.id);
           }}
@@ -184,6 +195,8 @@ export function PersonInspector({
   }
 
   const ownership = ownershipByPerson[selectedPerson.id] || 0;
+  const isDeceased =
+    Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
 
   return (
     <div className="person-inspector">
@@ -248,22 +261,24 @@ export function PersonInspector({
               <option>Other</option>
             </select>
           </label>
-          <label>
-            Date of birth
+          <label className="deceased-toggle full-width">
             <input
-              type="date"
-              value={selectedPerson.dateOfBirth || ""}
-              onChange={(event) => updateSelected({ dateOfBirth: event.target.value })}
+              type="checkbox"
+              checked={isDeceased}
+              onChange={(event) => setDeceased(event.target.checked)}
             />
+            This person is deceased.
           </label>
-          <label>
-            Date of death
-            <input
-              type="date"
-              value={selectedPerson.dateOfDeath || ""}
-              onChange={(event) => updateSelected({ dateOfDeath: event.target.value })}
-            />
-          </label>
+          {isDeceased && (
+            <label>
+              Date of death
+              <input
+                type="date"
+                value={selectedPerson.dateOfDeath || ""}
+                onChange={(event) => updateSelected({ dateOfDeath: event.target.value })}
+              />
+            </label>
+          )}
           <label>
             Father
             <select
@@ -299,25 +314,30 @@ export function PersonInspector({
           <label className="full-width">
             Notes
             <textarea
-              rows="3"
+              rows="2"
               value={selectedPerson.notes || ""}
               onChange={(event) => updateSelected({ notes: event.target.value })}
               placeholder="Private notes about this person"
             />
           </label>
         </div>
-        <div className="designation-list inspector-designations">
-          {DESIGNATIONS.map((designation) => (
-            <label key={designation} className="designation-choice">
-              <input
-                type="checkbox"
-                checked={personDesignations(selectedPerson).includes(designation)}
-                onChange={() => toggleDesignation(designation)}
-              />
-              {designation}
-            </label>
-          ))}
-        </div>
+        <details className="relationship-labels">
+          <summary>Succession labels</summary>
+          <div className="designation-list inspector-designations">
+            {DESIGNATIONS.filter((designation) => designation !== "Deceased").map(
+              (designation) => (
+                <label key={designation} className="designation-choice">
+                  <input
+                    type="checkbox"
+                    checked={personDesignations(selectedPerson).includes(designation)}
+                    onChange={() => toggleDesignation(designation)}
+                  />
+                  {designation}
+                </label>
+              ),
+            )}
+          </div>
+        </details>
       </section>
 
       <section className="inspector-section">

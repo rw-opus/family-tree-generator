@@ -19,9 +19,10 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
     const node = [...treeRef.current.querySelectorAll("[data-person-id]")].find((element) => element.dataset.personId === selectedPersonId);
     node?.scrollIntoView?.({ behavior: "smooth", block: "center", inline: "center" });
   }, [people, selectedPersonId]);
-  const cleanPeople = (people || []).filter((person) => person.fullName || personDesignations(person).length);
-  const deceased = cleanPeople.find((person) => hasDesignation(person, "Deceased"));
-  const related = (names) => cleanPeople.filter((person) => !hasDesignation(person, "Deceased") && hasAnyDesignation(person, names));
+  const cleanPeople = (people || []).filter((person) => person.id || person.fullName || personDesignations(person).length);
+  const deceased = cleanPeople.find((person) => person.isDeceased || hasDesignation(person, "Deceased"));
+  const focalPerson = deceased || cleanPeople[0];
+  const related = (names) => cleanPeople.filter((person) => !person.isDeceased && !hasDesignation(person, "Deceased") && hasAnyDesignation(person, names));
   const spouses = related(["Surviving Spouse"]);
   const children = related(["Child", "Children"]);
   const grandchildren = related(["Grandchild", "Grandchildren"]);
@@ -37,9 +38,9 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
   const cousinConnectors = uncles.length ? uncles : (cousins.length ? [placeholder("cousin-parent", "Uncle/Aunt", "Parent of cousin")] : []);
   const childGeneration = children.length ? children : ((grandchildren.length || greatGrandchildren.length) ? [placeholder("child-line", "Child", "Child")] : []);
   const grandchildGeneration = grandchildren.length ? grandchildren : (greatGrandchildren.length ? [placeholder("grandchild-line", "Grandchild", "Grandchild")] : []);
-  const title = `Family Tree of ${deceased?.fullName || "The Deceased"}`;
+  const title = deceased ? `Family Tree of ${deceased.fullName || "the deceased person"}` : "Family tree";
   const card = (person, variant = "") => {
-    const isDeceased = hasDesignation(person, "Deceased") || variant === "deceased";
+    const isDeceased = Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
     const ownership = ownershipByPerson[person.id] || 0;
     const ownershipFraction = approximateFraction(ownership);
     return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${person.fullName || "unnamed person"}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${isDeceased ? "deceased" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
@@ -76,7 +77,7 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
     relationalPeople.forEach((person) => { const depth = depthOf(person); if (!generations.has(depth)) generations.set(depth, []); generations.get(depth).push(person); });
     return <section className="tree-panel">
       <header className="tree-toolbar"><div><p className="eyebrow">Relational family record</p><h2>Family tree</h2></div><button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}><Printer size={16} /> Print</button></header>
-      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2>{[...generations.entries()].sort(([a], [b]) => a - b).map(([depth, members], index) => <div className="relational-generation" key={depth}>{index > 0 && <div className="family-down-line" />}<div className="family-generation-label">Generation {depth + 1}</div><div className="family-branch-row">{members.sort((a, b) => (a.fullName || "").localeCompare(b.fullName || "")).map((person) => <div className="family-branch-item" key={person.id}>{card(person)}</div>)}</div></div>)}</div></div>
+      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2>{[...generations.entries()].sort(([a], [b]) => a - b).map(([depth, members], index) => <div className="relational-generation" key={depth}>{index > 0 && <div className="family-down-line" />}<div className="family-branch-row">{members.sort((a, b) => (a.fullName || "").localeCompare(b.fullName || "")).map((person) => <div className="family-branch-item" key={person.id}>{card(person)}</div>)}</div></div>)}</div></div>
       <p className="helper-text">Select a person in the index to locate and highlight them in this tree.</p>
     </section>;
   }
@@ -86,7 +87,7 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
     <div className="family-chart" ref={treeRef}><div className="family-canvas"><h2 className="family-chart-title">{title}</h2>
       {grandparents.length > 0 && <><div className="family-generation-label">Grandparents</div>{row(grandparents)}<div className="family-down-line" /></>}
       {parents.length > 0 && <><div className="family-generation-label">Parents</div>{row(parents)}<div className="family-down-line" /></>}
-      <div className="family-main-stage"><div className="family-side-slot left">{(siblingConnectors.length > 0 || nephews.length > 0) && <><div className="family-side-stack">{branch(siblingConnectors, nephews, nephews.length ? "Brother / Sister Line" : "Siblings", "Nephews / Nieces")}</div><span className="family-side-line" /></>}</div><div className="family-union">{deceased ? card(deceased, "deceased") : <div className="family-empty">Add the deceased person to start the tree.</div>}{spouses.map((person) => <span className="family-spouse" key={person.id}><span className="family-spouse-line" />{card(person)}</span>)}</div><div className="family-side-slot right">{(cousinConnectors.length > 0 || cousins.length > 0) && <><span className="family-side-line" /><div className="family-side-stack">{branch(cousinConnectors, cousins, cousins.length ? "Uncle / Aunt Line" : "Uncles / Aunts", "Cousins")}</div></>}</div></div>
+      <div className="family-main-stage"><div className="family-side-slot left">{(siblingConnectors.length > 0 || nephews.length > 0) && <><div className="family-side-stack">{branch(siblingConnectors, nephews, nephews.length ? "Brother / Sister Line" : "Siblings", "Nephews / Nieces")}</div><span className="family-side-line" /></>}</div><div className="family-union">{focalPerson ? card(focalPerson, deceased ? "deceased" : "") : <div className="family-empty">Add a person to start the tree.</div>}{spouses.filter((person) => person.id !== focalPerson?.id).map((person) => <span className="family-spouse" key={person.id}><span className="family-spouse-line" />{card(person)}</span>)}</div><div className="family-side-slot right">{(cousinConnectors.length > 0 || cousins.length > 0) && <><span className="family-side-line" /><div className="family-side-stack">{branch(cousinConnectors, cousins, cousins.length ? "Uncle / Aunt Line" : "Uncles / Aunts", "Cousins")}</div></>}</div></div>
       {generation("Children", childGeneration)}{generation("Grandchildren", grandchildGeneration)}{generation("Great-Grandchildren", greatGrandchildren)}
       {!hasRelations && <div className="family-empty">Add relationship designations to show people in the tree.</div>}
     </div></div>

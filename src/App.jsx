@@ -27,7 +27,7 @@ import { supabase, supabaseConfigured } from "./supabaseClient.js";
 const initialTree = () => ({
   id: crypto.randomUUID(),
   title: "New property succession",
-  people: [createPerson("Deceased")],
+  people: [createPerson()],
   property: {
     address: "",
     description: "",
