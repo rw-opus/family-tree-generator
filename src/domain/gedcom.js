@@ -1,4 +1,4 @@
-import { surnameFromFullName } from "./people.js";
+import { givenNamesFromFullName, surnameFromFullName } from "./people.js";
 
 const MONTHS = { JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06", JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12" };
 
@@ -62,6 +62,8 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     id: idMap.get(person.pointer),
     gedcomId: person.pointer,
     fullName: person.name,
+    givenNames: givenNamesFromFullName(person.name),
+    surname: person.surnameAtBirth || surnameFromFullName(person.name),
     sex: person.sex,
     surnameAtBirth: person.surnameAtBirth || (person.sex === "Male" ? surnameFromFullName(person.name) : ""),
     dateOfBirth: exactDate(person.birthText),

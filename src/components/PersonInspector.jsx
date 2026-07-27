@@ -10,11 +10,13 @@ import {
 } from "lucide-react";
 import {
   DESIGNATIONS,
+  composeFullName,
   createPerson,
   hasDesignation,
+  personGivenNames,
   personRelationshipCounts,
+  personSurname,
   personDesignations,
-  surnameFromFullName,
 } from "../domain/people.js";
 import { parseGedcom } from "../domain/gedcom.js";
 import { approximateFraction } from "../domain/ownership.js";
@@ -86,15 +88,25 @@ export function PersonInspector({
     );
   };
 
-  const updateFullName = (fullName) => {
-    const patch = { fullName };
-    const previousDerivedSurname = surnameFromFullName(selectedPerson.fullName);
+  const updateGivenNames = (givenNames) => {
+    updateSelected({
+      givenNames,
+      fullName: composeFullName(givenNames, personSurname(selectedPerson)),
+    });
+  };
+
+  const updateSurname = (surname) => {
+    const previousSurname = personSurname(selectedPerson);
+    const patch = {
+      surname,
+      fullName: composeFullName(personGivenNames(selectedPerson), surname),
+    };
     if (
       selectedPerson.sex === "Male" &&
       (!selectedPerson.surnameAtBirth ||
-        selectedPerson.surnameAtBirth === previousDerivedSurname)
+        selectedPerson.surnameAtBirth === previousSurname)
     ) {
-      patch.surnameAtBirth = surnameFromFullName(fullName);
+      patch.surnameAtBirth = surname;
     }
     updateSelected(patch);
   };
@@ -102,7 +114,7 @@ export function PersonInspector({
   const updateSex = (sex) => {
     const patch = { sex };
     if (sex === "Male" && !selectedPerson.surnameAtBirth) {
-      patch.surnameAtBirth = surnameFromFullName(selectedPerson.fullName);
+      patch.surnameAtBirth = personSurname(selectedPerson);
     }
     updateSelected(patch);
   };
@@ -236,7 +248,9 @@ export function PersonInspector({
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
   const displayedSurnameAtBirth =
     selectedPerson.surnameAtBirth ||
-    (selectedPerson.sex === "Male" ? surnameFromFullName(selectedPerson.fullName) : "");
+    (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
+  const displayedGivenNames = personGivenNames(selectedPerson);
+  const displayedSurname = personSurname(selectedPerson);
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const deleteBlockers = [
     ...(relationshipCounts.child
@@ -310,12 +324,20 @@ export function PersonInspector({
         <p className="eyebrow">Personal details</p>
         <div className="inspector-fields">
           <label>
-            <span>Full name</span>
+            <span>Names</span>
             <input
-              autoFocus={!selectedPerson.fullName}
-              value={selectedPerson.fullName || ""}
-              onChange={(event) => updateFullName(event.target.value)}
-              placeholder="Name and surname"
+              autoFocus={!displayedGivenNames}
+              value={displayedGivenNames}
+              onChange={(event) => updateGivenNames(event.target.value)}
+              placeholder="Given name or names"
+            />
+          </label>
+          <label>
+            <span>Surname</span>
+            <input
+              value={displayedSurname}
+              onChange={(event) => updateSurname(event.target.value)}
+              placeholder="Current surname"
             />
           </label>
           <label>

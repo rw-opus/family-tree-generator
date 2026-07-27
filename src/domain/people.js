@@ -21,8 +21,30 @@ export function surnameFromFullName(value = "") {
   return parts.length > 1 ? parts.at(-1) : "";
 }
 
+export function givenNamesFromFullName(value = "") {
+  const parts = String(value).trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || "";
+  return parts.slice(0, -1).join(" ");
+}
+
+export function composeFullName(givenNames = "", surname = "") {
+  return `${String(givenNames).trim()} ${String(surname).trim()}`.trim();
+}
+
+export function personGivenNames(person = {}) {
+  return Object.prototype.hasOwnProperty.call(person, "givenNames")
+    ? String(person.givenNames || "")
+    : givenNamesFromFullName(person.fullName);
+}
+
+export function personSurname(person = {}) {
+  return Object.prototype.hasOwnProperty.call(person, "surname")
+    ? String(person.surname || "")
+    : surnameFromFullName(person.fullName);
+}
+
 export function createPerson(designation = "") {
-  return { id: crypto.randomUUID(), fullName: "", surnameAtBirth: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], siblingIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
+  return { id: crypto.randomUUID(), givenNames: "", surname: "", fullName: "", surnameAtBirth: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], siblingIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
 }
 
 export function personRelationshipCounts(people = [], person = {}) {

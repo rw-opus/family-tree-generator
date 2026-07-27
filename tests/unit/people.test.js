@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasDesignation, personDesignations, personRelationshipCounts, surnameFromFullName } from "../../src/domain/people.js";
+import { composeFullName, givenNamesFromFullName, hasDesignation, personDesignations, personGivenNames, personRelationshipCounts, personSurname, surnameFromFullName } from "../../src/domain/people.js";
 
 describe("family tree people", () => {
   it("normalises old and new designation shapes", () => {
@@ -11,6 +11,10 @@ describe("family tree people", () => {
   it("derives a default surname from a full name", () => {
     expect(surnameFromFullName("Joseph Borg")).toBe("Borg");
     expect(surnameFromFullName("Joseph")).toBe("");
+    expect(givenNamesFromFullName("Joseph Paul Borg")).toBe("Joseph Paul");
+    expect(composeFullName("Joseph Paul", "Borg")).toBe("Joseph Paul Borg");
+    expect(personGivenNames({ fullName: "Joseph Borg" })).toBe("Joseph");
+    expect(personSurname({ fullName: "Joseph Borg" })).toBe("Borg");
   });
 
   it("counts reciprocal and parent-based relationships", () => {

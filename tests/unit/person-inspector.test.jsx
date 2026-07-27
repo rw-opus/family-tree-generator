@@ -211,4 +211,40 @@ describe("PersonInspector", () => {
       .find((label) => label.textContent.includes("Surname at birth"));
     expect(surnameLabel.querySelector("input").value).toBe("Borg");
   });
+
+  it("edits names and surname separately while keeping the full display name synchronized", () => {
+    const onChange = vi.fn();
+    const person = {
+      id: "person",
+      fullName: "Maria Borg",
+      designations: [],
+      spouseIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[person]}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const namesInput = [...container.querySelectorAll("label")]
+      .find((label) => label.querySelector(":scope > span")?.textContent === "Names")
+      .querySelector("input");
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set.call(namesInput, "Maria Anna");
+      namesInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(onChange.mock.calls.at(-1)[0][0]).toMatchObject({
+      givenNames: "Maria Anna",
+      fullName: "Maria Anna Borg",
+    });
+  });
 });
