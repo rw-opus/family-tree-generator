@@ -154,6 +154,55 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Remove 1 child first.");
   });
 
+  it("can link an existing person as a spouse in both directions", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "person-a",
+        fullName: "Maria Borg",
+        designations: [],
+        spouseIds: [],
+      },
+      {
+        id: "person-b",
+        fullName: "Joseph Vella",
+        designations: [],
+        spouseIds: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person-a"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const spouseButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Spouse"));
+    act(() => spouseButton.click());
+
+    const spouseSelect = container.querySelector('select[aria-label="Existing spouse"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      ).set.call(spouseSelect, "person-b");
+      spouseSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const linkButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Link spouse"));
+    act(() => linkButton.click());
+
+    const updatedPeople = onChange.mock.calls.at(-1)[0];
+    expect(updatedPeople[0].spouseIds).toEqual(["person-b"]);
+    expect(updatedPeople[1].spouseIds).toEqual(["person-a"]);
+  });
+
   it("requires an explicit deceased checkbox and omits date of birth", () => {
     const onChange = vi.fn();
     const person = {

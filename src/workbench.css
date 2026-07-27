@@ -356,6 +356,35 @@ textarea {
   line-height: 1;
 }
 
+.spouse-chooser {
+  display: grid;
+  gap: 0.42rem;
+  margin-top: 0.55rem;
+  border: 1px solid #cddbd3;
+  border-radius: 7px;
+  background: #f7faf8;
+  padding: 0.55rem;
+}
+
+.spouse-chooser > span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.spouse-chooser > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.42rem;
+}
+
+.spouse-chooser select,
+.spouse-chooser button {
+  min-height: 2.1rem;
+  font-size: 0.67rem;
+}
+
 .inspector-fields {
   display: grid;
   grid-template-columns: 1fr;

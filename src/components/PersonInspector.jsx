@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Baby,
   FileUp,
@@ -62,6 +62,8 @@ export function PersonInspector({
   const [query, setQuery] = useState("");
   const [importMode, setImportMode] = useState("replace");
   const [importStatus, setImportStatus] = useState("");
+  const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
+  const [existingSpouseId, setExistingSpouseId] = useState("");
   const selectedPerson = people.find((person) => person.id === selectedPersonId) || people[0];
   const peopleById = useMemo(
     () => new Map(people.map((person) => [person.id, person])),
@@ -78,6 +80,11 @@ export function PersonInspector({
       })
       .slice(0, 12);
   }, [people, peopleById, query]);
+
+  useEffect(() => {
+    setSpouseChooserOpen(false);
+    setExistingSpouseId("");
+  }, [selectedPersonId]);
 
   const updateSelected = (patch) => {
     if (!selectedPerson) return;
@@ -187,6 +194,33 @@ export function PersonInspector({
     onChange([...updatedPeople, relative]);
   };
 
+  const linkExistingSpouse = () => {
+    if (!selectedPerson || !existingSpouseId || existingSpouseId === selectedPerson.id) {
+      return;
+    }
+    const existingPerson = people.find((person) => person.id === existingSpouseId);
+    if (!existingPerson) return;
+    onChange(
+      people.map((person) => {
+        if (person.id === selectedPerson.id) {
+          return {
+            ...person,
+            spouseIds: [...new Set([...(person.spouseIds || []), existingPerson.id])],
+          };
+        }
+        if (person.id === existingPerson.id) {
+          return {
+            ...person,
+            spouseIds: [...new Set([...(person.spouseIds || []), selectedPerson.id])],
+          };
+        }
+        return person;
+      }),
+    );
+    setExistingSpouseId("");
+    setSpouseChooserOpen(false);
+  };
+
   const removeSelected = () => {
     if (!selectedPerson || people.length === 1 || deleteBlockers.length) return;
     onChange(
@@ -252,6 +286,17 @@ export function PersonInspector({
   const displayedGivenNames = personGivenNames(selectedPerson);
   const displayedSurname = personSurname(selectedPerson);
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
+  const linkedSpouseIds = new Set([
+    ...(selectedPerson.spouseIds || []),
+    ...people
+      .filter((person) => (person.spouseIds || []).includes(selectedPerson.id))
+      .map((person) => person.id),
+  ]);
+  const existingSpouseCandidates = people.filter(
+    (person) =>
+      person.id !== selectedPerson.id &&
+      !linkedSpouseIds.has(person.id),
+  );
   const deleteBlockers = [
     ...(relationshipCounts.child
       ? [`${relationshipCounts.child} ${relationshipCounts.child === 1 ? "child" : "children"}`]
@@ -306,7 +351,12 @@ export function PersonInspector({
                   ? `${label} already added`
                   : `Add ${label.toLowerCase()}`
               }
-              onClick={() => addRelative(key)}
+              aria-expanded={key === "spouse" ? spouseChooserOpen : undefined}
+              onClick={() =>
+                key === "spouse"
+                  ? setSpouseChooserOpen((open) => !open)
+                  : addRelative(key)
+              }
             >
               <Icon size={16} />
               {label}
@@ -318,6 +368,50 @@ export function PersonInspector({
             </button>
           ))}
         </div>
+        {spouseChooserOpen && (
+          <div className="spouse-chooser">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                addRelative("spouse");
+                setSpouseChooserOpen(false);
+              }}
+            >
+              <UserRound size={15} />
+              Create new spouse
+            </button>
+            <span>or link an existing person</span>
+            <div>
+              <select
+                aria-label="Existing spouse"
+                value={existingSpouseId}
+                disabled={!existingSpouseCandidates.length}
+                onChange={(event) => setExistingSpouseId(event.target.value)}
+              >
+                <option value="">
+                  {existingSpouseCandidates.length
+                    ? "Choose from family list"
+                    : "No unlinked people available"}
+                </option>
+                {existingSpouseCandidates.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.fullName || "Unnamed person"}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!existingSpouseId}
+                onClick={linkExistingSpouse}
+              >
+                <Heart size={15} />
+                Link spouse
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="inspector-section">
