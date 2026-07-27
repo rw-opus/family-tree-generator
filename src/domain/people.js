@@ -1,5 +1,5 @@
 export const DESIGNATIONS = [
-  "Deceased", "Surviving Spouse", "Child", "Grandchild", "Great-Grandchild",
+  "Deceased", "Spouse", "Surviving Spouse", "Child", "Grandchild", "Great-Grandchild",
   "Parent", "Grandparent", "Sibling", "Nephew or Niece", "Uncle or Aunt", "Cousin",
 ];
 
