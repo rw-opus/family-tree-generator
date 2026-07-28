@@ -1,4 +1,4 @@
-import { buildStarterOwnership } from "./ownership.js";
+import { approximateFraction, buildStarterOwnership } from "./ownership.js";
 import { CURRENT_SUCCESSION_START } from "./propertyTax.js";
 
 const number = (input) => Math.max(0, Number(input) || 0);
@@ -280,22 +280,27 @@ export function willAllocations(person = {}) {
   return shares;
 }
 
-export function buildAutomaticFamilyOwnership(people = []) {
-  const startingOwnership = buildStarterOwnership(people);
-  if (!Object.keys(startingOwnership).length && people.length === 1) {
-    startingOwnership[people[0].id] = 1;
-  }
+// Runs the intestacy/will cascade against an arbitrary starting-ownership map, so the
+// same family logic can be shared between the legacy single-property view and the
+// per-property engine below. startingOwnership is { personId: fraction (0..1) }.
+function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const ownership = new Map();
+  const contributions = [];
   const transmissions = [];
   const unresolved = [];
 
-  const distribute = (personId, amount, trail = new Set()) => {
+  const record = (personId, amount, via) => {
+    addShare(ownership, personId, amount);
+    contributions.push({ ownerId: personId, amount, via });
+  };
+
+  const distribute = (personId, amount, via, trail = new Set()) => {
     if (!personId || amount <= 1e-12 || trail.has(personId)) return;
     const person = peopleById.get(personId);
     if (!person) return;
     if (!isPersonDeceased(person)) {
-      addShare(ownership, personId, amount);
+      record(personId, amount, via);
       return;
     }
 
@@ -324,18 +329,18 @@ export function buildAutomaticFamilyOwnership(people = []) {
       destination: result.destination,
     });
     if (!result.shares.size || allocated <= 1e-12) {
-      addShare(ownership, personId, amount);
+      record(personId, amount, "unresolved");
       unresolved.push({ personId, amount, warnings: result.warnings });
       return;
     }
 
     const nextTrail = new Set(trail).add(personId);
     result.shares.forEach((share, heirId) =>
-      distribute(heirId, amount * share, nextTrail)
+      distribute(heirId, amount * share, basis, nextTrail)
     );
     if (allocated < 1 - 1e-10) {
       const remainder = amount * (1 - allocated);
-      addShare(ownership, personId, remainder);
+      record(personId, remainder, "unresolved");
       unresolved.push({
         personId,
         amount: remainder,
@@ -345,11 +350,74 @@ export function buildAutomaticFamilyOwnership(people = []) {
   };
 
   Object.entries(startingOwnership).forEach(([personId, share]) =>
-    distribute(personId, share)
+    distribute(personId, share, "starting")
   );
   return {
     ownershipByPerson: Object.fromEntries(ownership),
+    contributions,
     transmissions,
     unresolved,
   };
+}
+
+export function buildAutomaticFamilyOwnership(people = []) {
+  const startingOwnership = buildStarterOwnership(people);
+  if (!Object.keys(startingOwnership).length && people.length === 1) {
+    startingOwnership[people[0].id] = 1;
+  }
+  const { ownershipByPerson, transmissions, unresolved } = buildFamilyOwnershipCore(
+    people,
+    startingOwnership,
+  );
+  return { ownershipByPerson, transmissions, unresolved };
+}
+
+// Converts a property's explicit owners list into a { personId: fraction } starting map.
+function propertyStartingOwnership(property = {}) {
+  const startingOwnership = {};
+  (property.owners || []).forEach((owner) => {
+    if (!owner.personId) return;
+    startingOwnership[owner.personId] =
+      (startingOwnership[owner.personId] || 0) + number(owner.sharePercent) / 100;
+  });
+  return startingOwnership;
+}
+
+// Runs the same automatic cascade for a single property's explicit starting owners, and
+// returns a flat per-owner breakdown suitable for future tax integration.
+export function buildPropertyOwnership(people = [], property = {}) {
+  const startingOwnership = propertyStartingOwnership(property);
+  const core = buildFamilyOwnershipCore(people, startingOwnership);
+  const breakdown = core.contributions
+    .filter((contribution) => contribution.amount > 1e-12)
+    .map((contribution) => {
+      const fraction = approximateFraction(contribution.amount);
+      return {
+        propertyId: property.id,
+        ownerId: contribution.ownerId,
+        numerator: fraction.numerator,
+        denominator: fraction.denominator,
+        sharePercent: contribution.amount * 100,
+        via: contribution.via,
+      };
+    });
+  return {
+    propertyId: property.id,
+    ownershipByPerson: core.ownershipByPerson,
+    breakdown,
+    transmissions: core.transmissions,
+    unresolved: core.unresolved,
+  };
+}
+
+// Runs buildPropertyOwnership across every property, for views that need the whole picture.
+export function buildFamilyPropertyOwnership(people = [], properties = []) {
+  const byProperty = {};
+  const breakdown = [];
+  properties.forEach((property) => {
+    const result = buildPropertyOwnership(people, property);
+    byProperty[property.id] = result;
+    breakdown.push(...result.breakdown);
+  });
+  return { byProperty, breakdown };
 }

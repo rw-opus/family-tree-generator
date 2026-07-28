@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approximateFraction, buildOwnershipLedger, buildStarterOwnership } from "../../src/domain/ownership.js";
+import { approximateFraction, buildOwnershipLedger, buildPropertyLedger, buildStarterOwnership } from "../../src/domain/ownership.js";
 
 describe("ownership transfer ledger", () => {
   it("shows useful fractional labels", () => {
@@ -62,5 +62,38 @@ describe("ownership transfer ledger", () => {
     );
     expect(ledger.entries[0].error).toContain("does not own enough");
     expect(ledger.owners.find((owner) => owner.id === "a").share).toBe(.25);
+  });
+});
+
+describe("per-property ownership ledger", () => {
+  it("starts from a property's automatic ownership instead of a manual heir list", () => {
+    const ledger = buildPropertyLedger(
+      [{ id: "child-a", fullName: "Child A" }, { id: "child-b", fullName: "Child B" }],
+      [],
+      [],
+      { "child-a": 0.5, "child-b": 0.5 },
+    );
+    expect(ledger.owners.find((owner) => owner.id === "child-a").share).toBe(.5);
+    expect(ledger.owners.find((owner) => owner.id === "child-b").share).toBe(.5);
+    expect(ledger.total).toBe(1);
+  });
+
+  it("lets a property owner sell a fraction to an outside company", () => {
+    const ledger = buildPropertyLedger(
+      [{ id: "owner", fullName: "Owner" }],
+      [{ id: "company", name: "Buyer Ltd", type: "company" }],
+      [{ id: "sale", sellerId: "owner", buyerId: "company", numerator: 1, denominator: 4, amountType: "seller-holding" }],
+      { owner: 1 },
+    );
+    expect(ledger.owners.find((owner) => owner.id === "owner").share).toBe(.75);
+    expect(ledger.owners.find((owner) => owner.id === "company").share).toBe(.25);
+  });
+
+  it("keeps ledgers for two different properties independent", () => {
+    const people = [{ id: "a", fullName: "A" }, { id: "b", fullName: "B" }];
+    const ledgerA = buildPropertyLedger(people, [], [], { a: 1 });
+    const ledgerB = buildPropertyLedger(people, [], [], { b: 1 });
+    expect(ledgerA.owners.map((owner) => owner.id)).toEqual(["a"]);
+    expect(ledgerB.owners.map((owner) => owner.id)).toEqual(["b"]);
   });
 });

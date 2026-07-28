@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAutomaticFamilyOwnership,
+  buildFamilyPropertyOwnership,
+  buildPropertyOwnership,
   intestateAllocations,
 } from "../../src/domain/familyOwnership.js";
 
@@ -223,5 +225,113 @@ describe("automatic family ownership", () => {
     expect(allocation.destination).toBe("historical-unresolved");
     expect(result.ownershipByPerson.owner).toBe(1);
     expect(result.unresolved).toHaveLength(1);
+  });
+});
+
+describe("per-property ownership", () => {
+  it("uses a property's explicit owners as the starting point, not the person's own record", () => {
+    const people = [
+      person("owner", { isDeceased: true, dateOfDeath: "2020-01-01" }),
+      person("child", { fatherId: "owner" }),
+      person("outsider"),
+    ];
+    const property = {
+      id: "flat-1",
+      owners: [{ personId: "owner", sharePercent: 100 }],
+    };
+
+    const result = buildPropertyOwnership(people, property);
+    expect(result.propertyId).toBe("flat-1");
+    expect(result.ownershipByPerson.child).toBeCloseTo(1);
+    expect(result.ownershipByPerson.outsider || 0).toBe(0);
+  });
+
+  it("reports a per-owner breakdown with fractions, percentages and provenance", () => {
+    const people = [
+      person("owner", { isDeceased: true, dateOfDeath: "2020-01-01" }),
+      person("child-a", { fatherId: "owner" }),
+      person("child-b", { fatherId: "owner" }),
+    ];
+    const property = {
+      id: "flat-1",
+      owners: [{ personId: "owner", sharePercent: 100 }],
+    };
+
+    const { breakdown } = buildPropertyOwnership(people, property);
+    expect(breakdown).toHaveLength(2);
+    const byOwner = Object.fromEntries(breakdown.map((row) => [row.ownerId, row]));
+    expect(byOwner["child-a"]).toMatchObject({
+      propertyId: "flat-1",
+      numerator: 1,
+      denominator: 2,
+      via: "intestacy",
+    });
+    expect(byOwner["child-a"].sharePercent).toBeCloseTo(50);
+    expect(byOwner["child-b"].via).toBe("intestacy");
+  });
+
+  it("tags a living starting owner's own share as starting, not a transmission", () => {
+    const people = [person("owner")];
+    const property = { id: "flat-1", owners: [{ personId: "owner", sharePercent: 100 }] };
+
+    const { breakdown } = buildPropertyOwnership(people, property);
+    expect(breakdown).toEqual([
+      { propertyId: "flat-1", ownerId: "owner", numerator: 1, denominator: 1, sharePercent: 100, via: "starting" },
+    ]);
+  });
+
+  it("tags a will-based transmission distinctly from intestacy", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "gift", personId: "friend", sharePercent: 100 }],
+      }),
+      person("friend"),
+    ];
+    const property = { id: "flat-1", owners: [{ personId: "owner", sharePercent: 100 }] };
+
+    const { breakdown } = buildPropertyOwnership(people, property);
+    expect(breakdown).toEqual([
+      { propertyId: "flat-1", ownerId: "friend", numerator: 1, denominator: 1, sharePercent: 100, via: "will" },
+    ]);
+  });
+
+  it("keeps two properties' cascades fully independent", () => {
+    const people = [
+      person("mother", { isDeceased: true, dateOfDeath: "2020-01-01", spouseIds: ["father"] }),
+      person("father", { spouseIds: ["mother"] }),
+      person("child", { fatherId: "father", motherId: "mother" }),
+    ];
+    const properties = [
+      { id: "house", owners: [{ personId: "mother", sharePercent: 100 }] },
+      { id: "garage", owners: [{ personId: "father", sharePercent: 100 }] },
+    ];
+
+    const { byProperty, breakdown } = buildFamilyPropertyOwnership(people, properties);
+    expect(byProperty.house.ownershipByPerson.father).toBeCloseTo(0.5);
+    expect(byProperty.house.ownershipByPerson.child).toBeCloseTo(0.5);
+    expect(byProperty.garage.ownershipByPerson.father).toBeCloseTo(1);
+    expect(breakdown).toHaveLength(3);
+  });
+
+  it("leaves an unresolved remainder tagged instead of silently dropping it", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "gift", personId: "friend", sharePercent: 40 }],
+      }),
+      person("friend"),
+    ];
+    const property = { id: "flat-1", owners: [{ personId: "owner", sharePercent: 100 }] };
+
+    const { breakdown, unresolved } = buildPropertyOwnership(people, property);
+    const ownerRow = breakdown.find((row) => row.ownerId === "owner");
+    expect(ownerRow.via).toBe("unresolved");
+    expect(ownerRow.sharePercent).toBeCloseTo(60);
+    expect(unresolved).toHaveLength(1);
   });
 });

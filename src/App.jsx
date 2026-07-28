@@ -4,6 +4,7 @@ import {
   CloudOff,
   FileText,
   FolderTree,
+  Home,
   Landmark,
   LogIn,
   Menu,
@@ -19,6 +20,7 @@ import { CaseSummary } from "./components/CaseSummary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
+import { Properties } from "./components/Properties.jsx";
 import { PropertyCalculator } from "./components/PropertyCalculator.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildAutomaticFamilyOwnership } from "./domain/familyOwnership.js";
@@ -39,6 +41,7 @@ const initialTree = () => ({
     deceasedOwnershipPercent: 100,
     rightPercent: 100,
   },
+  properties: [],
   succession: {
     basis: "intestacy",
     dateOfDeath: "",
@@ -58,6 +61,24 @@ const initialTree = () => ({
   },
 });
 
+const migratedProperties = (value) => {
+  if (value.properties?.length) return value.properties;
+  const legacy = value.property;
+  if (!legacy || !(legacy.address || legacy.description || legacy.marketValueAtDeath)) return [];
+  return [
+    {
+      id: "legacy-property",
+      address: legacy.address || "",
+      description: legacy.description || "",
+      marketValue: legacy.marketValueAtDeath || "",
+      owners: [],
+      declarations: [],
+      transfers: [],
+      saleLots: [],
+    },
+  ];
+};
+
 const normaliseTree = (value) => {
   const defaults = initialTree();
   return {
@@ -65,6 +86,7 @@ const normaliseTree = (value) => {
     ...value,
     people: value.people || defaults.people,
     property: { ...defaults.property, ...(value.property || {}) },
+    properties: migratedProperties(value),
     succession: { ...defaults.succession, ...(value.succession || {}) },
     declarations: value.declarations || [],
     outsideParties: value.outsideParties || [],
@@ -76,6 +98,7 @@ const normaliseTree = (value) => {
 
 const dashboardTabs = [
   { key: "person", label: "Person", icon: UserRound },
+  { key: "properties", label: "Properties", icon: Home },
   { key: "case", label: "Property & tax", icon: Landmark },
   { key: "summary", label: "Summary", icon: FileText },
   { key: "settings", label: "Settings", icon: Settings2 },
@@ -354,6 +377,14 @@ export function App() {
                 caseDependencyLabels={selectedCaseDependencyLabels}
                 onSelectPerson={selectPerson}
                 onChange={(people) => setTree({ ...currentTree, people })}
+              />
+            )}
+            {panelTab === "properties" && (
+              <Properties
+                properties={currentTree.properties}
+                people={currentTree.people}
+                outsideParties={currentTree.outsideParties}
+                onChange={(patch) => setTree({ ...currentTree, ...patch })}
               />
             )}
             {panelTab === "case" && (

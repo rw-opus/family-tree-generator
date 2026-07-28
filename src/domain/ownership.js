@@ -53,15 +53,10 @@ export function buildStarterOwnership(people = []) {
   );
 }
 
-export function buildOwnershipLedger(heirs = [], outsideParties = [], transfers = [], familyPeople = []) {
-  const linkedPersonIds = new Set(heirs.map((heir) => heir.personId).filter(Boolean));
-  const parties = [
-    ...heirs.map((heir) => ({ id: heir.id, personId: heir.personId || "", name: heir.name || "Unnamed family member", type: "individual", source: "family" })),
-    ...familyPeople.filter((person) => !linkedPersonIds.has(person.id)).map((person) => ({ id: person.id, personId: person.id, name: person.fullName || "Unnamed family member", type: "individual", source: "family-tree" })),
-    ...outsideParties.map((party) => ({ ...party, name: party.name || (party.type === "company" ? "Unnamed company" : "Unnamed individual"), source: "outside" })),
-  ];
-  const holdings = new Map(parties.map((party) => [party.id, 0]));
-  heirs.forEach((heir) => holdings.set(heir.id, value(heir.sharePercent) / 100));
+// Applies a sequence of transfers on top of starting holdings, shared by both the legacy
+// heir-list ledger and the per-property ledger below.
+function resolveTransfers(parties, startingHoldings, transfers) {
+  const holdings = new Map(parties.map((party) => [party.id, startingHoldings.get(party.id) || 0]));
   const entries = transfers.map((transfer) => {
     const sellerHolding = holdings.get(transfer.sellerId) || 0;
     const numerator = value(transfer.numerator);
@@ -77,6 +72,34 @@ export function buildOwnershipLedger(heirs = [], outsideParties = [], transfers 
     holdings.set(transfer.buyerId, (holdings.get(transfer.buyerId) || 0) + amount);
     return { ...transfer, amount, sellerBefore: sellerHolding, sellerAfter: sellerHolding - amount };
   });
+  return { holdings, entries };
+}
+
+function ledgerFromParties(parties, startingHoldings, transfers) {
+  const { holdings, entries } = resolveTransfers(parties, startingHoldings, transfers);
   const owners = parties.map((party) => ({ ...party, share: holdings.get(party.id) || 0 })).filter((party) => party.share > 1e-10).sort((a, b) => b.share - a.share);
   return { parties, owners, entries, total: owners.reduce((sum, owner) => sum + owner.share, 0) };
+}
+
+export function buildOwnershipLedger(heirs = [], outsideParties = [], transfers = [], familyPeople = []) {
+  const linkedPersonIds = new Set(heirs.map((heir) => heir.personId).filter(Boolean));
+  const parties = [
+    ...heirs.map((heir) => ({ id: heir.id, personId: heir.personId || "", name: heir.name || "Unnamed family member", type: "individual", source: "family" })),
+    ...familyPeople.filter((person) => !linkedPersonIds.has(person.id)).map((person) => ({ id: person.id, personId: person.id, name: person.fullName || "Unnamed family member", type: "individual", source: "family-tree" })),
+    ...outsideParties.map((party) => ({ ...party, name: party.name || (party.type === "company" ? "Unnamed company" : "Unnamed individual"), source: "outside" })),
+  ];
+  const startingHoldings = new Map(heirs.map((heir) => [heir.id, value(heir.sharePercent) / 100]));
+  return ledgerFromParties(parties, startingHoldings, transfers);
+}
+
+// Same ledger mechanics as buildOwnershipLedger, but starting from a property's automatic
+// per-person ownership (buildPropertyOwnership's ownershipByPerson) instead of a manual
+// heir list, so a property's title can be transferred onward without System A's heir records.
+export function buildPropertyLedger(people = [], outsideParties = [], transfers = [], startingOwnership = {}) {
+  const parties = [
+    ...people.map((person) => ({ id: person.id, personId: person.id, name: person.fullName || "Unnamed family member", type: "individual", source: "family-tree" })),
+    ...outsideParties.map((party) => ({ ...party, name: party.name || (party.type === "company" ? "Unnamed company" : "Unnamed individual"), source: "outside" })),
+  ];
+  const startingHoldings = new Map(Object.entries(startingOwnership));
+  return ledgerFromParties(parties, startingHoldings, transfers);
 }
