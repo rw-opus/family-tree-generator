@@ -46,9 +46,14 @@ button.index-row:hover, button.index-row.selected { background: #f1eaf4; color: 
 .share-status.invalid { background: #fff0ee; color: #9f1f1f; }
 .inline-result { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: .8rem; border-top: 1px solid #d8e2dc; padding-top: .7rem; color: #526073; }
 .method-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .5rem; margin-top: .8rem; }
-.method { display: grid; gap: .2rem; border: 1px solid #d8e2dc; border-radius: 5px; padding: .65rem; font-size: .82rem; }
+.method { display: grid; gap: .2rem; border: 1px solid #d8e2dc; border-radius: 5px; background: #fff; color: #27382f; padding: .65rem; font: inherit; font-size: .82rem; text-align: left; cursor: pointer; }
 .method.best { border-color: #64a77d; background: #edf8f1; }
+.method.selected { outline: 2px solid #6b3f79; outline-offset: 1px; }
 .method small { color: #17683a; font-weight: 800; }
+.tax-lot-fraction { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .4rem; }
+.tax-lot-fraction b { color: #657184; text-align: center; }
+.tax-lot-source { margin: .7rem 0 0; border-left: 3px solid #64a77d; background: #f2f9f4; color: #365844; padding: .5rem .65rem; font-size: .76rem; font-weight: 750; }
+.tax-lot-source.attention { border-left-color: #d59a22; background: #fff8e8; color: #654c18; }
 .grand-total { display: flex; align-items: center; gap: .6rem; margin-top: 1rem; border-radius: 6px; background: #004225; color: #fff; padding: 1rem; }
 .grand-total strong { margin-left: auto; font-size: 1.2rem; }
 .legal-note { border-left: 4px solid #d59a22; border-radius: 5px; background: #fff8e8; padding: 1rem; color: #654c18; font-size: .85rem; line-height: 1.5; }

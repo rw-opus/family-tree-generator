@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { allocateCurrentIntestacy, inheritanceDuty, saleTaxLot, successionRuleset, suggestedIntestacyShares } from "../../src/domain/propertyTax.js";
+import {
+  allocateCurrentIntestacy,
+  inheritanceDuty,
+  saleTaxLot,
+  saleTaxLotsTotal,
+  successionRuleset,
+  suggestedIntestacyShares,
+} from "../../src/domain/propertyTax.js";
 
 describe("Maltese inherited property estimates", () => {
   it("splits intestacy equally between spouse and descendants", () => {
@@ -64,8 +71,91 @@ describe("Maltese inherited property estimates", () => {
     expect(result.duty).toBeCloseTo(5000);
   });
   it("compares post-2003 sale methods", () => {
-    const result = saleTaxLot({ inheritanceDate: "2010-01-01", acquisitionValue: 100000, transferValue: 150000 });
+    const result = saleTaxLot({
+      inheritanceDate: "2010-01-01",
+      shareNumerator: 1,
+      shareDenominator: 1,
+      acquisitionValue: 100000,
+      transferValue: 150000,
+    });
     expect(result.methods.map((item) => item.tax)).toEqual([6000, 12000]);
     expect(result.recommended).toBe("increase");
+  });
+
+  it("charges 7% of the share sale price for pre-25 November 1992 inheritance", () => {
+    const result = saleTaxLot({
+      inheritanceDate: "1992-11-24",
+      shareNumerator: 1,
+      shareDenominator: 4,
+      acquisitionValue: 100,
+      transferValue: 120,
+    });
+    expect(result.methods).toHaveLength(1);
+    expect(result.methods[0]).toMatchObject({
+      key: "pre1992",
+      basis: 120,
+      tax: 8.4,
+    });
+  });
+
+  it("compares each inherited fraction against that fraction's declared value", () => {
+    const lots = [
+      {
+        inheritanceDate: "2010-01-01",
+        shareNumerator: 1,
+        shareDenominator: 4,
+        acquisitionValue: 100,
+        transferValue: 120,
+        selectedTaxMethod: "increase",
+      },
+      {
+        inheritanceDate: "2010-01-01",
+        shareNumerator: 1,
+        shareDenominator: 4,
+        acquisitionValue: 110,
+        transferValue: 120,
+        selectedTaxMethod: "increase",
+      },
+    ];
+    expect(saleTaxLot(lots[0]).methods[0].tax).toBeCloseTo(2.4);
+    expect(saleTaxLot(lots[1]).methods[0].tax).toBeCloseTo(1.2);
+    expect(saleTaxLotsTotal(lots)).toBeCloseTo(3.6);
+  });
+
+  it("offers 10% before 2004 and 8% from 2004 onward", () => {
+    const pre2004 = saleTaxLot({
+      inheritanceDate: "2003-12-31",
+      shareNumerator: 1,
+      shareDenominator: 4,
+      acquisitionValue: 100,
+      transferValue: 120,
+    });
+    const post2004 = saleTaxLot({
+      inheritanceDate: "2004-01-01",
+      shareNumerator: 1,
+      shareDenominator: 4,
+      acquisitionValue: 100,
+      transferValue: 120,
+      selectedTaxMethod: "whole",
+    });
+    expect(pre2004.methods.find((method) => method.key === "whole")).toMatchObject({
+      rate: 0.1,
+      tax: 12,
+    });
+    expect(post2004.methods.find((method) => method.key === "whole")).toMatchObject({
+      rate: 0.08,
+      tax: 9.6,
+    });
+    expect(post2004.selected).toBe("whole");
+  });
+
+  it("does not calculate until the inherited fraction is entered", () => {
+    const result = saleTaxLot({
+      inheritanceDate: "2010-01-01",
+      acquisitionValue: 100,
+      transferValue: 120,
+    });
+    expect(result.methods).toEqual([]);
+    expect(result.warning).toContain("inherited fraction");
   });
 });

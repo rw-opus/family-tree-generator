@@ -1,7 +1,8 @@
 import { Calculator, Home, Plus, Trash2 } from "lucide-react";
 import { buildPropertyOwnership } from "../domain/familyOwnership.js";
-import { buildPropertyLedger } from "../domain/ownership.js";
-import { saleTaxLot } from "../domain/propertyTax.js";
+import { declarationCoverage } from "../domain/declarations.js";
+import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
+import { saleTaxLot, selectedSaleTax } from "../domain/propertyTax.js";
 import { PropertyDeclarations } from "./PropertyDeclarations.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
 
@@ -23,11 +24,12 @@ const makeLot = () => ({
   id: crypto.randomUUID(),
   ownerId: "",
   inheritanceDate: "",
+  shareNumerator: 0,
+  shareDenominator: 1,
   acquisitionValue: "",
   transferValue: "",
-  brokerageFees: "",
-  qualifiesFivePercent: false,
-  ownResidenceExempt: false,
+  useDeclaredValues: true,
+  selectedTaxMethod: "",
 });
 
 const ownersTotal = (owners = []) =>
@@ -92,7 +94,36 @@ export function Properties({ properties, people, outsideParties, onChange }) {
           share,
         }));
         const ledger = buildPropertyLedger(people, outsideParties, property.transfers || [], result.ownershipByPerson);
-        const saleRows = (property.saleLots || []).map((lot) => ({ lot, result: saleTaxLot(lot) }));
+        const coverage = declarationCoverage(
+          declarationOwners,
+          property.declarations || [],
+        );
+        const saleRows = (property.saleLots || []).map((lot) => {
+          const declaredCoverage = coverage.find(
+            (item) => item.heirId === lot.ownerId,
+          );
+          const usePublishedValues =
+            lot.useDeclaredValues !== false &&
+            Boolean(declaredCoverage?.publishedCount);
+          const declaredFraction = approximateFraction(
+            declaredCoverage?.publishedFraction || 0,
+          );
+          const effectiveLot = usePublishedValues
+            ? {
+                ...lot,
+                acquisitionValue: declaredCoverage.publishedValue,
+                shareNumerator: declaredFraction.numerator,
+                shareDenominator: declaredFraction.denominator,
+              }
+            : lot;
+          return {
+            lot,
+            effectiveLot,
+            declaredCoverage,
+            usePublishedValues,
+            result: saleTaxLot(effectiveLot),
+          };
+        });
         return (
           <section className="editor-panel" key={property.id}>
             <div className="section-heading">
@@ -240,9 +271,18 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                 <h3>Seller tax lots</h3>
               </div>
             </div>
-            <p className="helper-text">Use a separate lot for every owner, inheritance date or acquisition route.</p>
+            <p className="helper-text">
+              Use one lot for each inherited fraction. The sale price and causa
+              mortis value in that lot must cover the same fraction.
+            </p>
             <div className="people-list">
-              {saleRows.map(({ lot, result: lotResult }) => (
+              {saleRows.map(({
+                lot,
+                effectiveLot,
+                declaredCoverage,
+                usePublishedValues,
+                result: lotResult,
+              }) => (
                 <article className="person-card" key={lot.id}>
                   <div className="person-card-heading">
                     <strong>{ledger.parties.find((party) => party.id === lot.ownerId)?.name || "Unassigned owner"}</strong>
@@ -253,27 +293,157 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                   <div className="form-grid">
                     <label>
                       Owner
-                      <select value={lot.ownerId} onChange={(e) => updateLot(property, lot.id, { ownerId: e.target.value })}>
+                      <select
+                        value={lot.ownerId}
+                        onChange={(event) =>
+                          updateLot(property, lot.id, {
+                            ownerId: event.target.value,
+                            selectedTaxMethod: "",
+                            useDeclaredValues: true,
+                          })
+                        }
+                      >
                         <option value="">Choose owner</option>
                         {ledger.parties.map((party) => (
                           <option key={party.id} value={party.id}>{party.name}</option>
                         ))}
                       </select>
                     </label>
-                    <label>Inheritance date<input type="date" value={lot.inheritanceDate} onChange={(e) => updateLot(property, lot.id, { inheritanceDate: e.target.value })} /></label>
-                    <label>Acquisition / causa mortis value (€)<input type="number" min="0" value={lot.acquisitionValue} onChange={(e) => updateLot(property, lot.id, { acquisitionValue: e.target.value })} /></label>
-                    <label>Share of sale value (€)<input type="number" min="0" value={lot.transferValue} onChange={(e) => updateLot(property, lot.id, { transferValue: e.target.value })} /></label>
-                    <label>Verified brokerage fees (€)<input type="number" min="0" value={lot.brokerageFees} onChange={(e) => updateLot(property, lot.id, { brokerageFees: e.target.value })} /></label>
-                    <label className="check-label"><input type="checkbox" checked={lot.qualifiesFivePercent} onChange={(e) => updateLot(property, lot.id, { qualifiesFivePercent: e.target.checked })} /> Qualifies for 5% method</label>
-                    <label className="check-label"><input type="checkbox" checked={lot.ownResidenceExempt} onChange={(e) => updateLot(property, lot.id, { ownResidenceExempt: e.target.checked })} /> Own-residence exemption confirmed</label>
+                    <label>
+                      Inheritance date
+                      <input
+                        type="date"
+                        value={lot.inheritanceDate}
+                        onChange={(event) =>
+                          updateLot(property, lot.id, {
+                            inheritanceDate: event.target.value,
+                            selectedTaxMethod: "",
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Fraction covered by this lot
+                      <span className="tax-lot-fraction">
+                        <input
+                          aria-label="Tax lot share numerator"
+                          type="number"
+                          min="0"
+                          step="1"
+                          disabled={usePublishedValues}
+                          value={effectiveLot.shareNumerator ?? 0}
+                          onChange={(event) =>
+                            updateLot(property, lot.id, {
+                              shareNumerator: event.target.value,
+                              useDeclaredValues: false,
+                            })
+                          }
+                        />
+                        <b>/</b>
+                        <input
+                          aria-label="Tax lot share denominator"
+                          type="number"
+                          min="1"
+                          step="1"
+                          disabled={usePublishedValues}
+                          value={effectiveLot.shareDenominator ?? 1}
+                          onChange={(event) =>
+                            updateLot(property, lot.id, {
+                              shareDenominator: event.target.value,
+                              useDeclaredValues: false,
+                            })
+                          }
+                        />
+                      </span>
+                    </label>
+                    <label>
+                      Accumulated causa mortis value (€)
+                      <input
+                        type="number"
+                        min="0"
+                        disabled={usePublishedValues}
+                        value={effectiveLot.acquisitionValue}
+                        onChange={(event) =>
+                          updateLot(property, lot.id, {
+                            acquisitionValue: event.target.value,
+                            useDeclaredValues: false,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Sale price of the same fraction (€)
+                      <input
+                        type="number"
+                        min="0"
+                        value={lot.transferValue}
+                        onChange={(event) =>
+                          updateLot(property, lot.id, {
+                            transferValue: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="check-label full-width">
+                      <input
+                        type="checkbox"
+                        disabled={!declaredCoverage?.publishedCount}
+                        checked={usePublishedValues}
+                        onChange={(event) =>
+                          updateLot(property, lot.id, {
+                            useDeclaredValues: event.target.checked,
+                          })
+                        }
+                      />
+                      Use the accumulated values and fraction from published CM declarations
+                    </label>
                   </div>
+                  {usePublishedValues && (
+                    <p className="tax-lot-source">
+                      Published CM total:{" "}
+                      {effectiveLot.shareNumerator}/{effectiveLot.shareDenominator}
+                      {" · "}
+                      {money.format(Number(effectiveLot.acquisitionValue) || 0)}
+                    </p>
+                  )}
+                  {!declaredCoverage?.publishedCount && (
+                    <p className="tax-lot-source attention">
+                      No published CM value is linked to this owner. Enter the
+                      fraction and its declared value manually.
+                    </p>
+                  )}
+                  {lotResult.warning && (
+                    <p className="transfer-error" role="status">
+                      {lotResult.warning}
+                    </p>
+                  )}
                   <div className="method-list">
                     {lotResult.methods.map((method) => (
-                      <div className={method.key === lotResult.recommended ? "method best" : "method"} key={method.key}>
+                      <button
+                        type="button"
+                        className={[
+                          "method",
+                          method.key === lotResult.selected ? "selected" : "",
+                          method.key === lotResult.recommended ? "best" : "",
+                        ].filter(Boolean).join(" ")}
+                        key={method.key}
+                        onClick={() =>
+                          updateLot(property, lot.id, {
+                            selectedTaxMethod: method.key,
+                          })
+                        }
+                      >
                         <span>{method.label}</span>
                         <strong>{money.format(method.tax)}</strong>
-                        {method.key === lotResult.recommended && <small>Lowest estimate</small>}
-                      </div>
+                        <small>
+                          Taxable basis {money.format(method.basis)}
+                          {method.key === lotResult.selected
+                            ? " · Selected"
+                            : method.key === lotResult.recommended
+                              ? " · Lowest estimate"
+                              : " · Choose this method"}
+                        </small>
+                      </button>
                     ))}
                   </div>
                 </article>
@@ -285,8 +455,11 @@ export function Properties({ properties, people, outsideParties, onChange }) {
             {saleRows.length > 0 && (
               <div className="grand-total">
                 <Calculator size={18} />
-                <span>Estimated seller tax total</span>
-                <strong>{money.format(saleRows.reduce((sum, row) => sum + row.result.methods.find((method) => method.key === row.result.recommended).tax, 0))}</strong>
+                <span>Selected seller tax total</span>
+                <strong>{money.format(saleRows.reduce(
+                  (sum, row) => sum + selectedSaleTax(row.result),
+                  0,
+                ))}</strong>
               </div>
             )}
           </section>

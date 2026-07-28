@@ -115,13 +115,100 @@ export function inheritanceDuty(property, heir, options = {}) {
 }
 
 export function saleTaxLot(lot) {
-  const transferValue = Math.max(0, number(lot.transferValue) - number(lot.brokerageFees));
+  const transferValue = number(lot.transferValue);
+  const declaredValue = number(lot.acquisitionValue);
   const inherited = String(lot.inheritanceDate || "");
-  if (inherited && inherited < "1992-11-25") return { methods: [{ key: "pre1992", label: "7% of transfer value", tax: transferValue * 0.07 }], recommended: "pre1992" };
-  const methods = [{ key: "increase", label: "12% of increase", tax: Math.max(0, transferValue - number(lot.acquisitionValue)) * 0.12 }];
-  const rate = inherited && inherited < "2004-01-01" ? 0.10 : 0.08;
-  methods.push({ key: "whole", label: `${rate * 100}% of transfer value`, tax: transferValue * rate });
-  if (lot.qualifiesFivePercent) methods.push({ key: "five", label: "5% qualifying rate", tax: transferValue * 0.05 });
-  if (lot.ownResidenceExempt) methods.push({ key: "residence", label: "Own-residence exemption", tax: 0 });
-  return { methods, recommended: methods.reduce((lowest, item) => item.tax < lowest.tax ? item : lowest).key };
+  const numerator = Math.max(0, number(lot.shareNumerator));
+  const denominator = Math.max(0, number(lot.shareDenominator));
+  const share = denominator > 0 ? numerator / denominator : 0;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(inherited)) {
+    return {
+      methods: [],
+      recommended: "",
+      selected: "",
+      transferValue,
+      declaredValue,
+      share,
+      warning: "Enter the inheritance date to determine the applicable tax methods.",
+    };
+  }
+  if (!(numerator > 0) || !(denominator > 0)) {
+    return {
+      methods: [],
+      recommended: "",
+      selected: "",
+      transferValue,
+      declaredValue,
+      share,
+      warning: "Enter the inherited fraction covered by this tax lot.",
+    };
+  }
+  if (inherited < "1992-11-25") {
+    const methods = [{
+      key: "pre1992",
+      label: "7% of this share's sale price",
+      rate: 0.07,
+      basis: transferValue,
+      tax: transferValue * 0.07,
+    }];
+    return {
+      methods,
+      recommended: "pre1992",
+      selected: "pre1992",
+      transferValue,
+      declaredValue,
+      increase: Math.max(0, transferValue - declaredValue),
+      share,
+    };
+  }
+
+  const increase = Math.max(0, transferValue - declaredValue);
+  const flatRate = inherited < "2004-01-01" ? 0.10 : 0.08;
+  const methods = [
+    {
+      key: "increase",
+      label: "12% of the increase for this fraction",
+      rate: 0.12,
+      basis: increase,
+      tax: increase * 0.12,
+    },
+    {
+      key: "whole",
+      label: `${flatRate * 100}% of this share's sale price`,
+      rate: flatRate,
+      basis: transferValue,
+      tax: transferValue * flatRate,
+    },
+  ];
+  const recommended = methods.reduce(
+    (lowest, item) => item.tax < lowest.tax ? item : lowest,
+  ).key;
+  const selected = methods.some(
+    (method) => method.key === lot.selectedTaxMethod,
+  )
+    ? lot.selectedTaxMethod
+    : recommended;
+  return {
+    methods,
+    recommended,
+    selected,
+    transferValue,
+    declaredValue,
+    increase,
+    share,
+  };
+}
+
+export function selectedSaleTax(result = {}) {
+  return (
+    (result.methods || []).find((method) => method.key === result.selected)
+      ?.tax || 0
+  );
+}
+
+export function saleTaxLotsTotal(lots = []) {
+  return lots.reduce(
+    (total, lot) => total + selectedSaleTax(saleTaxLot(lot)),
+    0,
+  );
 }
