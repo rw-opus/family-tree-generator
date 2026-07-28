@@ -23,6 +23,7 @@ import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { PropertyCalculator } from "./components/PropertyCalculator.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
+import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import { buildAutomaticFamilyOwnership } from "./domain/familyOwnership.js";
 import { buildOwnershipLedger } from "./domain/ownership.js";
 import { createPerson } from "./domain/people.js";
@@ -143,6 +144,14 @@ export function App() {
       ? recordedOwnership
       : automaticOwnership.ownershipByPerson;
   }, [automaticOwnership.ownershipByPerson, tree]);
+  const causaMortisCoverage = useMemo(
+    () =>
+      buildCausaMortisShareCoverage(
+        currentTree.people,
+        currentTree.properties,
+      ),
+    [currentTree.people, currentTree.properties],
+  );
   const selectedCaseDependencyLabels = useMemo(() => {
     const labels = [];
     if (
@@ -371,7 +380,11 @@ export function App() {
             {panelTab === "person" && (
               <PersonInspector
                 people={currentTree.people}
+                properties={currentTree.properties}
                 ownershipByPerson={ownershipByPerson}
+                causaMortisCoverage={
+                  causaMortisCoverage.byPerson[selectedPersonId] || []
+                }
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}
                 caseDependencyLabels={selectedCaseDependencyLabels}
@@ -452,6 +465,7 @@ export function App() {
           <FamilyTreeCanvas
             people={currentTree.people}
             ownershipByPerson={ownershipByPerson}
+            causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
             selectedPersonId={selectedPersonId}
             onSelectPerson={selectPerson}
             shareDisplay={currentTree.settings.shareDisplay}

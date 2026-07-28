@@ -738,6 +738,51 @@ textarea {
   font-size: 0.62rem;
 }
 
+.causa-mortis-coverage {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.causa-mortis-coverage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #b9d9c6;
+  border-radius: 5px;
+  background: #f2faf5;
+  padding: 0.38rem 0.45rem;
+}
+
+.causa-mortis-coverage-row > span {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.causa-mortis-coverage-row strong,
+.causa-mortis-coverage-row b {
+  color: #28704d;
+  font-size: 0.63rem;
+}
+
+.causa-mortis-coverage-row small {
+  color: #526158;
+  font-size: 0.56rem;
+}
+
+.causa-mortis-coverage-row.under,
+.causa-mortis-coverage-row.over {
+  border-color: #dda7a7;
+  background: #fff3f3;
+}
+
+.causa-mortis-coverage-row.under strong,
+.causa-mortis-coverage-row.under b,
+.causa-mortis-coverage-row.over strong,
+.causa-mortis-coverage-row.over b {
+  color: #a12828;
+}
+
 .causa-mortis-card {
   display: grid;
   gap: 0.32rem;
@@ -768,6 +813,27 @@ textarea {
   color: #526158;
   font-size: 0.62rem;
   font-weight: 800;
+}
+
+.causa-mortis-card > label > select {
+  width: 100%;
+  min-width: 0;
+}
+
+.causa-mortis-fraction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.causa-mortis-fraction input {
+  min-width: 0;
+  text-align: center;
+}
+
+.causa-mortis-fraction b {
+  color: var(--muted);
 }
 
 .currency-input {
@@ -1301,6 +1367,12 @@ textarea {
   border-top-color: #171717;
 }
 
+.tree-stage .family-node.cm-share-incomplete {
+  border-color: #b52b2b;
+  border-top-color: #8e1717;
+  box-shadow: 0 0 0 2px rgba(181, 43, 43, 0.12), 0 4px 14px rgba(28, 52, 40, 0.11);
+}
+
 .tree-stage .family-node.deceased:not(.male):not(.female) {
   background: #f3f3f3;
 }
@@ -1356,6 +1428,21 @@ textarea {
   color: var(--forest);
   padding: 0.25rem 0.4rem;
   font-size: 0.58rem;
+  font-weight: 850;
+}
+
+.tree-stage .family-node.cm-share-incomplete .family-node-ownership {
+  background: #b52b2b;
+  color: #fff;
+}
+
+.tree-stage .family-node-cm-alert {
+  margin-top: 0.32rem;
+  border-radius: 999px;
+  background: #b52b2b;
+  color: #fff;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.56rem;
   font-weight: 850;
 }
 

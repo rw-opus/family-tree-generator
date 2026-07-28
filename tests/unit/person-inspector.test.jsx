@@ -385,6 +385,20 @@ describe("PersonInspector", () => {
       root.render(
         <PersonInspector
           people={[deceased, child]}
+          properties={[
+            { id: "property-1", address: "1 Republic Street" },
+          ]}
+          causaMortisCoverage={[
+            {
+              personId: "deceased",
+              propertyId: "property-1",
+              propertyAddress: "1 Republic Street",
+              requiredShare: 0.5,
+              declaredShare: 0,
+              difference: -0.5,
+              status: "under",
+            },
+          ]}
           selectedPersonId="deceased"
           onChange={vi.fn()}
           onSelectPerson={vi.fn()}
@@ -395,7 +409,14 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Testate (will)");
     expect(container.textContent).toContain("Will notes");
     expect(container.textContent).toContain("Causa mortis declarations");
+    expect(container.textContent).toContain("Required 1/2");
+    expect(container.textContent).toContain("Missing 1/2");
     expect(container.textContent).toContain("Declaration CM 1");
+    expect(
+      container.querySelector(
+        'select[aria-label="Property declared causa mortis 1"]',
+      ).value,
+    ).toBe("property-1");
     const valueInput = container.querySelector(
       'input[aria-label="Immovable property value declared causa mortis 1"]',
     );

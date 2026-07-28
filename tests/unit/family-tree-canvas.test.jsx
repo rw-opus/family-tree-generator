@@ -69,4 +69,33 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Father of Joseph Borg");
     expect(container.textContent).not.toContain("Unnamed person");
   });
+
+  it("shows an incomplete causa mortis share in red on the deceased person", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        people={[
+          {
+            id: "deceased",
+            fullName: "Joseph Borg",
+            isDeceased: true,
+            dateOfDeath: "2020-01-01",
+          },
+        ]}
+        causaMortisCoverageByPerson={{
+          deceased: [
+            {
+              propertyId: "property-1",
+              requiredShare: 0.5,
+              declaredShare: 0.25,
+              status: "under",
+            },
+          ],
+        }}
+      />,
+    ));
+    const person = container.querySelector('[data-person-id="deceased"]');
+    expect(person.className).toContain("cm-share-incomplete");
+    expect(person.textContent).toContain("CM share 1/4 of 1/2");
+    expect(person.querySelector(".family-node-cm-alert")).not.toBeNull();
+  });
 });

@@ -18,7 +18,16 @@ function printTree(node) {
   popup.print();
 }
 
-export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = printTree, selectedPersonId, onSelectPerson, shareDisplay = "both", showOwnership = true }) {
+export function FamilyTreeCanvas({
+  people,
+  ownershipByPerson = {},
+  causaMortisCoverageByPerson = {},
+  onPrint = printTree,
+  selectedPersonId,
+  onSelectPerson,
+  shareDisplay = "both",
+  showOwnership = true,
+}) {
   const treeRef = useRef(null);
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
@@ -48,6 +57,9 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
   const title = deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree";
   const card = (person, variant = "") => {
     const isDeceased = Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
+    const incompleteCausaMortis = (
+      causaMortisCoverageByPerson[person.id] || []
+    ).filter((row) => row.status !== "complete");
     const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
     const hasOwnership = Object.prototype.hasOwnProperty.call(ownershipByPerson, person.id);
     const ownership = hasOwnership ? ownershipByPerson[person.id] : 0;
@@ -63,9 +75,16 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
           ? percentageText
           : `${fractionText} · ${percentageText}`;
     const name = person.isPlaceholder ? person.fullName : displayName(person);
-    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${name}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
+    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${name}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${incompleteCausaMortis.length ? "cm-share-incomplete" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
       <div className="family-node-name" title={name}>{name}</div>
       {!person.isPlaceholder && showOwnership && hasOwnership && <div className="family-node-ownership">{ownershipText} ownership</div>}
+      {!person.isPlaceholder && incompleteCausaMortis.map((row) => {
+        const required = approximateFraction(row.requiredShare);
+        const declared = approximateFraction(row.declaredShare);
+        return <div className="family-node-cm-alert" key={row.propertyId}>
+          CM share {declared.numerator}/{declared.denominator} of {required.numerator}/{required.denominator}
+        </div>;
+      })}
       {isDeceased && person.dateOfDeath && <div className="family-node-meta">d. {formattedDate(person.dateOfDeath)}</div>}
       {!isDeceased && !person.isPlaceholder && <div className="family-node-meta">{personDesignations(person).join(" + ") || "No relationship selected"}</div>}
       {person.isPlaceholder && <div className="family-node-meta">{personDesignations(person)[0]}</div>}

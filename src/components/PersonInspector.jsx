@@ -64,9 +64,16 @@ function ownershipLabel(share = 0, shareDisplay = "both") {
   return `${fractionText} · ${percentageText}`;
 }
 
+function fractionLabel(share = 0) {
+  const fraction = approximateFraction(Math.max(0, share));
+  return `${fraction.numerator}/${fraction.denominator}`;
+}
+
 export function PersonInspector({
   people,
+  properties = [],
   ownershipByPerson = {},
+  causaMortisCoverage = [],
   selectedPersonId,
   shareDisplay = "both",
   caseDependencyLabels = [],
@@ -239,11 +246,27 @@ export function PersonInspector({
   };
 
   const addCausaMortisDeclaration = () => {
+    const coverageTarget =
+      causaMortisCoverage.find((row) => row.status !== "complete") ||
+      causaMortisCoverage[0];
+    const propertyId =
+      coverageTarget?.propertyId ||
+      (properties.length === 1 ? properties[0].id : "");
+    const remainingShare = coverageTarget
+      ? Math.max(
+          0,
+          coverageTarget.requiredShare - coverageTarget.declaredShare,
+        )
+      : 0;
+    const remainingFraction = approximateFraction(remainingShare);
     updateSelected({
       causaMortisDeclarations: [
         ...(selectedPerson.causaMortisDeclarations || []),
         {
           id: crypto.randomUUID(),
+          propertyId,
+          declaredShareNumerator: remainingFraction.numerator,
+          declaredShareDenominator: remainingFraction.denominator,
           date: "",
           notaryName: "",
           immovablePropertyValue: "",
@@ -992,6 +1015,38 @@ export function PersonInspector({
                   </button>
                 </div>
 
+                {causaMortisCoverage.length > 0 && (
+                  <div
+                    className="causa-mortis-coverage"
+                    aria-label="Causa mortis share coverage"
+                  >
+                    {causaMortisCoverage.map((row) => {
+                      const difference = Math.abs(row.difference);
+                      const differenceLabel =
+                        row.status === "under"
+                          ? `Missing ${fractionLabel(difference)}`
+                          : row.status === "over"
+                            ? `Excess ${fractionLabel(difference)}`
+                            : "Complete";
+                      return (
+                        <div
+                          className={`causa-mortis-coverage-row ${row.status}`}
+                          key={row.propertyId}
+                        >
+                          <span>
+                            <strong>{row.propertyAddress}</strong>
+                            <small>
+                              Required {fractionLabel(row.requiredShare)} ·
+                              Declared {fractionLabel(row.declaredShare)}
+                            </small>
+                          </span>
+                          <b>{differenceLabel}</b>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {!causaMortisDeclarations.length && (
                   <small className="causa-mortis-empty">
                     No causa mortis declaration recorded yet.
@@ -1013,6 +1068,60 @@ export function PersonInspector({
                         <Trash2 size={14} />
                       </button>
                     </div>
+                    <label>
+                      <span>Property</span>
+                      <select
+                        aria-label={`Property declared causa mortis ${index + 1}`}
+                        value={
+                          declaration.propertyId ||
+                          (properties.length === 1 ? properties[0].id : "")
+                        }
+                        onChange={(event) =>
+                          updateCausaMortisDeclaration(declaration.id, {
+                            propertyId: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Select property</option>
+                        {properties.map((property) => (
+                          <option key={property.id} value={property.id}>
+                            {property.address ||
+                              property.description ||
+                              "Unnamed property"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Share declared CM</span>
+                      <span className="causa-mortis-fraction">
+                        <input
+                          aria-label={`Causa mortis share numerator ${index + 1}`}
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={declaration.declaredShareNumerator ?? ""}
+                          onChange={(event) =>
+                            updateCausaMortisDeclaration(declaration.id, {
+                              declaredShareNumerator: event.target.value,
+                            })
+                          }
+                        />
+                        <b>/</b>
+                        <input
+                          aria-label={`Causa mortis share denominator ${index + 1}`}
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={declaration.declaredShareDenominator ?? ""}
+                          onChange={(event) =>
+                            updateCausaMortisDeclaration(declaration.id, {
+                              declaredShareDenominator: event.target.value,
+                            })
+                          }
+                        />
+                      </span>
+                    </label>
                     <label>
                       <span>Declaration date</span>
                       <input
