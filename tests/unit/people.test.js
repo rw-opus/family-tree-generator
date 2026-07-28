@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { composeFullName, givenNamesFromFullName, hasDesignation, personDesignations, personGivenNames, personRelationshipCounts, personSurname, surnameFromFullName } from "../../src/domain/people.js";
+import {
+  composeFullName,
+  givenNamesFromFullName,
+  hasDesignation,
+  personDesignations,
+  personDisplayName,
+  personGivenNames,
+  personIdentityIssues,
+  personRelationshipCounts,
+  personSurname,
+  surnameFromFullName,
+} from "../../src/domain/people.js";
 
 describe("family tree people", () => {
   it("normalises old and new designation shapes", () => {
@@ -32,5 +43,42 @@ describe("family tree people", () => {
       child: 2,
       sibling: 1,
     });
+  });
+
+  it("describes unnamed people by their relationship to a named person", () => {
+    const people = [
+      { id: "joseph", fullName: "Joseph Borg", fatherId: "father" },
+      { id: "father", fullName: "", sex: "Male" },
+      {
+        id: "spouse",
+        fullName: "",
+        sex: "Female",
+        spouseIds: ["joseph"],
+      },
+    ];
+    expect(personDisplayName(people[1], people)).toBe("Father of Joseph Borg");
+    expect(personDisplayName(people[2], people)).toBe("Wife of Joseph Borg");
+  });
+
+  it("requires names, surname, and a woman's surname at birth before relationships", () => {
+    expect(personIdentityIssues({ fullName: "" })).toEqual([
+      "Names",
+      "Surname",
+      "Sex",
+    ]);
+    expect(
+      personIdentityIssues({
+        fullName: "Maria Borg",
+        sex: "Female",
+        surnameAtBirth: "",
+      }),
+    ).toEqual(["Surname at birth"]);
+    expect(
+      personIdentityIssues({
+        fullName: "Maria Borg",
+        sex: "Female",
+        surnameAtBirth: "Vella",
+      }),
+    ).toEqual([]);
   });
 });

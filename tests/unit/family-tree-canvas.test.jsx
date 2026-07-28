@@ -43,4 +43,30 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector('[data-person-id="child"]')).not.toBeNull();
     expect(container.textContent).not.toContain("0/1");
   });
+
+  it("labels an unnamed relative by relationship to the named person", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        selectedPersonId="person"
+        people={[
+          {
+            id: "father",
+            fullName: "",
+            sex: "Male",
+            spouseIds: [],
+            siblingIds: [],
+          },
+          {
+            id: "person",
+            fullName: "Joseph Borg",
+            fatherId: "father",
+            spouseIds: [],
+            siblingIds: [],
+          },
+        ]}
+      />,
+    ));
+    expect(container.textContent).toContain("Father of Joseph Borg");
+    expect(container.textContent).not.toContain("Unnamed person");
+  });
 });

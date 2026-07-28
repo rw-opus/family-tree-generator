@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Baby,
   FileUp,
@@ -13,7 +13,9 @@ import {
   composeFullName,
   createPerson,
   hasDesignation,
+  personDisplayName,
   personGivenNames,
+  personIdentityIssues,
   personRelationshipCounts,
   personSurname,
   personDesignations,
@@ -72,6 +74,10 @@ export function PersonInspector({
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
   const [existingSpouseId, setExistingSpouseId] = useState("");
   const selectedPerson = people.find((person) => person.id === selectedPersonId) || people[0];
+  const displayName = useCallback(
+    (person) => personDisplayName(person, people),
+    [people],
+  );
   const peopleById = useMemo(
     () => new Map(people.map((person) => [person.id, person])),
     [people],
@@ -83,10 +89,10 @@ export function PersonInspector({
       .filter((person) => {
         const father = peopleById.get(person.fatherId)?.fullName || "";
         const mother = peopleById.get(person.motherId)?.fullName || "";
-        return `${person.fullName} ${father} ${mother}`.toLowerCase().includes(needle);
+        return `${displayName(person)} ${father} ${mother}`.toLowerCase().includes(needle);
       })
       .slice(0, 12);
-  }, [people, peopleById, query]);
+  }, [displayName, people, peopleById, query]);
 
   useEffect(() => {
     setSpouseChooserOpen(false);
@@ -235,7 +241,7 @@ export function PersonInspector({
   };
 
   const addRelative = (kind) => {
-    if (!selectedPerson) return;
+    if (!selectedPerson || personIdentityIssues(selectedPerson).length) return;
     const counts = personRelationshipCounts(people, selectedPerson);
     if ((kind === "father" && counts.father) || (kind === "mother" && counts.mother)) {
       return;
@@ -380,6 +386,14 @@ export function PersonInspector({
     selectedPerson.ownershipSharePercent !== "";
   const isDeceased =
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
+  const identityIssues = personIdentityIssues(selectedPerson);
+  const identityComplete = identityIssues.length === 0;
+  const identityMessage = identityComplete
+    ? ""
+    : `Complete ${identityIssues.join(
+        identityIssues.length > 1 ? ", " : "",
+      )} before adding relatives.`;
+  const selectedDisplayName = displayName(selectedPerson);
   const inheritanceBasis = selectedPerson.inheritanceBasis || "intestacy";
   const willHeirs = selectedPerson.willHeirs || [];
   const willTotal = willHeirs.reduce(
@@ -425,11 +439,11 @@ export function PersonInspector({
     <div className="person-inspector">
       <section className="inspector-profile">
         <div className={`person-avatar ${selectedPerson.sex?.toLowerCase() || "unknown"}`}>
-          {initials(selectedPerson.fullName)}
+          {initials(selectedDisplayName)}
         </div>
         <div>
           <p className="eyebrow">Selected person</p>
-          <h2>{selectedPerson.fullName || "Unnamed person"}</h2>
+          <h2>{selectedDisplayName}</h2>
           {hasOwnership && <span>{ownershipLabel(ownership, shareDisplay)} ownership</span>}
         </div>
         <button
@@ -455,9 +469,16 @@ export function PersonInspector({
             <button
               type="button"
               key={key}
-              disabled={(key === "father" || key === "mother") && relationshipCounts[key] > 0}
+              disabled={
+                !identityComplete ||
+                ((key === "father" || key === "mother") &&
+                  relationshipCounts[key] > 0)
+              }
               title={
-                (key === "father" || key === "mother") && relationshipCounts[key] > 0
+                !identityComplete
+                  ? identityMessage
+                  : (key === "father" || key === "mother") &&
+                      relationshipCounts[key] > 0
                   ? `${label} already added`
                   : `Add ${label.toLowerCase()}`
               }
@@ -478,7 +499,12 @@ export function PersonInspector({
             </button>
           ))}
         </div>
-        {spouseChooserOpen && (
+        {!identityComplete && (
+          <p className="relationship-prerequisite" role="status">
+            Identify this person first: {identityIssues.join(", ")}.
+          </p>
+        )}
+        {spouseChooserOpen && identityComplete && (
           <div className="spouse-chooser">
             <button
               type="button"
@@ -506,7 +532,7 @@ export function PersonInspector({
                 </option>
                 {existingSpouseCandidates.map((person) => (
                   <option key={person.id} value={person.id}>
-                    {person.fullName || "Unnamed person"}
+                    {displayName(person)}
                   </option>
                 ))}
               </select>
@@ -596,7 +622,7 @@ export function PersonInspector({
                 .filter((person) => person.id !== selectedPerson.id)
                 .map((person) => (
                   <option key={person.id} value={person.id}>
-                    {person.fullName || "Unnamed person"}
+                    {displayName(person)}
                   </option>
                 ))}
             </select>
@@ -612,7 +638,7 @@ export function PersonInspector({
                 .filter((person) => person.id !== selectedPerson.id)
                 .map((person) => (
                   <option key={person.id} value={person.id}>
-                    {person.fullName || "Unnamed person"}
+                    {displayName(person)}
                   </option>
                 ))}
             </select>
@@ -718,7 +744,7 @@ export function PersonInspector({
                     const heir = peopleById.get(personId);
                     return (
                       <div key={personId}>
-                        <span>{heir?.fullName || "Unnamed person"}</span>
+                        <span>{displayName(heir)}</span>
                         <b>{ownershipLabel(share, shareDisplay)}</b>
                       </div>
                     );
@@ -775,7 +801,7 @@ export function PersonInspector({
                             .filter((person) => person.id !== selectedPerson.id)
                             .map((person) => (
                               <option key={person.id} value={person.id}>
-                                {person.fullName || "Unnamed person"}
+                                {displayName(person)}
                               </option>
                             ))}
                         </select>
@@ -897,8 +923,8 @@ export function PersonInspector({
               key={person.id}
               onClick={() => onSelectPerson(person.id)}
             >
-              <span>{initials(person.fullName)}</span>
-              <strong>{person.fullName || "Unnamed person"}</strong>
+              <span>{initials(displayName(person))}</span>
+              <strong>{displayName(person)}</strong>
             </button>
           ))}
         </div>

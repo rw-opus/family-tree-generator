@@ -43,6 +43,115 @@ export function personSurname(person = {}) {
     : surnameFromFullName(person.fullName);
 }
 
+export function personIdentityIssues(person = {}) {
+  const issues = [];
+  if (!personGivenNames(person).trim()) issues.push("Names");
+  if (!personSurname(person).trim()) issues.push("Surname");
+  if (!String(person.sex || "").trim()) issues.push("Sex");
+  if (
+    String(person.sex || "").toLowerCase() === "female" &&
+    !String(person.surnameAtBirth || "").trim()
+  ) {
+    issues.push("Surname at birth");
+  }
+  return issues;
+}
+
+export function personDisplayName(person = {}, people = []) {
+  const ownName = String(person.fullName || "").trim();
+  if (ownName) return ownName;
+  if (!person.id) return "New person";
+
+  const peopleById = new Map(
+    people.filter((candidate) => candidate?.id).map((candidate) => [
+      candidate.id,
+      candidate,
+    ]),
+  );
+  const named = (candidate) => {
+    const name = String(candidate?.fullName || "").trim();
+    return name || "";
+  };
+  const children = people.filter(
+    (candidate) =>
+      candidate?.id !== person.id &&
+      (candidate.fatherId === person.id || candidate.motherId === person.id),
+  );
+  const namedChild = children.find((candidate) => named(candidate));
+  if (namedChild) {
+    const relationship =
+      namedChild.fatherId === person.id
+        ? "Father"
+        : namedChild.motherId === person.id
+          ? "Mother"
+          : "Parent";
+    return `${relationship} of ${named(namedChild)}`;
+  }
+
+  const namedParents = [
+    peopleById.get(person.fatherId),
+    peopleById.get(person.motherId),
+  ]
+    .map((candidate) => named(candidate))
+    .filter(Boolean);
+  if (namedParents.length) {
+    const relationship =
+      person.sex === "Male"
+        ? "Son"
+        : person.sex === "Female"
+          ? "Daughter"
+          : "Child";
+    return `${relationship} of ${namedParents.join(" and ")}`;
+  }
+
+  const spouseIds = new Set(person.spouseIds || []);
+  people.forEach((candidate) => {
+    if ((candidate.spouseIds || []).includes(person.id)) {
+      spouseIds.add(candidate.id);
+    }
+  });
+  const namedSpouse = [...spouseIds]
+    .map((id) => peopleById.get(id))
+    .find((candidate) => named(candidate));
+  if (namedSpouse) {
+    const relationship =
+      person.sex === "Male"
+        ? "Husband"
+        : person.sex === "Female"
+          ? "Wife"
+          : "Spouse";
+    return `${relationship} of ${named(namedSpouse)}`;
+  }
+
+  const siblingIds = new Set(person.siblingIds || []);
+  people.forEach((candidate) => {
+    if (!candidate?.id || candidate.id === person.id) return;
+    const linked = (candidate.siblingIds || []).includes(person.id);
+    const sharedFather =
+      person.fatherId && candidate.fatherId === person.fatherId;
+    const sharedMother =
+      person.motherId && candidate.motherId === person.motherId;
+    if (linked || sharedFather || sharedMother) siblingIds.add(candidate.id);
+  });
+  const namedSibling = [...siblingIds]
+    .map((id) => peopleById.get(id))
+    .find((candidate) => named(candidate));
+  if (namedSibling) {
+    const relationship =
+      person.sex === "Male"
+        ? "Brother"
+        : person.sex === "Female"
+          ? "Sister"
+          : "Brother / sister";
+    return `${relationship} of ${named(namedSibling)}`;
+  }
+
+  const relationship = personDesignations(person).find(
+    (designation) => designation !== "Deceased",
+  );
+  return relationship ? `Unnamed ${relationship.toLowerCase()}` : "New person";
+}
+
 export function createPerson(designation = "") {
   return { id: crypto.randomUUID(), givenNames: "", surname: "", fullName: "", surnameAtBirth: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], siblingIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
 }

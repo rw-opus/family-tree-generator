@@ -1,6 +1,12 @@
 import { useEffect, useRef } from "react";
 import { Printer } from "lucide-react";
-import { formattedDate, hasAnyDesignation, hasDesignation, personDesignations } from "../domain/people.js";
+import {
+  formattedDate,
+  hasAnyDesignation,
+  hasDesignation,
+  personDesignations,
+  personDisplayName,
+} from "../domain/people.js";
 import { approximateFraction } from "../domain/ownership.js";
 
 function printTree(node) {
@@ -38,7 +44,8 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
   const cousinConnectors = uncles.length ? uncles : (cousins.length ? [placeholder("cousin-parent", "Uncle/Aunt", "Parent of cousin")] : []);
   const childGeneration = children.length ? children : ((grandchildren.length || greatGrandchildren.length) ? [placeholder("child-line", "Child", "Child")] : []);
   const grandchildGeneration = grandchildren.length ? grandchildren : (greatGrandchildren.length ? [placeholder("grandchild-line", "Grandchild", "Grandchild")] : []);
-  const title = deceased ? `Family Tree of ${deceased.fullName || "the deceased person"}` : "Family tree";
+  const displayName = (person) => personDisplayName(person, cleanPeople);
+  const title = deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree";
   const card = (person, variant = "") => {
     const isDeceased = Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
     const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
@@ -55,8 +62,9 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
         : shareDisplay === "percentage"
           ? percentageText
           : `${fractionText} · ${percentageText}`;
-    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${person.fullName || "unnamed person"}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
-      <div className="family-node-name" title={person.fullName || "Unnamed person"}>{person.fullName || "Unnamed person"}</div>
+    const name = person.isPlaceholder ? person.fullName : displayName(person);
+    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${name}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
+      <div className="family-node-name" title={name}>{name}</div>
       {!person.isPlaceholder && showOwnership && hasOwnership && <div className="family-node-ownership">{ownershipText} ownership</div>}
       {isDeceased && person.dateOfDeath && <div className="family-node-meta">d. {formattedDate(person.dateOfDeath)}</div>}
       {!isDeceased && !person.isPlaceholder && <div className="family-node-meta">{personDesignations(person).join(" + ") || "No relationship selected"}</div>}
@@ -120,7 +128,7 @@ export function FamilyTreeCanvas({ people, ownershipByPerson = {}, onPrint = pri
     relationalPeople.forEach((person) => { const depth = depths.get(person.id) || 0; if (!generations.has(depth)) generations.set(depth, []); generations.get(depth).push(person); });
     return <section className="tree-panel">
       <header className="tree-toolbar"><div><p className="eyebrow">Relational family record</p><h2>Family tree</h2></div><button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}><Printer size={16} /> Print</button></header>
-      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2>{[...generations.entries()].sort(([a], [b]) => a - b).map(([depth, members], index) => <div className="relational-generation" key={depth}>{index > 0 && <div className="family-down-line" />}<div className="family-branch-row">{members.sort((a, b) => (a.fullName || "").localeCompare(b.fullName || "")).map((person) => <div className="family-branch-item" key={person.id}>{card(person)}</div>)}</div></div>)}</div></div>
+      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2>{[...generations.entries()].sort(([a], [b]) => a - b).map(([depth, members], index) => <div className="relational-generation" key={depth}>{index > 0 && <div className="family-down-line" />}<div className="family-branch-row">{members.sort((a, b) => displayName(a).localeCompare(displayName(b))).map((person) => <div className="family-branch-item" key={person.id}>{card(person)}</div>)}</div></div>)}</div></div>
       <p className="helper-text">Select a person in the index to locate and highlight them in this tree.</p>
     </section>;
   }

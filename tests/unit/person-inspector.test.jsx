@@ -27,6 +27,8 @@ describe("PersonInspector", () => {
     const child = {
       id: "child",
       fullName: "Maria Example",
+      sex: "Female",
+      surnameAtBirth: "Example",
       designations: [],
       spouseIds: [],
     };
@@ -63,6 +65,7 @@ describe("PersonInspector", () => {
       id: "parent",
       fullName: "Maria Example",
       sex: "Female",
+      surnameAtBirth: "Example",
       designations: [],
       spouseIds: [],
       siblingIds: [],
@@ -160,6 +163,8 @@ describe("PersonInspector", () => {
       {
         id: "person-a",
         fullName: "Maria Borg",
+        sex: "Female",
+        surnameAtBirth: "Borg",
         designations: [],
         spouseIds: [],
       },
@@ -295,5 +300,41 @@ describe("PersonInspector", () => {
       givenNames: "Maria Anna",
       fullName: "Maria Anna Borg",
     });
+  });
+
+  it("blocks adding relatives until the selected person is identified", () => {
+    const onChange = vi.fn();
+    const person = {
+      id: "person",
+      givenNames: "",
+      surname: "",
+      fullName: "",
+      surnameAtBirth: "",
+      sex: "Female",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[person]}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const relationshipButtons = [...container.querySelectorAll(
+      ".relationship-actions button",
+    )];
+    expect(relationshipButtons.every((button) => button.disabled)).toBe(true);
+    expect(container.textContent).toContain(
+      "Identify this person first: Names, Surname, Surname at birth.",
+    );
+    act(() => relationshipButtons[0].click());
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

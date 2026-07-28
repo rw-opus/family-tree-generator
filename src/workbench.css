@@ -338,6 +338,18 @@ textarea {
   cursor: not-allowed;
 }
 
+.relationship-prerequisite {
+  margin: 0.45rem 0 0;
+  border-left: 3px solid #b47a42;
+  border-radius: 3px;
+  background: #fff9f1;
+  color: #75502e;
+  padding: 0.42rem 0.5rem;
+  font-size: 0.63rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .relationship-count {
   position: absolute;
   top: -5px;
