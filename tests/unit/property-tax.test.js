@@ -6,6 +6,7 @@ import {
   saleTaxLotsTotal,
   successionRuleset,
   suggestedIntestacyShares,
+  vendorTaxSummary,
 } from "../../src/domain/propertyTax.js";
 
 describe("Maltese inherited property estimates", () => {
@@ -157,5 +158,46 @@ describe("Maltese inherited property estimates", () => {
     });
     expect(result.methods).toEqual([]);
     expect(result.warning).toContain("inherited fraction");
+  });
+
+  it("summarises each living vendor and excludes deceased vendors and their taxes", () => {
+    const livingLot = {
+      ownerId: "living",
+      inheritanceDate: "2010-01-01",
+      shareNumerator: 1,
+      shareDenominator: 2,
+      acquisitionValue: 100,
+      transferValue: 120,
+      selectedTaxMethod: "increase",
+    };
+    const deceasedLot = {
+      ownerId: "deceased",
+      inheritanceDate: "2010-01-01",
+      shareNumerator: 1,
+      shareDenominator: 2,
+      acquisitionValue: 50,
+      transferValue: 100,
+      selectedTaxMethod: "increase",
+    };
+    const summary = vendorTaxSummary(
+      [
+        { id: "living", name: "Maria Borg", share: 0.5 },
+        { id: "deceased", name: "Joseph Borg", share: 0.5 },
+      ],
+      [
+        { lot: livingLot, result: saleTaxLot(livingLot) },
+        { lot: deceasedLot, result: saleTaxLot(deceasedLot) },
+      ],
+      ["deceased"],
+    );
+    expect(summary.vendors).toHaveLength(1);
+    expect(summary.vendors[0]).toMatchObject({
+      id: "living",
+      lotCount: 1,
+      saleValue: 120,
+      tax: 2.4,
+    });
+    expect(summary.total).toBeCloseTo(2.4);
+    expect(summary.excludedLotCount).toBe(1);
   });
 });

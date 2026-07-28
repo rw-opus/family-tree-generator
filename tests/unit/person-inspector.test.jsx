@@ -229,6 +229,10 @@ describe("PersonInspector", () => {
     );
 
     expect(container.textContent).not.toContain("Date of birth");
+    expect(container.textContent).toContain("Succession record");
+    expect(container.textContent).toContain(
+      "Not opened because this person is living",
+    );
     const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')]
       .find((input) => input.parentElement.textContent.includes("This person is deceased."));
     expect(deceasedCheckbox.checked).toBe(false);

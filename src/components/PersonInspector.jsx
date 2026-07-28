@@ -794,6 +794,19 @@ export function PersonInspector({
             </button>
           )}
         </div>
+        {!isDeceased && (
+          <div className="person-succession living-succession">
+            <div>
+              <strong>Succession record</strong>
+              <small>
+                Not opened because this person is living. Mark the person as
+                deceased to enter the death, will or intestacy, heirs and causa
+                mortis details.
+              </small>
+            </div>
+            <span>Living</span>
+          </div>
+        )}
         {isDeceased && (
           <div className="person-succession">
             <div className="person-succession-heading">

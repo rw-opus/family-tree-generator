@@ -1,8 +1,6 @@
 import { Calculator, Home, Plus, Trash2 } from "lucide-react";
-import { buildPropertyOwnership } from "../domain/familyOwnership.js";
-import { declarationCoverage } from "../domain/declarations.js";
-import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
-import { saleTaxLot, selectedSaleTax } from "../domain/propertyTax.js";
+import { approximateFraction } from "../domain/ownership.js";
+import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
 import { PropertyDeclarations } from "./PropertyDeclarations.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
 
@@ -87,43 +85,18 @@ export function Properties({ properties, people, outsideParties, onChange }) {
       {properties.map((property) => {
         const owners = property.owners || [];
         const total = ownersTotal(owners);
-        const result = buildPropertyOwnership(people, property);
-        const declarationOwners = Object.entries(result.ownershipByPerson).map(([personId, share]) => ({
-          id: personId,
-          name: peopleById.get(personId)?.fullName || "Unnamed person",
-          share,
-        }));
-        const ledger = buildPropertyLedger(people, outsideParties, property.transfers || [], result.ownershipByPerson);
-        const coverage = declarationCoverage(
+        const {
+          ownership: result,
           declarationOwners,
-          property.declarations || [],
+          ledger,
+          saleRows,
+          deceasedVendorIds,
+          livingVendors,
+          taxSummary,
+        } = buildPropertyVendorTaxReport(property, people, outsideParties);
+        const livingVendorIds = new Set(
+          livingVendors.map((vendor) => vendor.id),
         );
-        const saleRows = (property.saleLots || []).map((lot) => {
-          const declaredCoverage = coverage.find(
-            (item) => item.heirId === lot.ownerId,
-          );
-          const usePublishedValues =
-            lot.useDeclaredValues !== false &&
-            Boolean(declaredCoverage?.publishedCount);
-          const declaredFraction = approximateFraction(
-            declaredCoverage?.publishedFraction || 0,
-          );
-          const effectiveLot = usePublishedValues
-            ? {
-                ...lot,
-                acquisitionValue: declaredCoverage.publishedValue,
-                shareNumerator: declaredFraction.numerator,
-                shareDenominator: declaredFraction.denominator,
-              }
-            : lot;
-          return {
-            lot,
-            effectiveLot,
-            declaredCoverage,
-            usePublishedValues,
-            result: saleTaxLot(effectiveLot),
-          };
-        });
         return (
           <section className="editor-panel" key={property.id}>
             <div className="section-heading">
@@ -283,7 +256,14 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                 usePublishedValues,
                 result: lotResult,
               }) => (
-                <article className="person-card" key={lot.id}>
+                <article
+                  className={`person-card ${
+                    deceasedVendorIds.has(lot.ownerId)
+                      ? "excluded-vendor-lot"
+                      : ""
+                  }`}
+                  key={lot.id}
+                >
                   <div className="person-card-heading">
                     <strong>{ledger.parties.find((party) => party.id === lot.ownerId)?.name || "Unassigned owner"}</strong>
                     <button type="button" className="icon-button" title="Remove tax lot" onClick={() => removeLot(property, lot.id)}>
@@ -304,7 +284,17 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                         }
                       >
                         <option value="">Choose owner</option>
-                        {ledger.parties.map((party) => (
+                        {lot.ownerId && !livingVendorIds.has(lot.ownerId) && (
+                          <option value={lot.ownerId}>
+                            {ledger.parties.find(
+                              (party) => party.id === lot.ownerId,
+                            )?.name || "Unavailable vendor"}
+                            {deceasedVendorIds.has(lot.ownerId)
+                              ? " — deceased and excluded"
+                              : " — not a current vendor"}
+                          </option>
+                        )}
+                        {livingVendors.map((party) => (
                           <option key={party.id} value={party.id}>{party.name}</option>
                         ))}
                       </select>
@@ -398,7 +388,20 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                       Use the accumulated values and fraction from published CM declarations
                     </label>
                   </div>
-                  {usePublishedValues && (
+                  {deceasedVendorIds.has(lot.ownerId) && (
+                    <p className="excluded-vendor-notice">
+                      Excluded: this person is deceased. No vendor tax is
+                      calculated or carried into the payable totals.
+                    </p>
+                  )}
+                  {lot.ownerId && !livingVendorIds.has(lot.ownerId) &&
+                    !deceasedVendorIds.has(lot.ownerId) && (
+                    <p className="excluded-vendor-notice">
+                      Excluded: this party is not a current owner of the
+                      property and therefore is not on the vendor list.
+                    </p>
+                  )}
+                  {usePublishedValues && livingVendorIds.has(lot.ownerId) && (
                     <p className="tax-lot-source">
                       Published CM total:{" "}
                       {effectiveLot.shareNumerator}/{effectiveLot.shareDenominator}
@@ -406,17 +409,19 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                       {money.format(Number(effectiveLot.acquisitionValue) || 0)}
                     </p>
                   )}
-                  {!declaredCoverage?.publishedCount && (
+                  {!declaredCoverage?.publishedCount &&
+                    livingVendorIds.has(lot.ownerId) && (
                     <p className="tax-lot-source attention">
                       No published CM value is linked to this owner. Enter the
                       fraction and its declared value manually.
                     </p>
                   )}
-                  {lotResult.warning && (
+                  {lotResult.warning && livingVendorIds.has(lot.ownerId) && (
                     <p className="transfer-error" role="status">
                       {lotResult.warning}
                     </p>
                   )}
+                  {livingVendorIds.has(lot.ownerId) && (
                   <div className="method-list">
                     {lotResult.methods.map((method) => (
                       <button
@@ -446,20 +451,106 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                       </button>
                     ))}
                   </div>
+                  )}
                 </article>
               ))}
             </div>
             <button type="button" className="add-button" onClick={() => addLot(property)}>
               <Plus size={16} /> Add tax lot
             </button>
-            {saleRows.length > 0 && (
+            <div className="vendor-tax-summary">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Vendors</p>
+                  <h3>Tax payable by each living vendor</h3>
+                </div>
+              </div>
+              {taxSummary.vendors.length ? (
+                <div className="vendor-tax-list">
+                  {taxSummary.vendors.map((vendor) => {
+                    const ownershipFraction = approximateFraction(vendor.share);
+                    return (
+                      <article className="vendor-tax-card" key={vendor.id}>
+                        <div className="vendor-tax-heading">
+                          <span>
+                            <strong>{vendor.name}</strong>
+                            <small>
+                              Current vendor · {ownershipFraction.numerator}/
+                              {ownershipFraction.denominator} ownership
+                            </small>
+                          </span>
+                          <span>
+                            <strong>{money.format(vendor.tax)}</strong>
+                            <small>selected tax payable</small>
+                          </span>
+                        </div>
+                        {vendor.rows.length ? (
+                          <div className="vendor-tax-lots">
+                            {vendor.rows.map((row, index) => {
+                              const selectedMethod = row.result.methods.find(
+                                (method) =>
+                                  method.key === row.result.selected,
+                              );
+                              return (
+                                <div key={row.lot.id}>
+                                  <span>
+                                    Lot {index + 1} ·{" "}
+                                    {row.effectiveLot.shareNumerator}/
+                                    {row.effectiveLot.shareDenominator}
+                                    {" · "}
+                                    {row.lot.inheritanceDate || "date missing"}
+                                  </span>
+                                  <span>
+                                    Sale {money.format(
+                                      Number(row.result.transferValue) || 0,
+                                    )}
+                                  </span>
+                                  <strong>
+                                    {selectedMethod
+                                      ? `${selectedMethod.label}: ${money.format(
+                                          selectedMethod.tax,
+                                        )}`
+                                      : "Tax details incomplete"}
+                                  </strong>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <small className="vendor-no-lots">
+                            No tax lot has been entered for this vendor.
+                          </small>
+                        )}
+                        <div className="vendor-tax-subtotal">
+                          <span>
+                            {vendor.lotCount} tax{" "}
+                            {vendor.lotCount === 1 ? "lot" : "lots"} · sale
+                            proceeds {money.format(vendor.saleValue)}
+                          </span>
+                          <strong>{money.format(vendor.tax)}</strong>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="helper-text">
+                  No living current owner is available as a vendor.
+                </p>
+              )}
+              {taxSummary.excludedLotCount > 0 && (
+                <p className="excluded-vendor-summary">
+                  {taxSummary.excludedLotCount} deceased-person tax{" "}
+                  {taxSummary.excludedLotCount === 1 ? "lot has" : "lots have"}{" "}
+                  been excluded completely.
+                </p>
+              )}
+            </div>
+            {taxSummary.vendors.length > 0 && (
               <div className="grand-total">
                 <Calculator size={18} />
-                <span>Selected seller tax total</span>
-                <strong>{money.format(saleRows.reduce(
-                  (sum, row) => sum + selectedSaleTax(row.result),
-                  0,
-                ))}</strong>
+                <span>Total tax payable by living vendors</span>
+                <strong>{money.format(taxSummary.total)}</strong>
               </div>
             )}
           </section>

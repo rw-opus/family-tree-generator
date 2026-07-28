@@ -212,3 +212,39 @@ export function saleTaxLotsTotal(lots = []) {
     0,
   );
 }
+
+export function vendorTaxSummary(
+  vendors = [],
+  saleRows = [],
+  excludedVendorIds = [],
+) {
+  const excluded = new Set(excludedVendorIds);
+  const summaries = vendors
+    .filter((vendor) => !excluded.has(vendor.id))
+    .map((vendor) => {
+      const rows = saleRows.filter((row) => row.lot?.ownerId === vendor.id);
+      return {
+        id: vendor.id,
+        name: vendor.name,
+        type: vendor.type,
+        share: Number(vendor.share) || 0,
+        lotCount: rows.length,
+        saleValue: rows.reduce(
+          (total, row) => total + (Number(row.result?.transferValue) || 0),
+          0,
+        ),
+        tax: rows.reduce(
+          (total, row) => total + selectedSaleTax(row.result),
+          0,
+        ),
+        rows,
+      };
+    });
+  return {
+    vendors: summaries,
+    total: summaries.reduce((total, vendor) => total + vendor.tax, 0),
+    excludedLotCount: saleRows.filter((row) =>
+      excluded.has(row.lot?.ownerId),
+    ).length,
+  };
+}

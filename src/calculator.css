@@ -36,6 +36,20 @@ button.index-row:hover, button.index-row.selected { background: #f1eaf4; color: 
 .summary-heir-row > span { display: grid; gap: .12rem; }
 .summary-heir-row > span:last-child { text-align: right; }
 .summary-heir-row small { color: #657184; font-size: .68rem; }
+.summary-vendor-taxes { margin-top: .9rem; border-top: 1px solid #d8e2dc; padding-top: .8rem; }
+.summary-vendor-taxes > h3 { display: flex; align-items: center; gap: .4rem; margin: 0 0 .6rem; color: #3f4d60; font-size: .82rem; }
+.summary-property-tax { display: grid; gap: .45rem; margin-top: .55rem; border: 1px solid #d8e2dc; border-radius: 6px; background: #fafcfb; padding: .65rem; }
+.summary-property-tax-heading { display: flex; align-items: center; justify-content: space-between; gap: .8rem; color: #172033; }
+.summary-property-tax-heading > span { color: #004225; font-weight: 850; }
+.summary-vendor-card { display: grid; gap: .4rem; border-top: 1px dashed #d8e2dc; padding-top: .45rem; }
+.summary-vendor-card > div:first-child { display: flex; justify-content: space-between; gap: .8rem; }
+.summary-vendor-card > div:first-child > span { display: grid; gap: .12rem; }
+.summary-vendor-card > div:first-child > span:last-child { text-align: right; }
+.summary-vendor-card small { color: #657184; font-size: .66rem; }
+.summary-vendor-card p { margin: 0; border-left: 2px solid #64a77d; color: #526073; padding-left: .45rem; font-size: .68rem; line-height: 1.4; }
+.summary-excluded { color: #8f2923; font-size: .66rem; font-weight: 750; }
+.summary-vendor-grand-total { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-top: .65rem; border-radius: 5px; background: #004225; color: #fff; padding: .7rem; font-size: .78rem; }
+.summary-vendor-grand-total strong { font-size: .95rem; }
 .calculator-stack { display: grid; gap: 1rem; max-width: 1180px; margin: 0 auto; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-top: 1rem; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -54,6 +68,20 @@ button.index-row:hover, button.index-row.selected { background: #f1eaf4; color: 
 .tax-lot-fraction b { color: #657184; text-align: center; }
 .tax-lot-source { margin: .7rem 0 0; border-left: 3px solid #64a77d; background: #f2f9f4; color: #365844; padding: .5rem .65rem; font-size: .76rem; font-weight: 750; }
 .tax-lot-source.attention { border-left-color: #d59a22; background: #fff8e8; color: #654c18; }
+.excluded-vendor-lot { border-color: #d8c4c4; background: #fffafa; }
+.excluded-vendor-notice, .excluded-vendor-summary { margin: .7rem 0 0; border-left: 3px solid #a94b4b; background: #fff0ee; color: #8f2923; padding: .55rem .7rem; font-size: .76rem; font-weight: 750; }
+.vendor-tax-summary { margin-top: 1rem; border-top: 1px solid #d8e2dc; padding-top: .85rem; }
+.vendor-tax-list { display: grid; gap: .65rem; margin-top: .65rem; }
+.vendor-tax-card { display: grid; gap: .55rem; border: 1px solid #d8e2dc; border-radius: 6px; background: #fff; padding: .75rem; }
+.vendor-tax-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.vendor-tax-heading > span { display: grid; gap: .12rem; }
+.vendor-tax-heading > span:last-child { text-align: right; }
+.vendor-tax-heading small, .vendor-no-lots { color: #657184; font-size: .68rem; }
+.vendor-tax-lots { display: grid; gap: .35rem; border-top: 1px dashed #d8e2dc; border-bottom: 1px dashed #d8e2dc; padding-block: .45rem; }
+.vendor-tax-lots > div { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(180px, auto); align-items: center; gap: .7rem; color: #526073; font-size: .72rem; }
+.vendor-tax-lots > div strong { color: #27382f; text-align: right; }
+.vendor-tax-subtotal { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: #526073; font-size: .75rem; }
+.vendor-tax-subtotal strong { color: #004225; font-size: .9rem; }
 .grand-total { display: flex; align-items: center; gap: .6rem; margin-top: 1rem; border-radius: 6px; background: #004225; color: #fff; padding: 1rem; }
 .grand-total strong { margin-left: auto; font-size: 1.2rem; }
 .legal-note { border-left: 4px solid #d59a22; border-radius: 5px; background: #fff8e8; padding: 1rem; color: #654c18; font-size: .85rem; line-height: 1.5; }
@@ -137,6 +165,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .fraction-result strong { color: #004225; }
 .fraction-error { margin: 1rem 0 0; border-radius: 5px; background: #fff0ee; color: #9f1f1f; padding: .75rem; font-weight: 700; }
 @media (max-width: 800px) { .ownership-grid, .declaration-layout { grid-template-columns: 1fr; } .history-row { grid-template-columns: 1fr auto; } .history-row > :nth-child(3) { grid-column: 1 / -1; } }
+@media (max-width: 620px) { .vendor-tax-heading { display: grid; } .vendor-tax-heading > span:last-child { text-align: left; } .vendor-tax-lots > div { grid-template-columns: 1fr; gap: .15rem; } .vendor-tax-lots > div strong { text-align: left; } }
 @media (max-width: 900px) { .summary-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .declarant-row { grid-template-columns: 1fr auto; } .declarant-row > :nth-child(2), .declarant-row > :nth-child(3) { grid-column: 1 / -1; } }
 @media (max-width: 650px) { .form-grid { grid-template-columns: 1fr; } .section-heading { align-items: flex-start; flex-direction: column; } }
