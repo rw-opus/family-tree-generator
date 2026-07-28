@@ -187,6 +187,33 @@ export function personRelationshipCounts(people = [], person = {}) {
   };
 }
 
+export function personDescendants(people = [], personId) {
+  if (!personId) return [];
+  const descendants = [];
+  const visited = new Set([personId]);
+  let generation = people.filter(
+    (person) =>
+      person.fatherId === personId || person.motherId === personId,
+  );
+  while (generation.length) {
+    const nextGeneration = [];
+    generation.forEach((person) => {
+      if (!person?.id || visited.has(person.id)) return;
+      visited.add(person.id);
+      descendants.push(person);
+      nextGeneration.push(
+        ...people.filter(
+          (candidate) =>
+            candidate.fatherId === person.id ||
+            candidate.motherId === person.id,
+        ),
+      );
+    });
+    generation = nextGeneration;
+  }
+  return descendants;
+}
+
 export function formattedDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "";
   const [year, month, day] = value.split("-");

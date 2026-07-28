@@ -337,4 +337,170 @@ describe("PersonInspector", () => {
     act(() => relationshipButtons[0].click());
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("shows testate notes and post-1992 causa mortis fields", () => {
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "will",
+      willHeirs: [
+        {
+          id: "heir-record",
+          personId: "child",
+          sharePercent: 100,
+        },
+      ],
+      causaMortisDeclarations: [
+        {
+          id: "cm-1",
+          date: "",
+          notaryName: "",
+          immovablePropertyValue: "",
+          declarantPersonIds: ["child"],
+        },
+      ],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const child = {
+      id: "child",
+      fullName: "Maria Borg",
+      sex: "Female",
+      surnameAtBirth: "Borg",
+      fatherId: "deceased",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, child]}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Testate (will)");
+    expect(container.textContent).toContain("Will notes");
+    expect(container.textContent).toContain("Causa mortis declarations");
+    expect(container.textContent).toContain("Declaration CM 1");
+    const valueInput = container.querySelector(
+      'input[aria-label="Immovable property value declared causa mortis 1"]',
+    );
+    expect(valueInput.required).toBe(true);
+    const declarant = [...container.querySelectorAll(
+      ".causa-mortis-declarants label",
+    )].find((label) => label.textContent.includes("Maria Borg"));
+    expect(declarant.querySelector("input").checked).toBe(true);
+  });
+
+  it("selects every descendant when adding a causa mortis declaration", () => {
+    const onChange = vi.fn();
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "intestacy",
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const child = {
+      id: "child",
+      fullName: "Maria Borg",
+      fatherId: "deceased",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const grandchild = {
+      id: "grandchild",
+      fullName: "Paul Borg",
+      motherId: "child",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, child, grandchild]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const addButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.includes("Add declaration"),
+    );
+    act(() => addButton.click());
+    expect(
+      onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations[0]
+        .declarantPersonIds,
+    ).toEqual(["child", "grandchild"]);
+  });
+
+  it("makes the declared value optional when every identified heir is deceased", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+        causaMortisDeclarations: [
+          {
+            id: "cm-1",
+            declarantPersonIds: ["child"],
+          },
+        ],
+        designations: ["Deceased"],
+        spouseIds: [],
+        siblingIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Maria Borg",
+        fatherId: "deceased",
+        isDeceased: true,
+        dateOfDeath: "2022-01-01",
+        designations: ["Deceased"],
+        spouseIds: [],
+        siblingIds: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const valueInput = container.querySelector(
+      'input[aria-label="Immovable property value declared causa mortis 1"]',
+    );
+    expect(valueInput.required).toBe(false);
+    expect(container.textContent).toContain(
+      "optional because every identified heir is now deceased",
+    );
+  });
 });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Baby,
+  FilePlus2,
   FileUp,
   Heart,
   Search,
@@ -13,6 +14,7 @@ import {
   composeFullName,
   createPerson,
   hasDesignation,
+  personDescendants,
   personDisplayName,
   personGivenNames,
   personIdentityIssues,
@@ -21,7 +23,10 @@ import {
   personDesignations,
 } from "../domain/people.js";
 import { parseGedcom } from "../domain/gedcom.js";
-import { intestateAllocations } from "../domain/familyOwnership.js";
+import {
+  intestateAllocations,
+  isPersonDeceased,
+} from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
 import {
   fractionForShare,
@@ -221,6 +226,54 @@ export function PersonInspector({
     });
   };
 
+  const updateCausaMortisDeclaration = (declarationId, patch) => {
+    updateSelected({
+      causaMortisDeclarations: (
+        selectedPerson.causaMortisDeclarations || []
+      ).map((declaration) =>
+        declaration.id === declarationId
+          ? { ...declaration, ...patch }
+          : declaration,
+      ),
+    });
+  };
+
+  const addCausaMortisDeclaration = () => {
+    updateSelected({
+      causaMortisDeclarations: [
+        ...(selectedPerson.causaMortisDeclarations || []),
+        {
+          id: crypto.randomUUID(),
+          date: "",
+          notaryName: "",
+          immovablePropertyValue: "",
+          declarantPersonIds: declarationCandidates
+            .filter((person) =>
+              descendantIds.has(person.id),
+            )
+            .map((person) => person.id),
+        },
+      ],
+    });
+  };
+
+  const removeCausaMortisDeclaration = (declarationId) => {
+    updateSelected({
+      causaMortisDeclarations: (
+        selectedPerson.causaMortisDeclarations || []
+      ).filter((declaration) => declaration.id !== declarationId),
+    });
+  };
+
+  const toggleCausaMortisDeclarant = (declaration, personId) => {
+    const current = new Set(declaration.declarantPersonIds || []);
+    if (current.has(personId)) current.delete(personId);
+    else current.add(personId);
+    updateCausaMortisDeclaration(declaration.id, {
+      declarantPersonIds: [...current],
+    });
+  };
+
   const toggleDesignation = (designation) => {
     const current = personDesignations(selectedPerson);
     const next = current.includes(designation)
@@ -404,6 +457,30 @@ export function PersonInspector({
     isDeceased && inheritanceBasis === "intestacy"
       ? intestateAllocations(people, selectedPerson.id)
       : null;
+  const successionHeirIds =
+    inheritanceBasis === "will"
+      ? willHeirs.map((heir) => heir.personId).filter(Boolean)
+      : [...(automaticIntestacy?.shares.keys() || [])];
+  const successionHeirs = successionHeirIds
+    .map((personId) => peopleById.get(personId))
+    .filter(Boolean);
+  const allSuccessionHeirsDeceased =
+    successionHeirs.length > 0 &&
+    successionHeirs.every((person) => isPersonDeceased(person));
+  const descendants = personDescendants(people, selectedPerson.id);
+  const descendantIds = new Set(descendants.map((person) => person.id));
+  const declarationCandidateIds = new Set([
+    ...descendantIds,
+    ...successionHeirIds,
+  ]);
+  const declarationCandidates = people.filter((person) =>
+    declarationCandidateIds.has(person.id),
+  );
+  const causaMortisDeclarations =
+    selectedPerson.causaMortisDeclarations || [];
+  const requiresCausaMortisDetails =
+    Boolean(selectedPerson.dateOfDeath) &&
+    selectedPerson.dateOfDeath > "1992-11-25";
   const displayedSurnameAtBirth =
     selectedPerson.surnameAtBirth ||
     (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
@@ -721,8 +798,8 @@ export function PersonInspector({
           <div className="person-succession">
             <div className="person-succession-heading">
               <div>
-                <strong>Ownership on death</strong>
-                <small>The deceased person's current share passes automatically.</small>
+                <strong>Succession on death</strong>
+                <small>Record how this person's ownership passes to the heirs.</small>
               </div>
               <select
                 aria-label="Inheritance basis"
@@ -731,8 +808,8 @@ export function PersonInspector({
                   updateSelected({ inheritanceBasis: event.target.value })
                 }
               >
-                <option value="intestacy">Intestacy</option>
-                <option value="will">Will</option>
+                <option value="intestacy">Intestate</option>
+                <option value="will">Testate (will)</option>
               </select>
             </div>
 
@@ -769,13 +846,24 @@ export function PersonInspector({
                   />
                 </label>
                 <label>
-                  <span>Notary</span>
+                  <span>Will notary</span>
                   <input
                     value={selectedPerson.willNotaryName || ""}
                     onChange={(event) =>
                       updateSelected({ willNotaryName: event.target.value })
                     }
                     placeholder="Notary's name"
+                  />
+                </label>
+                <label className="will-notes">
+                  <span>Will notes</span>
+                  <textarea
+                    rows="2"
+                    value={selectedPerson.willNotes || ""}
+                    onChange={(event) =>
+                      updateSelected({ willNotes: event.target.value })
+                    }
+                    placeholder="Will details, references, institutes or other notes"
                   />
                 </label>
                 <div className="will-beneficiaries">
@@ -869,6 +957,144 @@ export function PersonInspector({
                     })}% {Math.abs(willTotal - 100) < 1e-8 ? "✓" : "— must equal 100%"}
                   </small>
                 </div>
+              </div>
+            )}
+
+            {requiresCausaMortisDetails && (
+              <div className="causa-mortis-records">
+                <div className="causa-mortis-heading">
+                  <div>
+                    <strong>Causa mortis declarations</strong>
+                    <small>
+                      Death after 25 November 1992 · record each declaration separately.
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={addCausaMortisDeclaration}
+                  >
+                    <FilePlus2 size={14} />
+                    Add declaration
+                  </button>
+                </div>
+
+                {!causaMortisDeclarations.length && (
+                  <small className="causa-mortis-empty">
+                    No causa mortis declaration recorded yet.
+                  </small>
+                )}
+
+                {causaMortisDeclarations.map((declaration, index) => (
+                  <div className="causa-mortis-card" key={declaration.id}>
+                    <div className="causa-mortis-card-heading">
+                      <strong>Declaration CM {index + 1}</strong>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={`Remove causa mortis declaration ${index + 1}`}
+                        onClick={() =>
+                          removeCausaMortisDeclaration(declaration.id)
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    <label>
+                      <span>Declaration date</span>
+                      <input
+                        type="date"
+                        value={declaration.date || ""}
+                        onChange={(event) =>
+                          updateCausaMortisDeclaration(declaration.id, {
+                            date: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Notary</span>
+                      <input
+                        value={declaration.notaryName || ""}
+                        onChange={(event) =>
+                          updateCausaMortisDeclaration(declaration.id, {
+                            notaryName: event.target.value,
+                          })
+                        }
+                        placeholder="Notary's full name"
+                      />
+                    </label>
+                    <label>
+                      <span>
+                        Immovable property value
+                        {allSuccessionHeirsDeceased ? " (optional)" : ""}
+                      </span>
+                      <span className="currency-input">
+                        <b>€</b>
+                        <input
+                          aria-label={`Immovable property value declared causa mortis ${index + 1}`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          required={!allSuccessionHeirsDeceased}
+                          value={declaration.immovablePropertyValue || ""}
+                          onChange={(event) =>
+                            updateCausaMortisDeclaration(declaration.id, {
+                              immovablePropertyValue: event.target.value,
+                            })
+                          }
+                        />
+                      </span>
+                    </label>
+                    <div className="causa-mortis-declarants">
+                      <strong>Declarants</strong>
+                      <small>
+                        Descendants are selected by default. Untick anyone who
+                        did not make this declaration.
+                      </small>
+                      {declarationCandidates.length ? (
+                        <div>
+                          {declarationCandidates.map((person) => (
+                            <label key={person.id}>
+                              <input
+                                type="checkbox"
+                                checked={(
+                                  declaration.declarantPersonIds || []
+                                ).includes(person.id)}
+                                onChange={() =>
+                                  toggleCausaMortisDeclarant(
+                                    declaration,
+                                    person.id,
+                                  )
+                                }
+                              />
+                              {displayName(person)}
+                              {!descendantIds.has(person.id) && (
+                                <small>heir</small>
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <small>
+                          Add the deceased person's descendants or heirs to the
+                          tree to select the declarants.
+                        </small>
+                      )}
+                    </div>
+                    <small
+                      className={
+                        allSuccessionHeirsDeceased
+                          ? "causa-mortis-value-note optional"
+                          : "causa-mortis-value-note required"
+                      }
+                    >
+                      {allSuccessionHeirsDeceased
+                        ? "Declared immovable-property value is optional because every identified heir is now deceased."
+                        : "Declared immovable-property value is required because at least one identified heir is living."}
+                    </small>
+                  </div>
+                ))}
               </div>
             )}
           </div>

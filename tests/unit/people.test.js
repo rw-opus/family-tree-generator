@@ -4,6 +4,7 @@ import {
   givenNamesFromFullName,
   hasDesignation,
   personDesignations,
+  personDescendants,
   personDisplayName,
   personGivenNames,
   personIdentityIssues,
@@ -80,5 +81,17 @@ describe("family tree people", () => {
         surnameAtBirth: "Vella",
       }),
     ).toEqual([]);
+  });
+
+  it("finds every generation of descendants without including the person", () => {
+    const people = [
+      { id: "ancestor" },
+      { id: "child", fatherId: "ancestor" },
+      { id: "grandchild", motherId: "child" },
+      { id: "unrelated" },
+    ];
+    expect(
+      personDescendants(people, "ancestor").map((person) => person.id),
+    ).toEqual(["child", "grandchild"]);
   });
 });

@@ -541,11 +541,16 @@ textarea {
 }
 
 .person-succession select,
-.person-succession input {
+.person-succession input,
+.person-succession textarea {
   min-width: 0;
   min-height: 1.9rem;
   padding: 0.28rem 0.4rem;
   font-size: 0.68rem;
+}
+
+.person-succession textarea {
+  resize: vertical;
 }
 
 .automatic-heirs {
@@ -594,6 +599,15 @@ textarea {
   color: #526158;
   font-size: 0.64rem;
   font-weight: 800;
+}
+
+.will-details > .will-notes {
+  align-items: start;
+  padding-block: 0.25rem;
+}
+
+.will-notes textarea {
+  min-height: 3.2rem;
 }
 
 .will-beneficiaries {
@@ -650,6 +664,140 @@ textarea {
   width: 28px;
   min-height: 1.9rem;
   color: #922f2f;
+}
+
+.causa-mortis-records {
+  display: grid;
+  gap: 0.45rem;
+  border-top: 1px solid #cbd9d1;
+  padding-top: 0.5rem;
+}
+
+.causa-mortis-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.causa-mortis-heading > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.causa-mortis-heading strong,
+.causa-mortis-card-heading strong,
+.causa-mortis-declarants > strong {
+  color: var(--ink);
+  font-size: 0.68rem;
+}
+
+.causa-mortis-heading small,
+.causa-mortis-empty,
+.causa-mortis-declarants > small,
+.causa-mortis-value-note {
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.35;
+}
+
+.causa-mortis-heading .secondary-button {
+  min-height: 1.9rem;
+  padding: 0.28rem 0.45rem;
+  font-size: 0.62rem;
+}
+
+.causa-mortis-card {
+  display: grid;
+  gap: 0.32rem;
+  border: 1px solid #d5dfda;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.48rem;
+}
+
+.causa-mortis-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.causa-mortis-card-heading .icon-button {
+  width: 28px;
+  min-height: 1.8rem;
+  color: #922f2f;
+}
+
+.causa-mortis-card > label {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4rem;
+  color: #526158;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.currency-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.currency-input b {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.causa-mortis-declarants {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.12rem;
+  border-top: 1px dashed #dde5e1;
+  padding-top: 0.36rem;
+}
+
+.causa-mortis-declarants > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.causa-mortis-declarants label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  border: 1px solid #e0e6e3;
+  border-radius: 4px;
+  background: #fafcfb;
+  color: #46554d;
+  padding: 0.28rem 0.35rem;
+  font-size: 0.61rem;
+  font-weight: 750;
+}
+
+.causa-mortis-declarants label input {
+  width: 0.9rem;
+  min-height: 0.9rem;
+  margin: 0;
+  accent-color: var(--forest);
+}
+
+.causa-mortis-declarants label small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.52rem;
+}
+
+.causa-mortis-value-note.required {
+  color: #9b551d;
+}
+
+.causa-mortis-value-note.optional {
+  color: #28704d;
 }
 
 .text-button {
