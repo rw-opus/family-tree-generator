@@ -1,12 +1,15 @@
 :root {
-  --ink: #172033;
-  --muted: #677383;
-  --forest: #174a36;
-  --forest-dark: #0d3526;
-  --forest-soft: #e9f2ed;
-  --plum: #6b3f79;
-  --paper: #fbfaf7;
-  --line: #d8dfda;
+  --ink: #10231c;
+  --muted: #65756e;
+  --forest: #004225;
+  --forest-dark: #00351d;
+  --forest-soft: #eaf5ee;
+  --plum: #4b116f;
+  --paper: #eef1f6;
+  --line: #dbe3ea;
+  --tracker-serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --tracker-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
   --panel-width: 390px;
 }
 
@@ -1870,6 +1873,187 @@ textarea {
 
 .tree-stage .helper-text {
   display: none;
+}
+
+/* Shared visual language with the File Tracker. */
+.tree-workbench {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--tracker-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.workbench-brand strong,
+.inspector-section h3,
+.tree-workbench h1,
+.tree-workbench h2,
+.tree-workbench h3,
+.tree-stage .family-chart-title {
+  font-family: var(--tracker-serif);
+  letter-spacing: -0.012em;
+}
+
+.tree-workbench input:not([type="checkbox"]):not([type="radio"]),
+.tree-workbench select,
+.tree-workbench textarea {
+  border-color: #cbd5e1;
+  border-radius: 0.55rem;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.tree-workbench input:focus,
+.tree-workbench select:focus,
+.tree-workbench textarea:focus {
+  border-color: var(--plum);
+  outline: 2px solid rgba(75, 17, 111, 0.2);
+  outline-offset: 1px;
+}
+
+.workbench-header {
+  border-color: #dbe3ea;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+
+.workbench-case-fields input,
+.workbench-title input,
+.header-currency-input {
+  background: #f8fafc;
+}
+
+.context-dashboard {
+  border-color: #dbe3ea;
+  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.05);
+}
+
+.dashboard-topline,
+.dashboard-tabs,
+.dashboard-status,
+.inspector-profile,
+.inspector-section {
+  border-color: #e2e8f0;
+}
+
+.dashboard-tabs {
+  background: #f8fafc;
+}
+
+.dashboard-tabs button,
+.person-edit-button,
+.relationship-actions button,
+.spouse-chooser,
+.primary-button,
+.secondary-button,
+.danger-button,
+.gedcom-button {
+  border-radius: 0.55rem;
+}
+
+.dashboard-tabs button.active {
+  color: var(--forest);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
+}
+
+.inspector-profile {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.person-avatar {
+  font-family: var(--tracker-serif);
+}
+
+.person-succession,
+.spouse-chooser,
+.causa-mortis-card,
+.initial-owner-row,
+.dashboard-case .editor-panel,
+.workbench-login {
+  border-color: #dbe3ea;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+}
+
+.gedcom-tool,
+.dashboard-case,
+.person-edit-fields:disabled input,
+.person-edit-fields:disabled select,
+.person-edit-fields:disabled textarea {
+  background: #f8fafc;
+}
+
+.tree-stage,
+.tree-stage .family-chart {
+  background-color: #fff;
+}
+
+.tree-stage-toolbar {
+  border-color: #dbe3ea;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.tree-stage .family-chart {
+  background-image:
+    radial-gradient(
+      circle at top left,
+      rgba(148, 163, 184, 0.1),
+      transparent 28rem
+    );
+  background-size: auto;
+}
+
+.tree-stage .family-node {
+  border: 1.5px solid #6f625a;
+  border-radius: 0.55rem;
+  box-shadow: 0 6px 15px rgba(15, 23, 42, 0.14);
+  padding: 0.62rem 0.85rem;
+}
+
+.tree-stage .family-node:not(.male):not(.female) {
+  background: #f6f4f1;
+}
+
+.tree-stage .family-node.deceased {
+  box-shadow: 0 7px 17px rgba(15, 23, 42, 0.18);
+}
+
+.tree-stage .family-node.deceased:not(.male):not(.female) {
+  background: #ebe7e1;
+}
+
+.tree-stage .family-node-name {
+  color: #111827;
+  font-weight: 600;
+}
+
+.tree-stage .family-node-meta {
+  color: #57534e;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.tree-stage .family-chart-title {
+  color: #334155;
+  font-size: 1.18rem;
+}
+
+.tree-stage .family-partner-link,
+.tree-stage .family-union-stem,
+.tree-stage .family-parent-row.has-children:not(.single-parent)::after,
+.tree-stage .family-child-stem,
+.tree-stage .family-spouse-line,
+.tree-stage .family-side-line,
+.tree-stage .family-down-line,
+.tree-stage .family-branch-row::before,
+.tree-stage .family-branch-item::before {
+  background: #71645c;
+}
+
+.tree-stage .family-child-branch-item::before,
+.tree-stage .family-child-branch-item::after {
+  border-top-color: #71645c;
 }
 
 .fraction-launcher {
