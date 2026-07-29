@@ -80,6 +80,25 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).not.toContain("0/1");
   });
 
+  it("shows compact capitalised names without relationship subtitles", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        people={[
+          {
+            id: "person",
+            fullName: "roland wadge",
+            designations: ["Parent"],
+          },
+        ]}
+      />,
+    ));
+    const person = container.querySelector('[data-person-id="person"]');
+
+    expect(person.textContent).toBe("Roland Wadge");
+    expect(person.querySelector(".family-node-meta")).toBeNull();
+    expect(person.style.getPropertyValue("--family-node-width")).toBe("112px");
+  });
+
   it("labels an unnamed relative by relationship to the named person", () => {
     act(() => root.render(
       <FamilyTreeCanvas
@@ -307,6 +326,6 @@ describe("FamilyTreeCanvas", () => {
         .querySelector('[data-person-id="roland"]')
         .closest(".family-child-branch-item")
         .style.getPropertyValue("--branch-anchor-offset"),
-    ).toBe("-142px");
+    ).toBe("-127px");
   });
 });

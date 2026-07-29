@@ -9,6 +9,22 @@ import {
 } from "../domain/people.js";
 import { approximateFraction } from "../domain/ownership.js";
 
+const PARTNER_LINK_WIDTH = 64;
+
+function capitalisedName(value = "") {
+  return String(value).replace(
+    /(^|[\s'-])\p{L}/gu,
+    (match) => match.toLocaleUpperCase("en-MT"),
+  );
+}
+
+function compactNodeWidth(value = "") {
+  const estimatedWidth = Math.ceil(String(value).trim().length * 7 + 28);
+  const evenWidth =
+    estimatedWidth % 2 === 0 ? estimatedWidth : estimatedWidth + 1;
+  return Math.min(210, Math.max(96, evenWidth));
+}
+
 function printTree(node) {
   const popup = window.open("", "_blank", "noopener,noreferrer");
   if (!popup) return window.print();
@@ -65,6 +81,12 @@ export function FamilyTreeCanvas({
   const childGeneration = children.length ? children : ((grandchildren.length || greatGrandchildren.length) ? [placeholder("child-line", "Child", "Child")] : []);
   const grandchildGeneration = grandchildren.length ? grandchildren : (greatGrandchildren.length ? [placeholder("grandchild-line", "Grandchild", "Grandchild")] : []);
   const displayName = (person) => personDisplayName(person, cleanPeople);
+  const cardName = (person) => {
+    const value = person.isPlaceholder ? person.fullName : displayName(person);
+    return !person.isPlaceholder && String(person.fullName || "").trim()
+      ? capitalisedName(value)
+      : value;
+  };
   const title = deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree";
   const card = (person, variant = "") => {
     const isDeceased = Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
@@ -85,8 +107,8 @@ export function FamilyTreeCanvas({
         : shareDisplay === "percentage"
           ? percentageText
           : `${fractionText} · ${percentageText}`;
-    const name = person.isPlaceholder ? person.fullName : displayName(person);
-    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${name}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${incompleteCausaMortis.length ? "cm-share-incomplete" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`}>
+    const name = cardName(person);
+    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${name}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${incompleteCausaMortis.length ? "cm-share-incomplete" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`} style={{ "--family-node-width": `${compactNodeWidth(name)}px` }}>
       <div className="family-node-name" title={name}>{name}</div>
       {!person.isPlaceholder && showOwnership && hasOwnership && <div className="family-node-ownership">{ownershipText} ownership</div>}
       {!person.isPlaceholder && incompleteCausaMortis.map((row) => {
@@ -97,8 +119,6 @@ export function FamilyTreeCanvas({
         </div>;
       })}
       {isDeceased && person.dateOfDeath && <div className="family-node-meta">d. {formattedDate(person.dateOfDeath)}</div>}
-      {!isDeceased && !person.isPlaceholder && <div className="family-node-meta">{personDesignations(person).join(" + ") || "No relationship selected"}</div>}
-      {person.isPlaceholder && <div className="family-node-meta">{personDesignations(person)[0]}</div>}
     </button>;
   };
   const row = (members) => members.length ? <div className={`family-branch-row ${members.length === 1 ? "single" : ""}`}>{members.map((person) => <div className="family-branch-item" key={person.id}>{card(person)}</div>)}</div> : null;
@@ -291,16 +311,21 @@ export function FamilyTreeCanvas({
                         {sortedChildren.map((child) => {
                           const childHousehold =
                             renderHousehold(child.id, nextTrail);
-                          const hasOnePartner =
-                            unionNeighbours(child.id).length === 1;
+                          const partnerIds = unionNeighbours(child.id);
+                          const partner = personMap.get(partnerIds[0]);
+                          const partnerWidth = partner
+                            ? compactNodeWidth(cardName(partner))
+                            : 0;
                           return (
                             <div
                               className="family-child-branch-item"
                               key={child.id}
                               style={{
                                 "--branch-anchor-offset":
-                                  childHousehold && hasOnePartner
-                                    ? "-142px"
+                                  childHousehold && partnerIds.length === 1
+                                    ? `${-(
+                                        PARTNER_LINK_WIDTH + partnerWidth
+                                      ) / 2}px`
                                     : "0px",
                               }}
                             >

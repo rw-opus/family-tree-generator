@@ -1619,9 +1619,9 @@ textarea {
 
 .tree-stage .family-node {
   position: relative;
-  width: 220px;
-  min-width: 220px;
-  max-width: 220px;
+  width: var(--family-node-width, 120px);
+  min-width: var(--family-node-width, 120px);
+  max-width: var(--family-node-width, 210px);
   border: 1px solid #7c8f84;
   border-top: 4px solid #557064;
   border-radius: 8px;
@@ -1707,6 +1707,11 @@ textarea {
 .tree-stage .family-node-name {
   color: var(--ink);
   font-size: 0.82rem;
+  font-weight: 400;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-transform: capitalize;
+  white-space: normal;
 }
 
 .tree-stage .family-node-ownership {
@@ -1716,7 +1721,7 @@ textarea {
   color: var(--forest);
   padding: 0.25rem 0.4rem;
   font-size: 0.58rem;
-  font-weight: 850;
+  font-weight: 500;
 }
 
 .tree-stage .family-node.cm-share-incomplete .family-node-ownership {
@@ -1736,6 +1741,7 @@ textarea {
 
 .tree-stage .family-node-meta {
   margin-top: 0.42rem;
+  font-weight: 400;
   line-height: 1.35;
 }
 
@@ -2028,7 +2034,7 @@ textarea {
   border: 1.5px solid #6f625a;
   border-radius: 0.55rem;
   box-shadow: 0 6px 15px rgba(15, 23, 42, 0.14);
-  padding: 0.62rem 0.85rem;
+  padding: 0.42rem 0.62rem;
 }
 
 .tree-stage .family-node:not(.male):not(.female) {
@@ -2045,7 +2051,7 @@ textarea {
 
 .tree-stage .family-node-name {
   color: #111827;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .tree-stage .family-node-meta {
