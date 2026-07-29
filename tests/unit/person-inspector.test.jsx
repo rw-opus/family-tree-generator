@@ -13,7 +13,7 @@ describe("PersonInspector", () => {
     const editButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Edit",
     );
-    act(() => editButton.click());
+    if (editButton) act(() => editButton.click());
   };
 
   beforeEach(() => {
@@ -26,6 +26,35 @@ describe("PersonInspector", () => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+  });
+
+  it("opens an unnamed person's fields for editing immediately", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "unnamed",
+              fullName: "",
+              givenNames: "",
+              surname: "",
+              sex: "",
+              spouseIds: [],
+            },
+          ]}
+          selectedPersonId="unnamed"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-edit-fields").disabled).toBe(false);
+    expect(
+      [...container.querySelectorAll("button")].find(
+        (button) => button.textContent.trim() === "Done",
+      ),
+    ).not.toBeNull();
   });
 
   it("adds a father around the selected person without moving the selection", () => {

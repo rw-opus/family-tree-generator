@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Baby,
   Check,
@@ -88,6 +88,7 @@ export function PersonInspector({
   const [existingSpouseId, setExistingSpouseId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const selectedPerson = people.find((person) => person.id === selectedPersonId) || people[0];
+  const previousSelectedPersonIdRef = useRef("");
   const displayName = useCallback(
     (person) => personDisplayName(person, people),
     [people],
@@ -109,10 +110,15 @@ export function PersonInspector({
   }, [displayName, people, peopleById, query]);
 
   useEffect(() => {
+    const nextPersonId = selectedPerson?.id || "";
+    if (previousSelectedPersonIdRef.current === nextPersonId) return;
+    previousSelectedPersonIdRef.current = nextPersonId;
     setSpouseChooserOpen(false);
     setExistingSpouseId("");
-    setIsEditing(false);
-  }, [selectedPersonId]);
+    setIsEditing(
+      Boolean(selectedPerson && personIdentityIssues(selectedPerson).length),
+    );
+  }, [selectedPerson]);
 
   const updateSelected = (patch) => {
     if (!selectedPerson) return;
