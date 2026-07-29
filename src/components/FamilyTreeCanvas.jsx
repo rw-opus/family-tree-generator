@@ -219,7 +219,6 @@ export function FamilyTreeCanvas({
                       <span className="family-union-stem" aria-hidden="true" />
                       <div
                         className={`family-children-branch ${sortedChildren.length === 1 ? "single" : ""}`}
-                        style={{ "--child-count": sortedChildren.length }}
                       >
                         {sortedChildren.map((child) => (
                           <div className="family-child-branch-item" key={child.id}>

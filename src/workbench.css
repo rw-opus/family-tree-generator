@@ -1762,39 +1762,39 @@ textarea {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: 2rem;
-}
-
-.tree-stage .family-children-branch::before {
-  position: absolute;
-  top: 0;
-  right: calc(50% / var(--child-count));
-  left: calc(50% / var(--child-count));
-  height: 3px;
-  background: #566b60;
-  content: "";
-}
-
-.tree-stage .family-children-branch.single::before {
-  display: none;
+  gap: 0;
 }
 
 .tree-stage .family-child-branch-item {
   position: relative;
   display: flex;
   justify-content: center;
-  padding-top: 34px;
+  padding: 34px 1rem 0;
 }
 
-.tree-stage .family-child-branch-item::before {
+.tree-stage .family-child-branch-item::before,
+.tree-stage .family-child-branch-item::after {
   position: absolute;
   top: 0;
-  left: 50%;
-  width: 3px;
+  right: 50%;
+  width: 50%;
   height: 34px;
-  background: #566b60;
+  border-top: 3px solid #566b60;
   content: "";
-  transform: translateX(-50%);
+}
+
+.tree-stage .family-child-branch-item::after {
+  right: auto;
+  left: 50%;
+  border-left: 3px solid #566b60;
+}
+
+.tree-stage .family-child-branch-item:first-child::before {
+  border: 0;
+}
+
+.tree-stage .family-child-branch-item:last-child::after {
+  border-top: 0;
 }
 
 .tree-stage .family-spouse-line,
