@@ -363,6 +363,43 @@ textarea {
   font-weight: 800;
 }
 
+.person-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 2rem;
+  border: 1px solid #9fb9aa;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--forest);
+  padding: 0 0.55rem;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.person-edit-button.active {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: #fff;
+}
+
+.person-edit-fields {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.person-edit-fields:disabled input,
+.person-edit-fields:disabled select,
+.person-edit-fields:disabled textarea {
+  opacity: 1;
+  background: #f5f7f6;
+  color: #526158;
+  cursor: default;
+}
+
 .inspector-section {
   border-bottom: 1px solid #e3e8e5;
   padding: 0.65rem 0.75rem;

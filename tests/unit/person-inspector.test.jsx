@@ -9,6 +9,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 describe("PersonInspector", () => {
   let container;
   let root;
+  const beginEditing = () => {
+    const editButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Edit",
+    );
+    act(() => editButton.click());
+  };
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -335,6 +341,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).not.toContain("Date of birth");
     expect(container.querySelector(".person-succession")).toBeNull();
     expect(container.textContent).not.toContain("Succession on death");
+    beginEditing();
     const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')]
       .find((input) => input.parentElement.textContent.includes("This person is deceased."));
     expect(deceasedCheckbox.checked).toBe(false);
@@ -452,6 +459,7 @@ describe("PersonInspector", () => {
       ),
     );
 
+    beginEditing();
     const namesInput = [...container.querySelectorAll("label")]
       .find((label) => label.querySelector(":scope > span")?.textContent === "Name")
       .querySelector("input");
@@ -633,6 +641,7 @@ describe("PersonInspector", () => {
     const addButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.includes("Add declaration"),
     );
+    beginEditing();
     act(() => addButton.click());
     expect(
       onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations[0]
@@ -689,5 +698,62 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain(
       "optional because every identified heir is now deceased",
     );
+  });
+
+  it("unlocks full details and assigned parent dropdowns with Edit", () => {
+    const people = [
+      {
+        id: "person",
+        fullName: "Paul Borg",
+        givenNames: "Paul",
+        surname: "Borg",
+        surnameAtBirth: "Borg",
+        sex: "Male",
+        fatherId: "father",
+        motherId: "mother",
+        spouseIds: [],
+        designations: [],
+      },
+      {
+        id: "father",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        spouseIds: ["mother"],
+        designations: [],
+      },
+      {
+        id: "mother",
+        fullName: "Maria Borg",
+        sex: "Female",
+        spouseIds: ["father"],
+        designations: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const nameInput = container.querySelector(".inspector-fields input");
+    const fatherSelect = container.querySelector('select[aria-label="Father"]');
+    const motherSelect = container.querySelector('select[aria-label="Mother"]');
+    expect(nameInput.matches(":disabled")).toBe(true);
+    expect(fatherSelect.matches(":disabled")).toBe(true);
+    expect(motherSelect.matches(":disabled")).toBe(true);
+    expect(fatherSelect.value).toBe("father");
+    expect(motherSelect.value).toBe("mother");
+
+    beginEditing();
+    expect(nameInput.matches(":disabled")).toBe(false);
+    expect(fatherSelect.matches(":disabled")).toBe(false);
+    expect(motherSelect.matches(":disabled")).toBe(false);
+    expect(container.textContent).toContain("Done");
   });
 });

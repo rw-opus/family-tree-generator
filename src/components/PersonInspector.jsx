@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Baby,
+  Check,
   FilePlus2,
   FileUp,
   Heart,
+  Pencil,
   Search,
   Trash2,
   UserRound,
@@ -84,6 +86,7 @@ export function PersonInspector({
   const [importStatus, setImportStatus] = useState("");
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
   const [existingSpouseId, setExistingSpouseId] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
   const selectedPerson = people.find((person) => person.id === selectedPersonId) || people[0];
   const displayName = useCallback(
     (person) => personDisplayName(person, people),
@@ -108,6 +111,7 @@ export function PersonInspector({
   useEffect(() => {
     setSpouseChooserOpen(false);
     setExistingSpouseId("");
+    setIsEditing(false);
   }, [selectedPersonId]);
 
   const updateSelected = (patch) => {
@@ -475,6 +479,10 @@ export function PersonInspector({
   const declarationCandidates = people.filter((person) =>
     declarationCandidateIds.has(person.id),
   );
+  const parentCandidates = people.filter(
+    (person) =>
+      person.id !== selectedPerson.id && !descendantIds.has(person.id),
+  );
   const causaMortisDeclarations =
     selectedPerson.causaMortisDeclarations || [];
   const requiresCausaMortisDetails =
@@ -524,12 +532,12 @@ export function PersonInspector({
         </div>
         <button
           type="button"
-          className="icon-button"
-          title={deleteDisabled ? deleteMessage : "Remove selected person"}
-          disabled={deleteDisabled}
-          onClick={removeSelected}
+          className={`person-edit-button ${isEditing ? "active" : ""}`}
+          aria-pressed={isEditing}
+          onClick={() => setIsEditing((editing) => !editing)}
         >
-          <Trash2 size={16} />
+          {isEditing ? <Check size={15} /> : <Pencil size={15} />}
+          {isEditing ? "Done" : "Edit"}
         </button>
       </section>
 
@@ -628,6 +636,7 @@ export function PersonInspector({
 
       <section className="inspector-section">
         <p className="eyebrow">Personal details</p>
+        <fieldset className="person-edit-fields" disabled={!isEditing}>
         <div className="inspector-fields">
           <label>
             <span>Name</span>
@@ -666,6 +675,44 @@ export function PersonInspector({
               <option>Other</option>
             </select>
           </label>
+          {selectedPerson.fatherId && (
+            <label>
+              <span>Father</span>
+              <select
+                aria-label="Father"
+                value={selectedPerson.fatherId}
+                onChange={(event) =>
+                  updateSelected({ fatherId: event.target.value })
+                }
+              >
+                <option value="">Not assigned</option>
+                {parentCandidates.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {displayName(person)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {selectedPerson.motherId && (
+            <label>
+              <span>Mother</span>
+              <select
+                aria-label="Mother"
+                value={selectedPerson.motherId}
+                onChange={(event) =>
+                  updateSelected({ motherId: event.target.value })
+                }
+              >
+                <option value="">Not assigned</option>
+                {parentCandidates.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {displayName(person)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <label className="deceased-status-control">
           <span>Status</span>
@@ -1091,6 +1138,7 @@ export function PersonInspector({
           </button>
           <small>{deleteMessage}</small>
         </div>
+        </fieldset>
       </section>
 
       <section className="inspector-section">
