@@ -6,6 +6,8 @@ import {
   hasDesignation,
   personDesignations,
   personDisplayName,
+  personGivenNames,
+  personSurname,
 } from "../domain/people.js";
 import { approximateFraction } from "../domain/ownership.js";
 
@@ -81,11 +83,34 @@ export function FamilyTreeCanvas({
   const childGeneration = children.length ? children : ((grandchildren.length || greatGrandchildren.length) ? [placeholder("child-line", "Child", "Child")] : []);
   const grandchildGeneration = grandchildren.length ? grandchildren : (greatGrandchildren.length ? [placeholder("grandchild-line", "Grandchild", "Grandchild")] : []);
   const displayName = (person) => personDisplayName(person, cleanPeople);
+  const cleanPeopleById = new Map(
+    cleanPeople.map((person) => [person.id, person]),
+  );
   const cardName = (person) => {
     const value = person.isPlaceholder ? person.fullName : displayName(person);
-    return !person.isPlaceholder && String(person.fullName || "").trim()
-      ? capitalisedName(value)
-      : value;
+    if (person.isPlaceholder || !String(person.fullName || "").trim()) {
+      return value;
+    }
+
+    const surname = personSurname(person).trim();
+    const parentSurnames = [person.fatherId, person.motherId]
+      .map((parentId) => cleanPeopleById.get(parentId))
+      .filter(Boolean)
+      .map((parent) => personSurname(parent).trim())
+      .filter(Boolean);
+    const sharesParentSurname =
+      surname &&
+      parentSurnames.some(
+        (parentSurname) =>
+          parentSurname.localeCompare(surname, "en-MT", {
+            sensitivity: "base",
+          }) === 0,
+      );
+    const givenNames = personGivenNames(person).trim();
+
+    return capitalisedName(
+      sharesParentSurname && givenNames ? givenNames : value,
+    );
   };
   const title = deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree";
   const card = (person, variant = "") => {
@@ -108,8 +133,12 @@ export function FamilyTreeCanvas({
           ? percentageText
           : `${fractionText} · ${percentageText}`;
     const name = cardName(person);
-    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${name}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${incompleteCausaMortis.length ? "cm-share-incomplete" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`} style={{ "--family-node-width": `${compactNodeWidth(name)}px` }}>
-      <div className="family-node-name" title={name}>{name}</div>
+    const accessibleName =
+      !person.isPlaceholder && String(person.fullName || "").trim()
+        ? capitalisedName(displayName(person))
+        : name;
+    return <button type="button" key={person.id} data-person-id={person.id} aria-label={`Open ${accessibleName}`} onClick={() => onSelectPerson?.(person.id)} className={`family-node ${sexClass} ${isDeceased ? "deceased" : ""} ${incompleteCausaMortis.length ? "cm-share-incomplete" : ""} ${person.isPlaceholder ? "placeholder" : ""} ${selectedPersonId === person.id ? "selected" : ""}`} style={{ "--family-node-width": `${compactNodeWidth(name)}px` }}>
+      <div className="family-node-name" title={accessibleName}>{name}</div>
       {!person.isPlaceholder && showOwnership && hasOwnership && <div className="family-node-ownership">{ownershipText} ownership</div>}
       {!person.isPlaceholder && incompleteCausaMortis.map((row) => {
         const required = approximateFraction(row.requiredShare);

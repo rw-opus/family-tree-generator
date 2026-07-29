@@ -99,6 +99,44 @@ describe("FamilyTreeCanvas", () => {
     expect(person.style.getPropertyValue("--family-node-width")).toBe("112px");
   });
 
+  it("omits a surname only when it matches a recorded parent", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        people={[
+          {
+            id: "father",
+            fullName: "joseph borg",
+          },
+          {
+            id: "matching-child",
+            fullName: "roland borg",
+            fatherId: "father",
+          },
+          {
+            id: "different-child",
+            fullName: "anna vella",
+            fatherId: "father",
+          },
+        ]}
+      />,
+    ));
+
+    const fatherName = container.querySelector(
+      '[data-person-id="father"] .family-node-name',
+    );
+    const matchingChildName = container.querySelector(
+      '[data-person-id="matching-child"] .family-node-name',
+    );
+    const differentChildName = container.querySelector(
+      '[data-person-id="different-child"] .family-node-name',
+    );
+
+    expect(fatherName.textContent).toBe("Joseph Borg");
+    expect(matchingChildName.textContent).toBe("Roland");
+    expect(matchingChildName.title).toBe("Roland Borg");
+    expect(differentChildName.textContent).toBe("Anna Vella");
+  });
+
   it("labels an unnamed relative by relationship to the named person", () => {
     act(() => root.render(
       <FamilyTreeCanvas
@@ -257,8 +295,22 @@ describe("FamilyTreeCanvas", () => {
       ),
     ).toHaveLength(2);
     expect(container.textContent).not.toContain("Partner");
-    expect(container.textContent).toContain("Paul Borg");
-    expect(container.textContent).toContain("Claire Borg");
+    expect(
+      container.querySelector('[data-person-id="child-1"] .family-node-name')
+        .textContent,
+    ).toBe("Paul");
+    expect(
+      container.querySelector('[data-person-id="child-2"] .family-node-name')
+        .textContent,
+    ).toBe("Claire");
+    expect(
+      container.querySelector('[data-person-id="child-1"] .family-node-name')
+        .title,
+    ).toBe("Paul Borg");
+    expect(
+      container.querySelector('[data-person-id="child-2"] .family-node-name')
+        .title,
+    ).toBe("Claire Borg");
   });
 
   it("renders one anchored person card when a partner shares existing children", () => {

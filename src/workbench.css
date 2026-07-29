@@ -1709,9 +1709,11 @@ textarea {
   font-size: 0.82rem;
   font-weight: 400;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
   text-transform: capitalize;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .tree-stage .family-node-ownership {
