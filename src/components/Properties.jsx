@@ -193,87 +193,89 @@ export function Properties({
             <p className={`share-status ${Math.abs(total - 100) < 0.001 || !owners.length ? "valid" : "invalid"}`}>
               Initial title allocated: {total.toFixed(2)}% {owners.length ? (Math.abs(total - 100) < 0.001 ? "— valid" : "— must equal 100%") : ""}
             </p>
-            <div className="people-list">
+            <div className="initial-owner-list">
+              {owners.length > 0 && (
+                <div className="initial-owner-columns" aria-hidden="true">
+                  <span>Person</span>
+                  <span>Fraction</span>
+                  <span>Percentage</span>
+                  <span />
+                </div>
+              )}
               {owners.map((owner) => {
                 const ownerFraction = fractionForShare(owner);
                 return (
-                  <article className="person-card" key={owner.id}>
-                  <div className="form-grid">
-                    <label>
-                      Initial owner
-                      <select
-                        value={owner.personId}
-                        onChange={(event) => updateOwner(property, owner.id, { personId: event.target.value })}
-                      >
-                        <option value="">Choose person</option>
-                        {people.map((person) => (
-                          <option key={person.id} value={person.id}>
-                            {person.fullName || "Unnamed person"}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Fraction owned
-                      <span className="initial-owner-fraction">
-                        <input
-                          aria-label="Initial ownership numerator"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={ownerFraction.numerator}
-                          onChange={(event) =>
-                            updateOwnerFraction(property, owner, {
-                              numerator: event.target.value,
-                            })
-                          }
-                        />
-                        <b>/</b>
-                        <input
-                          aria-label="Initial ownership denominator"
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={ownerFraction.denominator}
-                          onChange={(event) =>
-                            updateOwnerFraction(property, owner, {
-                              denominator: event.target.value,
-                            })
-                          }
-                        />
-                      </span>
-                    </label>
-                    <label>
-                      Percentage
-                      <span className="initial-owner-percentage">
-                        <input
-                          aria-label="Initial ownership percentage"
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="any"
-                          value={owner.sharePercent}
-                          onChange={(event) =>
-                            updateOwnerPercentage(
-                              property,
-                              owner,
-                              event.target.value,
-                            )
-                          }
-                        />
-                        <b>%</b>
-                      </span>
-                    </label>
+                  <div className="initial-owner-row" key={owner.id}>
+                    <select
+                      aria-label="Initial owner"
+                      value={owner.personId}
+                      onChange={(event) =>
+                        updateOwner(property, owner.id, {
+                          personId: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Choose person</option>
+                      {people.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.fullName || "Unnamed person"}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="initial-owner-fraction">
+                      <input
+                        aria-label="Initial ownership numerator"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={ownerFraction.numerator}
+                        onChange={(event) =>
+                          updateOwnerFraction(property, owner, {
+                            numerator: event.target.value,
+                          })
+                        }
+                      />
+                      <b>/</b>
+                      <input
+                        aria-label="Initial ownership denominator"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={ownerFraction.denominator}
+                        onChange={(event) =>
+                          updateOwnerFraction(property, owner, {
+                            denominator: event.target.value,
+                          })
+                        }
+                      />
+                    </span>
+                    <span className="initial-owner-percentage">
+                      <input
+                        aria-label="Initial ownership percentage"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="any"
+                        value={owner.sharePercent}
+                        onChange={(event) =>
+                          updateOwnerPercentage(
+                            property,
+                            owner,
+                            event.target.value,
+                          )
+                        }
+                      />
+                      <b>%</b>
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title="Remove owner"
+                      onClick={() => removeOwner(property, owner.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    title="Remove owner"
-                    onClick={() => removeOwner(property, owner.id)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </article>
                 );
               })}
             </div>

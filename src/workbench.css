@@ -1356,6 +1356,70 @@ textarea {
   gap: 0.3rem;
 }
 
+.initial-owner-list {
+  display: grid;
+  gap: 0.28rem;
+  margin-top: 0.4rem;
+}
+
+.initial-owner-columns,
+.initial-owner-row {
+  display: grid;
+  grid-template-columns:
+    minmax(112px, 1.4fr)
+    minmax(78px, 0.82fr)
+    minmax(62px, 0.64fr)
+    28px;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.initial-owner-columns {
+  padding: 0 0.32rem;
+  color: #657184;
+  font-size: 0.57rem;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.initial-owner-row {
+  border: 1px solid #dce4df;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.3rem;
+}
+
+.single-property-case .initial-owner-row > select,
+.single-property-case .initial-owner-row input {
+  min-width: 0;
+  min-height: 1.8rem;
+  padding: 0.22rem 0.28rem;
+  font-size: 0.64rem;
+}
+
+.initial-owner-row .initial-owner-fraction,
+.initial-owner-row .initial-owner-percentage {
+  min-width: 0;
+  border: 1px solid #cbd5d1;
+  border-radius: 5px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.single-property-case .initial-owner-row .initial-owner-fraction input,
+.single-property-case .initial-owner-row .initial-owner-percentage input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+}
+
+.initial-owner-row .icon-button {
+  width: 28px;
+  min-height: 1.8rem;
+}
+
 .single-property-case .ownership-grid,
 .single-property-case .declaration-layout {
   grid-template-columns: 1fr;

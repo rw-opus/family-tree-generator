@@ -123,7 +123,8 @@ describe("App local recovery", () => {
     );
     act(() => addOwner.click());
 
-    const ownerSelect = container.querySelector(".person-card select");
+    const ownerSelect = container.querySelector(".initial-owner-row select");
+    expect(container.querySelectorAll(".initial-owner-row")).toHaveLength(1);
     expect([...ownerSelect.options].map((option) => option.textContent)).toEqual([
       "Choose person",
       "Joseph Borg",
