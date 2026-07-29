@@ -1751,6 +1751,7 @@ textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: max-content;
 }
 
 .tree-stage .family-household-unions {
@@ -1796,18 +1797,18 @@ textarea {
 .tree-stage .family-children-branch {
   position: relative;
   display: grid;
-  grid-auto-columns: minmax(max-content, 1fr);
+  grid-auto-columns: max-content;
   grid-auto-flow: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 0;
+  column-gap: 0;
 }
 
 .tree-stage .family-child-branch-item {
   position: relative;
   display: flex;
   justify-content: center;
-  padding: 24px 0.25rem 0;
+  padding: 24px 0.125rem 0;
 }
 
 .tree-stage .family-child-branch-item::before,
