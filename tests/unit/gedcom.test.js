@@ -32,8 +32,20 @@ describe("GEDCOM import", () => {
     const joseph = result.people.find((person) => person.fullName === "Joseph Borg");
     const maria = result.people.find((person) => person.fullName === "Maria Borg");
     const anna = result.people.find((person) => person.fullName === "Anna Borg");
-    expect(joseph).toMatchObject({ givenNames: "Joseph", surname: "Borg", dateOfBirth: "1940-02-02", dateOfDeath: "2020-10-10", isDeceased: true, surnameAtBirth: "Borg" });
-    expect(anna).toMatchObject({ fatherId: joseph.id, motherId: maria.id, dateOfBirth: "1970-03-12", surnameAtBirth: "Borg" });
+    expect(joseph).toMatchObject({
+      givenNames: "Joseph",
+      surname: "Borg",
+      dateOfBirth: "1940-02-02",
+      dateOfDeath: "2020-10-10",
+      isDeceased: true,
+      surnameAtBirth: "Borg",
+    });
+    expect(anna).toMatchObject({
+      fatherId: joseph.id,
+      motherId: maria.id,
+      dateOfBirth: "1970-03-12",
+      surnameAtBirth: "Borg",
+    });
     expect(joseph.spouseIds).toContain(maria.id);
   });
   it("returns an empty tree for content without individual records", () => {

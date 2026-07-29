@@ -48,9 +48,7 @@ export function SettingsPanel({ settings, zoom, onChange, onZoomChange }) {
               <input
                 type="checkbox"
                 checked={settings.showOwnershipOnTree !== false}
-                onChange={(event) =>
-                  update({ showOwnershipOnTree: event.target.checked })
-                }
+                onChange={(event) => update({ showOwnershipOnTree: event.target.checked })}
               />
               Show shares on people
             </span>

@@ -72,7 +72,8 @@ const server = createServer(async (request, response) => {
 
   try {
     const filePath = await resolveFile(request.url || "/");
-    const contentType = mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+    const contentType =
+      mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream";
     const cacheControl = filePath.includes(`${path.sep}assets${path.sep}`)
       ? "public, max-age=31536000, immutable"
       : "no-cache";

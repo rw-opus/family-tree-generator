@@ -5,4 +5,8 @@ import "./styles.css";
 import "./calculator.css";
 import "./workbench.css";
 
-createRoot(document.getElementById("root")).render(<React.StrictMode><App /></React.StrictMode>);
+createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);

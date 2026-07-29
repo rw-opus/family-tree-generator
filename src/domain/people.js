@@ -1,6 +1,16 @@
 export const DESIGNATIONS = [
-  "Deceased", "Spouse", "Surviving Spouse", "Child", "Grandchild", "Great-Grandchild",
-  "Parent", "Grandparent", "Sibling", "Nephew or Niece", "Uncle or Aunt", "Cousin",
+  "Deceased",
+  "Spouse",
+  "Surviving Spouse",
+  "Child",
+  "Grandchild",
+  "Great-Grandchild",
+  "Parent",
+  "Grandparent",
+  "Sibling",
+  "Nephew or Niece",
+  "Uncle or Aunt",
+  "Cousin",
 ];
 
 export function personDesignations(person = {}) {
@@ -9,7 +19,9 @@ export function personDesignations(person = {}) {
 }
 
 export function hasDesignation(person, designation) {
-  return personDesignations(person).some((value) => value.toLowerCase() === designation.toLowerCase());
+  return personDesignations(person).some(
+    (value) => value.toLowerCase() === designation.toLowerCase(),
+  );
 }
 
 export function hasAnyDesignation(person, designations) {
@@ -63,10 +75,7 @@ export function personDisplayName(person = {}, people = []) {
   if (!person.id) return "New person";
 
   const peopleById = new Map(
-    people.filter((candidate) => candidate?.id).map((candidate) => [
-      candidate.id,
-      candidate,
-    ]),
+    people.filter((candidate) => candidate?.id).map((candidate) => [candidate.id, candidate]),
   );
   const named = (candidate) => {
     const name = String(candidate?.fullName || "").trim();
@@ -88,19 +97,12 @@ export function personDisplayName(person = {}, people = []) {
     return `${relationship} of ${named(namedChild)}`;
   }
 
-  const namedParents = [
-    peopleById.get(person.fatherId),
-    peopleById.get(person.motherId),
-  ]
+  const namedParents = [peopleById.get(person.fatherId), peopleById.get(person.motherId)]
     .map((candidate) => named(candidate))
     .filter(Boolean);
   if (namedParents.length) {
     const relationship =
-      person.sex === "Male"
-        ? "Son"
-        : person.sex === "Female"
-          ? "Daughter"
-          : "Child";
+      person.sex === "Male" ? "Son" : person.sex === "Female" ? "Daughter" : "Child";
     return `${relationship} of ${namedParents.join(" and ")}`;
   }
 
@@ -121,10 +123,8 @@ export function personDisplayName(person = {}, people = []) {
   people.forEach((candidate) => {
     if (!candidate?.id || candidate.id === person.id) return;
     const linked = (candidate.siblingIds || []).includes(person.id);
-    const sharedFather =
-      person.fatherId && candidate.fatherId === person.fatherId;
-    const sharedMother =
-      person.motherId && candidate.motherId === person.motherId;
+    const sharedFather = person.fatherId && candidate.fatherId === person.fatherId;
+    const sharedMother = person.motherId && candidate.motherId === person.motherId;
     if (linked || sharedFather || sharedMother) siblingIds.add(candidate.id);
   });
   const namedSibling = [...siblingIds]
@@ -132,22 +132,31 @@ export function personDisplayName(person = {}, people = []) {
     .find((candidate) => named(candidate));
   if (namedSibling) {
     const relationship =
-      person.sex === "Male"
-        ? "Brother"
-        : person.sex === "Female"
-          ? "Sister"
-          : "Brother / sister";
+      person.sex === "Male" ? "Brother" : person.sex === "Female" ? "Sister" : "Brother / sister";
     return `${relationship} of ${named(namedSibling)}`;
   }
 
-  const relationship = personDesignations(person).find(
-    (designation) => designation !== "Deceased",
-  );
+  const relationship = personDesignations(person).find((designation) => designation !== "Deceased");
   return relationship ? `Unnamed ${relationship.toLowerCase()}` : "New person";
 }
 
 export function createPerson(designation = "") {
-  return { id: crypto.randomUUID(), givenNames: "", surname: "", fullName: "", surnameAtBirth: "", designations: designation ? [designation] : [], sex: "", fatherId: "", motherId: "", spouseIds: [], siblingIds: [], dateOfBirth: "", dateOfDeath: "", notes: "" };
+  return {
+    id: crypto.randomUUID(),
+    givenNames: "",
+    surname: "",
+    fullName: "",
+    surnameAtBirth: "",
+    designations: designation ? [designation] : [],
+    sex: "",
+    fatherId: "",
+    motherId: "",
+    spouseIds: [],
+    siblingIds: [],
+    dateOfBirth: "",
+    dateOfDeath: "",
+    notes: "",
+  };
 }
 
 export function personRelationshipCounts(people = [], person = {}) {
@@ -186,8 +195,7 @@ export function personDescendants(people = [], personId) {
   const descendants = [];
   const visited = new Set([personId]);
   let generation = people.filter(
-    (person) =>
-      person.fatherId === personId || person.motherId === personId,
+    (person) => person.fatherId === personId || person.motherId === personId,
   );
   while (generation.length) {
     const nextGeneration = [];
@@ -197,9 +205,7 @@ export function personDescendants(people = [], personId) {
       descendants.push(person);
       nextGeneration.push(
         ...people.filter(
-          (candidate) =>
-            candidate.fatherId === person.id ||
-            candidate.motherId === person.id,
+          (candidate) => candidate.fatherId === person.id || candidate.motherId === person.id,
         ),
       );
     });
@@ -228,19 +234,11 @@ export function assignSolePartnersAsMissingParents(people = []) {
   });
 
   return people.map((person) => {
-    if (
-      person.fatherId &&
-      !person.motherId &&
-      !person.motherExplicitlyUnassigned
-    ) {
+    if (person.fatherId && !person.motherId && !person.motherExplicitlyUnassigned) {
       const partners = partnerIdsByPerson.get(person.fatherId) || [];
       if (partners.length === 1) return { ...person, motherId: partners[0] };
     }
-    if (
-      person.motherId &&
-      !person.fatherId &&
-      !person.fatherExplicitlyUnassigned
-    ) {
+    if (person.motherId && !person.fatherId && !person.fatherExplicitlyUnassigned) {
       const partners = partnerIdsByPerson.get(person.motherId) || [];
       if (partners.length === 1) return { ...person, fatherId: partners[0] };
     }

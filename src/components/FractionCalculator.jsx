@@ -14,10 +14,7 @@ export function FractionCalculator() {
   const [left, setLeft] = useState({ numerator: "1", denominator: "2" });
   const [right, setRight] = useState({ numerator: "1", denominator: "3" });
   const [operation, setOperation] = useState("add");
-  const result = useMemo(
-    () => calculateFraction(left, right, operation),
-    [left, operation, right],
-  );
+  const result = useMemo(() => calculateFraction(left, right, operation), [left, operation, right]);
   const update = (side, field, value) => {
     if (side === "left") setLeft({ ...left, [field]: value });
     else setRight({ ...right, [field]: value });
@@ -99,18 +96,14 @@ export function FractionCalculator() {
                   aria-label="First numerator"
                   inputMode="numeric"
                   value={left.numerator}
-                  onChange={(event) =>
-                    update("left", "numerator", event.target.value)
-                  }
+                  onChange={(event) => update("left", "numerator", event.target.value)}
                 />
                 <span />
                 <input
                   aria-label="First denominator"
                   inputMode="numeric"
                   value={left.denominator}
-                  onChange={(event) =>
-                    update("left", "denominator", event.target.value)
-                  }
+                  onChange={(event) => update("left", "denominator", event.target.value)}
                 />
               </div>
               <strong className="fraction-operation-symbol">
@@ -121,18 +114,14 @@ export function FractionCalculator() {
                   aria-label="Second numerator"
                   inputMode="numeric"
                   value={right.numerator}
-                  onChange={(event) =>
-                    update("right", "numerator", event.target.value)
-                  }
+                  onChange={(event) => update("right", "numerator", event.target.value)}
                 />
                 <span />
                 <input
                   aria-label="Second denominator"
                   inputMode="numeric"
                   value={right.denominator}
-                  onChange={(event) =>
-                    update("right", "denominator", event.target.value)
-                  }
+                  onChange={(event) => update("right", "denominator", event.target.value)}
                 />
               </div>
             </div>

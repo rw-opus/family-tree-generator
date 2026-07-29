@@ -26,10 +26,7 @@ const peopleWithDeclarations = (declarations = [], dateOfDeath = "2020-01-01") =
 
 describe("buildCausaMortisShareCoverage", () => {
   it("marks missing, exact, and excess declaration shares", () => {
-    const missing = buildCausaMortisShareCoverage(
-      peopleWithDeclarations([]),
-      [property],
-    ).rows[0];
+    const missing = buildCausaMortisShareCoverage(peopleWithDeclarations([]), [property]).rows[0];
     expect(missing).toMatchObject({
       requiredShare: 0.5,
       declaredShare: 0,
@@ -92,10 +89,9 @@ describe("buildCausaMortisShareCoverage", () => {
   });
 
   it("does not require causa mortis share coverage before the cutoff", () => {
-    const result = buildCausaMortisShareCoverage(
-      peopleWithDeclarations([], "1990-01-01"),
-      [property],
-    );
+    const result = buildCausaMortisShareCoverage(peopleWithDeclarations([], "1990-01-01"), [
+      property,
+    ]);
     expect(result.rows).toEqual([]);
   });
 });

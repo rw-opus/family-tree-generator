@@ -5,10 +5,7 @@ import {
   saveLocalWorkspace,
   upsertWorkspaceTree,
 } from "../../src/services/localWorkspace.js";
-import {
-  familyTreeRecord,
-  hydrateFamilyTree,
-} from "../../src/services/familyTrees.js";
+import { familyTreeRecord, hydrateFamilyTree } from "../../src/services/familyTrees.js";
 
 const memoryStorage = () => {
   const values = new Map();
@@ -39,10 +36,7 @@ describe("local family-tree workspace", () => {
       title: "Vella succession",
       people: [{ id: "person-2" }],
     };
-    const trees = upsertWorkspaceTree(
-      upsertWorkspaceTree([], otherTree),
-      completeTree,
-    );
+    const trees = upsertWorkspaceTree(upsertWorkspaceTree([], otherTree), completeTree);
 
     expect(saveLocalWorkspace(trees, completeTree.id, storage)).toBe(true);
     expect(loadLocalWorkspace(storage)).toEqual({

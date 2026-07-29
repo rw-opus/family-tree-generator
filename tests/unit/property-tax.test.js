@@ -11,7 +11,11 @@ import {
 
 describe("Maltese inherited property estimates", () => {
   it("splits intestacy equally between spouse and descendants", () => {
-    const heirs = suggestedIntestacyShares([{ id: "s", relationship: "Surviving spouse" }, { id: "a", relationship: "Child" }, { id: "b", relationship: "Child" }]);
+    const heirs = suggestedIntestacyShares([
+      { id: "s", relationship: "Surviving spouse" },
+      { id: "a", relationship: "Child" },
+      { id: "b", relationship: "Child" },
+    ]);
     expect(heirs.map((heir) => heir.sharePercent)).toEqual([50, 25, 25]);
   });
   it("allocates a predeceased child's branch per stirpes", () => {
@@ -67,7 +71,10 @@ describe("Maltese inherited property estimates", () => {
     expect(successionRuleset("2005-03-01").supported).toBe(true);
   });
   it("calculates inherited value and standard duty", () => {
-    const result = inheritanceDuty({ marketValueAtDeath: 600000, deceasedOwnershipPercent: 50, rightPercent: 100 }, { sharePercent: 100 / 3, soleResidence: false });
+    const result = inheritanceDuty(
+      { marketValueAtDeath: 600000, deceasedOwnershipPercent: 50, rightPercent: 100 },
+      { sharePercent: 100 / 3, soleResidence: false },
+    );
     expect(result.inheritedValue).toBeCloseTo(100000);
     expect(result.duty).toBeCloseTo(5000);
   });

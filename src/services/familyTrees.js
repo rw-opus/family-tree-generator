@@ -11,9 +11,7 @@ export function familyTreeRecord(tree) {
 
 export function hydrateFamilyTree(record = {}) {
   const storedTree =
-    record.tree_data &&
-    typeof record.tree_data === "object" &&
-    !Array.isArray(record.tree_data)
+    record.tree_data && typeof record.tree_data === "object" && !Array.isArray(record.tree_data)
       ? record.tree_data
       : {};
   return {

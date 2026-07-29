@@ -1,15 +1,15 @@
 import { Calculator, Home, Plus, Trash2 } from "lucide-react";
 import { approximateFraction } from "../domain/ownership.js";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
-import {
-  fractionForShare,
-  shareFromFraction,
-  shareFromPercentage,
-} from "../domain/shares.js";
+import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
 import { PropertyDeclarations } from "./PropertyDeclarations.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
 
-const money = new Intl.NumberFormat("en-MT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat("en-MT", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 2,
+});
 
 const makeProperty = () => ({
   id: crypto.randomUUID(),
@@ -61,9 +61,12 @@ export function Properties({
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const updateProperties = (nextProperties) => onChange({ properties: nextProperties });
   const updateProperty = (id, patch) =>
-    updateProperties(properties.map((property) => (property.id === id ? { ...property, ...patch } : property)));
+    updateProperties(
+      properties.map((property) => (property.id === id ? { ...property, ...patch } : property)),
+    );
   const addProperty = () => updateProperties([...properties, makeProperty()]);
-  const removeProperty = (id) => updateProperties(properties.filter((property) => property.id !== id));
+  const removeProperty = (id) =>
+    updateProperties(properties.filter((property) => property.id !== id));
 
   const addOwner = (property) =>
     updateProperty(property.id, { owners: [...(property.owners || []), makeOwner()] });
@@ -103,7 +106,9 @@ export function Properties({
     updateProperty(property.id, { saleLots: [...(property.saleLots || []), makeLot()] });
   const updateLot = (property, lotId, patch) =>
     updateProperty(property.id, {
-      saleLots: (property.saleLots || []).map((lot) => (lot.id === lotId ? { ...lot, ...patch } : lot)),
+      saleLots: (property.saleLots || []).map((lot) =>
+        lot.id === lotId ? { ...lot, ...patch } : lot,
+      ),
     });
   const removeLot = (property, lotId) =>
     updateProperty(property.id, {
@@ -111,11 +116,7 @@ export function Properties({
     });
 
   return (
-    <div
-      className={`calculator-stack ${
-        singleProperty ? "single-property-case" : ""
-      }`}
-    >
+    <div className={`calculator-stack ${singleProperty ? "single-property-case" : ""}`}>
       {properties.map((property) => {
         const owners = property.owners || [];
         const total = ownersTotal(owners);
@@ -128,54 +129,58 @@ export function Properties({
           livingVendors,
           taxSummary,
         } = buildPropertyVendorTaxReport(property, people, outsideParties);
-        const livingVendorIds = new Set(
-          livingVendors.map((vendor) => vendor.id),
-        );
+        const livingVendorIds = new Set(livingVendors.map((vendor) => vendor.id));
         return (
           <section className="editor-panel" key={property.id}>
             {!singleProperty && (
               <>
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Property</p>
-                <h2>{property.address || "Unnamed property"}</h2>
-              </div>
-              <button
-                type="button"
-                className="icon-button"
-                title="Remove property"
-                onClick={() => removeProperty(property.id)}
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-            <div className="form-grid">
-              <label className="full-width">
-                Address
-                <input
-                  value={property.address}
-                  onChange={(event) => updateProperty(property.id, { address: event.target.value })}
-                  placeholder="Full address of the property"
-                />
-              </label>
-              <label className="full-width">
-                Description
-                <input
-                  value={property.description}
-                  onChange={(event) => updateProperty(property.id, { description: event.target.value })}
-                  placeholder="Optional registry, title or internal reference"
-                />
-              </label>
-              <label>
-                Market value (€)
-                <input
-                  type="number"
-                  min="0"
-                  value={property.marketValue}
-                  onChange={(event) => updateProperty(property.id, { marketValue: event.target.value })}
-                />
-              </label>
-            </div>
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Property</p>
+                    <h2>{property.address || "Unnamed property"}</h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Remove property"
+                    onClick={() => removeProperty(property.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                <div className="form-grid">
+                  <label className="full-width">
+                    Address
+                    <input
+                      value={property.address}
+                      onChange={(event) =>
+                        updateProperty(property.id, { address: event.target.value })
+                      }
+                      placeholder="Full address of the property"
+                    />
+                  </label>
+                  <label className="full-width">
+                    Description
+                    <input
+                      value={property.description}
+                      onChange={(event) =>
+                        updateProperty(property.id, { description: event.target.value })
+                      }
+                      placeholder="Optional registry, title or internal reference"
+                    />
+                  </label>
+                  <label>
+                    Market value (€)
+                    <input
+                      type="number"
+                      min="0"
+                      value={property.marketValue}
+                      onChange={(event) =>
+                        updateProperty(property.id, { marketValue: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
               </>
             )}
 
@@ -186,12 +191,18 @@ export function Properties({
               </div>
             </div>
             <p className="helper-text">
-              Select any person already on the family tree and enter the
-              fraction originally owned. Initial owners may be added whenever
-              they are identified.
+              Select any person already on the family tree and enter the fraction originally owned.
+              Initial owners may be added whenever they are identified.
             </p>
-            <p className={`share-status ${Math.abs(total - 100) < 0.001 || !owners.length ? "valid" : "invalid"}`}>
-              Initial title allocated: {total.toFixed(2)}% {owners.length ? (Math.abs(total - 100) < 0.001 ? "— valid" : "— must equal 100%") : ""}
+            <p
+              className={`share-status ${Math.abs(total - 100) < 0.001 || !owners.length ? "valid" : "invalid"}`}
+            >
+              Initial title allocated: {total.toFixed(2)}%{" "}
+              {owners.length
+                ? Math.abs(total - 100) < 0.001
+                  ? "— valid"
+                  : "— must equal 100%"
+                : ""}
             </p>
             <div className="initial-owner-list">
               {owners.length > 0 && (
@@ -258,11 +269,7 @@ export function Properties({
                         step="any"
                         value={owner.sharePercent}
                         onChange={(event) =>
-                          updateOwnerPercentage(
-                            property,
-                            owner,
-                            event.target.value,
-                          )
+                          updateOwnerPercentage(property, owner, event.target.value)
                         }
                       />
                       <b>%</b>
@@ -287,8 +294,8 @@ export function Properties({
               <div className="automatic-heirs">
                 <strong>Calculated title after inheritance</strong>
                 <small>
-                  The initial fractions are followed automatically through
-                  intestacy, wills and recorded transfers.
+                  The initial fractions are followed automatically through intestacy, wills and
+                  recorded transfers.
                 </small>
                 {result.breakdown.length ? (
                   result.breakdown.map((row) => {
@@ -300,16 +307,14 @@ export function Properties({
                           <small> · {viaLabel(row.via)}</small>
                         </span>
                         <b>
-                          {row.numerator}/{row.denominator} · {row.sharePercent.toLocaleString("en-MT", { maximumFractionDigits: 4 })}%
+                          {row.numerator}/{row.denominator} ·{" "}
+                          {row.sharePercent.toLocaleString("en-MT", { maximumFractionDigits: 4 })}%
                         </b>
                       </div>
                     );
                   })
                 ) : (
-                  <small>
-                    Complete the selected initial owners to calculate the later
-                    title.
-                  </small>
+                  <small>Complete the selected initial owners to calculate the later title.</small>
                 )}
                 {property.marketValue && (
                   <small>Market value {money.format(Number(property.marketValue) || 0)}</small>
@@ -339,215 +344,226 @@ export function Properties({
               </div>
             </div>
             <p className="helper-text">
-              Use one lot for each inherited fraction. The sale price and causa
-              mortis value in that lot must cover the same fraction.
+              Use one lot for each inherited fraction. The sale price and causa mortis value in that
+              lot must cover the same fraction.
             </p>
             <div className="people-list">
-              {saleRows.map(({
-                lot,
-                effectiveLot,
-                declaredCoverage,
-                usePublishedValues,
-                result: lotResult,
-              }) => (
-                <article
-                  className={`person-card ${
-                    deceasedVendorIds.has(lot.ownerId)
-                      ? "excluded-vendor-lot"
-                      : ""
-                  }`}
-                  key={lot.id}
-                >
-                  <div className="person-card-heading">
-                    <strong>{ledger.parties.find((party) => party.id === lot.ownerId)?.name || "Unassigned owner"}</strong>
-                    <button type="button" className="icon-button" title="Remove tax lot" onClick={() => removeLot(property, lot.id)}>
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                  <div className="form-grid">
-                    <label>
-                      Owner
-                      <select
-                        value={lot.ownerId}
-                        onChange={(event) =>
-                          updateLot(property, lot.id, {
-                            ownerId: event.target.value,
-                            selectedTaxMethod: "",
-                            useDeclaredValues: true,
-                          })
-                        }
-                      >
-                        <option value="">Choose owner</option>
-                        {lot.ownerId && !livingVendorIds.has(lot.ownerId) && (
-                          <option value={lot.ownerId}>
-                            {ledger.parties.find(
-                              (party) => party.id === lot.ownerId,
-                            )?.name || "Unavailable vendor"}
-                            {deceasedVendorIds.has(lot.ownerId)
-                              ? " — deceased and excluded"
-                              : " — not a current vendor"}
-                          </option>
-                        )}
-                        {livingVendors.map((party) => (
-                          <option key={party.id} value={party.id}>{party.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Inheritance date
-                      <input
-                        type="date"
-                        value={lot.inheritanceDate}
-                        onChange={(event) =>
-                          updateLot(property, lot.id, {
-                            inheritanceDate: event.target.value,
-                            selectedTaxMethod: "",
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Fraction covered by this lot
-                      <span className="tax-lot-fraction">
-                        <input
-                          aria-label="Tax lot share numerator"
-                          type="number"
-                          min="0"
-                          step="1"
-                          disabled={usePublishedValues}
-                          value={effectiveLot.shareNumerator ?? 0}
-                          onChange={(event) =>
-                            updateLot(property, lot.id, {
-                              shareNumerator: event.target.value,
-                              useDeclaredValues: false,
-                            })
-                          }
-                        />
-                        <b>/</b>
-                        <input
-                          aria-label="Tax lot share denominator"
-                          type="number"
-                          min="1"
-                          step="1"
-                          disabled={usePublishedValues}
-                          value={effectiveLot.shareDenominator ?? 1}
-                          onChange={(event) =>
-                            updateLot(property, lot.id, {
-                              shareDenominator: event.target.value,
-                              useDeclaredValues: false,
-                            })
-                          }
-                        />
-                      </span>
-                    </label>
-                    <label>
-                      Accumulated causa mortis value (€)
-                      <input
-                        type="number"
-                        min="0"
-                        disabled={usePublishedValues}
-                        value={effectiveLot.acquisitionValue}
-                        onChange={(event) =>
-                          updateLot(property, lot.id, {
-                            acquisitionValue: event.target.value,
-                            useDeclaredValues: false,
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Sale price of the same fraction (€)
-                      <input
-                        type="number"
-                        min="0"
-                        value={lot.transferValue}
-                        onChange={(event) =>
-                          updateLot(property, lot.id, {
-                            transferValue: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="check-label full-width">
-                      <input
-                        type="checkbox"
-                        disabled={!declaredCoverage?.publishedCount}
-                        checked={usePublishedValues}
-                        onChange={(event) =>
-                          updateLot(property, lot.id, {
-                            useDeclaredValues: event.target.checked,
-                          })
-                        }
-                      />
-                      Use the accumulated values and fraction from published CM declarations
-                    </label>
-                  </div>
-                  {deceasedVendorIds.has(lot.ownerId) && (
-                    <p className="excluded-vendor-notice">
-                      Excluded: this person is deceased. No vendor tax is
-                      calculated or carried into the payable totals.
-                    </p>
-                  )}
-                  {lot.ownerId && !livingVendorIds.has(lot.ownerId) &&
-                    !deceasedVendorIds.has(lot.ownerId) && (
-                    <p className="excluded-vendor-notice">
-                      Excluded: this party is not a current owner of the
-                      property and therefore is not on the vendor list.
-                    </p>
-                  )}
-                  {usePublishedValues && livingVendorIds.has(lot.ownerId) && (
-                    <p className="tax-lot-source">
-                      Published CM total:{" "}
-                      {effectiveLot.shareNumerator}/{effectiveLot.shareDenominator}
-                      {" · "}
-                      {money.format(Number(effectiveLot.acquisitionValue) || 0)}
-                    </p>
-                  )}
-                  {!declaredCoverage?.publishedCount &&
-                    livingVendorIds.has(lot.ownerId) && (
-                    <p className="tax-lot-source attention">
-                      No published CM value is linked to this owner. Enter the
-                      fraction and its declared value manually.
-                    </p>
-                  )}
-                  {lotResult.warning && livingVendorIds.has(lot.ownerId) && (
-                    <p className="transfer-error" role="status">
-                      {lotResult.warning}
-                    </p>
-                  )}
-                  {livingVendorIds.has(lot.ownerId) && (
-                  <div className="method-list">
-                    {lotResult.methods.map((method) => (
+              {saleRows.map(
+                ({
+                  lot,
+                  effectiveLot,
+                  declaredCoverage,
+                  usePublishedValues,
+                  result: lotResult,
+                }) => (
+                  <article
+                    className={`person-card ${
+                      deceasedVendorIds.has(lot.ownerId) ? "excluded-vendor-lot" : ""
+                    }`}
+                    key={lot.id}
+                  >
+                    <div className="person-card-heading">
+                      <strong>
+                        {ledger.parties.find((party) => party.id === lot.ownerId)?.name ||
+                          "Unassigned owner"}
+                      </strong>
                       <button
                         type="button"
-                        className={[
-                          "method",
-                          method.key === lotResult.selected ? "selected" : "",
-                          method.key === lotResult.recommended ? "best" : "",
-                        ].filter(Boolean).join(" ")}
-                        key={method.key}
-                        onClick={() =>
-                          updateLot(property, lot.id, {
-                            selectedTaxMethod: method.key,
-                          })
-                        }
+                        className="icon-button"
+                        title="Remove tax lot"
+                        onClick={() => removeLot(property, lot.id)}
                       >
-                        <span>{method.label}</span>
-                        <strong>{money.format(method.tax)}</strong>
-                        <small>
-                          Taxable basis {money.format(method.basis)}
-                          {method.key === lotResult.selected
-                            ? " · Selected"
-                            : method.key === lotResult.recommended
-                              ? " · Lowest estimate"
-                              : " · Choose this method"}
-                        </small>
+                        <Trash2 size={16} />
                       </button>
-                    ))}
-                  </div>
-                  )}
-                </article>
-              ))}
+                    </div>
+                    <div className="form-grid">
+                      <label>
+                        Owner
+                        <select
+                          value={lot.ownerId}
+                          onChange={(event) =>
+                            updateLot(property, lot.id, {
+                              ownerId: event.target.value,
+                              selectedTaxMethod: "",
+                              useDeclaredValues: true,
+                            })
+                          }
+                        >
+                          <option value="">Choose owner</option>
+                          {lot.ownerId && !livingVendorIds.has(lot.ownerId) && (
+                            <option value={lot.ownerId}>
+                              {ledger.parties.find((party) => party.id === lot.ownerId)?.name ||
+                                "Unavailable vendor"}
+                              {deceasedVendorIds.has(lot.ownerId)
+                                ? " — deceased and excluded"
+                                : " — not a current vendor"}
+                            </option>
+                          )}
+                          {livingVendors.map((party) => (
+                            <option key={party.id} value={party.id}>
+                              {party.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Inheritance date
+                        <input
+                          type="date"
+                          value={lot.inheritanceDate}
+                          onChange={(event) =>
+                            updateLot(property, lot.id, {
+                              inheritanceDate: event.target.value,
+                              selectedTaxMethod: "",
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Fraction covered by this lot
+                        <span className="tax-lot-fraction">
+                          <input
+                            aria-label="Tax lot share numerator"
+                            type="number"
+                            min="0"
+                            step="1"
+                            disabled={usePublishedValues}
+                            value={effectiveLot.shareNumerator ?? 0}
+                            onChange={(event) =>
+                              updateLot(property, lot.id, {
+                                shareNumerator: event.target.value,
+                                useDeclaredValues: false,
+                              })
+                            }
+                          />
+                          <b>/</b>
+                          <input
+                            aria-label="Tax lot share denominator"
+                            type="number"
+                            min="1"
+                            step="1"
+                            disabled={usePublishedValues}
+                            value={effectiveLot.shareDenominator ?? 1}
+                            onChange={(event) =>
+                              updateLot(property, lot.id, {
+                                shareDenominator: event.target.value,
+                                useDeclaredValues: false,
+                              })
+                            }
+                          />
+                        </span>
+                      </label>
+                      <label>
+                        Accumulated causa mortis value (€)
+                        <input
+                          type="number"
+                          min="0"
+                          disabled={usePublishedValues}
+                          value={effectiveLot.acquisitionValue}
+                          onChange={(event) =>
+                            updateLot(property, lot.id, {
+                              acquisitionValue: event.target.value,
+                              useDeclaredValues: false,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Sale price of the same fraction (€)
+                        <input
+                          type="number"
+                          min="0"
+                          value={lot.transferValue}
+                          onChange={(event) =>
+                            updateLot(property, lot.id, {
+                              transferValue: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="check-label full-width">
+                        <input
+                          type="checkbox"
+                          disabled={!declaredCoverage?.publishedCount}
+                          checked={usePublishedValues}
+                          onChange={(event) =>
+                            updateLot(property, lot.id, {
+                              useDeclaredValues: event.target.checked,
+                            })
+                          }
+                        />
+                        Use the accumulated values and fraction from published CM declarations
+                      </label>
+                    </div>
+                    {deceasedVendorIds.has(lot.ownerId) && (
+                      <p className="excluded-vendor-notice">
+                        Excluded: this person is deceased. No vendor tax is calculated or carried
+                        into the payable totals.
+                      </p>
+                    )}
+                    {lot.ownerId &&
+                      !livingVendorIds.has(lot.ownerId) &&
+                      !deceasedVendorIds.has(lot.ownerId) && (
+                        <p className="excluded-vendor-notice">
+                          Excluded: this party is not a current owner of the property and therefore
+                          is not on the vendor list.
+                        </p>
+                      )}
+                    {usePublishedValues && livingVendorIds.has(lot.ownerId) && (
+                      <p className="tax-lot-source">
+                        Published CM total: {effectiveLot.shareNumerator}/
+                        {effectiveLot.shareDenominator}
+                        {" · "}
+                        {money.format(Number(effectiveLot.acquisitionValue) || 0)}
+                      </p>
+                    )}
+                    {!declaredCoverage?.publishedCount && livingVendorIds.has(lot.ownerId) && (
+                      <p className="tax-lot-source attention">
+                        No published CM value is linked to this owner. Enter the fraction and its
+                        declared value manually.
+                      </p>
+                    )}
+                    {lotResult.warning && livingVendorIds.has(lot.ownerId) && (
+                      <p className="transfer-error" role="status">
+                        {lotResult.warning}
+                      </p>
+                    )}
+                    {livingVendorIds.has(lot.ownerId) && (
+                      <div className="method-list">
+                        {lotResult.methods.map((method) => (
+                          <button
+                            type="button"
+                            className={[
+                              "method",
+                              method.key === lotResult.selected ? "selected" : "",
+                              method.key === lotResult.recommended ? "best" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            key={method.key}
+                            onClick={() =>
+                              updateLot(property, lot.id, {
+                                selectedTaxMethod: method.key,
+                              })
+                            }
+                          >
+                            <span>{method.label}</span>
+                            <strong>{money.format(method.tax)}</strong>
+                            <small>
+                              Taxable basis {money.format(method.basis)}
+                              {method.key === lotResult.selected
+                                ? " · Selected"
+                                : method.key === lotResult.recommended
+                                  ? " · Lowest estimate"
+                                  : " · Choose this method"}
+                            </small>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ),
+              )}
             </div>
             <button type="button" className="add-button" onClick={() => addLot(property)}>
               <Plus size={16} /> Add tax lot
@@ -582,22 +598,18 @@ export function Properties({
                           <div className="vendor-tax-lots">
                             {vendor.rows.map((row, index) => {
                               const selectedMethod = row.result.methods.find(
-                                (method) =>
-                                  method.key === row.result.selected,
+                                (method) => method.key === row.result.selected,
                               );
                               return (
                                 <div key={row.lot.id}>
                                   <span>
-                                    Lot {index + 1} ·{" "}
-                                    {row.effectiveLot.shareNumerator}/
+                                    Lot {index + 1} · {row.effectiveLot.shareNumerator}/
                                     {row.effectiveLot.shareDenominator}
                                     {" · "}
                                     {row.lot.inheritanceDate || "date missing"}
                                   </span>
                                   <span>
-                                    Sale {money.format(
-                                      Number(row.result.transferValue) || 0,
-                                    )}
+                                    Sale {money.format(Number(row.result.transferValue) || 0)}
                                   </span>
                                   <strong>
                                     {selectedMethod
@@ -617,8 +629,7 @@ export function Properties({
                         )}
                         <div className="vendor-tax-subtotal">
                           <span>
-                            {vendor.lotCount} tax{" "}
-                            {vendor.lotCount === 1 ? "lot" : "lots"} · sale
+                            {vendor.lotCount} tax {vendor.lotCount === 1 ? "lot" : "lots"} · sale
                             proceeds {money.format(vendor.saleValue)}
                           </span>
                           <strong>{money.format(vendor.tax)}</strong>
@@ -628,15 +639,13 @@ export function Properties({
                   })}
                 </div>
               ) : (
-                <p className="helper-text">
-                  No living current owner is available as a vendor.
-                </p>
+                <p className="helper-text">No living current owner is available as a vendor.</p>
               )}
               {taxSummary.excludedLotCount > 0 && (
                 <p className="excluded-vendor-summary">
                   {taxSummary.excludedLotCount} deceased-person tax{" "}
-                  {taxSummary.excludedLotCount === 1 ? "lot has" : "lots have"}{" "}
-                  been excluded completely.
+                  {taxSummary.excludedLotCount === 1 ? "lot has" : "lots have"} been excluded
+                  completely.
                 </p>
               )}
             </div>
@@ -657,8 +666,8 @@ export function Properties({
       )}
       {!singleProperty && !properties.length && (
         <p className="helper-text">
-          No properties yet. Add a property, then assign its starting owners from the family tree — the
-          automatic cascade will follow any deceased owner to their heirs.
+          No properties yet. Add a property, then assign its starting owners from the family tree —
+          the automatic cascade will follow any deceased owner to their heirs.
         </p>
       )}
     </div>

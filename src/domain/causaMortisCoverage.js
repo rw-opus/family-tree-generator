@@ -18,15 +18,12 @@ export function buildCausaMortisShareCoverage(people = [], properties = []) {
 
   properties.forEach((property) => {
     const requiredByPerson = new Map();
-    buildPropertyOwnership(people, property).transmissions.forEach(
-      (transmission) => {
-        requiredByPerson.set(
-          transmission.deceasedId,
-          (requiredByPerson.get(transmission.deceasedId) || 0) +
-            transmission.amount,
-        );
-      },
-    );
+    buildPropertyOwnership(people, property).transmissions.forEach((transmission) => {
+      requiredByPerson.set(
+        transmission.deceasedId,
+        (requiredByPerson.get(transmission.deceasedId) || 0) + transmission.amount,
+      );
+    });
 
     requiredByPerson.forEach((requiredShare, personId) => {
       const person = peopleById.get(personId);
@@ -43,11 +40,7 @@ export function buildCausaMortisShareCoverage(people = [], properties = []) {
       );
       const difference = totalDeclaredShare - requiredShare;
       const status =
-        Math.abs(difference) <= EPSILON
-          ? "complete"
-          : difference < 0
-            ? "under"
-            : "over";
+        Math.abs(difference) <= EPSILON ? "complete" : difference < 0 ? "under" : "over";
 
       rows.push({
         personId,

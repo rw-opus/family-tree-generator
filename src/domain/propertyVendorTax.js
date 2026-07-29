@@ -1,16 +1,9 @@
 import { declarationCoverage } from "./declarations.js";
-import {
-  buildPropertyOwnership,
-  isPersonDeceased,
-} from "./familyOwnership.js";
+import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
 import { approximateFraction, buildPropertyLedger } from "./ownership.js";
 import { saleTaxLot, vendorTaxSummary } from "./propertyTax.js";
 
-export function buildPropertyVendorTaxReport(
-  property = {},
-  people = [],
-  outsideParties = [],
-) {
+export function buildPropertyVendorTaxReport(property = {}, people = [], outsideParties = []) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const ownership = buildPropertyOwnership(people, property);
   const declarationOwners = Object.entries(ownership.ownershipByPerson).map(
@@ -26,20 +19,12 @@ export function buildPropertyVendorTaxReport(
     property.transfers || [],
     ownership.ownershipByPerson,
   );
-  const coverage = declarationCoverage(
-    declarationOwners,
-    property.declarations || [],
-  );
+  const coverage = declarationCoverage(declarationOwners, property.declarations || []);
   const saleRows = (property.saleLots || []).map((lot) => {
-    const declaredCoverage = coverage.find(
-      (item) => item.heirId === lot.ownerId,
-    );
+    const declaredCoverage = coverage.find((item) => item.heirId === lot.ownerId);
     const usePublishedValues =
-      lot.useDeclaredValues !== false &&
-      Boolean(declaredCoverage?.publishedCount);
-    const declaredFraction = approximateFraction(
-      declaredCoverage?.publishedFraction || 0,
-    );
+      lot.useDeclaredValues !== false && Boolean(declaredCoverage?.publishedCount);
+    const declaredFraction = approximateFraction(declaredCoverage?.publishedFraction || 0);
     const effectiveLot = usePublishedValues
       ? {
           ...lot,
@@ -64,14 +49,8 @@ export function buildPropertyVendorTaxReport(
       })
       .map((party) => party.id),
   );
-  const livingVendors = ledger.owners.filter(
-    (owner) => !deceasedVendorIds.has(owner.id),
-  );
-  const taxSummary = vendorTaxSummary(
-    ledger.owners,
-    saleRows,
-    [...deceasedVendorIds],
-  );
+  const livingVendors = ledger.owners.filter((owner) => !deceasedVendorIds.has(owner.id));
+  const taxSummary = vendorTaxSummary(ledger.owners, saleRows, [...deceasedVendorIds]);
   return {
     ownership,
     declarationOwners,

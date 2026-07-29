@@ -21,8 +21,7 @@ export function shareFromFraction(numerator, denominator) {
   return {
     shareNumerator,
     shareDenominator,
-    sharePercent:
-      shareDenominator > 0 ? (shareNumerator * 100) / shareDenominator : 0,
+    sharePercent: shareDenominator > 0 ? (shareNumerator * 100) / shareDenominator : 0,
   };
 }
 

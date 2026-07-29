@@ -1,10 +1,7 @@
 export const LOCAL_WORKSPACE_KEY = "family-tree-generator:workspace:v1";
 
 const usableTree = (tree) =>
-  tree &&
-  typeof tree === "object" &&
-  typeof tree.id === "string" &&
-  Array.isArray(tree.people);
+  tree && typeof tree === "object" && typeof tree.id === "string" && Array.isArray(tree.people);
 
 export function upsertWorkspaceTree(trees = [], tree) {
   if (!usableTree(tree)) return trees.filter(usableTree);
@@ -16,9 +13,7 @@ export function loadLocalWorkspace(storage) {
     const target = storage || globalThis.localStorage;
     if (!target) return { trees: [], activeTreeId: "" };
     const parsed = JSON.parse(target.getItem(LOCAL_WORKSPACE_KEY) || "{}");
-    const trees = Array.isArray(parsed.trees)
-      ? parsed.trees.filter(usableTree)
-      : [];
+    const trees = Array.isArray(parsed.trees) ? parsed.trees.filter(usableTree) : [];
     const activeTreeId = trees.some((tree) => tree.id === parsed.activeTreeId)
       ? parsed.activeTreeId
       : trees[0]?.id || "";
@@ -28,11 +23,7 @@ export function loadLocalWorkspace(storage) {
   }
 }
 
-export function saveLocalWorkspace(
-  trees = [],
-  activeTreeId = "",
-  storage,
-) {
+export function saveLocalWorkspace(trees = [], activeTreeId = "", storage) {
   try {
     const target = storage || globalThis.localStorage;
     if (!target) return false;

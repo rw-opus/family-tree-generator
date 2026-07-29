@@ -7,7 +7,8 @@ export const CURRENT_SUCCESSION_START = "2005-03-01";
 
 export function successionRuleset(dateOfDeath) {
   if (!dateOfDeath) return { key: "undated", label: "Enter the date of death", supported: false };
-  if (dateOfDeath < CURRENT_SUCCESSION_START) return { key: "pre2005", label: "Historical law before 1 March 2005", supported: false };
+  if (dateOfDeath < CURRENT_SUCCESSION_START)
+    return { key: "pre2005", label: "Historical law before 1 March 2005", supported: false };
   return { key: "current", label: "Current rules (from 1 March 2005)", supported: true };
 }
 
@@ -33,7 +34,9 @@ function allocateBranches(heirs, rootRelationship, representativeRelationship, t
     if (!allowsRepresentation(person)) return false;
     if (viableMemo.has(person.id)) return viableMemo.get(person.id);
     const nextTrail = new Set(trail).add(person.id);
-    const viable = (childrenByParent.get(person.id) || []).some((child) => isViable(child, nextTrail));
+    const viable = (childrenByParent.get(person.id) || []).some((child) =>
+      isViable(child, nextTrail),
+    );
     viableMemo.set(person.id, viable);
     return viable;
   };
@@ -44,10 +47,17 @@ function allocateBranches(heirs, rootRelationship, representativeRelationship, t
     viable.forEach((person) => {
       if (trail.has(person.id)) return;
       if (isActive(person)) shares.set(person.id, (shares.get(person.id) || 0) + perBranch);
-      else allocateLevel(childrenByParent.get(person.id) || [], perBranch, new Set(trail).add(person.id));
+      else
+        allocateLevel(
+          childrenByParent.get(person.id) || [],
+          perBranch,
+          new Set(trail).add(person.id),
+        );
     });
   };
-  const orphanRepresentatives = representatives.filter((person) => !person.branchId || !nodeIds.has(person.branchId));
+  const orphanRepresentatives = representatives.filter(
+    (person) => !person.branchId || !nodeIds.has(person.branchId),
+  );
   allocateLevel([...roots, ...orphanRepresentatives], totalShare);
   return shares;
 }
@@ -69,27 +79,58 @@ export function allocateCurrentIntestacy(heirs = []) {
     return { shares, warnings, destination: "spouse" };
   }
 
-  const activeAscendants = heirs.filter((heir) => ["Parent", "Ascendant"].includes(heir.relationship) && isActive(heir));
-  const nearestDegree = Math.min(...activeAscendants.map((heir) => number(heir.degree) || (heir.relationship === "Parent" ? 1 : 2)));
-  const nearestAscendants = activeAscendants.filter((heir) => (number(heir.degree) || (heir.relationship === "Parent" ? 1 : 2)) === nearestDegree);
+  const activeAscendants = heirs.filter(
+    (heir) => ["Parent", "Ascendant"].includes(heir.relationship) && isActive(heir),
+  );
+  const nearestDegree = Math.min(
+    ...activeAscendants.map(
+      (heir) => number(heir.degree) || (heir.relationship === "Parent" ? 1 : 2),
+    ),
+  );
+  const nearestAscendants = activeAscendants.filter(
+    (heir) => (number(heir.degree) || (heir.relationship === "Parent" ? 1 : 2)) === nearestDegree,
+  );
   const collateralProbe = allocateBranches(heirs, "Sibling", "Sibling descendant", 100);
   const hasDirectCollaterals = [...collateralProbe.values()].some((share) => share > 0);
   if (nearestAscendants.length || hasDirectCollaterals) {
     const ascendantTotal = nearestAscendants.length ? (hasDirectCollaterals ? 50 : 100) : 0;
-    nearestAscendants.forEach((heir) => shares.set(heir.id, ascendantTotal / nearestAscendants.length));
-    const collateralShares = allocateBranches(heirs, "Sibling", "Sibling descendant", nearestAscendants.length ? 50 : 100);
+    nearestAscendants.forEach((heir) =>
+      shares.set(heir.id, ascendantTotal / nearestAscendants.length),
+    );
+    const collateralShares = allocateBranches(
+      heirs,
+      "Sibling",
+      "Sibling descendant",
+      nearestAscendants.length ? 50 : 100,
+    );
     collateralShares.forEach((share, id) => shares.set(id, share));
-    return { shares, warnings, destination: nearestAscendants.length && hasDirectCollaterals ? "ascendants-and-direct-collaterals" : nearestAscendants.length ? "ascendants" : "direct-collaterals" };
+    return {
+      shares,
+      warnings,
+      destination:
+        nearestAscendants.length && hasDirectCollaterals
+          ? "ascendants-and-direct-collaterals"
+          : nearestAscendants.length
+            ? "ascendants"
+            : "direct-collaterals",
+    };
   }
 
-  const otherCollaterals = heirs.filter((heir) => heir.relationship === "Other collateral" && isActive(heir) && number(heir.degree) <= 12);
+  const otherCollaterals = heirs.filter(
+    (heir) =>
+      heir.relationship === "Other collateral" && isActive(heir) && number(heir.degree) <= 12,
+  );
   const nearestCollateralDegree = Math.min(...otherCollaterals.map((heir) => number(heir.degree)));
-  const nearestCollaterals = otherCollaterals.filter((heir) => number(heir.degree) === nearestCollateralDegree);
+  const nearestCollaterals = otherCollaterals.filter(
+    (heir) => number(heir.degree) === nearestCollateralDegree,
+  );
   if (nearestCollaterals.length) {
     nearestCollaterals.forEach((heir) => shares.set(heir.id, 100 / nearestCollaterals.length));
     return { shares, warnings, destination: "other-collaterals" };
   }
-  warnings.push("No eligible relative was found within the supported classes; the succession may devolve on the Government of Malta.");
+  warnings.push(
+    "No eligible relative was found within the supported classes; the succession may devolve on the Government of Malta.",
+  );
   return { shares, warnings, destination: "government" };
 }
 
@@ -101,7 +142,12 @@ export function suggestedIntestacyShares(heirs = [], dateOfDeath = CURRENT_SUCCE
 }
 
 export function inheritedValue(property, heir) {
-  return number(property.marketValueAtDeath) * (number(property.deceasedOwnershipPercent) / 100) * (number(property.rightPercent) / 100) * (number(heir.sharePercent) / 100);
+  return (
+    number(property.marketValueAtDeath) *
+    (number(property.deceasedOwnershipPercent) / 100) *
+    (number(property.rightPercent) / 100) *
+    (number(heir.sharePercent) / 100)
+  );
 }
 
 export function inheritanceDuty(property, heir, options = {}) {
@@ -144,13 +190,15 @@ export function saleTaxLot(lot) {
     };
   }
   if (inherited < "1992-11-25") {
-    const methods = [{
-      key: "pre1992",
-      label: "7% of this share's sale price",
-      rate: 0.07,
-      basis: transferValue,
-      tax: transferValue * 0.07,
-    }];
+    const methods = [
+      {
+        key: "pre1992",
+        label: "7% of this share's sale price",
+        rate: 0.07,
+        basis: transferValue,
+        tax: transferValue * 0.07,
+      },
+    ];
     return {
       methods,
       recommended: "pre1992",
@@ -163,7 +211,7 @@ export function saleTaxLot(lot) {
   }
 
   const increase = Math.max(0, transferValue - declaredValue);
-  const flatRate = inherited < "2004-01-01" ? 0.10 : 0.08;
+  const flatRate = inherited < "2004-01-01" ? 0.1 : 0.08;
   const methods = [
     {
       key: "increase",
@@ -180,12 +228,8 @@ export function saleTaxLot(lot) {
       tax: transferValue * flatRate,
     },
   ];
-  const recommended = methods.reduce(
-    (lowest, item) => item.tax < lowest.tax ? item : lowest,
-  ).key;
-  const selected = methods.some(
-    (method) => method.key === lot.selectedTaxMethod,
-  )
+  const recommended = methods.reduce((lowest, item) => (item.tax < lowest.tax ? item : lowest)).key;
+  const selected = methods.some((method) => method.key === lot.selectedTaxMethod)
     ? lot.selectedTaxMethod
     : recommended;
   return {
@@ -200,24 +244,14 @@ export function saleTaxLot(lot) {
 }
 
 export function selectedSaleTax(result = {}) {
-  return (
-    (result.methods || []).find((method) => method.key === result.selected)
-      ?.tax || 0
-  );
+  return (result.methods || []).find((method) => method.key === result.selected)?.tax || 0;
 }
 
 export function saleTaxLotsTotal(lots = []) {
-  return lots.reduce(
-    (total, lot) => total + selectedSaleTax(saleTaxLot(lot)),
-    0,
-  );
+  return lots.reduce((total, lot) => total + selectedSaleTax(saleTaxLot(lot)), 0);
 }
 
-export function vendorTaxSummary(
-  vendors = [],
-  saleRows = [],
-  excludedVendorIds = [],
-) {
+export function vendorTaxSummary(vendors = [], saleRows = [], excludedVendorIds = []) {
   const excluded = new Set(excludedVendorIds);
   const summaries = vendors
     .filter((vendor) => !excluded.has(vendor.id))
@@ -229,22 +263,14 @@ export function vendorTaxSummary(
         type: vendor.type,
         share: Number(vendor.share) || 0,
         lotCount: rows.length,
-        saleValue: rows.reduce(
-          (total, row) => total + (Number(row.result?.transferValue) || 0),
-          0,
-        ),
-        tax: rows.reduce(
-          (total, row) => total + selectedSaleTax(row.result),
-          0,
-        ),
+        saleValue: rows.reduce((total, row) => total + (Number(row.result?.transferValue) || 0), 0),
+        tax: rows.reduce((total, row) => total + selectedSaleTax(row.result), 0),
         rows,
       };
     });
   return {
     vendors: summaries,
     total: summaries.reduce((total, vendor) => total + vendor.tax, 0),
-    excludedLotCount: saleRows.filter((row) =>
-      excluded.has(row.lot?.ownerId),
-    ).length,
+    excludedLotCount: saleRows.filter((row) => excluded.has(row.lot?.ownerId)).length,
   };
 }

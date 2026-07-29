@@ -27,6 +27,10 @@ export function calculateFraction(left, right, operation) {
   const gcd = divisor(numerator, denominator);
   numerator /= gcd;
   denominator /= gcd;
-  return { numerator, denominator, decimal: numerator / denominator, percentage: (numerator / denominator) * 100 };
+  return {
+    numerator,
+    denominator,
+    decimal: numerator / denominator,
+    percentage: (numerator / denominator) * 100,
+  };
 }
-

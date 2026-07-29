@@ -49,19 +49,17 @@ describe("App local recovery", () => {
     act(() => root.render(<App />));
 
     const title = container.querySelector(".workbench-title input");
-    const picker = container.querySelector(
-      'select[aria-label="Saved family trees"]',
-    );
+    const picker = container.querySelector('select[aria-label="Saved family trees"]');
     expect(title.value).toBe("Borg succession");
     expect(picker.value).toBe("tree-1");
     expect(picker.options).toHaveLength(2);
     expect(container.textContent).toContain("Joseph Borg");
-    expect(
-      container.querySelector('input[aria-label="Property address"]').value,
-    ).toBe("1 Republic Street");
-    expect(
-      container.querySelector('input[aria-label="Property selling price"]').value,
-    ).toBe("250000");
+    expect(container.querySelector('input[aria-label="Property address"]').value).toBe(
+      "1 Republic Street",
+    );
+    expect(container.querySelector('input[aria-label="Property selling price"]').value).toBe(
+      "250000",
+    );
     expect(
       [...container.querySelectorAll(".dashboard-tabs button")].some(
         (button) => button.textContent === "Properties",
@@ -74,10 +72,10 @@ describe("App local recovery", () => {
     ).toBe(false);
 
     act(() => {
-      Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
-        "value",
-      ).set.call(picker, "tree-2");
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        picker,
+        "tree-2",
+      );
       picker.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
@@ -108,8 +106,9 @@ describe("App local recovery", () => {
       window.localStorage,
     );
     act(() => root.render(<App />));
-    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")]
-      .find((button) => button.textContent.includes("Property & tax"));
+    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")].find((button) =>
+      button.textContent.includes("Property & tax"),
+    );
 
     act(() => caseButton.click());
 
@@ -118,8 +117,8 @@ describe("App local recovery", () => {
     expect(container.textContent).not.toContain("Add property");
     expect(container.querySelector(".single-property-case")).not.toBeNull();
 
-    const addOwner = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.includes("Add initial owner"),
+    const addOwner = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Add initial owner"),
     );
     act(() => addOwner.click());
 
@@ -131,31 +130,24 @@ describe("App local recovery", () => {
       "Maria Borg",
     ]);
 
-    const numerator = container.querySelector(
-      'input[aria-label="Initial ownership numerator"]',
-    );
+    const numerator = container.querySelector('input[aria-label="Initial ownership numerator"]');
     const denominator = container.querySelector(
       'input[aria-label="Initial ownership denominator"]',
     );
     act(() => {
-      Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      ).set.call(numerator, "1");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "1");
       numerator.dispatchEvent(new Event("input", { bubbles: true }));
     });
     act(() => {
-      Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      ).set.call(denominator, "2");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        denominator,
+        "2",
+      );
       denominator.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(
-      container.querySelector(
-        'input[aria-label="Initial ownership percentage"]',
-      ).value,
-    ).toBe("50");
+    expect(container.querySelector('input[aria-label="Initial ownership percentage"]').value).toBe(
+      "50",
+    );
   });
 
   it("creates ownership only from initial owners entered for the property", () => {
@@ -202,43 +194,36 @@ describe("App local recovery", () => {
     expect(container.querySelectorAll(".family-node-ownership")).toHaveLength(0);
     expect(container.textContent).not.toContain("Starting property ownership");
 
-    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")]
-      .find((button) => button.textContent.includes("Property & tax"));
+    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")].find((button) =>
+      button.textContent.includes("Property & tax"),
+    );
     act(() => caseButton.click());
-    const addOwner = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.includes("Add initial owner"),
+    const addOwner = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Add initial owner"),
     );
     act(() => addOwner.click());
 
-    const ownerSelect = container.querySelector(
-      'select[aria-label="Initial owner"]',
-    );
+    const ownerSelect = container.querySelector('select[aria-label="Initial owner"]');
     act(() => {
-      Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
-        "value",
-      ).set.call(ownerSelect, "father");
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        ownerSelect,
+        "father",
+      );
       ownerSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    const percentage = container.querySelector(
-      'input[aria-label="Initial ownership percentage"]',
-    );
+    const percentage = container.querySelector('input[aria-label="Initial ownership percentage"]');
     act(() => {
-      Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      ).set.call(percentage, "100");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        percentage,
+        "100",
+      );
       percentage.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    const ownershipBadges = container.querySelectorAll(
-      ".family-node-ownership",
-    );
+    const ownershipBadges = container.querySelectorAll(".family-node-ownership");
     expect(ownershipBadges).toHaveLength(1);
     expect(ownershipBadges[0].textContent).toContain("100%");
-    expect(
-      ownershipBadges[0].closest("[data-person-id]").dataset.personId,
-    ).toBe("father");
+    expect(ownershipBadges[0].closest("[data-person-id]").dataset.personId).toBe("father");
   });
 
   it("lets the tree zoom out to a 25% overview", () => {
@@ -249,8 +234,6 @@ describe("App local recovery", () => {
       act(() => zoomOut.click());
     }
 
-    expect(container.querySelector(".zoom-controls span").textContent).toBe(
-      "25%",
-    );
+    expect(container.querySelector(".zoom-controls span").textContent).toBe("25%");
   });
 });

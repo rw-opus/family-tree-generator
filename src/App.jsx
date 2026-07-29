@@ -20,10 +20,7 @@ import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
-import {
-  assignSolePartnersAsMissingParents,
-  createPerson,
-} from "./domain/people.js";
+import { assignSolePartnersAsMissingParents, createPerson } from "./domain/people.js";
 import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
 import {
@@ -80,12 +77,7 @@ const migratedProperties = (value) => {
   const legacy = value.property;
   if (
     !legacy ||
-    !(
-      legacy.address ||
-      legacy.description ||
-      legacy.marketValueAtDeath ||
-      legacy.saleValue
-    )
+    !(legacy.address || legacy.description || legacy.marketValueAtDeath || legacy.saleValue)
   ) {
     return [makePrimaryProperty("primary-property")];
   }
@@ -109,9 +101,7 @@ const normaliseTree = (value) => {
   return {
     ...defaults,
     ...value,
-    people: assignSolePartnersAsMissingParents(
-      value.people || defaults.people,
-    ),
+    people: assignSolePartnersAsMissingParents(value.people || defaults.people),
     property: { ...defaults.property, ...(value.property || {}) },
     properties: migratedProperties(value),
     succession: { ...defaults.succession, ...(value.succession || {}) },
@@ -133,9 +123,8 @@ export function App() {
   const [startupWorkspace] = useState(() => loadLocalWorkspace());
   const [tree, setTree] = useState(() => {
     const restoredTree =
-      startupWorkspace.trees.find(
-        (item) => item.id === startupWorkspace.activeTreeId,
-      ) || startupWorkspace.trees[0];
+      startupWorkspace.trees.find((item) => item.id === startupWorkspace.activeTreeId) ||
+      startupWorkspace.trees[0];
     return restoredTree ? normaliseTree(restoredTree) : initialTree();
   });
   const [trees, setTrees] = useState(startupWorkspace.trees);
@@ -153,49 +142,33 @@ export function App() {
   const [panelTab, setPanelTab] = useState("person");
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
-  const [zoom, setZoom] = useState(
-    () => Number(tree.settings?.treeZoom) || 100,
-  );
+  const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
 
   const currentTree = normaliseTree(tree);
-  const activeProperty =
-    currentTree.properties[0] || makePrimaryProperty("primary-property");
+  const activeProperty = currentTree.properties[0] || makePrimaryProperty("primary-property");
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const ownershipByPerson = useMemo(
     () =>
       Object.fromEntries(
-        buildPropertyVendorTaxReport(
-          activeProperty,
-          currentTree.people,
-          currentTree.outsideParties,
-        ).ledger.owners
-          .filter((owner) => owner.personId)
+        buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties)
+          .ledger.owners.filter((owner) => owner.personId)
           .map((owner) => [owner.personId, owner.share]),
       ),
     [activeProperty, currentTree.outsideParties, currentTree.people],
   );
   const causaMortisCoverage = useMemo(
-    () =>
-      buildCausaMortisShareCoverage(
-        currentTree.people,
-        activeProperties,
-      ),
+    () => buildCausaMortisShareCoverage(currentTree.people, activeProperties),
     [activeProperties, currentTree.people],
   );
   const selectedCaseDependencyLabels = useMemo(() => {
     const labels = [];
-    if (
-      currentTree.succession.heirs.some(
-        (heir) => heir.personId === selectedPersonId,
-      )
-    ) {
+    if (currentTree.succession.heirs.some((heir) => heir.personId === selectedPersonId)) {
       labels.push("the linked heir record");
     }
     if (
       currentTree.transfers.some(
         (transfer) =>
-          transfer.sellerId === selectedPersonId ||
-          transfer.buyerId === selectedPersonId,
+          transfer.sellerId === selectedPersonId || transfer.buyerId === selectedPersonId,
       )
     ) {
       labels.push("the linked ownership transfer");
@@ -231,8 +204,8 @@ export function App() {
   useEffect(() => {
     if (!supabase) return undefined;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    return supabase.auth.onAuthStateChange((_event, nextSession) =>
-      setSession(nextSession)).data.subscription.unsubscribe;
+    return supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession)).data
+      .subscription.unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -241,9 +214,7 @@ export function App() {
       .then((items) => {
         setTrees((currentItems) => [
           ...items,
-          ...currentItems.filter(
-            (item) => !items.some((cloudTree) => cloudTree.id === item.id),
-          ),
+          ...currentItems.filter((item) => !items.some((cloudTree) => cloudTree.id === item.id)),
         ]);
         if (!startupWorkspace.trees.length && items[0]) {
           setTree(normaliseTree(items[0]));
@@ -253,10 +224,7 @@ export function App() {
       .catch((error) => setStatus(`Cloud storage needs attention: ${error.message}`));
   }, [session, startupWorkspace.trees.length]);
 
-  const treeOptions = useMemo(
-    () => upsertWorkspaceTree(trees, normaliseTree(tree)),
-    [tree, trees],
-  );
+  const treeOptions = useMemo(() => upsertWorkspaceTree(trees, normaliseTree(tree)), [tree, trees]);
   const treeCount = treeOptions.length;
 
   const selectPerson = (personId) => {
@@ -266,10 +234,7 @@ export function App() {
   };
 
   const updateZoom = (nextZoom) => {
-    const boundedZoom = Math.min(
-      140,
-      Math.max(25, Math.round(Number(nextZoom) / 5) * 5),
-    );
+    const boundedZoom = Math.min(140, Math.max(25, Math.round(Number(nextZoom) / 5) * 5));
     setZoom(boundedZoom);
     setTree({
       ...currentTree,
@@ -305,10 +270,7 @@ export function App() {
         address: nextProperty.address || "",
         saleValue: nextProperty.saleValue || "",
       },
-      properties: [
-        nextProperty,
-        ...currentTree.properties.slice(1),
-      ],
+      properties: [nextProperty, ...currentTree.properties.slice(1)],
     });
   };
 
@@ -322,10 +284,7 @@ export function App() {
         address: nextProperty.address || "",
         saleValue: nextProperty.saleValue || "",
       },
-      properties: [
-        nextProperty,
-        ...currentTree.properties.slice(1),
-      ],
+      properties: [nextProperty, ...currentTree.properties.slice(1)],
     });
   };
 
@@ -371,9 +330,7 @@ export function App() {
             <span>Tree name</span>
             <input
               value={tree.title}
-              onChange={(event) =>
-                setTree({ ...tree, title: event.target.value })
-              }
+              onChange={(event) => setTree({ ...tree, title: event.target.value })}
             />
           </label>
           <label className="property-header-address">
@@ -381,9 +338,7 @@ export function App() {
             <input
               aria-label="Property address"
               value={activeProperty.address || ""}
-              onChange={(event) =>
-                updateActiveProperty({ address: event.target.value })
-              }
+              onChange={(event) => updateActiveProperty({ address: event.target.value })}
               placeholder="Property address"
             />
           </label>
@@ -397,9 +352,7 @@ export function App() {
                 min="0"
                 step="any"
                 value={activeProperty.saleValue || ""}
-                onChange={(event) =>
-                  updateActiveProperty({ saleValue: event.target.value })
-                }
+                onChange={(event) => updateActiveProperty({ saleValue: event.target.value })}
                 placeholder="0"
               />
             </span>
@@ -483,11 +436,7 @@ export function App() {
           <button className="primary-button" type="submit">
             Sign in
           </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => setShowLogin(false)}
-          >
+          <button type="button" className="secondary-button" onClick={() => setShowLogin(false)}>
             Cancel
           </button>
         </form>
@@ -528,9 +477,7 @@ export function App() {
                 people={currentTree.people}
                 properties={activeProperties}
                 ownershipByPerson={ownershipByPerson}
-                causaMortisCoverage={
-                  causaMortisCoverage.byPerson[selectedPersonId] || []
-                }
+                causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}
                 caseDependencyLabels={selectedCaseDependencyLabels}
@@ -581,19 +528,11 @@ export function App() {
               </select>
             </label>
             <div className="zoom-controls" aria-label="Tree zoom">
-              <button
-                type="button"
-                onClick={() => updateZoom(zoom - 10)}
-                aria-label="Zoom out"
-              >
+              <button type="button" onClick={() => updateZoom(zoom - 10)} aria-label="Zoom out">
                 <Minus size={16} />
               </button>
               <span>{zoom}%</span>
-              <button
-                type="button"
-                onClick={() => updateZoom(zoom + 10)}
-                aria-label="Zoom in"
-              >
+              <button type="button" onClick={() => updateZoom(zoom + 10)} aria-label="Zoom in">
                 <ZoomIn size={16} />
               </button>
             </div>

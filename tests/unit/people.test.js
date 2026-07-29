@@ -63,11 +63,7 @@ describe("family tree people", () => {
   });
 
   it("requires names, surname, and a woman's surname at birth before relationships", () => {
-    expect(personIdentityIssues({ fullName: "" })).toEqual([
-      "Names",
-      "Surname",
-      "Sex",
-    ]);
+    expect(personIdentityIssues({ fullName: "" })).toEqual(["Names", "Surname", "Sex"]);
     expect(
       personIdentityIssues({
         fullName: "Maria Borg",
@@ -91,9 +87,10 @@ describe("family tree people", () => {
       { id: "grandchild", motherId: "child" },
       { id: "unrelated" },
     ];
-    expect(
-      personDescendants(people, "ancestor").map((person) => person.id),
-    ).toEqual(["child", "grandchild"]);
+    expect(personDescendants(people, "ancestor").map((person) => person.id)).toEqual([
+      "child",
+      "grandchild",
+    ]);
   });
 
   it("migrates single-parent children to a sole partner unless removed manually", () => {
@@ -109,11 +106,7 @@ describe("family tree people", () => {
       },
     ]);
 
-    expect(migrated.find((person) => person.id === "child").motherId).toBe(
-      "partner",
-    );
-    expect(
-      migrated.find((person) => person.id === "removed-child").motherId,
-    ).toBe("");
+    expect(migrated.find((person) => person.id === "child").motherId).toBe("partner");
+    expect(migrated.find((person) => person.id === "removed-child").motherId).toBe("");
   });
 });

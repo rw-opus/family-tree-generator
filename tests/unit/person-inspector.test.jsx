@@ -97,15 +97,17 @@ describe("PersonInspector", () => {
   });
 
   it("adds several children while keeping the relationship controls on the same person", () => {
-    let currentPeople = [{
-      id: "parent",
-      fullName: "Maria Example",
-      sex: "Female",
-      surnameAtBirth: "Example",
-      designations: [],
-      spouseIds: [],
-      siblingIds: [],
-    }];
+    let currentPeople = [
+      {
+        id: "parent",
+        fullName: "Maria Example",
+        sex: "Female",
+        surnameAtBirth: "Example",
+        designations: [],
+        spouseIds: [],
+        siblingIds: [],
+      },
+    ];
     const onChange = vi.fn((nextPeople) => {
       currentPeople = nextPeople;
       act(() =>
@@ -132,8 +134,9 @@ describe("PersonInspector", () => {
     );
 
     const clickChild = () => {
-      const childButton = [...container.querySelectorAll("button")]
-        .find((button) => button.textContent.includes("Child"));
+      const childButton = [...container.querySelectorAll("button")].find((button) =>
+        button.textContent.includes("Child"),
+      );
       act(() => childButton.click());
     };
     clickChild();
@@ -142,8 +145,9 @@ describe("PersonInspector", () => {
 
     expect(currentPeople).toHaveLength(4);
     expect(currentPeople.slice(1).every((person) => person.motherId === "parent")).toBe(true);
-    const childButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Child"));
+    const childButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Child"),
+    );
     expect(childButton.querySelector(".relationship-count").textContent).toBe("3");
   });
 
@@ -250,10 +254,12 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const fatherButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Father"));
-    const deleteButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Delete person"));
+    const fatherButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Father"),
+    );
+    const deleteButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Delete person"),
+    );
     expect(fatherButton.disabled).toBe(true);
     expect(fatherButton.querySelector(".relationship-count").textContent).toBe("1");
     expect(deleteButton.disabled).toBe(true);
@@ -287,8 +293,9 @@ describe("PersonInspector", () => {
     );
     beginEditing();
 
-    const deleteButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Delete person"));
+    const deleteButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Delete person"),
+    );
     const unlinkButton = container.querySelector(
       'button[aria-label="Remove partner link to Joseph Borg"]',
     );
@@ -328,8 +335,9 @@ describe("PersonInspector", () => {
       ),
     );
     beginEditing();
-    const deleteButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Delete person"));
+    const deleteButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Delete person"),
+    );
 
     expect(deleteButton.disabled).toBe(false);
     act(() => deleteButton.click());
@@ -340,9 +348,7 @@ describe("PersonInspector", () => {
 
     confirm.mockReturnValue(true);
     act(() => deleteButton.click());
-    expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({ id: "parent" }),
-    ]);
+    expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ id: "parent" })]);
     expect(onSelectPerson).toHaveBeenCalledWith("parent");
   });
 
@@ -376,20 +382,22 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const partnerButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Partner"));
+    const partnerButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Partner"),
+    );
     act(() => partnerButton.click());
 
     const spouseSelect = container.querySelector('select[aria-label="Existing partner"]');
     act(() => {
-      Object.getOwnPropertyDescriptor(
-        HTMLSelectElement.prototype,
-        "value",
-      ).set.call(spouseSelect, "person-b");
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        spouseSelect,
+        "person-b",
+      );
       spouseSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    const linkButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Link partner"));
+    const linkButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Link partner"),
+    );
     act(() => linkButton.click());
 
     const updatedPeople = onChange.mock.calls.at(-1)[0];
@@ -421,9 +429,9 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const relationshipButtons = [
-      ...container.querySelectorAll(".relationship-actions button"),
-    ].map((button) => button.textContent);
+    const relationshipButtons = [...container.querySelectorAll(".relationship-actions button")].map(
+      (button) => button.textContent,
+    );
     expect(relationshipButtons.some((text) => text.includes("Father"))).toBe(true);
     expect(relationshipButtons.some((text) => text.includes("Mother"))).toBe(true);
     expect(container.textContent).not.toContain("Succession labels");
@@ -458,8 +466,9 @@ describe("PersonInspector", () => {
     expect(container.querySelector(".person-succession")).toBeNull();
     expect(container.textContent).not.toContain("Succession on death");
     beginEditing();
-    const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')]
-      .find((input) => input.parentElement.textContent.includes("This person is deceased."));
+    const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')].find(
+      (input) => input.parentElement.textContent.includes("This person is deceased."),
+    );
     expect(deceasedCheckbox.checked).toBe(false);
 
     act(() => deceasedCheckbox.click());
@@ -493,9 +502,7 @@ describe("PersonInspector", () => {
     );
 
     const labels = [
-      ...container.querySelectorAll(
-        ".inspector-fields > label > span:first-child",
-      ),
+      ...container.querySelectorAll(".inspector-fields > label > span:first-child"),
     ].map((span) => span.textContent);
     expect(labels).toEqual(["Name", "Surname", "Surname at birth", "Sex"]);
   });
@@ -523,9 +530,7 @@ describe("PersonInspector", () => {
     );
 
     expect(container.querySelector(".person-succession")).not.toBeNull();
-    expect(
-      container.querySelector(".succession-detail-row input").value,
-    ).toBe("2024-02-03");
+    expect(container.querySelector(".succession-detail-row input").value).toBe("2024-02-03");
     expect(container.textContent).toContain("Succession on death");
   });
 
@@ -550,8 +555,9 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const surnameLabel = [...container.querySelectorAll("label")]
-      .find((label) => label.textContent.includes("Surname at birth"));
+    const surnameLabel = [...container.querySelectorAll("label")].find((label) =>
+      label.textContent.includes("Surname at birth"),
+    );
     expect(surnameLabel.querySelector("input").value).toBe("Borg");
   });
 
@@ -580,10 +586,10 @@ describe("PersonInspector", () => {
       .find((label) => label.querySelector(":scope > span")?.textContent === "Name")
       .querySelector("input");
     act(() => {
-      Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      ).set.call(namesInput, "Maria Anna");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        namesInput,
+        "Maria Anna",
+      );
       namesInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(onChange.mock.calls.at(-1)[0][0]).toMatchObject({
@@ -617,9 +623,7 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const relationshipButtons = [...container.querySelectorAll(
-      ".relationship-actions button",
-    )];
+    const relationshipButtons = [...container.querySelectorAll(".relationship-actions button")];
     expect(relationshipButtons.every((button) => button.disabled)).toBe(true);
     expect(container.textContent).toContain(
       "Identify this person first: Names, Surname, Surname at birth.",
@@ -671,9 +675,7 @@ describe("PersonInspector", () => {
       root.render(
         <PersonInspector
           people={[deceased, child]}
-          properties={[
-            { id: "property-1", address: "1 Republic Street" },
-          ]}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
           causaMortisCoverage={[
             {
               personId: "deceased",
@@ -699,17 +701,15 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Missing 1/2");
     expect(container.textContent).toContain("Declaration CM 1");
     expect(
-      container.querySelector(
-        'select[aria-label="Property declared causa mortis 1"]',
-      ).value,
+      container.querySelector('select[aria-label="Property declared causa mortis 1"]').value,
     ).toBe("property-1");
     const valueInput = container.querySelector(
       'input[aria-label="Immovable property value declared causa mortis 1"]',
     );
     expect(valueInput.required).toBe(true);
-    const declarant = [...container.querySelectorAll(
-      ".causa-mortis-declarants label",
-    )].find((label) => label.textContent.includes("Maria Borg"));
+    const declarant = [...container.querySelectorAll(".causa-mortis-declarants label")].find(
+      (label) => label.textContent.includes("Maria Borg"),
+    );
     expect(declarant.querySelector("input").checked).toBe(true);
   });
 
@@ -754,15 +754,15 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const addButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.includes("Add declaration"),
+    const addButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Add declaration"),
     );
     beginEditing();
     act(() => addButton.click());
-    expect(
-      onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations[0]
-        .declarantPersonIds,
-    ).toEqual(["child", "grandchild"]);
+    expect(onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations[0].declarantPersonIds).toEqual([
+      "child",
+      "grandchild",
+    ]);
   });
 
   it("makes the declared value optional when every identified heir is deceased", () => {

@@ -198,7 +198,7 @@ describe("automatic family ownership", () => {
           fatherId: "grandparent",
           isDeceased: true,
           dateOfDeath: "2018-01-01",
-        })
+        }),
       ),
       ...["a1", "a2", "a3"].map((id) => person(id, { fatherId: "uncle-a" })),
       ...["b1", "b2", "b3"].map((id) => person(id, { fatherId: "uncle-b" })),
@@ -276,7 +276,14 @@ describe("per-property ownership", () => {
 
     const { breakdown } = buildPropertyOwnership(people, property);
     expect(breakdown).toEqual([
-      { propertyId: "flat-1", ownerId: "owner", numerator: 1, denominator: 1, sharePercent: 100, via: "starting" },
+      {
+        propertyId: "flat-1",
+        ownerId: "owner",
+        numerator: 1,
+        denominator: 1,
+        sharePercent: 100,
+        via: "starting",
+      },
     ]);
   });
 
@@ -294,7 +301,14 @@ describe("per-property ownership", () => {
 
     const { breakdown } = buildPropertyOwnership(people, property);
     expect(breakdown).toEqual([
-      { propertyId: "flat-1", ownerId: "friend", numerator: 1, denominator: 1, sharePercent: 100, via: "will" },
+      {
+        propertyId: "flat-1",
+        ownerId: "friend",
+        numerator: 1,
+        denominator: 1,
+        sharePercent: 100,
+        via: "will",
+      },
     ]);
   });
 
