@@ -1891,7 +1891,27 @@ textarea {
 .tree-workbench h3,
 .tree-stage .family-chart-title {
   font-family: var(--tracker-serif);
+  font-weight: 400 !important;
   letter-spacing: -0.012em;
+}
+
+.tree-workbench button,
+.tree-workbench label,
+.tree-workbench strong,
+.tree-workbench b,
+.tree-workbench .eyebrow {
+  font-weight: 600 !important;
+}
+
+.tree-workbench input:not([type="checkbox"]):not([type="radio"]),
+.tree-workbench select,
+.tree-workbench textarea {
+  font-weight: 500 !important;
+}
+
+.tree-workbench .relationship-count,
+.tree-workbench .family-node-cm-alert {
+  font-weight: 700 !important;
 }
 
 .tree-workbench input:not([type="checkbox"]):not([type="radio"]),
