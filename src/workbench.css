@@ -1451,6 +1451,102 @@ textarea {
   line-height: 1.35;
 }
 
+.tree-stage .relational-forest {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: max-content;
+  min-width: 100%;
+  gap: 5rem;
+  padding: 1rem 1rem 3rem;
+}
+
+.tree-stage .family-household,
+.tree-stage .family-union-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tree-stage .family-household-unions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3.5rem;
+}
+
+.tree-stage .family-household-unions.multiple {
+  padding: 0.75rem;
+  border: 1px dashed rgba(81, 104, 92, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.tree-stage .family-parent-row,
+.tree-stage .family-parent-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tree-stage .family-parent-row {
+  min-height: 88px;
+}
+
+.tree-stage .family-partner-link {
+  display: block;
+  width: 64px;
+  height: 3px;
+  background: #566b60;
+}
+
+.tree-stage .family-union-stem {
+  display: block;
+  width: 3px;
+  height: 34px;
+  background: #566b60;
+}
+
+.tree-stage .family-children-branch {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2rem;
+}
+
+.tree-stage .family-children-branch::before {
+  position: absolute;
+  top: 0;
+  right: calc(50% / var(--child-count));
+  left: calc(50% / var(--child-count));
+  height: 3px;
+  background: #566b60;
+  content: "";
+}
+
+.tree-stage .family-children-branch.single::before {
+  display: none;
+}
+
+.tree-stage .family-child-branch-item {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 34px;
+}
+
+.tree-stage .family-child-branch-item::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 3px;
+  height: 34px;
+  background: #566b60;
+  content: "";
+  transform: translateX(-50%);
+}
+
 .tree-stage .family-spouse-line,
 .tree-stage .family-side-line,
 .tree-stage .family-down-line,

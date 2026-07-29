@@ -110,17 +110,11 @@ export function personDisplayName(person = {}, people = []) {
       spouseIds.add(candidate.id);
     }
   });
-  const namedSpouse = [...spouseIds]
+  const namedPartner = [...spouseIds]
     .map((id) => peopleById.get(id))
     .find((candidate) => named(candidate));
-  if (namedSpouse) {
-    const relationship =
-      person.sex === "Male"
-        ? "Husband"
-        : person.sex === "Female"
-          ? "Wife"
-          : "Spouse";
-    return `${relationship} of ${named(namedSpouse)}`;
+  if (namedPartner) {
+    return `Partner of ${named(namedPartner)}`;
   }
 
   const siblingIds = new Set(person.siblingIds || []);

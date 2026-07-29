@@ -27,6 +27,10 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector('[data-person-id="m"]').className).toContain("female");
     expect(container.querySelector('[data-person-id="c"]').className).toContain("deceased");
     expect(container.querySelector('[data-person-id="c"]').className).toContain("selected");
+    expect(container.querySelectorAll(".family-partner-link")).toHaveLength(1);
+    expect(container.querySelectorAll(".family-union-stem")).toHaveLength(1);
+    expect(container.querySelectorAll(".family-child-branch-item")).toHaveLength(1);
+    expect(container.textContent).not.toContain("Partner");
   });
 
   it("keeps an unnamed central person visible while adding unnamed relatives", () => {
@@ -97,5 +101,96 @@ describe("FamilyTreeCanvas", () => {
     expect(person.className).toContain("cm-share-incomplete");
     expect(person.textContent).toContain("CM share 1/4 of 1/2");
     expect(person.querySelector(".family-node-cm-alert")).not.toBeNull();
+  });
+
+  it("draws a direct stem from a single parent to the child", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        people={[
+          { id: "parent", fullName: "Joseph Borg", sex: "Male" },
+          {
+            id: "child",
+            fullName: "Maria Borg",
+            sex: "Female",
+            fatherId: "parent",
+          },
+        ]}
+      />,
+    ));
+    expect(container.querySelectorAll(".family-partner-link")).toHaveLength(0);
+    expect(container.querySelector(".family-parent-row.single-parent")).not.toBeNull();
+    expect(container.querySelector(".family-union-stem")).not.toBeNull();
+    expect(container.querySelector(".family-child-branch-item")).not.toBeNull();
+  });
+
+  it("branches siblings from the shared stem of both parents", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        people={[
+          { id: "father", fullName: "Joseph Borg", sex: "Male" },
+          { id: "mother", fullName: "Maria Borg", sex: "Female" },
+          {
+            id: "child-1",
+            fullName: "Anna Borg",
+            fatherId: "father",
+            motherId: "mother",
+          },
+          {
+            id: "child-2",
+            fullName: "Paul Borg",
+            fatherId: "father",
+            motherId: "mother",
+          },
+        ]}
+      />,
+    ));
+    expect(container.querySelectorAll(".family-partner-link")).toHaveLength(1);
+    expect(container.querySelector(".family-children-branch.single")).toBeNull();
+    expect(container.querySelectorAll(".family-child-branch-item")).toHaveLength(2);
+  });
+
+  it("shows separate horizontal unions for multiple partners without text labels", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        people={[
+          {
+            id: "person",
+            fullName: "Joseph Borg",
+            spouseIds: ["partner-1", "partner-2"],
+          },
+          {
+            id: "partner-1",
+            fullName: "Maria Borg",
+            spouseIds: ["person"],
+          },
+          {
+            id: "partner-2",
+            fullName: "Anne Vella",
+            spouseIds: ["person"],
+          },
+          {
+            id: "child-1",
+            fullName: "Paul Borg",
+            fatherId: "person",
+            motherId: "partner-1",
+          },
+          {
+            id: "child-2",
+            fullName: "Claire Borg",
+            fatherId: "person",
+            motherId: "partner-2",
+          },
+        ]}
+      />,
+    ));
+    expect(container.querySelectorAll(".family-partner-link")).toHaveLength(2);
+    expect(
+      container.querySelectorAll(
+        ".family-household-unions.multiple > .family-union-block",
+      ),
+    ).toHaveLength(2);
+    expect(container.textContent).not.toContain("Partner");
+    expect(container.textContent).toContain("Paul Borg");
+    expect(container.textContent).toContain("Claire Borg");
   });
 });

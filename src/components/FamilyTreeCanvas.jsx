@@ -110,44 +110,147 @@ export function FamilyTreeCanvas({
   );
   if (hasRelationalLinks) {
     const personMap = new Map(relationalPeople.map((person) => [person.id, person]));
-    const depths = new Map(relationalPeople.map((person) => [person.id, 0]));
-    for (let pass = 0; pass < relationalPeople.length * 2; pass += 1) {
-      let changed = false;
-      relationalPeople.forEach((person) => {
-        const parentDepths = [person.fatherId, person.motherId]
-          .filter((id) => personMap.has(id))
-          .map((id) => depths.get(id) || 0);
-        if (parentDepths.length) {
-          const nextDepth = Math.max(...parentDepths) + 1;
-          if (nextDepth > (depths.get(person.id) || 0)) {
-            depths.set(person.id, nextDepth);
-            changed = true;
-          }
-        }
+    const childrenByParent = new Map();
+    relationalPeople.forEach((person) => {
+      [person.fatherId, person.motherId]
+        .filter((id) => personMap.has(id))
+        .forEach((parentId) => {
+          if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+          childrenByParent.get(parentId).push(person);
+        });
+    });
+    const unionNeighbours = (personId) => {
+      const ids = new Set(personMap.get(personId)?.spouseIds || []);
+      relationalPeople.forEach((candidate) => {
+        if ((candidate.spouseIds || []).includes(personId)) ids.add(candidate.id);
       });
-      relationalPeople.forEach((person) => {
-        const lateralIds = [
-          ...(person.spouseIds || []),
-          ...(person.siblingIds || []),
-        ].filter((id) => personMap.has(id));
-        const lateralDepth = Math.max(
-          depths.get(person.id) || 0,
-          ...lateralIds.map((id) => depths.get(id) || 0),
-        );
-        [person.id, ...lateralIds].forEach((id) => {
-          if ((depths.get(id) || 0) < lateralDepth) {
-            depths.set(id, lateralDepth);
-            changed = true;
+      (childrenByParent.get(personId) || []).forEach((child) => {
+        [child.fatherId, child.motherId].forEach((parentId) => {
+          if (parentId && parentId !== personId && personMap.has(parentId)) {
+            ids.add(parentId);
           }
         });
       });
-      if (!changed) break;
-    }
-    const generations = new Map();
-    relationalPeople.forEach((person) => { const depth = depths.get(person.id) || 0; if (!generations.has(depth)) generations.set(depth, []); generations.get(depth).push(person); });
+      ids.delete(personId);
+      return [...ids].filter((id) => personMap.has(id));
+    };
+    const partnershipComponent = (startId) => {
+      const component = new Set();
+      const queue = [startId];
+      while (queue.length) {
+        const personId = queue.shift();
+        if (!personId || component.has(personId)) continue;
+        component.add(personId);
+        unionNeighbours(personId).forEach((partnerId) => {
+          if (!component.has(partnerId)) queue.push(partnerId);
+        });
+      }
+      return [...component];
+    };
+    const pairKey = (ids) => [...ids].sort().join("::");
+    const rendered = new Set();
+
+    const renderHousehold = (startId, trail = new Set()) => {
+      if (!personMap.has(startId) || rendered.has(startId) || trail.has(startId)) {
+        return null;
+      }
+      const memberIds = partnershipComponent(startId);
+      const memberSet = new Set(memberIds);
+      memberIds.forEach((id) => rendered.add(id));
+
+      const childGroups = new Map();
+      relationalPeople.forEach((child) => {
+        if (memberSet.has(child.id)) return;
+        const parentIds = [child.fatherId, child.motherId].filter((id) =>
+          memberSet.has(id),
+        );
+        if (!parentIds.length) return;
+        const key = pairKey(parentIds);
+        if (!childGroups.has(key)) {
+          childGroups.set(key, { parentIds: [...new Set(parentIds)], children: [] });
+        }
+        childGroups.get(key).children.push(child);
+      });
+
+      const unionGroups = new Map(childGroups);
+      memberIds.forEach((personId) => {
+        unionNeighbours(personId).forEach((partnerId) => {
+          if (!memberSet.has(partnerId)) return;
+          const parentIds = [personId, partnerId].sort();
+          const key = pairKey(parentIds);
+          if (!unionGroups.has(key)) {
+            unionGroups.set(key, { parentIds, children: [] });
+          }
+        });
+      });
+      if (!unionGroups.size) {
+        unionGroups.set(startId, {
+          parentIds: [startId],
+          children: [],
+        });
+      }
+
+      const nextTrail = new Set(trail);
+      memberIds.forEach((id) => nextTrail.add(id));
+      return (
+        <div className="family-household" key={`household-${startId}`}>
+          <div className={`family-household-unions ${unionGroups.size > 1 ? "multiple" : ""}`}>
+            {[...unionGroups.entries()].map(([key, group]) => {
+              const parentPeople = group.parentIds
+                .map((id) => personMap.get(id))
+                .filter(Boolean);
+              const sortedChildren = [...group.children].sort((a, b) =>
+                displayName(a).localeCompare(displayName(b)),
+              );
+              return (
+                <div className="family-union-block" key={key}>
+                  <div className={`family-parent-row ${parentPeople.length === 1 ? "single-parent" : ""}`}>
+                    {parentPeople.map((person, index) => (
+                      <span className="family-parent-node" key={`${key}-${person.id}`}>
+                        {index > 0 && (
+                          <span className="family-partner-link" aria-hidden="true" />
+                        )}
+                        {card(person)}
+                      </span>
+                    ))}
+                  </div>
+                  {sortedChildren.length > 0 && (
+                    <>
+                      <span className="family-union-stem" aria-hidden="true" />
+                      <div
+                        className={`family-children-branch ${sortedChildren.length === 1 ? "single" : ""}`}
+                        style={{ "--child-count": sortedChildren.length }}
+                      >
+                        {sortedChildren.map((child) => (
+                          <div className="family-child-branch-item" key={child.id}>
+                            {renderHousehold(child.id, nextTrail) || card(child)}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    };
+
+    const roots = relationalPeople
+      .filter(
+        (person) =>
+          ![person.fatherId, person.motherId].some((id) => personMap.has(id)),
+      )
+      .sort((a, b) => displayName(a).localeCompare(displayName(b)));
+    const forest = [];
+    [...roots, ...relationalPeople].forEach((person) => {
+      const household = renderHousehold(person.id);
+      if (household) forest.push(household);
+    });
     return <section className="tree-panel">
       <header className="tree-toolbar"><div><p className="eyebrow">Relational family record</p><h2>Family tree</h2></div><button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}><Printer size={16} /> Print</button></header>
-      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2>{[...generations.entries()].sort(([a], [b]) => a - b).map(([depth, members], index) => <div className="relational-generation" key={depth}>{index > 0 && <div className="family-down-line" />}<div className="family-branch-row">{members.sort((a, b) => displayName(a).localeCompare(displayName(b))).map((person) => <div className="family-branch-item" key={person.id}>{card(person)}</div>)}</div></div>)}</div></div>
+      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2><div className="relational-forest">{forest}</div></div></div>
       <p className="helper-text">Select a person in the index to locate and highlight them in this tree.</p>
     </section>;
   }

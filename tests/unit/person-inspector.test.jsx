@@ -157,7 +157,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Remove 1 child first.");
   });
 
-  it("can link an existing person as a spouse in both directions", () => {
+  it("can link an existing person as a partner in both directions", () => {
     const onChange = vi.fn();
     const people = [
       {
@@ -187,11 +187,11 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const spouseButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Spouse"));
-    act(() => spouseButton.click());
+    const partnerButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Partner"));
+    act(() => partnerButton.click());
 
-    const spouseSelect = container.querySelector('select[aria-label="Existing spouse"]');
+    const spouseSelect = container.querySelector('select[aria-label="Existing partner"]');
     act(() => {
       Object.getOwnPropertyDescriptor(
         HTMLSelectElement.prototype,
@@ -200,7 +200,7 @@ describe("PersonInspector", () => {
       spouseSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
     const linkButton = [...container.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Link spouse"));
+      .find((button) => button.textContent.includes("Link partner"));
     act(() => linkButton.click());
 
     const updatedPeople = onChange.mock.calls.at(-1)[0];

@@ -58,7 +58,7 @@ describe("family tree people", () => {
       },
     ];
     expect(personDisplayName(people[1], people)).toBe("Father of Joseph Borg");
-    expect(personDisplayName(people[2], people)).toBe("Wife of Joseph Borg");
+    expect(personDisplayName(people[2], people)).toBe("Partner of Joseph Borg");
   });
 
   it("requires names, surname, and a woman's surname at birth before relationships", () => {

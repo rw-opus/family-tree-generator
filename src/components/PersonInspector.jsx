@@ -37,7 +37,7 @@ import {
 const relationshipActions = [
   { key: "father", label: "Father", icon: UserRound },
   { key: "mother", label: "Mother", icon: UserRound },
-  { key: "spouse", label: "Spouse", icon: Heart },
+  { key: "spouse", label: "Partner", icon: Heart },
   { key: "child", label: "Child", icon: Baby },
   { key: "sibling", label: "Brother / sister", icon: UsersRound },
 ];
@@ -335,7 +335,7 @@ export function PersonInspector({
     }
     if (kind === "spouse") {
       Object.assign(relative, {
-        designations: [hasDesignation(selectedPerson, "Deceased") ? "Surviving Spouse" : "Spouse"],
+        designations: [hasDesignation(selectedPerson, "Deceased") ? "Surviving Spouse" : "Partner"],
         spouseIds: [selectedPerson.id],
       });
       selectedPatch = {
@@ -615,12 +615,12 @@ export function PersonInspector({
               }}
             >
               <UserRound size={15} />
-              Create new spouse
+              Create new partner
             </button>
             <span>or link an existing person</span>
             <div>
               <select
-                aria-label="Existing spouse"
+                aria-label="Existing partner"
                 value={existingSpouseId}
                 disabled={!existingSpouseCandidates.length}
                 onChange={(event) => setExistingSpouseId(event.target.value)}
@@ -643,7 +643,7 @@ export function PersonInspector({
                 onClick={linkExistingSpouse}
               >
                 <Heart size={15} />
-                Link spouse
+                Link partner
               </button>
             </div>
           </div>
