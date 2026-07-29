@@ -208,6 +208,42 @@ describe("PersonInspector", () => {
     expect(updatedPeople[1].spouseIds).toEqual(["person-a"]);
   });
 
+  it("keeps parent creation buttons but omits father and mother detail selectors", () => {
+    const person = {
+      id: "person",
+      fullName: "Joseph Borg",
+      givenNames: "Joseph",
+      surname: "Borg",
+      surnameAtBirth: "Borg",
+      sex: "Male",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[person]}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const relationshipButtons = [
+      ...container.querySelectorAll(".relationship-actions button"),
+    ].map((button) => button.textContent);
+    expect(relationshipButtons.some((text) => text.includes("Father"))).toBe(true);
+    expect(relationshipButtons.some((text) => text.includes("Mother"))).toBe(true);
+    const detailLabels = [
+      ...container.querySelectorAll(".inspector-fields > label > span:first-child"),
+    ].map((span) => span.textContent);
+    expect(detailLabels).not.toContain("Father");
+    expect(detailLabels).not.toContain("Mother");
+  });
+
   it("requires an explicit deceased checkbox and omits date of birth", () => {
     const onChange = vi.fn();
     const person = {

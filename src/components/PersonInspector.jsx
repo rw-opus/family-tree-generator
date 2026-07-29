@@ -712,38 +712,6 @@ export function PersonInspector({
             </label>
           )}
           <label>
-            <span>Father</span>
-            <select
-              value={selectedPerson.fatherId || ""}
-              onChange={(event) => updateSelected({ fatherId: event.target.value })}
-            >
-              <option value="">Not linked</option>
-              {people
-                .filter((person) => person.id !== selectedPerson.id)
-                .map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {displayName(person)}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
-            <span>Mother</span>
-            <select
-              value={selectedPerson.motherId || ""}
-              onChange={(event) => updateSelected({ motherId: event.target.value })}
-            >
-              <option value="">Not linked</option>
-              {people
-                .filter((person) => person.id !== selectedPerson.id)
-                .map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {displayName(person)}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
             <span>Notes</span>
             <textarea
               rows="2"
