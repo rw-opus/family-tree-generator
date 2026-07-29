@@ -44,7 +44,7 @@ textarea {
   position: relative;
   z-index: 20;
   display: grid;
-  grid-template-columns: auto minmax(220px, 520px) auto;
+  grid-template-columns: auto minmax(420px, 1fr) auto;
   align-items: center;
   gap: 1rem;
   min-height: 68px;
@@ -52,6 +52,63 @@ textarea {
   background: rgba(255, 255, 255, 0.97);
   box-shadow: 0 5px 18px rgba(18, 48, 36, 0.07);
   padding: 0.65rem 1rem;
+}
+
+.workbench-case-fields {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.65fr) minmax(190px, 1.35fr) 118px;
+  align-items: end;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.workbench-case-fields > label,
+.workbench-case-fields .workbench-title {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.workbench-case-fields > label > span:first-child,
+.workbench-case-fields .workbench-title > span:first-child {
+  color: var(--muted);
+  font-size: 0.56rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.workbench-case-fields input {
+  min-height: 2.3rem;
+  min-width: 0;
+  border-color: transparent;
+  background: #f2f5f3;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.workbench-case-fields input:focus {
+  border-color: #9eb8aa;
+  background: #fff;
+}
+
+.header-currency-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border-radius: 5px;
+  background: #f2f5f3;
+  padding-left: 0.5rem;
+}
+
+.header-currency-input b {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.header-currency-input input {
+  background: transparent;
 }
 
 .workbench-brand {
@@ -1594,7 +1651,7 @@ textarea {
   }
 
   .workbench-header {
-    grid-template-columns: auto minmax(180px, 1fr) auto;
+    grid-template-columns: auto minmax(360px, 1fr) auto;
   }
 
   .stage-person-picker {
@@ -1635,6 +1692,24 @@ textarea {
   .workbench-title input {
     min-height: 2.1rem;
     font-size: 0.78rem;
+  }
+
+  .workbench-case-fields {
+    grid-template-columns: minmax(0, 1fr) 92px;
+    gap: 0.35rem;
+  }
+
+  .workbench-case-fields .workbench-title {
+    display: none;
+  }
+
+  .workbench-case-fields > label > span:first-child {
+    display: none;
+  }
+
+  .workbench-case-fields input,
+  .header-currency-input {
+    min-height: 2.1rem;
   }
 
   .workbench-actions > .compact {

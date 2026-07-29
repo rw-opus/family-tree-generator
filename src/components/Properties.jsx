@@ -40,7 +40,13 @@ const viaLabel = (via) => {
   return "Inherited by intestacy";
 };
 
-export function Properties({ properties, people, outsideParties, onChange }) {
+export function Properties({
+  properties,
+  people,
+  outsideParties,
+  singleProperty = false,
+  onChange,
+}) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const updateProperties = (nextProperties) => onChange({ properties: nextProperties });
   const updateProperty = (id, patch) =>
@@ -99,6 +105,8 @@ export function Properties({ properties, people, outsideParties, onChange }) {
         );
         return (
           <section className="editor-panel" key={property.id}>
+            {!singleProperty && (
+              <>
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Property</p>
@@ -140,6 +148,8 @@ export function Properties({ properties, people, outsideParties, onChange }) {
                 />
               </label>
             </div>
+              </>
+            )}
 
             <div className="section-heading">
               <div>
@@ -556,10 +566,12 @@ export function Properties({ properties, people, outsideParties, onChange }) {
           </section>
         );
       })}
-      <button type="button" className="primary-button" onClick={addProperty}>
-        <Home size={16} /> Add property
-      </button>
-      {!properties.length && (
+      {!singleProperty && (
+        <button type="button" className="primary-button" onClick={addProperty}>
+          <Home size={16} /> Add property
+        </button>
+      )}
+      {!singleProperty && !properties.length && (
         <p className="helper-text">
           No properties yet. Add a property, then assign its starting owners from the family tree — the
           automatic cascade will follow any deceased owner to their heirs.

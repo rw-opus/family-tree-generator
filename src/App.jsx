@@ -4,7 +4,6 @@ import {
   CloudOff,
   FileText,
   FolderTree,
-  Home,
   Landmark,
   LogIn,
   Menu,
@@ -21,7 +20,6 @@ import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
-import { PropertyCalculator } from "./components/PropertyCalculator.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import { buildAutomaticFamilyOwnership } from "./domain/familyOwnership.js";
@@ -35,6 +33,16 @@ import {
 } from "./services/localWorkspace.js";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
 
+const makePrimaryProperty = (id = crypto.randomUUID()) => ({
+  id,
+  address: "",
+  saleValue: "",
+  owners: [],
+  declarations: [],
+  transfers: [],
+  saleLots: [],
+});
+
 const initialTree = () => ({
   id: crypto.randomUUID(),
   title: "New property succession",
@@ -47,7 +55,7 @@ const initialTree = () => ({
     deceasedOwnershipPercent: 100,
     rightPercent: 100,
   },
-  properties: [],
+  properties: [makePrimaryProperty()],
   succession: {
     basis: "intestacy",
     dateOfDeath: "",
@@ -70,13 +78,24 @@ const initialTree = () => ({
 const migratedProperties = (value) => {
   if (value.properties?.length) return value.properties;
   const legacy = value.property;
-  if (!legacy || !(legacy.address || legacy.description || legacy.marketValueAtDeath)) return [];
+  if (
+    !legacy ||
+    !(
+      legacy.address ||
+      legacy.description ||
+      legacy.marketValueAtDeath ||
+      legacy.saleValue
+    )
+  ) {
+    return [makePrimaryProperty("primary-property")];
+  }
   return [
     {
       id: "legacy-property",
       address: legacy.address || "",
       description: legacy.description || "",
       marketValue: legacy.marketValueAtDeath || "",
+      saleValue: legacy.saleValue || "",
       owners: [],
       declarations: [],
       transfers: [],
@@ -104,7 +123,6 @@ const normaliseTree = (value) => {
 
 const dashboardTabs = [
   { key: "person", label: "Person", icon: UserRound },
-  { key: "properties", label: "Properties", icon: Home },
   { key: "case", label: "Property & tax", icon: Landmark },
   { key: "summary", label: "Summary", icon: FileText },
   { key: "settings", label: "Settings", icon: Settings2 },
@@ -137,6 +155,9 @@ export function App() {
   const [zoom, setZoom] = useState(100);
 
   const currentTree = normaliseTree(tree);
+  const activeProperty =
+    currentTree.properties[0] || makePrimaryProperty("primary-property");
+  const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const automaticOwnership = useMemo(
     () => buildAutomaticFamilyOwnership(currentTree.people),
     [currentTree.people],
@@ -162,9 +183,9 @@ export function App() {
     () =>
       buildCausaMortisShareCoverage(
         currentTree.people,
-        currentTree.properties,
+        activeProperties,
       ),
-    [currentTree.people, currentTree.properties],
+    [activeProperties, currentTree.people],
   );
   const selectedCaseDependencyLabels = useMemo(() => {
     const labels = [];
@@ -274,6 +295,39 @@ export function App() {
     setPanelTab("person");
   };
 
+  const updateActiveProperty = (patch) => {
+    const nextProperty = { ...activeProperty, ...patch };
+    setTree({
+      ...currentTree,
+      property: {
+        ...currentTree.property,
+        address: nextProperty.address || "",
+        saleValue: nextProperty.saleValue || "",
+      },
+      properties: [
+        nextProperty,
+        ...currentTree.properties.slice(1),
+      ],
+    });
+  };
+
+  const updatePropertyCase = (patch) => {
+    const nextProperty = patch.properties?.[0] || activeProperty;
+    setTree({
+      ...currentTree,
+      ...patch,
+      property: {
+        ...currentTree.property,
+        address: nextProperty.address || "",
+        saleValue: nextProperty.saleValue || "",
+      },
+      properties: [
+        nextProperty,
+        ...currentTree.properties.slice(1),
+      ],
+    });
+  };
+
   const save = async () => {
     if (!session) {
       if (supabaseConfigured) setShowLogin(true);
@@ -311,13 +365,45 @@ export function App() {
             <span>Family ownership workspace</span>
           </div>
         </div>
-        <label className="workbench-title">
-          <span>Tree name</span>
-          <input
-            value={tree.title}
-            onChange={(event) => setTree({ ...tree, title: event.target.value })}
-          />
-        </label>
+        <div className="workbench-case-fields">
+          <label className="workbench-title">
+            <span>Tree name</span>
+            <input
+              value={tree.title}
+              onChange={(event) =>
+                setTree({ ...tree, title: event.target.value })
+              }
+            />
+          </label>
+          <label className="property-header-address">
+            <span>Property address</span>
+            <input
+              aria-label="Property address"
+              value={activeProperty.address || ""}
+              onChange={(event) =>
+                updateActiveProperty({ address: event.target.value })
+              }
+              placeholder="Property address"
+            />
+          </label>
+          <label className="property-header-price">
+            <span>Selling price</span>
+            <span className="header-currency-input">
+              <b>€</b>
+              <input
+                aria-label="Property selling price"
+                type="number"
+                min="0"
+                step="any"
+                value={activeProperty.saleValue || ""}
+                onChange={(event) =>
+                  updateActiveProperty({ saleValue: event.target.value })
+                }
+                placeholder="0"
+              />
+            </span>
+          </label>
+        </div>
         <div className="workbench-actions">
           <label className="saved-tree-picker">
             <span>Saved trees</span>
@@ -439,7 +525,7 @@ export function App() {
             {panelTab === "person" && (
               <PersonInspector
                 people={currentTree.people}
-                properties={currentTree.properties}
+                properties={activeProperties}
                 ownershipByPerson={ownershipByPerson}
                 causaMortisCoverage={
                   causaMortisCoverage.byPerson[selectedPersonId] || []
@@ -451,18 +537,20 @@ export function App() {
                 onChange={(people) => setTree({ ...currentTree, people })}
               />
             )}
-            {panelTab === "properties" && (
+            {panelTab === "case" && (
               <Properties
-                properties={currentTree.properties}
+                properties={activeProperties}
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
-                onChange={(patch) => setTree({ ...currentTree, ...patch })}
+                singleProperty
+                onChange={updatePropertyCase}
               />
             )}
-            {panelTab === "case" && (
-              <PropertyCalculator caseData={currentTree} onChange={setTree} />
+            {panelTab === "summary" && (
+              <CaseSummary
+                tree={{ ...currentTree, properties: activeProperties }}
+              />
             )}
-            {panelTab === "summary" && <CaseSummary tree={currentTree} />}
             {panelTab === "settings" && (
               <SettingsPanel
                 settings={currentTree.settings}

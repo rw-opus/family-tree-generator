@@ -30,7 +30,13 @@ describe("App local recovery", () => {
         id: "tree-1",
         title: "Borg succession",
         people: [{ id: "person-1", fullName: "Joseph Borg" }],
-        properties: [{ id: "property-1", address: "1 Republic Street" }],
+        properties: [
+          {
+            id: "property-1",
+            address: "1 Republic Street",
+            saleValue: "250000",
+          },
+        ],
       },
       {
         id: "tree-2",
@@ -50,6 +56,17 @@ describe("App local recovery", () => {
     expect(picker.value).toBe("tree-1");
     expect(picker.options).toHaveLength(2);
     expect(container.textContent).toContain("Joseph Borg");
+    expect(
+      container.querySelector('input[aria-label="Property address"]').value,
+    ).toBe("1 Republic Street");
+    expect(
+      container.querySelector('input[aria-label="Property selling price"]').value,
+    ).toBe("250000");
+    expect(
+      [...container.querySelectorAll(".dashboard-tabs button")].some(
+        (button) => button.textContent === "Properties",
+      ),
+    ).toBe(false);
 
     act(() => {
       Object.getOwnPropertyDescriptor(
@@ -61,5 +78,16 @@ describe("App local recovery", () => {
 
     expect(title.value).toBe("Vella succession");
     expect(container.textContent).toContain("Maria Vella");
+  });
+
+  it("places the single property's tools under Property & tax", () => {
+    act(() => root.render(<App />));
+    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")]
+      .find((button) => button.textContent.includes("Property & tax"));
+
+    act(() => caseButton.click());
+
+    expect(container.textContent).toContain("Owners of this property");
+    expect(container.textContent).not.toContain("Add property");
   });
 });
