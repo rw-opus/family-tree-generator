@@ -314,9 +314,25 @@ export function PersonInspector({
       };
     }
 
-    const updatedPeople = people.map((person) =>
-      person.id === selectedPerson.id ? { ...person, ...selectedPatch } : person,
-    );
+    const updatedPeople = people.map((person) => {
+      if (person.id === selectedPerson.id) {
+        return { ...person, ...selectedPatch };
+      }
+      if (kind !== "spouse") return person;
+      if (
+        person.fatherId === selectedPerson.id &&
+        !person.motherId
+      ) {
+        return { ...person, motherId: relative.id };
+      }
+      if (
+        person.motherId === selectedPerson.id &&
+        !person.fatherId
+      ) {
+        return { ...person, fatherId: relative.id };
+      }
+      return person;
+    });
     onChange([...updatedPeople, relative]);
   };
 
@@ -339,6 +355,18 @@ export function PersonInspector({
             ...person,
             spouseIds: [...new Set([...(person.spouseIds || []), selectedPerson.id])],
           };
+        }
+        if (
+          person.fatherId === selectedPerson.id &&
+          !person.motherId
+        ) {
+          return { ...person, motherId: existingPerson.id };
+        }
+        if (
+          person.motherId === selectedPerson.id &&
+          !person.fatherId
+        ) {
+          return { ...person, fatherId: existingPerson.id };
         }
         return person;
       }),

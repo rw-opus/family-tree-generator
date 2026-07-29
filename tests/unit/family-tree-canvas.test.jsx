@@ -200,4 +200,53 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Paul Borg");
     expect(container.textContent).toContain("Claire Borg");
   });
+
+  it("renders one anchored person card when a partner shares existing children", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        people={[
+          {
+            id: "roland",
+            fullName: "Roland Wadge",
+            sex: "Male",
+            spouseIds: ["partner"],
+          },
+          {
+            id: "partner",
+            fullName: "Partner of Roland Wadge",
+            sex: "Female",
+            spouseIds: ["roland"],
+          },
+          {
+            id: "child-1",
+            fullName: "Child One",
+            fatherId: "roland",
+            motherId: "partner",
+          },
+          {
+            id: "child-2",
+            fullName: "Child Two",
+            fatherId: "roland",
+            motherId: "partner",
+          },
+          {
+            id: "child-3",
+            fullName: "Child Three",
+            fatherId: "roland",
+            motherId: "partner",
+          },
+        ]}
+      />,
+    ));
+
+    expect(
+      container.querySelectorAll('[data-person-id="roland"]'),
+    ).toHaveLength(1);
+    expect(
+      container.querySelectorAll('[data-person-id="partner"]'),
+    ).toHaveLength(1);
+    expect(container.querySelectorAll(".family-parent-balance")).toHaveLength(1);
+    expect(container.querySelectorAll(".family-partner-link")).toHaveLength(1);
+    expect(container.querySelectorAll(".family-child-stem")).toHaveLength(3);
+  });
 });

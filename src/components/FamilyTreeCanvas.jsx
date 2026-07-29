@@ -198,13 +198,29 @@ export function FamilyTreeCanvas({
             {[...unionGroups.entries()].map(([key, group]) => {
               const parentPeople = group.parentIds
                 .map((id) => personMap.get(id))
-                .filter(Boolean);
+                .filter(Boolean)
+                .sort((a, b) => {
+                  if (a.id === startId) return -1;
+                  if (b.id === startId) return 1;
+                  return displayName(a).localeCompare(displayName(b));
+                });
               const sortedChildren = [...group.children].sort((a, b) =>
                 displayName(a).localeCompare(displayName(b)),
               );
               return (
-                <div className="family-union-block" key={key}>
+                <div
+                  className={`family-union-block ${
+                    parentPeople.length > 1 ? "partner-union" : ""
+                  }`}
+                  key={key}
+                >
                   <div className={`family-parent-row ${parentPeople.length === 1 ? "single-parent" : ""}`}>
+                    {parentPeople.length > 1 && (
+                      <span
+                        className="family-parent-balance"
+                        aria-hidden="true"
+                      />
+                    )}
                     {parentPeople.map((person, index) => (
                       <span className="family-parent-node" key={`${key}-${person.id}`}>
                         {index > 0 && (

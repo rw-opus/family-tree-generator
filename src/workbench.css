@@ -1514,7 +1514,8 @@ textarea {
 
 .tree-stage .family-node {
   position: relative;
-  min-width: 178px;
+  width: 220px;
+  min-width: 220px;
   max-width: 220px;
   border: 1px solid #7c8f84;
   border-top: 4px solid #557064;
@@ -1675,6 +1676,12 @@ textarea {
   min-height: 88px;
 }
 
+.tree-stage .family-parent-balance {
+  display: block;
+  flex: 0 0 284px;
+  width: 284px;
+}
+
 .tree-stage .family-partner-link {
   display: block;
   width: 64px;
@@ -1687,6 +1694,11 @@ textarea {
   width: 3px;
   height: 34px;
   background: #566b60;
+}
+
+.tree-stage .family-union-block.partner-union > .family-union-stem,
+.tree-stage .family-union-block.partner-union > .family-children-branch {
+  transform: translateX(142px);
 }
 
 .tree-stage .family-children-branch {

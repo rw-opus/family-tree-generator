@@ -111,6 +111,73 @@ describe("PersonInspector", () => {
     expect(childButton.querySelector(".relationship-count").textContent).toBe("3");
   });
 
+  it("adds a partner to existing children as their missing parent", () => {
+    const onChange = vi.fn();
+    const onSelectPerson = vi.fn();
+    const people = [
+      {
+        id: "parent",
+        fullName: "Roland Wadge",
+        sex: "Male",
+        surnameAtBirth: "Wadge",
+        spouseIds: [],
+        designations: [],
+      },
+      {
+        id: "child-1",
+        fullName: "Child One",
+        fatherId: "parent",
+        spouseIds: [],
+        designations: [],
+      },
+      {
+        id: "child-2",
+        fullName: "Child Two",
+        fatherId: "parent",
+        spouseIds: [],
+        designations: [],
+      },
+      {
+        id: "child-3",
+        fullName: "Child Three",
+        fatherId: "parent",
+        spouseIds: [],
+        designations: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="parent"
+          onChange={onChange}
+          onSelectPerson={onSelectPerson}
+        />,
+      ),
+    );
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Partner"))
+        .click(),
+    );
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Create new partner"))
+        .click(),
+    );
+
+    const updatedPeople = onChange.mock.calls[0][0];
+    const partner = updatedPeople.at(-1);
+    expect(updatedPeople[0].spouseIds).toEqual([partner.id]);
+    expect(
+      updatedPeople
+        .filter((person) => person.id.startsWith("child-"))
+        .every((person) => person.motherId === partner.id),
+    ).toBe(true);
+    expect(onSelectPerson).not.toHaveBeenCalled();
+  });
+
   it("locks a parent to one father and blocks deleting someone with a child", () => {
     const people = [
       {
