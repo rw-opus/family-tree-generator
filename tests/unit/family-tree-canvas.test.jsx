@@ -18,6 +18,24 @@ describe("FamilyTreeCanvas", () => {
     act(() => [...container.querySelectorAll("button")].find((button) => button.textContent.includes("Print")).click());
     expect(onPrint).toHaveBeenCalledWith(expect.any(HTMLElement));
   });
+  it("uses the editable tree name as the diagram heading", () => {
+    act(() => root.render(
+      <FamilyTreeCanvas
+        treeTitle="The Borg Family"
+        people={[
+          { id: "parent", fullName: "Joseph Borg" },
+          { id: "child", fullName: "Anna Borg", fatherId: "parent" },
+        ]}
+      />,
+    ));
+
+    expect(
+      [...container.querySelectorAll("h2")].every(
+        (heading) => heading.textContent === "The Borg Family",
+      ),
+    ).toBe(true);
+    expect(container.textContent).not.toContain("Family tree");
+  });
   it("renders parent-linked people without numbered generation captions and highlights the selected person", () => {
     act(() => root.render(<FamilyTreeCanvas selectedPersonId="c" people={[{ id: "f", fullName: "Father", sex: "Male" }, { id: "m", fullName: "Mother", sex: "Female" }, { id: "c", fullName: "Child", sex: "Female", isDeceased: true, fatherId: "f", motherId: "m" }]} />));
     expect(container.textContent).toContain("Father");

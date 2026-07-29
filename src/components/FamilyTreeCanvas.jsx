@@ -37,6 +37,7 @@ function printTree(node) {
 }
 
 export function FamilyTreeCanvas({
+  treeTitle = "",
   people,
   ownershipByPerson = {},
   causaMortisCoverageByPerson = {},
@@ -112,7 +113,9 @@ export function FamilyTreeCanvas({
       sharesParentSurname && givenNames ? givenNames : value,
     );
   };
-  const title = deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree";
+  const title =
+    String(treeTitle).trim() ||
+    (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");
   const card = (person, variant = "") => {
     const isDeceased = Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
     const incompleteCausaMortis = (
@@ -395,8 +398,8 @@ export function FamilyTreeCanvas({
       if (household) forest.push(household);
     });
     return <section className="tree-panel">
-      <header className="tree-toolbar"><div><p className="eyebrow">Relational family record</p><h2>Family tree</h2></div><button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}><Printer size={16} /> Print</button></header>
-      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">Family tree</h2><div className="relational-forest">{forest}</div></div></div>
+      <header className="tree-toolbar"><div><p className="eyebrow">Relational family record</p><h2>{title}</h2></div><button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}><Printer size={16} /> Print</button></header>
+      <div className="family-chart" ref={treeRef}><div className="family-canvas relational-canvas"><h2 className="family-chart-title">{title}</h2><div className="relational-forest">{forest}</div></div></div>
       <p className="helper-text">Select a person in the index to locate and highlight them in this tree.</p>
     </section>;
   }

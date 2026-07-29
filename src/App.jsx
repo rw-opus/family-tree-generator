@@ -606,6 +606,7 @@ export function App() {
             </button>
           </div>
           <FamilyTreeCanvas
+            treeTitle={currentTree.title}
             people={currentTree.people}
             ownershipByPerson={ownershipByPerson}
             causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
