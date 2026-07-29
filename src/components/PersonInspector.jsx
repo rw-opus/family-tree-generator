@@ -286,11 +286,17 @@ export function PersonInspector({
 
     if (kind === "father") {
       Object.assign(relative, { sex: "Male", designations: ["Parent"] });
-      selectedPatch = { fatherId: relative.id };
+      selectedPatch = {
+        fatherId: relative.id,
+        fatherExplicitlyUnassigned: false,
+      };
     }
     if (kind === "mother") {
       Object.assign(relative, { sex: "Female", designations: ["Parent"] });
-      selectedPatch = { motherId: relative.id };
+      selectedPatch = {
+        motherId: relative.id,
+        motherExplicitlyUnassigned: false,
+      };
     }
     if (kind === "spouse") {
       Object.assign(relative, {
@@ -325,13 +331,15 @@ export function PersonInspector({
       if (kind !== "spouse") return person;
       if (
         person.fatherId === selectedPerson.id &&
-        !person.motherId
+        !person.motherId &&
+        !person.motherExplicitlyUnassigned
       ) {
         return { ...person, motherId: relative.id };
       }
       if (
         person.motherId === selectedPerson.id &&
-        !person.fatherId
+        !person.fatherId &&
+        !person.fatherExplicitlyUnassigned
       ) {
         return { ...person, fatherId: relative.id };
       }
@@ -362,13 +370,15 @@ export function PersonInspector({
         }
         if (
           person.fatherId === selectedPerson.id &&
-          !person.motherId
+          !person.motherId &&
+          !person.motherExplicitlyUnassigned
         ) {
           return { ...person, motherId: existingPerson.id };
         }
         if (
           person.motherId === selectedPerson.id &&
-          !person.fatherId
+          !person.fatherId &&
+          !person.fatherExplicitlyUnassigned
         ) {
           return { ...person, fatherId: existingPerson.id };
         }
@@ -682,7 +692,10 @@ export function PersonInspector({
                 aria-label="Father"
                 value={selectedPerson.fatherId}
                 onChange={(event) =>
-                  updateSelected({ fatherId: event.target.value })
+                  updateSelected({
+                    fatherId: event.target.value,
+                    fatherExplicitlyUnassigned: !event.target.value,
+                  })
                 }
               >
                 <option value="">Not assigned</option>
@@ -701,7 +714,10 @@ export function PersonInspector({
                 aria-label="Mother"
                 value={selectedPerson.motherId}
                 onChange={(event) =>
-                  updateSelected({ motherId: event.target.value })
+                  updateSelected({
+                    motherId: event.target.value,
+                    motherExplicitlyUnassigned: !event.target.value,
+                  })
                 }
               >
                 <option value="">Not assigned</option>

@@ -20,7 +20,10 @@ import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
-import { createPerson } from "./domain/people.js";
+import {
+  assignSolePartnersAsMissingParents,
+  createPerson,
+} from "./domain/people.js";
 import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
 import {
@@ -106,7 +109,9 @@ const normaliseTree = (value) => {
   return {
     ...defaults,
     ...value,
-    people: value.people || defaults.people,
+    people: assignSolePartnersAsMissingParents(
+      value.people || defaults.people,
+    ),
     property: { ...defaults.property, ...(value.property || {}) },
     properties: migratedProperties(value),
     succession: { ...defaults.succession, ...(value.succession || {}) },

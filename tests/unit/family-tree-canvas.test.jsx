@@ -206,9 +206,15 @@ describe("FamilyTreeCanvas", () => {
       <FamilyTreeCanvas
         people={[
           {
+            id: "ancestor",
+            fullName: "Roland's Father",
+            sex: "Male",
+          },
+          {
             id: "roland",
             fullName: "Roland Wadge",
             sex: "Male",
+            fatherId: "ancestor",
             spouseIds: ["partner"],
           },
           {
@@ -245,8 +251,21 @@ describe("FamilyTreeCanvas", () => {
     expect(
       container.querySelectorAll('[data-person-id="partner"]'),
     ).toHaveLength(1);
-    expect(container.querySelectorAll(".family-parent-balance")).toHaveLength(1);
+    expect(container.querySelectorAll(".family-parent-balance")).toHaveLength(0);
     expect(container.querySelectorAll(".family-partner-link")).toHaveLength(1);
-    expect(container.querySelectorAll(".family-child-stem")).toHaveLength(3);
+    const rolandUnion = container
+      .querySelector('[data-person-id="roland"]')
+      .closest(".family-union-block");
+    expect(
+      rolandUnion.querySelectorAll(
+        ":scope > .family-children-branch > .family-child-branch-item > .family-child-stem",
+      ),
+    ).toHaveLength(3);
+    expect(
+      container
+        .querySelector('[data-person-id="roland"]')
+        .closest(".family-child-branch-item")
+        .style.getPropertyValue("--branch-anchor-offset"),
+    ).toBe("-142px");
   });
 });

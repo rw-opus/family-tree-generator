@@ -208,19 +208,8 @@ export function FamilyTreeCanvas({
                 displayName(a).localeCompare(displayName(b)),
               );
               return (
-                <div
-                  className={`family-union-block ${
-                    parentPeople.length > 1 ? "partner-union" : ""
-                  }`}
-                  key={key}
-                >
+                <div className="family-union-block" key={key}>
                   <div className={`family-parent-row ${parentPeople.length === 1 ? "single-parent" : ""}`}>
-                    {parentPeople.length > 1 && (
-                      <span
-                        className="family-parent-balance"
-                        aria-hidden="true"
-                      />
-                    )}
                     {parentPeople.map((person, index) => (
                       <span className="family-parent-node" key={`${key}-${person.id}`}>
                         {index > 0 && (
@@ -236,15 +225,30 @@ export function FamilyTreeCanvas({
                       <div
                         className={`family-children-branch ${sortedChildren.length === 1 ? "single" : ""}`}
                       >
-                        {sortedChildren.map((child) => (
-                          <div className="family-child-branch-item" key={child.id}>
-                            <span
-                              className="family-child-stem"
-                              aria-hidden="true"
-                            />
-                            {renderHousehold(child.id, nextTrail) || card(child)}
-                          </div>
-                        ))}
+                        {sortedChildren.map((child) => {
+                          const childHousehold =
+                            renderHousehold(child.id, nextTrail);
+                          const hasOnePartner =
+                            unionNeighbours(child.id).length === 1;
+                          return (
+                            <div
+                              className="family-child-branch-item"
+                              key={child.id}
+                              style={{
+                                "--branch-anchor-offset":
+                                  childHousehold && hasOnePartner
+                                    ? "-142px"
+                                    : "0px",
+                              }}
+                            >
+                              <span
+                                className="family-child-stem"
+                                aria-hidden="true"
+                              />
+                              {childHousehold || card(child)}
+                            </div>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -259,7 +263,13 @@ export function FamilyTreeCanvas({
     const roots = relationalPeople
       .filter(
         (person) =>
-          ![person.fatherId, person.motherId].some((id) => personMap.has(id)),
+          ![person.fatherId, person.motherId].some((id) => personMap.has(id)) &&
+          !unionNeighbours(person.id).some((partnerId) => {
+            const partner = personMap.get(partnerId);
+            return [partner?.fatherId, partner?.motherId].some((id) =>
+              personMap.has(id),
+            );
+          }),
       )
       .sort((a, b) => displayName(a).localeCompare(displayName(b)));
     const forest = [];
