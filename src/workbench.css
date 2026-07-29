@@ -1691,7 +1691,9 @@ textarea {
 
 .tree-stage .family-children-branch {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-auto-columns: minmax(max-content, 1fr);
+  grid-auto-flow: column;
   align-items: flex-start;
   justify-content: center;
   gap: 0;
@@ -1718,15 +1720,24 @@ textarea {
 .tree-stage .family-child-branch-item::after {
   right: auto;
   left: 50%;
-  border-left: 3px solid #566b60;
 }
 
 .tree-stage .family-child-branch-item:first-child::before {
-  border: 0;
+  display: none;
 }
 
 .tree-stage .family-child-branch-item:last-child::after {
-  border-top: 0;
+  display: none;
+}
+
+.tree-stage .family-child-stem {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 3px;
+  height: 34px;
+  background: #566b60;
+  transform: translateX(-50%);
 }
 
 .tree-stage .family-spouse-line,

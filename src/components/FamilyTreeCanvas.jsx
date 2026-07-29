@@ -222,6 +222,10 @@ export function FamilyTreeCanvas({
                       >
                         {sortedChildren.map((child) => (
                           <div className="family-child-branch-item" key={child.id}>
+                            <span
+                              className="family-child-stem"
+                              aria-hidden="true"
+                            />
                             {renderHousehold(child.id, nextTrail) || card(child)}
                           </div>
                         ))}

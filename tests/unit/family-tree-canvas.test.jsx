@@ -141,12 +141,19 @@ describe("FamilyTreeCanvas", () => {
             fatherId: "father",
             motherId: "mother",
           },
+          {
+            id: "child-3",
+            fullName: "Mark Borg",
+            fatherId: "father",
+            motherId: "mother",
+          },
         ]}
       />,
     ));
     expect(container.querySelectorAll(".family-partner-link")).toHaveLength(1);
     expect(container.querySelector(".family-children-branch.single")).toBeNull();
-    expect(container.querySelectorAll(".family-child-branch-item")).toHaveLength(2);
+    expect(container.querySelectorAll(".family-child-branch-item")).toHaveLength(3);
+    expect(container.querySelectorAll(".family-child-stem")).toHaveLength(3);
   });
 
   it("shows separate horizontal unions for multiple partners without text labels", () => {
