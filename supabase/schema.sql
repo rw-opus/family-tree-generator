@@ -5,9 +5,12 @@ create table if not exists public.family_trees (
   owner_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
   title text not null default 'Untitled family tree' check (char_length(title) <= 200),
   people jsonb not null default '[]'::jsonb check (jsonb_typeof(people) = 'array'),
+  tree_data jsonb not null default '{}'::jsonb check (jsonb_typeof(tree_data) = 'object'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.family_trees
+  add column if not exists tree_data jsonb not null default '{}'::jsonb;
 create index if not exists family_trees_owner_updated_idx on public.family_trees (owner_id, updated_at desc);
 
 create or replace function public.set_family_tree_updated_at()
@@ -20,4 +23,3 @@ create trigger family_trees_set_updated_at before update on public.family_trees 
 alter table public.family_trees enable row level security;
 drop policy if exists "family tree owner access" on public.family_trees;
 create policy "family tree owner access" on public.family_trees for all to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
-

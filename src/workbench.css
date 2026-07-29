@@ -123,6 +123,25 @@ textarea {
   padding: 0;
 }
 
+.saved-tree-picker {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.saved-tree-picker span {
+  color: var(--muted);
+  font-size: 0.56rem;
+  line-height: 1;
+}
+
+.saved-tree-picker select {
+  width: 158px;
+  min-height: 2.1rem;
+  padding: 0.3rem 1.6rem 0.3rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
 .compact {
   min-height: 2.3rem;
   padding: 0 0.7rem;
@@ -1620,6 +1639,15 @@ textarea {
 
   .workbench-actions > .compact {
     display: none;
+  }
+
+  .saved-tree-picker span {
+    display: none;
+  }
+
+  .saved-tree-picker select {
+    width: 112px;
+    min-height: 2.1rem;
   }
 
   .mobile-dashboard-button {

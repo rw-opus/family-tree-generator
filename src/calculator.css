@@ -149,21 +149,33 @@ button.index-row:hover, button.index-row.selected { background: #f1eaf4; color: 
 .declaration-participants { display: grid; gap: .28rem; margin-top: .55rem; }
 .declaration-participants > span { border-left: 3px solid #6b3f79; background: #faf7fb; padding: .35rem .5rem; color: #526073; font-size: .72rem; }
 button:disabled { cursor: not-allowed; opacity: .5; }
-.fraction-launcher { position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 20; display: inline-flex; align-items: center; gap: .45rem; min-height: 2.65rem; border: 0; border-radius: 999px; background: #6b3f79; color: #fff; padding: 0 1rem; box-shadow: 0 8px 24px rgba(44, 22, 51, .28); font-weight: 800; }
-.fraction-launcher:hover { background: #583265; }
+.fraction-launcher { position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 20; display: grid; grid-template-rows: 18px 1fr; gap: 4px; width: 48px; height: 54px; border: 2px solid #fff; border-radius: 9px; background: #6b3f79; color: #fff; padding: 6px; box-shadow: 0 8px 24px rgba(44, 22, 51, .3); }
+.fraction-launcher:hover { background: #583265; transform: translateY(-1px); }
+.mini-calculator-screen { display: grid; place-items: center; border-radius: 3px; background: #f6f0f8; color: #4f285c; font: 800 12px/1 Georgia, serif; }
+.mini-calculator-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.mini-calculator-keys i { border-radius: 2px; background: rgba(255, 255, 255, .88); }
 .fraction-overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(13, 24, 19, .42); padding: 1rem; }
-.fraction-dialog { width: min(440px, 100%); border: 1px solid #cfdad3; border-radius: 10px; background: #fff; box-shadow: 0 24px 70px rgba(8, 25, 16, .28); padding: 1rem; }
+.fraction-dialog { width: min(350px, 100%); border: 1px solid #cfdad3; border-radius: 12px; background: #f8faf8; box-shadow: 0 24px 70px rgba(8, 25, 16, .28); padding: .85rem; }
 .fraction-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.fraction-expression { display: grid; grid-template-columns: minmax(90px, 1fr) 64px minmax(90px, 1fr); align-items: center; gap: .8rem; margin-top: 1.1rem; }
-.fraction-expression > select { font-size: 1.25rem; text-align: center; }
-.fraction-input { display: grid; gap: .35rem; }
+.fraction-dialog > header h2 { display: flex; align-items: center; gap: .4rem; font-size: 1rem; }
+.fraction-display { position: relative; display: grid; min-height: 78px; margin-top: .75rem; border: 1px solid #bacdc2; border-radius: 8px; background: #e9f2ed; padding: .55rem .7rem; text-align: right; }
+.fraction-display small { justify-self: start; color: #5f7167; font-size: .62rem; font-weight: 800; text-transform: uppercase; }
+.fraction-display strong { color: #174a36; font: 800 1.65rem/1 Georgia, serif; }
+.fraction-display strong span { padding: 0 .2rem; color: #6c7d73; font-size: 1.05rem; }
+.fraction-display > span { color: #526158; font-size: .68rem; font-weight: 750; }
+.fraction-display.invalid { border-color: #e0b0ac; background: #fff0ee; }
+.fraction-expression { display: grid; grid-template-columns: minmax(80px, 1fr) 34px minmax(80px, 1fr); align-items: center; gap: .55rem; margin-top: .8rem; }
+.fraction-input { display: grid; gap: .25rem; }
 .fraction-input span { height: 2px; background: #172033; }
-.fraction-input input { text-align: center; font-weight: 800; }
-.fraction-result { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-top: 1rem; }
-.fraction-result div { display: grid; gap: .25rem; border-radius: 6px; background: #edf6f0; padding: .7rem; text-align: center; }
-.fraction-result span { color: #526073; font-size: .7rem; font-weight: 700; }
-.fraction-result strong { color: #004225; }
-.fraction-error { margin: 1rem 0 0; border-radius: 5px; background: #fff0ee; color: #9f1f1f; padding: .75rem; font-weight: 700; }
+.fraction-input input { min-height: 2.15rem; text-align: center; font-weight: 800; }
+.fraction-operation-symbol { color: #6b3f79; font-size: 1.35rem; text-align: center; }
+.fraction-operation-pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; margin-top: .75rem; }
+.fraction-operation-pad button { min-height: 2.35rem; border: 1px solid #cbd5d1; border-radius: 6px; background: #fff; color: #42544a; font-size: 1.05rem; font-weight: 850; }
+.fraction-operation-pad button.active { border-color: #6b3f79; background: #6b3f79; color: #fff; box-shadow: 0 3px 9px rgba(78, 42, 89, .2); }
+.fraction-result { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .65rem; border-radius: 6px; background: #edf6f0; padding: .55rem .65rem; }
+.fraction-result span { color: #526073; font-size: .68rem; font-weight: 700; }
+.fraction-result strong { color: #004225; font-size: .82rem; }
+.fraction-error { margin: .65rem 0 0; border-radius: 5px; background: #fff0ee; color: #9f1f1f; padding: .55rem .65rem; font-size: .72rem; font-weight: 700; }
 @media (max-width: 800px) { .ownership-grid, .declaration-layout { grid-template-columns: 1fr; } .history-row { grid-template-columns: 1fr auto; } .history-row > :nth-child(3) { grid-column: 1 / -1; } }
 @media (max-width: 620px) { .vendor-tax-heading { display: grid; } .vendor-tax-heading > span:last-child { text-align: left; } .vendor-tax-lots > div { grid-template-columns: 1fr; gap: .15rem; } .vendor-tax-lots > div strong { text-align: left; } }
 @media (max-width: 900px) { .summary-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

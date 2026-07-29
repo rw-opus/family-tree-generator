@@ -28,6 +28,11 @@ import { buildAutomaticFamilyOwnership } from "./domain/familyOwnership.js";
 import { buildOwnershipLedger } from "./domain/ownership.js";
 import { createPerson } from "./domain/people.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
+import {
+  loadLocalWorkspace,
+  saveLocalWorkspace,
+  upsertWorkspaceTree,
+} from "./services/localWorkspace.js";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
 
 const initialTree = () => ({
@@ -106,13 +111,22 @@ const dashboardTabs = [
 ];
 
 export function App() {
-  const [tree, setTree] = useState(initialTree);
-  const [trees, setTrees] = useState([]);
+  const [startupWorkspace] = useState(() => loadLocalWorkspace());
+  const [tree, setTree] = useState(() => {
+    const restoredTree =
+      startupWorkspace.trees.find(
+        (item) => item.id === startupWorkspace.activeTreeId,
+      ) || startupWorkspace.trees[0];
+    return restoredTree ? normaliseTree(restoredTree) : initialTree();
+  });
+  const [trees, setTrees] = useState(startupWorkspace.trees);
   const [session, setSession] = useState(null);
   const [status, setStatus] = useState(
-    supabaseConfigured
-      ? "Connecting to secure storage..."
-      : "Local draft only · cloud storage is not configured.",
+    startupWorkspace.trees.length
+      ? "Recovered automatically from this device."
+      : supabaseConfigured
+        ? "Connecting to secure storage..."
+        : "Automatically saved on this device.",
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -184,6 +198,21 @@ export function App() {
   }, [currentTree.people, selectedPersonId]);
 
   useEffect(() => {
+    setTrees((items) => upsertWorkspaceTree(items, normaliseTree(tree)));
+  }, [tree]);
+
+  useEffect(() => {
+    const saved = saveLocalWorkspace(trees, tree.id);
+    if (!session) {
+      setStatus(
+        saved
+          ? "Automatically saved on this device."
+          : "This browser could not save the current tree. Keep this page open and use cloud save when available.",
+      );
+    }
+  }, [session, tree.id, trees]);
+
+  useEffect(() => {
     if (!supabase) return undefined;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     return supabase.auth.onAuthStateChange((_event, nextSession) =>
@@ -194,17 +223,25 @@ export function App() {
     if (!session) return;
     listFamilyTrees()
       .then((items) => {
-        setTrees(items);
-        if (items[0]) setTree(normaliseTree(items[0]));
+        setTrees((currentItems) => [
+          ...items,
+          ...currentItems.filter(
+            (item) => !items.some((cloudTree) => cloudTree.id === item.id),
+          ),
+        ]);
+        if (!startupWorkspace.trees.length && items[0]) {
+          setTree(normaliseTree(items[0]));
+        }
         setStatus("Saved securely to your workspace.");
       })
       .catch((error) => setStatus(`Cloud storage needs attention: ${error.message}`));
-  }, [session]);
+  }, [session, startupWorkspace.trees.length]);
 
-  const treeCount = useMemo(
-    () => trees.length + (trees.some((item) => item.id === tree.id) ? 0 : 1),
-    [tree.id, trees],
+  const treeOptions = useMemo(
+    () => upsertWorkspaceTree(trees, normaliseTree(tree)),
+    [tree, trees],
   );
+  const treeCount = treeOptions.length;
 
   const selectPerson = (personId) => {
     setSelectedPersonId(personId);
@@ -229,10 +266,18 @@ export function App() {
     setDashboardOpen(true);
   };
 
+  const openTree = (treeId) => {
+    const selectedTree = treeOptions.find((item) => item.id === treeId);
+    if (!selectedTree) return;
+    setTree(normaliseTree(selectedTree));
+    setSelectedPersonId(selectedTree.people?.[0]?.id || "");
+    setPanelTab("person");
+  };
+
   const save = async () => {
     if (!session) {
       if (supabaseConfigured) setShowLogin(true);
-      else setStatus("This draft remains in this browser until cloud storage is configured.");
+      else setStatus("This tree is already saved automatically on this device.");
       return;
     }
     setStatus("Saving...");
@@ -274,6 +319,20 @@ export function App() {
           />
         </label>
         <div className="workbench-actions">
+          <label className="saved-tree-picker">
+            <span>Saved trees</span>
+            <select
+              aria-label="Saved family trees"
+              value={tree.id}
+              onChange={(event) => openTree(event.target.value)}
+            >
+              {treeOptions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title || "Untitled family tree"}
+                </option>
+              ))}
+            </select>
+          </label>
           <span className="tree-count">
             {treeCount} {treeCount === 1 ? "tree" : "trees"}
           </span>
@@ -284,7 +343,7 @@ export function App() {
               </>
             ) : (
               <>
-                <CloudOff size={15} /> {supabaseConfigured ? "Not signed in" : "Local draft"}
+                <CloudOff size={15} /> {supabaseConfigured ? "Not signed in" : "Auto-saved"}
               </>
             )}
           </span>

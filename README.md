@@ -9,7 +9,7 @@ A Maltese property ownership and succession calculator. It combines a family tre
 3. Add its project URL and publishable key to `.env`.
 4. Run `npm install` then `npm run dev`.
 
-Until Supabase is configured, trees remain only in the current browser tab. Once configured, each signed-in user can save and reopen only their own trees. Row Level Security enforces that separation.
+Trees are automatically restored from the browser on the same device, including after a refresh or accidental close. Once Supabase is configured, each signed-in user can also save and reopen the complete case across devices. Row Level Security enforces that separation.
 
 ## Deployment readiness
 
