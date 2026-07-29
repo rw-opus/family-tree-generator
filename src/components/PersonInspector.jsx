@@ -654,7 +654,7 @@ export function PersonInspector({
         <p className="eyebrow">Personal details</p>
         <div className="inspector-fields">
           <label>
-            <span>Names</span>
+            <span>Name</span>
             <input
               autoFocus={!displayedGivenNames}
               value={displayedGivenNames}
@@ -671,6 +671,14 @@ export function PersonInspector({
             />
           </label>
           <label>
+            <span>Surname at birth</span>
+            <input
+              value={displayedSurnameAtBirth}
+              onChange={(event) => updateSelected({ surnameAtBirth: event.target.value })}
+              placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
+            />
+          </label>
+          <label>
             <span>Sex</span>
             <select
               value={selectedPerson.sex || ""}
@@ -681,44 +689,6 @@ export function PersonInspector({
               <option>Male</option>
               <option>Other</option>
             </select>
-          </label>
-          <label>
-            <span>Surname at birth</span>
-            <input
-              value={displayedSurnameAtBirth}
-              onChange={(event) => updateSelected({ surnameAtBirth: event.target.value })}
-              placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
-            />
-          </label>
-          <label className="deceased-toggle">
-            <span>Deceased</span>
-            <span className="detail-checkbox">
-              <input
-                type="checkbox"
-                checked={isDeceased}
-                onChange={(event) => setDeceased(event.target.checked)}
-              />
-              This person is deceased.
-            </span>
-          </label>
-          {isDeceased && (
-            <label>
-              <span>Date of death</span>
-              <input
-                type="date"
-                value={selectedPerson.dateOfDeath || ""}
-                onChange={(event) => updateSelected({ dateOfDeath: event.target.value })}
-              />
-            </label>
-          )}
-          <label>
-            <span>Notes</span>
-            <textarea
-              rows="2"
-              value={selectedPerson.notes || ""}
-              onChange={(event) => updateSelected({ notes: event.target.value })}
-              placeholder="Private notes about this person"
-            />
           </label>
         </div>
         <div className="starting-ownership">
@@ -785,19 +755,17 @@ export function PersonInspector({
             </button>
           )}
         </div>
-        {!isDeceased && (
-          <div className="person-succession living-succession">
-            <div>
-              <strong>Succession record</strong>
-              <small>
-                Not opened because this person is living. Mark the person as
-                deceased to enter the death, will or intestacy, heirs and causa
-                mortis details.
-              </small>
-            </div>
-            <span>Living</span>
-          </div>
-        )}
+        <label className="deceased-status-control">
+          <span>Status</span>
+          <span className="detail-checkbox">
+            <input
+              type="checkbox"
+              checked={isDeceased}
+              onChange={(event) => setDeceased(event.target.checked)}
+            />
+            This person is deceased.
+          </span>
+        </label>
         {isDeceased && (
           <div className="person-succession">
             <div className="person-succession-heading">
@@ -816,6 +784,16 @@ export function PersonInspector({
                 <option value="will">Testate (will)</option>
               </select>
             </div>
+            <label className="succession-detail-row">
+              <span>Date of death</span>
+              <input
+                type="date"
+                value={selectedPerson.dateOfDeath || ""}
+                onChange={(event) =>
+                  updateSelected({ dateOfDeath: event.target.value })
+                }
+              />
+            </label>
 
             {inheritanceBasis === "intestacy" ? (
               <div className="automatic-heirs">

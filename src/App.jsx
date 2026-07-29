@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Cloud,
   CloudOff,
-  FileText,
   FolderTree,
   Landmark,
   LogIn,
@@ -15,7 +14,6 @@ import {
   X,
   ZoomIn,
 } from "lucide-react";
-import { CaseSummary } from "./components/CaseSummary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
@@ -124,7 +122,6 @@ const normaliseTree = (value) => {
 const dashboardTabs = [
   { key: "person", label: "Person", icon: UserRound },
   { key: "case", label: "Property & tax", icon: Landmark },
-  { key: "summary", label: "Summary", icon: FileText },
   { key: "settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -544,11 +541,6 @@ export function App() {
                 outsideParties={currentTree.outsideParties}
                 singleProperty
                 onChange={updatePropertyCase}
-              />
-            )}
-            {panelTab === "summary" && (
-              <CaseSummary
-                tree={{ ...currentTree, properties: activeProperties }}
               />
             )}
             {panelTab === "settings" && (

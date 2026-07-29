@@ -87,7 +87,11 @@ export function Properties({
     });
 
   return (
-    <div className="calculator-stack">
+    <div
+      className={`calculator-stack ${
+        singleProperty ? "single-property-case" : ""
+      }`}
+    >
       {properties.map((property) => {
         const owners = property.owners || [];
         const total = ownersTotal(owners);

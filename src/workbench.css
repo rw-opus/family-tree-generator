@@ -268,7 +268,7 @@ textarea {
 
 .dashboard-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   border-bottom: 1px solid #dfe5e1;
   background: #f7f9f8;
   padding: 0.35rem;
@@ -516,10 +516,6 @@ textarea {
   padding-top: 0.5rem;
 }
 
-.deceased-toggle {
-  background: #fafcfb;
-}
-
 .detail-checkbox {
   display: flex;
   align-items: center;
@@ -534,6 +530,19 @@ textarea {
   min-height: 1rem;
   margin: 0;
   accent-color: var(--forest);
+}
+
+.deceased-status-control {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  border-top: 1px solid #e2e8e4;
+  padding: 0.45rem 0.1rem 0;
+  color: #526158;
+  font-size: 0.64rem;
+  font-weight: 800;
 }
 
 .starting-ownership {
@@ -589,42 +598,29 @@ textarea {
   padding: 0.55rem;
 }
 
-.living-succession {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  background: #f8faf9;
-}
-
-.living-succession > div {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.living-succession strong {
-  color: var(--ink);
-  font-size: 0.68rem;
-}
-
-.living-succession small {
-  color: var(--muted);
-  font-size: 0.59rem;
-  line-height: 1.35;
-}
-
-.living-succession > span {
-  border-radius: 999px;
-  background: #e5f3e9;
-  color: #28704d;
-  padding: 0.25rem 0.45rem;
-  font-size: 0.59rem;
-  font-weight: 850;
-}
-
 .person-succession-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 96px;
   align-items: center;
   gap: 0.5rem;
+}
+
+.succession-detail-row {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  border-top: 1px solid #dce5df;
+  padding-top: 0.45rem;
+  color: #526158;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.succession-detail-row input {
+  min-height: 1.9rem;
+  padding: 0.28rem 0.4rem;
+  font-size: 0.7rem;
 }
 
 .person-succession-heading > div {
@@ -1248,18 +1244,125 @@ textarea {
   padding: 0.65rem;
 }
 
-.dashboard-summary {
-  padding: 0.75rem;
-  background: #f4f6f5;
+.single-property-case {
+  gap: 0.5rem;
 }
 
-.dashboard-summary .case-summary {
-  margin: 0;
-  box-shadow: none;
+.single-property-case .editor-panel {
+  padding: 0.62rem;
 }
 
-.dashboard-summary .summary-facts {
+.single-property-case .section-heading {
+  margin-top: 0.15rem;
+}
+
+.single-property-case .section-heading h3 {
+  font-size: 0.78rem;
+}
+
+.single-property-case .helper-text {
+  margin: 0.25rem 0;
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+
+.single-property-case .form-grid {
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.single-property-case .form-grid > label:not(.check-label) {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.05rem;
+  border-top: 1px solid #e4eae6;
+  color: #526158;
+  font-size: 0.63rem;
+  font-weight: 800;
+}
+
+.single-property-case .form-grid > label:first-child {
+  border-top: 0;
+}
+
+.single-property-case .transfer-form > label,
+.single-property-case .declaration-form > label {
+  display: grid;
+  grid-template-columns: minmax(128px, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.05rem;
+  border-top: 1px solid #e4eae6;
+  color: #526158;
+  font-size: 0.63rem;
+  font-weight: 800;
+}
+
+.single-property-case .transfer-form {
+  gap: 0.28rem;
+  padding: 0.55rem;
+}
+
+.single-property-case .transfer-fraction,
+.single-property-case .declared-fraction {
+  gap: 0.25rem;
+}
+
+.single-property-case .transfer-fraction > label,
+.single-property-case .declared-fraction > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem;
+  color: #526158;
+  font-size: 0.6rem;
+  font-weight: 800;
+}
+
+.single-property-case .transfer-fraction > span,
+.single-property-case .declared-fraction > span {
+  padding-bottom: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.single-property-case input,
+.single-property-case select {
+  min-height: 1.9rem;
+  padding: 0.28rem 0.4rem;
+  font-size: 0.68rem;
+}
+
+.single-property-case .check-label {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2rem;
+  border-top: 1px solid #e4eae6;
+  font-size: 0.63rem;
+}
+
+.single-property-case .check-label input {
+  min-height: 1rem;
+}
+
+.single-property-case .ownership-grid,
+.single-property-case .declaration-layout {
   grid-template-columns: 1fr;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.single-property-case .people-list {
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.single-property-case .person-card {
+  padding: 0.5rem;
 }
 
 .tree-stage {

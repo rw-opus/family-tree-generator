@@ -265,10 +265,8 @@ describe("PersonInspector", () => {
     );
 
     expect(container.textContent).not.toContain("Date of birth");
-    expect(container.textContent).toContain("Succession record");
-    expect(container.textContent).toContain(
-      "Not opened because this person is living",
-    );
+    expect(container.querySelector(".person-succession")).toBeNull();
+    expect(container.textContent).not.toContain("Succession on death");
     const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')]
       .find((input) => input.parentElement.textContent.includes("This person is deceased."));
     expect(deceasedCheckbox.checked).toBe(false);
@@ -278,6 +276,66 @@ describe("PersonInspector", () => {
       isDeceased: true,
       designations: ["Deceased"],
     });
+  });
+
+  it("shows only the requested personal fields in the requested order", () => {
+    const person = {
+      id: "person",
+      fullName: "Maria Example",
+      givenNames: "Maria",
+      surname: "Example",
+      surnameAtBirth: "Borg",
+      sex: "Female",
+      designations: [],
+      spouseIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[person]}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const labels = [
+      ...container.querySelectorAll(
+        ".inspector-fields > label > span:first-child",
+      ),
+    ].map((span) => span.textContent);
+    expect(labels).toEqual(["Name", "Surname", "Surname at birth", "Sex"]);
+  });
+
+  it("shows succession fields only for a deceased person", () => {
+    const person = {
+      id: "person",
+      fullName: "Maria Example",
+      isDeceased: true,
+      dateOfDeath: "2024-02-03",
+      inheritanceBasis: "intestacy",
+      designations: ["Deceased"],
+      spouseIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[person]}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-succession")).not.toBeNull();
+    expect(
+      container.querySelector(".succession-detail-row input").value,
+    ).toBe("2024-02-03");
+    expect(container.textContent).toContain("Succession on death");
   });
 
   it("prefills a man's surname at birth from his full name", () => {
@@ -327,7 +385,7 @@ describe("PersonInspector", () => {
     );
 
     const namesInput = [...container.querySelectorAll("label")]
-      .find((label) => label.querySelector(":scope > span")?.textContent === "Names")
+      .find((label) => label.querySelector(":scope > span")?.textContent === "Name")
       .querySelector("input");
     act(() => {
       Object.getOwnPropertyDescriptor(

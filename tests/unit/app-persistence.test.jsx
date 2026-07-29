@@ -67,6 +67,11 @@ describe("App local recovery", () => {
         (button) => button.textContent === "Properties",
       ),
     ).toBe(false);
+    expect(
+      [...container.querySelectorAll(".dashboard-tabs button")].some(
+        (button) => button.textContent === "Summary",
+      ),
+    ).toBe(false);
 
     act(() => {
       Object.getOwnPropertyDescriptor(
@@ -89,5 +94,6 @@ describe("App local recovery", () => {
 
     expect(container.textContent).toContain("Owners of this property");
     expect(container.textContent).not.toContain("Add property");
+    expect(container.querySelector(".single-property-case")).not.toBeNull();
   });
 });
