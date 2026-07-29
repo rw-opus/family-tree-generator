@@ -1,6 +1,11 @@
 import { Calculator, Home, Plus, Trash2 } from "lucide-react";
 import { approximateFraction } from "../domain/ownership.js";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
+import {
+  fractionForShare,
+  shareFromFraction,
+  shareFromPercentage,
+} from "../domain/shares.js";
 import { PropertyDeclarations } from "./PropertyDeclarations.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
 
@@ -17,7 +22,13 @@ const makeProperty = () => ({
   saleLots: [],
 });
 
-const makeOwner = () => ({ id: crypto.randomUUID(), personId: "", sharePercent: 0 });
+const makeOwner = () => ({
+  id: crypto.randomUUID(),
+  personId: "",
+  sharePercent: 0,
+  shareNumerator: 0,
+  shareDenominator: 1,
+});
 const makeLot = () => ({
   id: crypto.randomUUID(),
   ownerId: "",
@@ -62,6 +73,19 @@ export function Properties({
         owner.id === ownerId ? { ...owner, ...patch } : owner,
       ),
     });
+  const updateOwnerFraction = (property, owner, patch) => {
+    const current = fractionForShare(owner);
+    updateOwner(
+      property,
+      owner.id,
+      shareFromFraction(
+        patch.numerator ?? current.numerator,
+        patch.denominator ?? current.denominator,
+      ),
+    );
+  };
+  const updateOwnerPercentage = (property, owner, percentage) =>
+    updateOwner(property, owner.id, shareFromPercentage(percentage));
   const removeOwner = (property, ownerId) =>
     updateProperty(property.id, {
       owners: (property.owners || []).filter((owner) => owner.id !== ownerId),
@@ -157,19 +181,26 @@ export function Properties({
 
             <div className="section-heading">
               <div>
-                <p className="eyebrow">Ownership today</p>
-                <h3>Owners of this property</h3>
+                <p className="eyebrow">Initial title</p>
+                <h3>Initial owner/s of the property</h3>
               </div>
             </div>
+            <p className="helper-text">
+              Select any person already on the family tree and enter the
+              fraction originally owned. Initial owners may be added whenever
+              they are identified.
+            </p>
             <p className={`share-status ${Math.abs(total - 100) < 0.001 || !owners.length ? "valid" : "invalid"}`}>
-              Allocated: {total.toFixed(2)}% {owners.length ? (Math.abs(total - 100) < 0.001 ? "— valid" : "— must equal 100%") : ""}
+              Initial title allocated: {total.toFixed(2)}% {owners.length ? (Math.abs(total - 100) < 0.001 ? "— valid" : "— must equal 100%") : ""}
             </p>
             <div className="people-list">
-              {owners.map((owner) => (
-                <article className="person-card" key={owner.id}>
+              {owners.map((owner) => {
+                const ownerFraction = fractionForShare(owner);
+                return (
+                  <article className="person-card" key={owner.id}>
                   <div className="form-grid">
                     <label>
-                      Person
+                      Initial owner
                       <select
                         value={owner.personId}
                         onChange={(event) => updateOwner(property, owner.id, { personId: event.target.value })}
@@ -183,17 +214,55 @@ export function Properties({
                       </select>
                     </label>
                     <label>
-                      Share (%)
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="any"
-                        value={owner.sharePercent}
-                        onChange={(event) =>
-                          updateOwner(property, owner.id, { sharePercent: event.target.value })
-                        }
-                      />
+                      Fraction owned
+                      <span className="initial-owner-fraction">
+                        <input
+                          aria-label="Initial ownership numerator"
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={ownerFraction.numerator}
+                          onChange={(event) =>
+                            updateOwnerFraction(property, owner, {
+                              numerator: event.target.value,
+                            })
+                          }
+                        />
+                        <b>/</b>
+                        <input
+                          aria-label="Initial ownership denominator"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={ownerFraction.denominator}
+                          onChange={(event) =>
+                            updateOwnerFraction(property, owner, {
+                              denominator: event.target.value,
+                            })
+                          }
+                        />
+                      </span>
+                    </label>
+                    <label>
+                      Percentage
+                      <span className="initial-owner-percentage">
+                        <input
+                          aria-label="Initial ownership percentage"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="any"
+                          value={owner.sharePercent}
+                          onChange={(event) =>
+                            updateOwnerPercentage(
+                              property,
+                              owner,
+                              event.target.value,
+                            )
+                          }
+                        />
+                        <b>%</b>
+                      </span>
                     </label>
                   </div>
                   <button
@@ -205,37 +274,46 @@ export function Properties({
                     <Trash2 size={16} />
                   </button>
                 </article>
-              ))}
+                );
+              })}
             </div>
             <button type="button" className="add-button" onClick={() => addOwner(property)}>
-              <Plus size={16} /> Add owner
+              <Plus size={16} /> Add initial owner
             </button>
 
-            <div className="automatic-heirs">
-              <strong>Who owns this property today</strong>
-              <small>Deceased owners are followed automatically to their heirs by intestacy or will.</small>
-              {result.breakdown.length ? (
-                result.breakdown.map((row) => {
-                  const person = peopleById.get(row.ownerId);
-                  return (
-                    <div key={`${row.ownerId}-${row.via}`}>
-                      <span>
-                        {person?.fullName || "Unnamed person"}
-                        <small> · {viaLabel(row.via)}</small>
-                      </span>
-                      <b>
-                        {row.numerator}/{row.denominator} · {row.sharePercent.toLocaleString("en-MT", { maximumFractionDigits: 4 })}%
-                      </b>
-                    </div>
-                  );
-                })
-              ) : (
-                <small>Add owners above to see how this property is currently held.</small>
-              )}
-              {property.marketValue && (
-                <small>Market value {money.format(Number(property.marketValue) || 0)}</small>
-              )}
-            </div>
+            {owners.length > 0 && (
+              <div className="automatic-heirs">
+                <strong>Calculated title after inheritance</strong>
+                <small>
+                  The initial fractions are followed automatically through
+                  intestacy, wills and recorded transfers.
+                </small>
+                {result.breakdown.length ? (
+                  result.breakdown.map((row) => {
+                    const person = peopleById.get(row.ownerId);
+                    return (
+                      <div key={`${row.ownerId}-${row.via}`}>
+                        <span>
+                          {person?.fullName || "Unnamed person"}
+                          <small> · {viaLabel(row.via)}</small>
+                        </span>
+                        <b>
+                          {row.numerator}/{row.denominator} · {row.sharePercent.toLocaleString("en-MT", { maximumFractionDigits: 4 })}%
+                        </b>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <small>
+                    Complete the selected initial owners to calculate the later
+                    title.
+                  </small>
+                )}
+                {property.marketValue && (
+                  <small>Market value {money.format(Number(property.marketValue) || 0)}</small>
+                )}
+              </div>
+            )}
 
             <PropertyDeclarations
               property={property}

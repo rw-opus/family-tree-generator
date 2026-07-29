@@ -86,14 +86,74 @@ describe("App local recovery", () => {
   });
 
   it("places the single property's tools under Property & tax", () => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "tree",
+          title: "Initial ownership",
+          people: [
+            { id: "person-1", fullName: "Joseph Borg" },
+            { id: "person-2", fullName: "Maria Borg" },
+          ],
+          properties: [
+            {
+              id: "property",
+              address: "1 Republic Street",
+              owners: [],
+            },
+          ],
+        },
+      ],
+      "tree",
+      window.localStorage,
+    );
     act(() => root.render(<App />));
     const caseButton = [...container.querySelectorAll(".dashboard-tabs button")]
       .find((button) => button.textContent.includes("Property & tax"));
 
     act(() => caseButton.click());
 
-    expect(container.textContent).toContain("Owners of this property");
+    expect(container.textContent).toContain("Initial owner/s of the property");
+    expect(container.textContent).not.toContain("Who owns this property today");
     expect(container.textContent).not.toContain("Add property");
     expect(container.querySelector(".single-property-case")).not.toBeNull();
+
+    const addOwner = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.includes("Add initial owner"),
+    );
+    act(() => addOwner.click());
+
+    const ownerSelect = container.querySelector(".person-card select");
+    expect([...ownerSelect.options].map((option) => option.textContent)).toEqual([
+      "Choose person",
+      "Joseph Borg",
+      "Maria Borg",
+    ]);
+
+    const numerator = container.querySelector(
+      'input[aria-label="Initial ownership numerator"]',
+    );
+    const denominator = container.querySelector(
+      'input[aria-label="Initial ownership denominator"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set.call(numerator, "1");
+      numerator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set.call(denominator, "2");
+      denominator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(
+      container.querySelector(
+        'input[aria-label="Initial ownership percentage"]',
+      ).value,
+    ).toBe("50");
   });
 });

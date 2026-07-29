@@ -1336,6 +1336,26 @@ textarea {
   min-height: 1rem;
 }
 
+.initial-owner-fraction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.initial-owner-fraction b,
+.initial-owner-percentage b {
+  color: #657184;
+  text-align: center;
+}
+
+.initial-owner-percentage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .single-property-case .ownership-grid,
 .single-property-case .declaration-layout {
   grid-template-columns: 1fr;
