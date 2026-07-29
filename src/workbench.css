@@ -7,10 +7,6 @@
   --plum: #4b116f;
   --paper: #eef1f6;
   --line: #dbe3ea;
-  --female-background: #fff7bf;
-  --female-border: #d4b548;
-  --female-accent: #a97b00;
-  --female-text: #604900;
   --tracker-serif: "Fraunces", Georgia, "Times New Roman", serif;
   --tracker-sans:
     "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
@@ -350,9 +346,9 @@ textarea {
 }
 
 .person-avatar.female {
-  border-color: var(--female-border);
-  background: var(--female-background);
-  color: var(--female-text);
+  border-color: #a96e80;
+  background: #fff5f7;
+  color: #7a3850;
 }
 
 .person-avatar.male {
@@ -1659,9 +1655,9 @@ textarea {
 }
 
 .tree-stage .family-node.female {
-  border-color: var(--female-border);
-  border-top-color: var(--female-accent);
-  background: var(--female-background);
+  border-color: #d6a0b2;
+  border-top-color: #b96f89;
+  background: #fff0f5;
 }
 
 .tree-stage .family-node.deceased {
