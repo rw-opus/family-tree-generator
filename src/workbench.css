@@ -1025,6 +1025,50 @@ textarea {
   padding-top: 0.55rem;
 }
 
+.person-partner-links {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+  border-top: 1px solid #e3e8e5;
+  padding-top: 0.55rem;
+  color: #526158;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.person-partner-links > div {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.person-partner-links > div > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.person-partner-links strong {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-partner-links button {
+  flex: 0 0 auto;
+  min-height: 1.75rem;
+  border: 1px solid #d3b2b2;
+  border-radius: 5px;
+  background: #fff9f9;
+  color: #8c3b3b;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
 .danger-button {
   display: inline-flex;
   align-items: center;

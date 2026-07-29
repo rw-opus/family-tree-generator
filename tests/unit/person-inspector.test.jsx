@@ -25,6 +25,7 @@ describe("PersonInspector", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
   });
 
   it("adds a father around the selected person without moving the selection", () => {
@@ -184,7 +185,7 @@ describe("PersonInspector", () => {
     expect(onSelectPerson).not.toHaveBeenCalled();
   });
 
-  it("locks a parent to one father and blocks deleting someone with a child", () => {
+  it("locks a parent to one father and blocks deleting someone with a descendant", () => {
     const people = [
       {
         id: "parent",
@@ -227,7 +228,93 @@ describe("PersonInspector", () => {
     expect(fatherButton.disabled).toBe(true);
     expect(fatherButton.querySelector(".relationship-count").textContent).toBe("1");
     expect(deleteButton.disabled).toBe(true);
-    expect(container.textContent).toContain("Remove 1 child first.");
+    expect(container.textContent).toContain("Remove 1 descendant first.");
+  });
+
+  it("blocks deletion while a partner is linked and can remove that link", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "person",
+        fullName: "Maria Borg",
+        spouseIds: ["partner"],
+      },
+      {
+        id: "partner",
+        fullName: "Joseph Borg",
+        spouseIds: ["person"],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    beginEditing();
+
+    const deleteButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Delete person"));
+    const unlinkButton = container.querySelector(
+      'button[aria-label="Remove partner link to Joseph Borg"]',
+    );
+    expect(deleteButton.disabled).toBe(true);
+    expect(container.textContent).toContain("Remove 1 partner link first.");
+
+    act(() => unlinkButton.click());
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "person", spouseIds: [] }),
+      expect.objectContaining({ id: "partner", spouseIds: [] }),
+    ]);
+  });
+
+  it("asks for confirmation before deleting a person without dependencies", () => {
+    const onChange = vi.fn();
+    const onSelectPerson = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const people = [
+      { id: "parent", fullName: "Joseph Borg", spouseIds: [] },
+      {
+        id: "person",
+        fullName: "Maria Borg",
+        fatherId: "parent",
+        spouseIds: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={onSelectPerson}
+        />,
+      ),
+    );
+    beginEditing();
+    const deleteButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Delete person"));
+
+    expect(deleteButton.disabled).toBe(false);
+    act(() => deleteButton.click());
+    expect(confirm).toHaveBeenCalledWith(
+      "Are you sure you want to delete Maria Borg from the family tree? This cannot be undone.",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    act(() => deleteButton.click());
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "parent" }),
+    ]);
+    expect(onSelectPerson).toHaveBeenCalledWith("parent");
   });
 
   it("can link an existing person as a partner in both directions", () => {

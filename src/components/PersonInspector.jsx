@@ -391,6 +391,10 @@ export function PersonInspector({
 
   const removeSelected = () => {
     if (!selectedPerson || people.length === 1 || deleteBlockers.length) return;
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
+    );
+    if (!confirmed) return;
     onChange(
       people
         .filter((person) => person.id !== selectedPerson.id)
@@ -403,6 +407,31 @@ export function PersonInspector({
         })),
     );
     onSelectPerson(people.find((person) => person.id !== selectedPerson.id)?.id || "");
+  };
+
+  const removePartnerLink = (partnerId) => {
+    if (!selectedPerson || !partnerId) return;
+    onChange(
+      people.map((person) => {
+        if (person.id === selectedPerson.id) {
+          return {
+            ...person,
+            spouseIds: (person.spouseIds || []).filter(
+              (id) => id !== partnerId,
+            ),
+          };
+        }
+        if (person.id === partnerId) {
+          return {
+            ...person,
+            spouseIds: (person.spouseIds || []).filter(
+              (id) => id !== selectedPerson.id,
+            ),
+          };
+        }
+        return person;
+      }),
+    );
   };
 
   const importGedcom = async (event) => {
@@ -510,14 +539,31 @@ export function PersonInspector({
       .filter((person) => (person.spouseIds || []).includes(selectedPerson.id))
       .map((person) => person.id),
   ]);
+  const linkedPartners = [...linkedSpouseIds]
+    .map((personId) => peopleById.get(personId))
+    .filter(Boolean);
   const existingSpouseCandidates = people.filter(
     (person) =>
       person.id !== selectedPerson.id &&
       !linkedSpouseIds.has(person.id),
   );
   const deleteBlockers = [
-    ...(relationshipCounts.child
-      ? [`${relationshipCounts.child} ${relationshipCounts.child === 1 ? "child" : "children"}`]
+    ...(linkedPartners.length
+      ? [
+          `${linkedPartners.length} ${
+            linkedPartners.length === 1 ? "partner link" : "partner links"
+          }`,
+        ]
+      : []),
+    ...(descendants.length
+      ? [
+          `${descendants.length} ${
+            descendants.length === 1 ? "descendant" : "descendants"
+          }`,
+        ]
+      : []),
+    ...(hasOwnership && ownership > 1e-10
+      ? ["the person's property ownership"]
       : []),
     ...caseDependencyLabels,
   ];
@@ -527,7 +573,7 @@ export function PersonInspector({
       ? "A tree must contain at least one person."
       : deleteBlockers.length
         ? `Remove ${deleteBlockers.join(" and ")} first.`
-        : "Spouse and sibling links will be removed automatically.";
+        : "No partner or descendant dependencies. Confirmation is required.";
 
   return (
     <div className="person-inspector">
@@ -1140,6 +1186,25 @@ export function PersonInspector({
                 ))}
               </div>
             )}
+          </div>
+        )}
+        {linkedPartners.length > 0 && (
+          <div className="person-partner-links">
+            <span>Partner links</span>
+            <div>
+              {linkedPartners.map((partner) => (
+                <span key={partner.id}>
+                  <strong>{displayName(partner)}</strong>
+                  <button
+                    type="button"
+                    onClick={() => removePartnerLink(partner.id)}
+                    aria-label={`Remove partner link to ${displayName(partner)}`}
+                  >
+                    Remove link
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
         )}
         <div className="person-delete-control">
