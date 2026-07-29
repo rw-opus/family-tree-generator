@@ -1084,19 +1084,6 @@ textarea {
   line-height: 1.35;
 }
 
-.relationship-labels {
-  margin-top: 0.5rem;
-  border-top: 1px solid #e3e8e5;
-  padding-top: 0.45rem;
-}
-
-.relationship-labels summary {
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.68rem;
-  font-weight: 800;
-}
-
 .inspector-search {
   display: flex;
   align-items: center;

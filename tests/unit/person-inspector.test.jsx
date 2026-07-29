@@ -237,6 +237,7 @@ describe("PersonInspector", () => {
     ].map((button) => button.textContent);
     expect(relationshipButtons.some((text) => text.includes("Father"))).toBe(true);
     expect(relationshipButtons.some((text) => text.includes("Mother"))).toBe(true);
+    expect(container.textContent).not.toContain("Succession labels");
     const detailLabels = [
       ...container.querySelectorAll(".inspector-fields > label > span:first-child"),
     ].map((span) => span.textContent);

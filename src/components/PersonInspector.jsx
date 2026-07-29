@@ -10,7 +10,6 @@ import {
   UsersRound,
 } from "lucide-react";
 import {
-  DESIGNATIONS,
   composeFullName,
   createPerson,
   hasDesignation,
@@ -295,14 +294,6 @@ export function PersonInspector({
     updateCausaMortisDeclaration(declaration.id, {
       declarantPersonIds: [...current],
     });
-  };
-
-  const toggleDesignation = (designation) => {
-    const current = personDesignations(selectedPerson);
-    const next = current.includes(designation)
-      ? current.filter((value) => value !== designation)
-      : [...current, designation];
-    updateSelected({ designations: next });
   };
 
   const setDeceased = (checked) => {
@@ -1167,23 +1158,6 @@ export function PersonInspector({
             )}
           </div>
         )}
-        <details className="relationship-labels">
-          <summary>Succession labels</summary>
-          <div className="designation-list inspector-designations">
-            {DESIGNATIONS.filter((designation) => designation !== "Deceased").map(
-              (designation) => (
-                <label key={designation} className="designation-choice">
-                  <input
-                    type="checkbox"
-                    checked={personDesignations(selectedPerson).includes(designation)}
-                    onChange={() => toggleDesignation(designation)}
-                  />
-                  {designation}
-                </label>
-              ),
-            )}
-          </div>
-        </details>
         <div className="person-delete-control">
           <button
             type="button"
