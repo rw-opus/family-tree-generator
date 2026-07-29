@@ -150,7 +150,11 @@ describe("FamilyTreeCanvas", () => {
       />,
     ));
     expect(container.querySelectorAll(".family-partner-link")).toHaveLength(0);
-    expect(container.querySelector(".family-parent-row.single-parent")).not.toBeNull();
+    expect(
+      container.querySelector(
+        ".family-parent-row.single-parent.has-children",
+      ),
+    ).not.toBeNull();
     expect(container.querySelector(".family-union-stem")).not.toBeNull();
     expect(container.querySelector(".family-child-branch-item")).not.toBeNull();
   });
@@ -183,6 +187,11 @@ describe("FamilyTreeCanvas", () => {
       />,
     ));
     expect(container.querySelectorAll(".family-partner-link")).toHaveLength(1);
+    expect(
+      container.querySelector(
+        ".family-parent-row.has-children:not(.single-parent)",
+      ),
+    ).not.toBeNull();
     expect(container.querySelector(".family-children-branch.single")).toBeNull();
     expect(container.querySelectorAll(".family-child-branch-item")).toHaveLength(3);
     expect(container.querySelectorAll(".family-child-stem")).toHaveLength(3);

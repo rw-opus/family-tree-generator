@@ -268,7 +268,11 @@ export function FamilyTreeCanvas({
               );
               return (
                 <div className="family-union-block" key={key}>
-                  <div className={`family-parent-row ${parentPeople.length === 1 ? "single-parent" : ""}`}>
+                  <div
+                    className={`family-parent-row ${
+                      parentPeople.length === 1 ? "single-parent" : ""
+                    } ${sortedChildren.length ? "has-children" : ""}`}
+                  >
                     {parentPeople.map((person, index) => (
                       <span className="family-parent-node" key={`${key}-${person.id}`}>
                         {index > 0 && (

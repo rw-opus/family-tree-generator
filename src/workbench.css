@@ -1776,8 +1776,22 @@ textarea {
 }
 
 .tree-stage .family-parent-row {
-  align-items: flex-start;
+  position: relative;
+  align-items: center;
   min-height: 0;
+}
+
+.tree-stage
+  .family-parent-row.has-children:not(.single-parent)::after {
+  position: absolute;
+  top: calc(50% - 1px);
+  bottom: -1px;
+  left: 50%;
+  width: 3px;
+  background: #566b60;
+  content: "";
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .tree-stage .family-partner-link {
