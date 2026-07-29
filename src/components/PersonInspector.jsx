@@ -150,42 +150,6 @@ export function PersonInspector({
     updateSelected(patch);
   };
 
-  const updateOwnershipPercentage = (percentage) => {
-    if (percentage === "") {
-      updateSelected({
-        ownershipSharePercent: undefined,
-        ownershipShareNumerator: undefined,
-        ownershipShareDenominator: undefined,
-      });
-      return;
-    }
-    const share = shareFromPercentage(percentage);
-    updateSelected({
-      ownershipSharePercent: share.sharePercent,
-      ownershipShareNumerator: share.shareNumerator,
-      ownershipShareDenominator: share.shareDenominator,
-    });
-  };
-
-  const updateOwnershipFraction = (patch) => {
-    const hasOwnership = Object.prototype.hasOwnProperty.call(
-      ownershipByPerson,
-      selectedPerson.id,
-    );
-    const current = approximateFraction(
-      hasOwnership ? ownershipByPerson[selectedPerson.id] : 0,
-    );
-    const share = shareFromFraction(
-      patch.numerator ?? current.numerator,
-      patch.denominator ?? current.denominator,
-    );
-    updateSelected({
-      ownershipSharePercent: share.sharePercent,
-      ownershipShareNumerator: share.shareNumerator,
-      ownershipShareDenominator: share.shareDenominator,
-    });
-  };
-
   const updateWillHeir = (heirId, patch) => {
     updateSelected({
       willHeirs: (selectedPerson.willHeirs || []).map((heir) =>
@@ -444,13 +408,6 @@ export function PersonInspector({
     selectedPerson.id,
   );
   const ownership = hasOwnership ? ownershipByPerson[selectedPerson.id] : 0;
-  const ownershipFraction = hasOwnership
-    ? approximateFraction(ownership)
-    : { numerator: "", denominator: "" };
-  const hasManualOwnership =
-    selectedPerson.ownershipSharePercent !== undefined &&
-    selectedPerson.ownershipSharePercent !== null &&
-    selectedPerson.ownershipSharePercent !== "";
   const isDeceased =
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
   const identityIssues = personIdentityIssues(selectedPerson);
@@ -681,70 +638,6 @@ export function PersonInspector({
               <option>Other</option>
             </select>
           </label>
-        </div>
-        <div className="starting-ownership">
-          <div>
-            <strong>Starting property ownership</strong>
-            <small>
-              {hasManualOwnership
-                ? "Manually defined"
-                : hasOwnership
-                  ? "Automatic share — edit either format to override"
-                  : "Not yet allocated"}
-            </small>
-          </div>
-          <label>
-            <span>Fraction</span>
-            <span className="fraction-share-input">
-              <input
-                aria-label="Starting ownership numerator"
-                type="number"
-                min="0"
-                step="1"
-                value={ownershipFraction.numerator}
-                onChange={(event) =>
-                  updateOwnershipFraction({ numerator: event.target.value })
-                }
-              />
-              <strong>/</strong>
-              <input
-                aria-label="Starting ownership denominator"
-                type="number"
-                min="1"
-                step="1"
-                value={ownershipFraction.denominator}
-                onChange={(event) =>
-                  updateOwnershipFraction({ denominator: event.target.value })
-                }
-              />
-            </span>
-          </label>
-          <label>
-            <span>Percentage</span>
-            <span className="percentage-share-input">
-              <input
-                aria-label="Starting ownership percentage"
-                type="number"
-                min="0"
-                max="100"
-                step="any"
-                value={hasOwnership ? ownership * 100 : ""}
-                onChange={(event) =>
-                  updateOwnershipPercentage(event.target.value)
-                }
-              />
-              <strong>%</strong>
-            </span>
-          </label>
-          {hasManualOwnership && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => updateOwnershipPercentage("")}
-            >
-              Use automatic share
-            </button>
-          )}
         </div>
         <label className="deceased-status-control">
           <span>Status</span>

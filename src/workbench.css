@@ -545,49 +545,6 @@ textarea {
   font-weight: 800;
 }
 
-.starting-ownership {
-  display: grid;
-  gap: 0.42rem;
-  margin-top: 0.55rem;
-  border: 1px solid #d6dfda;
-  border-radius: 7px;
-  background: #f8faf9;
-  padding: 0.55rem;
-}
-
-.starting-ownership > div:first-child {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.starting-ownership > div:first-child strong {
-  color: var(--ink);
-  font-size: 0.68rem;
-}
-
-.starting-ownership > div:first-child small {
-  color: var(--muted);
-  font-size: 0.59rem;
-  text-align: right;
-}
-
-.starting-ownership > label {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  align-items: center;
-  gap: 0.45rem;
-  color: #526158;
-  font-size: 0.64rem;
-  font-weight: 800;
-}
-
-.starting-ownership input {
-  min-height: 1.9rem;
-  padding: 0.28rem 0.4rem;
-  font-size: 0.7rem;
-}
-
 .person-succession {
   display: grid;
   gap: 0.5rem;
@@ -978,31 +935,6 @@ textarea {
   font-size: 0.61rem;
   font-weight: 850;
   text-decoration: underline;
-}
-
-.fraction-share-input,
-.percentage-share-input {
-  display: grid;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.fraction-share-input {
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-}
-
-.percentage-share-input {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.fraction-share-input input,
-.percentage-share-input input {
-  min-width: 0;
-}
-
-.fraction-share-input strong,
-.percentage-share-input strong {
-  color: var(--muted);
 }
 
 .settings-panel {

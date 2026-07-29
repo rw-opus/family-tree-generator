@@ -157,4 +157,87 @@ describe("App local recovery", () => {
       ).value,
     ).toBe("50");
   });
+
+  it("creates ownership only from initial owners entered for the property", () => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "tree",
+          title: "No assumed ownership",
+          people: [
+            { id: "father", fullName: "Joseph Borg", sex: "Male" },
+            { id: "mother", fullName: "Maria Borg", sex: "Female" },
+            {
+              id: "child",
+              fullName: "Paul Borg",
+              fatherId: "father",
+              motherId: "mother",
+            },
+            {
+              id: "sibling-1",
+              fullName: "Anna Borg",
+              fatherId: "father",
+              motherId: "mother",
+            },
+            {
+              id: "sibling-2",
+              fullName: "Mark Borg",
+              fatherId: "father",
+              motherId: "mother",
+            },
+            {
+              id: "grandchild",
+              fullName: "Luke Borg",
+              fatherId: "child",
+            },
+          ],
+          properties: [{ id: "property", owners: [] }],
+        },
+      ],
+      "tree",
+      window.localStorage,
+    );
+    act(() => root.render(<App />));
+
+    expect(container.querySelectorAll(".family-node-ownership")).toHaveLength(0);
+    expect(container.textContent).not.toContain("Starting property ownership");
+
+    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")]
+      .find((button) => button.textContent.includes("Property & tax"));
+    act(() => caseButton.click());
+    const addOwner = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.includes("Add initial owner"),
+    );
+    act(() => addOwner.click());
+
+    const ownerSelect = container.querySelector(
+      'select[aria-label="Initial owner"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      ).set.call(ownerSelect, "father");
+      ownerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const percentage = container.querySelector(
+      'input[aria-label="Initial ownership percentage"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      ).set.call(percentage, "100");
+      percentage.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const ownershipBadges = container.querySelectorAll(
+      ".family-node-ownership",
+    );
+    expect(ownershipBadges).toHaveLength(1);
+    expect(ownershipBadges[0].textContent).toContain("100%");
+    expect(
+      ownershipBadges[0].closest("[data-person-id]").dataset.personId,
+    ).toBe("father");
+  });
 });

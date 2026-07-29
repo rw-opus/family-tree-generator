@@ -20,9 +20,8 @@ import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
-import { buildAutomaticFamilyOwnership } from "./domain/familyOwnership.js";
-import { buildOwnershipLedger } from "./domain/ownership.js";
 import { createPerson } from "./domain/people.js";
+import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
 import {
   loadLocalWorkspace,
@@ -155,27 +154,19 @@ export function App() {
   const activeProperty =
     currentTree.properties[0] || makePrimaryProperty("primary-property");
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
-  const automaticOwnership = useMemo(
-    () => buildAutomaticFamilyOwnership(currentTree.people),
-    [currentTree.people],
+  const ownershipByPerson = useMemo(
+    () =>
+      Object.fromEntries(
+        buildPropertyVendorTaxReport(
+          activeProperty,
+          currentTree.people,
+          currentTree.outsideParties,
+        ).ledger.owners
+          .filter((owner) => owner.personId)
+          .map((owner) => [owner.personId, owner.share]),
+      ),
+    [activeProperty, currentTree.outsideParties, currentTree.people],
   );
-  const ownershipByPerson = useMemo(() => {
-    const normalised = normaliseTree(tree);
-    const ledger = buildOwnershipLedger(
-      normalised.succession.heirs,
-      normalised.outsideParties,
-      normalised.transfers,
-      normalised.people,
-    );
-    const recordedOwnership = Object.fromEntries(
-      ledger.owners
-        .filter((owner) => owner.personId)
-        .map((owner) => [owner.personId, owner.share]),
-    );
-    return Object.keys(recordedOwnership).length
-      ? recordedOwnership
-      : automaticOwnership.ownershipByPerson;
-  }, [automaticOwnership.ownershipByPerson, tree]);
   const causaMortisCoverage = useMemo(
     () =>
       buildCausaMortisShareCoverage(
