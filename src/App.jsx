@@ -153,7 +153,9 @@ export function App() {
   const [panelTab, setPanelTab] = useState("person");
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
-  const [zoom, setZoom] = useState(100);
+  const [zoom, setZoom] = useState(
+    () => Number(tree.settings?.treeZoom) || 100,
+  );
 
   const currentTree = normaliseTree(tree);
   const activeProperty =
@@ -264,7 +266,10 @@ export function App() {
   };
 
   const updateZoom = (nextZoom) => {
-    const boundedZoom = Math.min(140, Math.max(65, Number(nextZoom)));
+    const boundedZoom = Math.min(
+      140,
+      Math.max(25, Math.round(Number(nextZoom) / 5) * 5),
+    );
     setZoom(boundedZoom);
     setTree({
       ...currentTree,
@@ -275,6 +280,7 @@ export function App() {
   const createNewTree = () => {
     const nextTree = initialTree();
     setTree(nextTree);
+    setZoom(nextTree.settings.treeZoom);
     setSelectedPersonId(nextTree.people[0].id);
     setPanelTab("person");
     setDashboardOpen(true);
@@ -283,7 +289,9 @@ export function App() {
   const openTree = (treeId) => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return;
-    setTree(normaliseTree(selectedTree));
+    const nextTree = normaliseTree(selectedTree);
+    setTree(nextTree);
+    setZoom(Number(nextTree.settings.treeZoom) || 100);
     setSelectedPersonId(selectedTree.people?.[0]?.id || "");
     setPanelTab("person");
   };
@@ -603,6 +611,8 @@ export function App() {
             causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
             selectedPersonId={selectedPersonId}
             onSelectPerson={selectPerson}
+            zoom={zoom}
+            onZoomChange={updateZoom}
             shareDisplay={currentTree.settings.shareDisplay}
             showOwnership={currentTree.settings.showOwnershipOnTree}
           />

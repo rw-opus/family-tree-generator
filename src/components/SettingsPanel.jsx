@@ -24,20 +24,22 @@ export function SettingsPanel({ settings, zoom, onChange, onZoomChange }) {
 
           <label>
             <span>Tree zoom</span>
-            <select
-              value={zoom}
-              onChange={(event) => {
-                const nextZoom = Number(event.target.value);
-                onZoomChange(nextZoom);
-                update({ treeZoom: nextZoom });
-              }}
-            >
-              <option value="75">75%</option>
-              <option value="90">90%</option>
-              <option value="100">100%</option>
-              <option value="110">110%</option>
-              <option value="125">125%</option>
-            </select>
+            <span className="settings-zoom">
+              <input
+                aria-label="Tree zoom"
+                type="range"
+                min="25"
+                max="140"
+                step="5"
+                value={zoom}
+                onChange={(event) => {
+                  const nextZoom = Number(event.target.value);
+                  onZoomChange(nextZoom);
+                  update({ treeZoom: nextZoom });
+                }}
+              />
+              <output>{zoom}%</output>
+            </span>
           </label>
 
           <label className="settings-check">

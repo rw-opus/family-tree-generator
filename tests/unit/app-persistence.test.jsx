@@ -240,4 +240,17 @@ describe("App local recovery", () => {
       ownershipBadges[0].closest("[data-person-id]").dataset.personId,
     ).toBe("father");
   });
+
+  it("lets the tree zoom out to a 25% overview", () => {
+    act(() => root.render(<App />));
+    const zoomOut = container.querySelector('button[aria-label="Zoom out"]');
+
+    for (let index = 0; index < 8; index += 1) {
+      act(() => zoomOut.click());
+    }
+
+    expect(container.querySelector(".zoom-controls span").textContent).toBe(
+      "25%",
+    );
+  });
 });

@@ -27,8 +27,19 @@ export function FamilyTreeCanvas({
   onSelectPerson,
   shareDisplay = "both",
   showOwnership = true,
+  zoom = 100,
+  onZoomChange,
 }) {
   const treeRef = useRef(null);
+  const zoomRef = useRef(zoom);
+  const onZoomChangeRef = useRef(onZoomChange);
+  const pinchRef = useRef(null);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+    onZoomChangeRef.current = onZoomChange;
+  }, [onZoomChange, zoom]);
+
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
     const node = [...treeRef.current.querySelectorAll("[data-person-id]")].find((element) => element.dataset.personId === selectedPersonId);
@@ -108,6 +119,54 @@ export function FamilyTreeCanvas({
     (person.spouseIds || []).length ||
     (person.siblingIds || []).length
   );
+
+  useEffect(() => {
+    const chart = treeRef.current;
+    if (!chart) return undefined;
+
+    const touchDistance = (touches) => {
+      const horizontal = touches[1].clientX - touches[0].clientX;
+      const vertical = touches[1].clientY - touches[0].clientY;
+      return Math.hypot(horizontal, vertical);
+    };
+    const startPinch = (event) => {
+      if (event.touches.length !== 2) return;
+      pinchRef.current = {
+        distance: touchDistance(event.touches),
+        zoom: zoomRef.current,
+        lastZoom: zoomRef.current,
+      };
+    };
+    const movePinch = (event) => {
+      if (event.touches.length !== 2 || !pinchRef.current) return;
+      event.preventDefault();
+      const distance = touchDistance(event.touches);
+      if (!pinchRef.current.distance || !distance) return;
+      const nextZoom = Math.round(
+        (pinchRef.current.zoom * distance) /
+          pinchRef.current.distance /
+          5,
+      ) * 5;
+      if (nextZoom === pinchRef.current.lastZoom) return;
+      pinchRef.current.lastZoom = nextZoom;
+      onZoomChangeRef.current?.(nextZoom);
+    };
+    const endPinch = (event) => {
+      if (event.touches.length < 2) pinchRef.current = null;
+    };
+
+    chart.addEventListener("touchstart", startPinch, { passive: true });
+    chart.addEventListener("touchmove", movePinch, { passive: false });
+    chart.addEventListener("touchend", endPinch, { passive: true });
+    chart.addEventListener("touchcancel", endPinch, { passive: true });
+    return () => {
+      chart.removeEventListener("touchstart", startPinch);
+      chart.removeEventListener("touchmove", movePinch);
+      chart.removeEventListener("touchend", endPinch);
+      chart.removeEventListener("touchcancel", endPinch);
+    };
+  }, [hasRelationalLinks]);
+
   if (hasRelationalLinks) {
     const personMap = new Map(relationalPeople.map((person) => [person.id, person]));
     const childrenByParent = new Map();

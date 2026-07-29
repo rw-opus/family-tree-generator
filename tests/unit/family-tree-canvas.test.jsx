@@ -33,6 +33,38 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).not.toContain("Partner");
   });
 
+  it("uses a two-finger pinch to zoom the tree", () => {
+    const onZoomChange = vi.fn();
+    act(() => root.render(
+      <FamilyTreeCanvas
+        zoom={100}
+        onZoomChange={onZoomChange}
+        people={[{ id: "person", fullName: "Joseph Borg" }]}
+      />,
+    ));
+    const chart = container.querySelector(".family-chart");
+    const touchEvent = (type, touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", { value: touches });
+      return event;
+    };
+
+    act(() => {
+      chart.dispatchEvent(touchEvent("touchstart", [
+        { clientX: 0, clientY: 0 },
+        { clientX: 200, clientY: 0 },
+      ]));
+    });
+    const move = touchEvent("touchmove", [
+      { clientX: 0, clientY: 0 },
+      { clientX: 100, clientY: 0 },
+    ]);
+    act(() => chart.dispatchEvent(move));
+
+    expect(move.defaultPrevented).toBe(true);
+    expect(onZoomChange).toHaveBeenCalledWith(50);
+  });
+
   it("keeps an unnamed central person visible while adding unnamed relatives", () => {
     act(() => root.render(
       <FamilyTreeCanvas

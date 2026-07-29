@@ -1476,6 +1476,26 @@ textarea {
   text-align: center;
 }
 
+.settings-zoom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-zoom input {
+  min-height: 1.5rem;
+  padding: 0;
+  accent-color: var(--forest);
+}
+
+.settings-zoom output {
+  color: var(--forest);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: right;
+}
+
 .stage-dashboard-button {
   display: none;
   align-items: center;
@@ -1534,6 +1554,7 @@ textarea {
     linear-gradient(90deg, rgba(42, 74, 58, 0.045) 1px, transparent 1px);
   background-size: 28px 28px;
   overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
 }
 
 .tree-stage .family-canvas {
@@ -1677,8 +1698,8 @@ textarea {
   justify-content: center;
   width: max-content;
   min-width: 100%;
-  gap: 5rem;
-  padding: 1rem 1rem 3rem;
+  gap: 1rem;
+  padding: 0.5rem 0.5rem 2rem;
 }
 
 .tree-stage .family-household,
@@ -1692,7 +1713,7 @@ textarea {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: 3.5rem;
+  gap: 1rem;
 }
 
 .tree-stage .family-household-unions.multiple {
@@ -1724,7 +1745,7 @@ textarea {
 .tree-stage .family-union-stem {
   display: block;
   width: 3px;
-  height: 34px;
+  height: 24px;
   background: #566b60;
 }
 
@@ -1742,7 +1763,7 @@ textarea {
   position: relative;
   display: flex;
   justify-content: center;
-  padding: 34px 1rem 0;
+  padding: 24px 0.25rem 0;
 }
 
 .tree-stage .family-child-branch-item::before,
@@ -1751,7 +1772,7 @@ textarea {
   top: 0;
   left: 0;
   width: calc(50% + var(--branch-anchor-offset, 0px));
-  height: 34px;
+  height: 24px;
   border-top: 3px solid #566b60;
   content: "";
 }
@@ -1775,7 +1796,7 @@ textarea {
   top: 0;
   left: calc(50% + var(--branch-anchor-offset, 0px));
   width: 3px;
-  height: 34px;
+  height: 24px;
   background: #566b60;
   transform: translateX(-50%);
 }
