@@ -24,9 +24,14 @@ import {
   personDesignations,
 } from "../domain/people.js";
 import { parseGedcom } from "../domain/gedcom.js";
-import { intestateAllocations, isPersonDeceased } from "../domain/familyOwnership.js";
+import {
+  confirmedIntestacyAllocations,
+  intestateAllocations,
+  isPersonDeceased,
+} from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
+import { IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 
 const relationshipActions = [
   { key: "father", label: "Father", icon: UserRound },
@@ -117,11 +122,13 @@ export function PersonInspector({
     setOwnershipDisplay(shareDisplay === "percentage" ? "percentage" : "fraction");
   }, [shareDisplay]);
 
+  const updatePerson = (personId, patch) => {
+    onChange(people.map((person) => (person.id === personId ? { ...person, ...patch } : person)));
+  };
+
   const updateSelected = (patch) => {
     if (!selectedPerson) return;
-    onChange(
-      people.map((person) => (person.id === selectedPerson.id ? { ...person, ...patch } : person)),
-    );
+    updatePerson(selectedPerson.id, patch);
   };
 
   const updateGivenNames = (givenNames) => {
@@ -486,10 +493,18 @@ export function PersonInspector({
     isDeceased && inheritanceBasis === "intestacy"
       ? intestateAllocations(people, selectedPerson.id)
       : null;
+  const confirmedIntestacy =
+    automaticIntestacy &&
+    confirmedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy);
   const successionHeirIds =
     inheritanceBasis === "will"
       ? willHeirs.map((heir) => heir.personId).filter(Boolean)
-      : [...(automaticIntestacy?.shares.keys() || [])];
+      : [
+          ...((confirmedIntestacy?.valid
+            ? confirmedIntestacy.shares
+            : automaticIntestacy?.shares
+          )?.keys() || []),
+        ];
   const successionHeirs = successionHeirIds
     .map((personId) => peopleById.get(personId))
     .filter(Boolean);
@@ -833,27 +848,14 @@ export function PersonInspector({
               </label>
 
               {inheritanceBasis === "intestacy" ? (
-                <div className="automatic-heirs">
-                  <strong>Calculated heirs</strong>
-                  {automaticIntestacy?.shares.size ? (
-                    [...automaticIntestacy.shares.entries()].map(([personId, share]) => {
-                      const heir = peopleById.get(personId);
-                      return (
-                        <div key={personId}>
-                          <span>{displayName(heir)}</span>
-                          <b>{ownershipLabel(share, shareDisplay)}</b>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <small>No supported heir can yet be calculated.</small>
-                  )}
-                  {automaticIntestacy?.warnings.map((warning) => (
-                    <small className="succession-warning" key={warning}>
-                      {warning}
-                    </small>
-                  ))}
-                </div>
+                <IntestateHeirConfirmation
+                  deceased={selectedPerson}
+                  people={people}
+                  calculated={automaticIntestacy}
+                  displayName={displayName}
+                  onUpdatePerson={updatePerson}
+                  onSelectPerson={onSelectPerson}
+                />
               ) : (
                 <div className="will-details">
                   <label>

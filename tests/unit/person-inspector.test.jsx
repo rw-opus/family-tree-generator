@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonInspector } from "../../src/components/PersonInspector.jsx";
@@ -886,6 +886,117 @@ describe("PersonInspector", () => {
     expect(container.querySelector('select[aria-label="Inheritance basis"]').disabled).toBe(false);
     expect(container.textContent).not.toContain("Succession on death");
     expect(container.textContent).toContain("Intestate");
+  });
+
+  it("requires the proposed intestate heirs and 100% shares to be confirmed", () => {
+    let latestPeople = [];
+    const initialPeople = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2024-02-03",
+        inheritanceBasis: "intestacy",
+        designations: ["Deceased"],
+        spouseIds: ["spouse"],
+      },
+      {
+        id: "spouse",
+        fullName: "Maria Borg",
+        spouseIds: ["deceased"],
+        designations: [],
+      },
+      {
+        id: "child",
+        fullName: "Paul Borg",
+        fatherId: "deceased",
+        motherId: "spouse",
+        spouseIds: [],
+        designations: [],
+      },
+    ];
+    function Harness() {
+      const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    expect(container.textContent).toContain("Confirm who inherited");
+    expect(container.textContent).toContain("Proposed under intestacy");
+    expect(container.textContent).toContain("50%");
+
+    const useProposal = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Use proposed shares"),
+    );
+    act(() => useProposal.click());
+
+    expect(container.querySelectorAll(".confirmed-heir-row")).toHaveLength(2);
+    const confirm = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Confirm heirs"),
+    );
+    expect(confirm.disabled).toBe(false);
+    act(() => confirm.click());
+
+    expect(latestPeople[0].intestateHeirsConfirmed).toBe(true);
+    expect(latestPeople[0].intestateHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
+    expect(container.textContent).toContain("Confirmed");
+  });
+
+  it("allows a deceased linked partner's death date to be completed in the succession workflow", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2024-02-03",
+        inheritanceBasis: "intestacy",
+        designations: ["Deceased"],
+        spouseIds: ["spouse"],
+      },
+      {
+        id: "spouse",
+        fullName: "Maria Borg",
+        isDeceased: true,
+        dateOfDeath: "",
+        spouseIds: ["deceased"],
+        designations: ["Deceased"],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const spouseDeathDate = container.querySelector(
+      'input[aria-label="Date of death for Maria Borg"]',
+    );
+    expect(spouseDeathDate).not.toBeNull();
+    expect(container.textContent).toContain("before confirming the heirs");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        spouseDeathDate,
+        "2025-01-01",
+      );
+      spouseDeathDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(onChange.mock.calls.at(-1)[0][1].dateOfDeath).toBe("2025-01-01");
   });
 
   it("prefills a man's surname at birth from his full name", () => {

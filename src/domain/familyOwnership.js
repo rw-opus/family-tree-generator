@@ -169,9 +169,20 @@ export function intestateAllocations(people = [], deceasedId) {
   }
 
   const atDate = deceased.dateOfDeath || "";
-  const livingSpouses = linkedSpouses(deceased, people, index.peopleById).filter((person) =>
-    wasAliveAt(person, atDate),
-  );
+  const spouses = linkedSpouses(deceased, people, index.peopleById);
+  const spousesWithUnknownSurvival = deceased.dateOfDeath
+    ? spouses.filter((person) => isPersonDeceased(person) && !person.dateOfDeath)
+    : [];
+  if (spousesWithUnknownSurvival.length) {
+    const names = spousesWithUnknownSurvival.map((person) => person.fullName || "Unnamed partner");
+    warnings.push(
+      `Enter the date of death for ${names.join(
+        ", ",
+      )} before deciding whether the linked spouse survived the deceased.`,
+    );
+    return { shares, warnings, destination: "spouse-survival-unresolved" };
+  }
+  const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
   const children = index.childrenByParent.get(deceased.id) || [];
   const descendantProbe = allocateBranches(children, atDate, 1, index);
   if (descendantProbe.size) {
@@ -247,6 +258,59 @@ export function intestateAllocations(people = [], deceasedId) {
   return { shares, warnings, destination: "government" };
 }
 
+export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
+  const shares = [...(allocation.shares || new Map()).entries()]
+    .map(([personId, share]) => `${personId}:${number(share).toFixed(12)}`)
+    .sort()
+    .join("|");
+  return [deceased.dateOfDeath || "", allocation.destination || "", shares].join("::");
+}
+
+export function confirmedIntestacyAllocations(
+  people = [],
+  deceasedId,
+  calculatedAllocation = null,
+) {
+  const deceased = people.find((person) => person.id === deceasedId);
+  const shares = new Map();
+  const warnings = [];
+  if (!deceased) {
+    return { valid: false, shares, warnings: ["Deceased person not found."] };
+  }
+
+  const calculated = calculatedAllocation || intestateAllocations(people, deceasedId);
+  const currentSignature = intestacyAllocationSignature(deceased, calculated);
+  const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
+  const selectedIds = rows.map((row) => row.personId).filter(Boolean);
+  const uniqueIds = new Set(selectedIds);
+  const total = rows.reduce((sum, row) => sum + number(row.sharePercent) / 100, 0);
+  const valid =
+    deceased.intestateHeirsConfirmed === true &&
+    calculated.destination !== "spouse-survival-unresolved" &&
+    deceased.intestateConfirmationBasis === currentSignature &&
+    rows.length > 0 &&
+    rows.every((row) => number(row.sharePercent) > 0) &&
+    selectedIds.length === rows.length &&
+    uniqueIds.size === rows.length &&
+    !uniqueIds.has(deceasedId) &&
+    selectedIds.every((personId) => people.some((person) => person.id === personId)) &&
+    Math.abs(total - 1) < 1e-8;
+
+  if (!valid) {
+    if (deceased.intestateHeirsConfirmed) {
+      warnings.push(
+        "The confirmed intestate heirs need review because the family details or statutory calculation changed.",
+      );
+    } else {
+      warnings.push("The intestate heirs and their shares have not yet been confirmed.");
+    }
+    return { valid: false, shares, warnings, currentSignature };
+  }
+
+  rows.forEach((row) => addShare(shares, row.personId, number(row.sharePercent) / 100));
+  return { valid: true, shares, warnings, currentSignature };
+}
+
 export function willAllocations(person = {}) {
   const shares = new Map();
   (person.willHeirs || []).forEach((heir) => {
@@ -281,10 +345,23 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
     }
 
     const basis = person.inheritanceBasis || "intestacy";
-    const result =
-      basis === "will"
-        ? { shares: willAllocations(person), warnings: [], destination: "will" }
-        : intestateAllocations(people, personId);
+    let result;
+    if (basis === "will") {
+      result = { shares: willAllocations(person), warnings: [], destination: "will" };
+    } else {
+      const calculated = intestateAllocations(people, personId);
+      const confirmed = confirmedIntestacyAllocations(people, personId, calculated);
+      result = confirmed.valid
+        ? {
+            shares: confirmed.shares,
+            warnings: calculated.warnings,
+            destination: "confirmed-intestacy",
+          }
+        : {
+            ...calculated,
+            warnings: [...calculated.warnings, ...confirmed.warnings],
+          };
+    }
     let allocated = [...result.shares.values()].reduce((sum, share) => sum + share, 0);
     if (basis === "will" && Math.abs(allocated - 1) > 1e-10) {
       result.warnings.push(

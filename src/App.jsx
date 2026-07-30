@@ -283,6 +283,13 @@ export function App() {
       labels.push("the linked heir record");
     }
     if (
+      currentTree.people.some((person) =>
+        (person.intestateHeirs || []).some((heir) => heir.personId === selectedPersonId),
+      )
+    ) {
+      labels.push("the confirmed intestate-heir record");
+    }
+    if (
       (activeProperty.transfers || []).some(
         (transfer) =>
           transfer.sellerId === selectedPersonId || transfer.buyerId === selectedPersonId,
@@ -297,6 +304,7 @@ export function App() {
   }, [
     activeProperty.saleLots,
     activeProperty.transfers,
+    currentTree.people,
     currentTree.succession.heirs,
     selectedPersonId,
   ]);
