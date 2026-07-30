@@ -3388,6 +3388,89 @@ textarea {
     display: none;
   }
 
+  .workbench-header {
+    grid-template-areas:
+      "brand case-picker menu"
+      "property-fields property-fields property-fields";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    min-height: auto;
+    gap: 0.4rem 0.5rem;
+    padding: 0.45rem 0.6rem 0.55rem;
+  }
+
+  .workbench-brand {
+    grid-area: brand;
+  }
+
+  .workbench-case-fields {
+    grid-area: property-fields;
+    grid-template-columns: minmax(0, 1fr) 96px;
+    width: 100%;
+  }
+
+  .workbench-actions {
+    display: contents;
+  }
+
+  .saved-tree-picker {
+    grid-area: case-picker;
+    min-width: 0;
+  }
+
+  .saved-tree-picker select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .mobile-dashboard-button {
+    grid-area: menu;
+  }
+
+  .case-view-tabs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+    min-height: auto;
+    overflow: visible;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .family-view-tabs {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 0.05rem;
+    scrollbar-width: thin;
+  }
+
+  .property-view-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .property-view-tabs button {
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 0.35rem;
+  }
+
+  .tree-stage-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.4rem;
+    min-height: auto;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .stage-family-title {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .stage-family-title input {
+    width: 100%;
+  }
+
   .dashboard-tabs button {
     font-size: 0.62rem;
   }
@@ -3402,7 +3485,7 @@ textarea {
   }
 
   .zoom-controls {
-    margin-left: auto;
+    margin-left: 0;
   }
 
   .stage-context {
@@ -3420,7 +3503,7 @@ textarea {
   }
 
   .stage-dashboard-button {
-    padding: 0 0.5rem;
+    display: none;
   }
 }
 
