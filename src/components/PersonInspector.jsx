@@ -723,17 +723,19 @@ export function PersonInspector({
               </label>
             )}
           </div>
-          <label className="deceased-status-control">
-            <span>Status</span>
-            <span className="detail-checkbox">
-              <input
-                type="checkbox"
-                checked={isDeceased}
-                onChange={(event) => setDeceased(event.target.checked)}
-              />
-              This person is deceased.
-            </span>
-          </label>
+        </fieldset>
+        <label className="deceased-status-control">
+          <span>Status</span>
+          <span className="detail-checkbox">
+            <input
+              type="checkbox"
+              checked={isDeceased}
+              onChange={(event) => setDeceased(event.target.checked)}
+            />
+            This person is deceased.
+          </span>
+        </label>
+        <fieldset className="person-edit-fields" disabled={!isEditing}>
           {isDeceased && (
             <div className="person-succession">
               <div className="person-succession-heading">

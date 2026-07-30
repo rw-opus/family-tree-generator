@@ -447,6 +447,8 @@ describe("PersonInspector", () => {
     const person = {
       id: "person",
       fullName: "Maria Example",
+      sex: "Female",
+      surnameAtBirth: "Example",
       designations: [],
       spouseIds: [],
     };
@@ -465,10 +467,10 @@ describe("PersonInspector", () => {
     expect(container.textContent).not.toContain("Date of birth");
     expect(container.querySelector(".person-succession")).toBeNull();
     expect(container.textContent).not.toContain("Succession on death");
-    beginEditing();
     const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')].find(
       (input) => input.parentElement.textContent.includes("This person is deceased."),
     );
+    expect(deceasedCheckbox.disabled).toBe(false);
     expect(deceasedCheckbox.checked).toBe(false);
 
     act(() => deceasedCheckbox.click());
