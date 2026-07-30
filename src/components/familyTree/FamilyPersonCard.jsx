@@ -31,6 +31,7 @@ function formattedCurrency(value) {
 
 function availableCausaMortisDetails(person) {
   return (person.causaMortisDeclarations || [])
+    .filter((declaration) => declaration.status === "complete")
     .map((declaration) =>
       [formattedDate(declaration.date), String(declaration.notaryName || "").trim()]
         .filter(Boolean)

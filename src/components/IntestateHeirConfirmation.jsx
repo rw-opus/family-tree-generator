@@ -7,16 +7,26 @@ import {
   linkedSpousesFor,
   linkedSpousesMissingDeathDates,
 } from "../domain/familyOwnership.js";
+import { approximateFraction } from "../domain/ownership.js";
 import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
 
 const OTHER_PERSON = "__other_person__";
 const totalPercentage = (rows = []) =>
   rows.reduce((total, row) => total + (Number(row.sharePercent) || 0), 0);
 
+function shareLabel(share, shareDisplay) {
+  if (shareDisplay === "fraction") {
+    const fraction = approximateFraction(share);
+    return `${fraction.numerator}/${fraction.denominator}`;
+  }
+  return `${(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 4 })}%`;
+}
+
 export function IntestateHeirConfirmation({
   deceased,
   people,
   calculated,
+  shareDisplay = "fraction",
   displayName,
   onUpdatePerson,
   onSelectPerson,
@@ -58,16 +68,19 @@ export function IntestateHeirConfirmation({
   const updateRow = (rowId, patch) =>
     replaceRows(rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
   const updateRowPercentage = (rowId, percentage) =>
-    updateRow(rowId, shareFromPercentage(percentage));
+    updateRow(rowId, {
+      ...shareFromPercentage(percentage),
+      sharePercent: percentage,
+    });
   const updateRowFraction = (row, patch) => {
     const current = fractionForShare(row);
-    updateRow(
-      row.id,
-      shareFromFraction(
-        patch.numerator ?? current.numerator,
-        patch.denominator ?? current.denominator,
-      ),
-    );
+    const numerator = patch.numerator ?? row.shareNumerator ?? current.numerator;
+    const denominator = patch.denominator ?? row.shareDenominator ?? current.denominator;
+    updateRow(row.id, {
+      ...shareFromFraction(numerator, denominator),
+      shareNumerator: numerator,
+      shareDenominator: denominator,
+    });
   };
   const addPerson = (personId) => {
     if (!personId || selectedPersonIds.has(personId)) return;
@@ -106,7 +119,7 @@ export function IntestateHeirConfirmation({
         <div>
           <strong>Confirm who inherited</strong>
           <small>
-            Linked partners are treated as spouses. The proposed persons and fractions come from the
+            Linked partners are treated as spouses. The proposed persons and shares come from the
             intestacy calculation.
           </small>
         </div>
@@ -161,7 +174,7 @@ export function IntestateHeirConfirmation({
             return (
               <div className="calculated-intestacy-row" key={personId}>
                 <span>{displayName(person)}</span>
-                <b>{(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 4 })}%</b>
+                <b>{shareLabel(share, shareDisplay)}</b>
               </div>
             );
           })
@@ -180,40 +193,47 @@ export function IntestateHeirConfirmation({
         {rows.map((row) => {
           const person = people.find((candidate) => candidate.id === row.personId);
           const fraction = fractionForShare(row);
+          const numerator = row.shareNumerator ?? fraction.numerator;
+          const denominator = row.shareDenominator ?? fraction.denominator;
           return (
-            <div className="confirmed-heir-row" key={row.id}>
+            <div className={`confirmed-heir-row ${shareDisplay}`} key={row.id}>
               <span className="confirmed-heir-name">{displayName(person)}</span>
-              <span className="confirmed-heir-fraction">
-                <input
-                  aria-label={`Confirmed share numerator for ${displayName(person)}`}
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={fraction.numerator}
-                  onChange={(event) => updateRowFraction(row, { numerator: event.target.value })}
-                />
-                <b>/</b>
-                <input
-                  aria-label={`Confirmed share denominator for ${displayName(person)}`}
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={fraction.denominator}
-                  onChange={(event) => updateRowFraction(row, { denominator: event.target.value })}
-                />
-              </span>
-              <span className="confirmed-heir-percent">
-                <input
-                  aria-label={`Confirmed share percentage for ${displayName(person)}`}
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="any"
-                  value={row.sharePercent ?? 0}
-                  onChange={(event) => updateRowPercentage(row.id, event.target.value)}
-                />
-                <b>%</b>
-              </span>
+              {shareDisplay === "fraction" ? (
+                <span className="confirmed-heir-fraction">
+                  <input
+                    aria-label={`Confirmed share numerator for ${displayName(person)}`}
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={numerator}
+                    onChange={(event) => updateRowFraction(row, { numerator: event.target.value })}
+                  />
+                  <b>/</b>
+                  <input
+                    aria-label={`Confirmed share denominator for ${displayName(person)}`}
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={denominator}
+                    onChange={(event) =>
+                      updateRowFraction(row, { denominator: event.target.value })
+                    }
+                  />
+                </span>
+              ) : (
+                <span className="confirmed-heir-percent">
+                  <input
+                    aria-label={`Confirmed share percentage for ${displayName(person)}`}
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="any"
+                    value={row.sharePercent ?? ""}
+                    onChange={(event) => updateRowPercentage(row.id, event.target.value)}
+                  />
+                  <b>%</b>
+                </span>
+              )}
               <button
                 type="button"
                 className="icon-button"
@@ -267,8 +287,10 @@ export function IntestateHeirConfirmation({
           <small
             className={hasCompleteRows ? "succession-total valid" : "succession-total invalid"}
           >
-            Total: {total.toLocaleString("en-MT", { maximumFractionDigits: 4 })}%{" "}
-            {hasCompleteRows ? "Complete" : "- must equal 100%"}
+            Total: {shareLabel(total / 100, shareDisplay)}{" "}
+            {hasCompleteRows
+              ? "Complete"
+              : `- must equal ${shareDisplay === "fraction" ? "1/1" : "100%"}`}
           </small>
           <button
             type="button"

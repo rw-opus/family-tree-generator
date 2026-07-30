@@ -1219,9 +1219,16 @@ textarea {
 
 .confirmed-heir-row {
   display: grid;
-  grid-template-columns: minmax(78px, 1fr) 76px 60px 28px;
   align-items: center;
   gap: 0.25rem;
+}
+
+.confirmed-heir-row.fraction {
+  grid-template-columns: minmax(78px, 1fr) 76px 28px;
+}
+
+.confirmed-heir-row.percentage {
+  grid-template-columns: minmax(78px, 1fr) 60px 28px;
 }
 
 .confirmed-heir-name {
@@ -1482,6 +1489,30 @@ textarea {
   gap: 0.5rem;
 }
 
+.causa-mortis-card-heading > span {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.causa-mortis-card-heading small {
+  border-radius: 999px;
+  background: #fff0d9;
+  color: #8b571a;
+  padding: 0.12rem 0.35rem;
+  font-size: 0.54rem;
+  font-weight: 800;
+}
+
+.causa-mortis-card.complete {
+  border-color: #b9d9c6;
+}
+
+.causa-mortis-card.complete .causa-mortis-card-heading small {
+  background: #e7f6ed;
+  color: #28704d;
+}
+
 .causa-mortis-card-heading .icon-button {
   width: 28px;
   min-height: 1.8rem;
@@ -1578,6 +1609,33 @@ textarea {
 
 .causa-mortis-value-note.optional {
   color: #28704d;
+}
+
+.causa-mortis-card-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  border-top: 1px dashed #dde5e1;
+  padding-top: 0.4rem;
+}
+
+.causa-mortis-card-actions small {
+  color: #a12828;
+  font-size: 0.59rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.causa-mortis-card-actions .primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 4.5rem;
+  min-height: 1.9rem;
+  padding: 0.28rem 0.5rem;
+  font-size: 0.64rem;
 }
 
 .text-button {
