@@ -24,6 +24,10 @@ import {
   personSurname,
   personDesignations,
 } from "../domain/people.js";
+import {
+  applyParentSuggestions,
+  solePartnerParentSuggestions,
+} from "../domain/parentSuggestions.js";
 import { parseGedcom } from "../domain/gedcom.js";
 import {
   CAUSA_MORTIS_EPSILON,
@@ -121,6 +125,19 @@ export function PersonInspector({
   const previousSelectedPersonIdRef = useRef("");
   const displayName = useCallback((person) => personDisplayName(person, people), [people]);
   const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
+  const parentSuggestions = useMemo(() => solePartnerParentSuggestions(people), [people]);
+  const relevantParentSuggestions = useMemo(
+    () =>
+      selectedPerson
+        ? parentSuggestions.filter(
+            (suggestion) =>
+              suggestion.personId === selectedPerson.id ||
+              suggestion.viaParentId === selectedPerson.id ||
+              suggestion.suggestedPersonId === selectedPerson.id,
+          )
+        : [],
+    [parentSuggestions, selectedPerson],
+  );
 
   useEffect(() => {
     const nextPersonId = selectedPerson?.id || "";
@@ -152,6 +169,22 @@ export function PersonInspector({
   const updateSelected = (patch) => {
     if (!selectedPerson) return;
     updatePerson(selectedPerson.id, patch);
+  };
+
+  const acceptParentSuggestion = (suggestion) => {
+    onChange(applyParentSuggestions(people, [suggestion]));
+  };
+
+  const dismissParentSuggestion = (suggestion) => {
+    const flag =
+      suggestion.field === "motherId"
+        ? "motherExplicitlyUnassigned"
+        : "fatherExplicitlyUnassigned";
+    onChange(
+      people.map((person) =>
+        person.id === suggestion.personId ? { ...person, [flag]: true } : person,
+      ),
+    );
   };
 
   const updateGivenNames = (givenNames) => {
@@ -411,27 +444,9 @@ export function PersonInspector({
       };
     }
 
-    const updatedPeople = people.map((person) => {
-      if (person.id === selectedPerson.id) {
-        return { ...person, ...selectedPatch };
-      }
-      if (kind !== "spouse") return person;
-      if (
-        person.fatherId === selectedPerson.id &&
-        !person.motherId &&
-        !person.motherExplicitlyUnassigned
-      ) {
-        return { ...person, motherId: relative.id };
-      }
-      if (
-        person.motherId === selectedPerson.id &&
-        !person.fatherId &&
-        !person.fatherExplicitlyUnassigned
-      ) {
-        return { ...person, fatherId: relative.id };
-      }
-      return person;
-    });
+    const updatedPeople = people.map((person) =>
+      person.id === selectedPerson.id ? { ...person, ...selectedPatch } : person,
+    );
     onChange([...updatedPeople, relative]);
   };
 
@@ -636,7 +651,7 @@ export function PersonInspector({
     ]),
   );
   const addChild = () => {
-    if (linkedPartners.length > 1) {
+    if (linkedPartners.length > 0) {
       setChildPartnerChooserOpen((open) => !open);
       return;
     }
@@ -823,6 +838,46 @@ export function PersonInspector({
                 Add child
               </button>
             </div>
+          </div>
+        )}
+        {relevantParentSuggestions.length > 0 && (
+          <div className="parent-suggestion-list">
+            <strong>Parent links to confirm</strong>
+            {relevantParentSuggestions.map((suggestion) => {
+              const child = peopleById.get(suggestion.personId);
+              const recordedParent = peopleById.get(suggestion.viaParentId);
+              const suggestedParent = peopleById.get(suggestion.suggestedPersonId);
+              const relationship = suggestion.field === "motherId" ? "mother" : "father";
+              return (
+                <article
+                  className="parent-suggestion"
+                  key={`${suggestion.personId}-${suggestion.field}-${suggestion.suggestedPersonId}`}
+                >
+                  <p>
+                    {displayName(child)} has no {relationship} recorded.{" "}
+                    {displayName(recordedParent)}&apos;s only recorded partner is{" "}
+                    {displayName(suggestedParent)}. Set {displayName(suggestedParent)} as the{" "}
+                    {relationship}?
+                  </p>
+                  <span>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => acceptParentSuggestion(suggestion)}
+                    >
+                      <Check size={14} /> Accept
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => dismissParentSuggestion(suggestion)}
+                    >
+                      Dismiss
+                    </button>
+                  </span>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

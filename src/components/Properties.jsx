@@ -47,9 +47,6 @@ const makeLot = () => ({
   manualTaxAmount: "",
 });
 
-const ownersTotal = (owners = []) =>
-  owners.reduce((total, owner) => total + (Number(owner.sharePercent) || 0), 0);
-
 const viaLabel = (via) => {
   if (via === "starting") return "Direct owner";
   if (via === "will") return "Inherited by will";
@@ -120,8 +117,8 @@ export function Properties({
     <div className={`calculator-stack ${singleProperty ? "single-property-case" : ""}`}>
       {properties.map((property) => {
         const owners = property.owners || [];
-        const total = ownersTotal(owners);
         const {
+          startingOwnership,
           ownership: result,
           declarationOwners,
           ledger,
@@ -131,6 +128,9 @@ export function Properties({
           taxSummary,
         } = buildPropertyVendorTaxReport(property, people, outsideParties);
         const livingVendorIds = new Set(livingVendors.map((vendor) => vendor.id));
+        const ownershipTotalLabel = startingOwnership.totalPercent.toLocaleString("en-MT", {
+          maximumFractionDigits: 4,
+        });
         return (
           <section className="editor-panel" key={property.id}>
             {showProperty && (
@@ -189,6 +189,22 @@ export function Properties({
               </>
             )}
 
+            {!startingOwnership.isComplete && (
+              <div className="ownership-blocking-notice" role="alert">
+                <strong>
+                  {startingOwnership.isUnset
+                    ? "No starting ownership has been set."
+                    : `Starting ownership totals ${ownershipTotalLabel}%.`}
+                </strong>
+                <span>
+                  {startingOwnership.isUnset
+                    ? "Enter who owned this property before any transfers."
+                    : "Starting ownership must equal 100% before calculated shares, declarations, transfers or tax figures are shown."}
+                  {!showProperty && " Open Owners & transfers to complete the initial title."}
+                </span>
+              </div>
+            )}
+
             {showProperty && (
               <>
                 <div className="section-heading">
@@ -202,14 +218,10 @@ export function Properties({
                   owned. Initial owners may be added whenever they are identified.
                 </p>
                 <p
-                  className={`share-status ${Math.abs(total - 100) < 0.001 || !owners.length ? "valid" : "invalid"}`}
+                  className={`share-status ${startingOwnership.isComplete ? "valid" : "invalid"}`}
                 >
-                  Initial title allocated: {total.toFixed(2)}%{" "}
-                  {owners.length
-                    ? Math.abs(total - 100) < 0.001
-                      ? "— valid"
-                      : "— must equal 100%"
-                    : ""}
+                  Initial title allocated: {ownershipTotalLabel}%{" "}
+                  {startingOwnership.isComplete ? "— valid" : "— must equal 100%"}
                 </p>
                 <div className="initial-owner-list">
                   {owners.length > 0 && (
@@ -299,7 +311,7 @@ export function Properties({
                   <Plus size={16} /> Add initial owner
                 </button>
 
-                {owners.length > 0 && (
+                {startingOwnership.isComplete && (
                   <div className="automatic-heirs">
                     <strong>Calculated title after inheritance</strong>
                     <small>
@@ -336,16 +348,18 @@ export function Properties({
                   </div>
                 )}
 
-                <PropertyDeclarations
-                  property={property}
-                  owners={declarationOwners}
-                  declarations={property.declarations || []}
-                  onChange={(declarations) => updateProperty(property.id, { declarations })}
-                />
+                {startingOwnership.isComplete && (
+                  <PropertyDeclarations
+                    property={property}
+                    owners={declarationOwners}
+                    declarations={property.declarations || []}
+                    onChange={(declarations) => updateProperty(property.id, { declarations })}
+                  />
+                )}
               </>
             )}
 
-            {showOwnership && (
+            {showOwnership && startingOwnership.isComplete && (
               <PropertyTransfers
                 people={people}
                 outsideParties={outsideParties}
@@ -355,7 +369,7 @@ export function Properties({
               />
             )}
 
-            {showTax && (
+            {showTax && startingOwnership.isComplete && (
               <>
                 <div className="section-heading">
                   <div>

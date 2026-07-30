@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Printer } from "lucide-react";
 import {
   hasAnyDesignation,
@@ -79,15 +79,31 @@ export function FamilyTreeCanvas({
   onZoomChange,
 }) {
   const treeRef = useRef(null);
-  const cleanPeople = people.filter(
-    (person) => person.id || person.fullName || personDesignations(person).length,
+  const cleanPeople = useMemo(
+    () =>
+      people.filter(
+        (person) => person.id || person.fullName || personDesignations(person).length,
+      ),
+    [people],
   );
-  const peopleById = new Map(cleanPeople.map((person) => [person.id, person]));
+  const peopleById = useMemo(
+    () => new Map(cleanPeople.map((person) => [person.id, person])),
+    [cleanPeople],
+  );
+  const displayNamesById = useMemo(
+    () =>
+      new Map(
+        cleanPeople.map((person) => [person.id, personDisplayName(person, cleanPeople)]),
+      ),
+    [cleanPeople],
+  );
   const deceased = cleanPeople.find(
     (person) => person.isDeceased || hasDesignation(person, "Deceased"),
   );
-  const displayName = (person) => personDisplayName(person, cleanPeople);
-  const cardName = (person) => personCardName(person, cleanPeople, peopleById);
+  const displayName = (person) =>
+    displayNamesById.get(person?.id) || personDisplayName(person, cleanPeople);
+  const cardName = (person) =>
+    personCardName(person, cleanPeople, peopleById, displayNamesById);
   const title =
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");

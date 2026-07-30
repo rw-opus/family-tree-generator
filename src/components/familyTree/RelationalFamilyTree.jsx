@@ -18,29 +18,36 @@ function buildChildrenByParent(people, peopleById) {
   return childrenByParent;
 }
 
-function createUnionNeighbours(people, peopleById, childrenByParent) {
-  return (personId) => {
-    const neighbours = new Set(peopleById.get(personId)?.spouseIds || []);
+function buildUnionNeighbours(people, peopleById, childrenByParent) {
+  const neighboursById = new Map(
+    people.map((person) => [person.id, new Set()]),
+  );
 
-    people.forEach((candidate) => {
-      if ((candidate.spouseIds || []).includes(personId)) {
-        neighbours.add(candidate.id);
-      }
-    });
-    (childrenByParent.get(personId) || []).forEach((child) => {
+  people.forEach((person) => {
+    (person.spouseIds || [])
+      .filter((partnerId) => partnerId !== person.id && peopleById.has(partnerId))
+      .forEach((partnerId) => {
+        neighboursById.get(person.id).add(partnerId);
+        neighboursById.get(partnerId).add(person.id);
+      });
+  });
+
+  people.forEach((person) => {
+    (childrenByParent.get(person.id) || []).forEach((child) => {
       [child.fatherId, child.motherId].forEach((parentId) => {
-        if (parentId && parentId !== personId && peopleById.has(parentId)) {
-          neighbours.add(parentId);
+        if (parentId && parentId !== person.id && peopleById.has(parentId)) {
+          neighboursById.get(person.id).add(parentId);
         }
       });
     });
+  });
 
-    neighbours.delete(personId);
-    return [...neighbours].filter((personId) => peopleById.has(personId));
-  };
+  return new Map(
+    [...neighboursById].map(([personId, neighbours]) => [personId, [...neighbours]]),
+  );
 }
 
-function partnershipComponent(startId, unionNeighbours) {
+function partnershipComponent(startId, unionNeighboursById) {
   const component = new Set();
   const queue = [startId];
 
@@ -49,7 +56,7 @@ function partnershipComponent(startId, unionNeighbours) {
     if (!personId || component.has(personId)) continue;
 
     component.add(personId);
-    unionNeighbours(personId).forEach((partnerId) => {
+    (unionNeighboursById.get(personId) || []).forEach((partnerId) => {
       if (!component.has(partnerId)) queue.push(partnerId);
     });
   }
@@ -152,12 +159,12 @@ function groupChildrenByUnion(people, householdIds, peopleById, excludedUnionKey
   return childGroups;
 }
 
-function includeChildlessUnions(childGroups, householdIds, unionNeighbours) {
+function includeChildlessUnions(childGroups, householdIds, unionNeighboursById) {
   const unionGroups = new Map(childGroups);
   const householdIdSet = new Set(householdIds);
 
   householdIds.forEach((personId) => {
-    unionNeighbours(personId).forEach((partnerId) => {
+    (unionNeighboursById.get(personId) || []).forEach((partnerId) => {
       if (!householdIdSet.has(partnerId)) return;
 
       const parentIds = [personId, partnerId].sort();
@@ -178,37 +185,45 @@ function includeChildlessUnions(childGroups, householdIds, unionNeighbours) {
   return unionGroups;
 }
 
-function findRoots(people, peopleById, unionNeighbours, displayName) {
+function findRoots(people, peopleById, unionNeighboursById, displayNamesById) {
   return people
     .filter(
       (person) =>
         ![person.fatherId, person.motherId].some((parentId) => peopleById.has(parentId)) &&
-        !unionNeighbours(person.id).some((partnerId) => {
+        !(unionNeighboursById.get(person.id) || []).some((partnerId) => {
           const partner = peopleById.get(partnerId);
           return [partner?.fatherId, partner?.motherId].some((parentId) =>
             peopleById.has(parentId),
           );
         }),
     )
-    .sort((first, second) => displayName(first).localeCompare(displayName(second)));
+    .sort((first, second) =>
+      (displayNamesById.get(first.id) || "").localeCompare(displayNamesById.get(second.id) || ""),
+    );
 }
 
 export function RelationalFamilyTree({ people, displayName, cardName, renderCard }) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const displayNamesById = new Map(people.map((person) => [person.id, displayName(person)]));
+  const cachedDisplayName = (person) => displayNamesById.get(person?.id) || "";
   const childrenByParent = buildChildrenByParent(people, peopleById);
   const unionPairs = buildUnionPairs(people, peopleById);
   const crossUnions = crossBranchUnionGroups(unionPairs, peopleById).map((union) => ({
     ...union,
     children: [...union.children].sort((first, second) =>
-      displayName(first).localeCompare(displayName(second)),
+      cachedDisplayName(first).localeCompare(cachedDisplayName(second)),
     ),
   }));
   const crossUnionKeys = new Set(crossUnions.map((union) => union.key));
-  const allUnionNeighbours = createUnionNeighbours(people, peopleById, childrenByParent);
-  const unionNeighbours = (personId) =>
-    allUnionNeighbours(personId).filter(
-      (partnerId) => !crossUnionKeys.has(pairKey([personId, partnerId])),
-    );
+  const allUnionNeighbours = buildUnionNeighbours(people, peopleById, childrenByParent);
+  const unionNeighboursById = new Map(
+    [...allUnionNeighbours].map(([personId, partnerIds]) => [
+      personId,
+      partnerIds.filter(
+        (partnerId) => !crossUnionKeys.has(pairKey([personId, partnerId])),
+      ),
+    ]),
+  );
   const rendered = new Set();
 
   let renderHousehold;
@@ -221,7 +236,7 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
         <div className={`family-children-branch ${children.length === 1 ? "single" : ""}`}>
           {children.map((child) => {
             const childHousehold = renderHousehold(child.id, trail);
-            const partnerIds = unionNeighbours(child.id);
+            const partnerIds = unionNeighboursById.get(child.id) || [];
             const partner = peopleById.get(partnerIds[0]);
             const partnerWidth = partner ? compactNodeWidth(cardName(partner)) : 0;
             const branchAnchorOffset =
@@ -252,18 +267,23 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
       return null;
     }
 
-    const householdIds = partnershipComponent(startId, unionNeighbours);
+    const householdIds = partnershipComponent(startId, unionNeighboursById);
+    const householdIdSet = new Set(householdIds);
     householdIds.forEach((personId) => rendered.add(personId));
 
     const childGroups = groupChildrenByUnion(people, householdIds, peopleById, crossUnionKeys);
-    const unionGroups = includeChildlessUnions(childGroups, householdIds, unionNeighbours);
+    const unionGroups = includeChildlessUnions(
+      childGroups,
+      householdIds,
+      unionNeighboursById,
+    );
     const nextTrail = new Set([...trail, ...householdIds]);
     const anchorId = householdIds.reduce((currentAnchorId, personId) => {
-      const currentPartners = unionNeighbours(currentAnchorId).filter((partnerId) =>
-        householdIds.includes(partnerId),
+      const currentPartners = (unionNeighboursById.get(currentAnchorId) || []).filter((partnerId) =>
+        householdIdSet.has(partnerId),
       ).length;
-      const candidatePartners = unionNeighbours(personId).filter((partnerId) =>
-        householdIds.includes(partnerId),
+      const candidatePartners = (unionNeighboursById.get(personId) || []).filter((partnerId) =>
+        householdIdSet.has(partnerId),
       ).length;
 
       return candidatePartners > currentPartners ? personId : currentAnchorId;
@@ -280,9 +300,9 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
         ...group,
         key,
         partner,
-        partnerName: partner ? displayName(partner) : "",
+        partnerName: partner ? cachedDisplayName(partner) : "",
         children: [...group.children].sort((first, second) =>
-          displayName(first).localeCompare(displayName(second)),
+          cachedDisplayName(first).localeCompare(cachedDisplayName(second)),
         ),
       };
     });
@@ -334,10 +354,10 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
                 .sort((first, second) => {
                   if (first.id === startId) return -1;
                   if (second.id === startId) return 1;
-                  return displayName(first).localeCompare(displayName(second));
+                  return cachedDisplayName(first).localeCompare(cachedDisplayName(second));
                 });
               const children = [...group.children].sort((first, second) =>
-                displayName(first).localeCompare(displayName(second)),
+                cachedDisplayName(first).localeCompare(cachedDisplayName(second)),
               );
 
               return (
@@ -368,7 +388,7 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
     );
   };
 
-  const roots = findRoots(people, peopleById, unionNeighbours, displayName);
+  const roots = findRoots(people, peopleById, unionNeighboursById, displayNamesById);
   const forest = [];
 
   roots.forEach((person) => {

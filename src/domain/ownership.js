@@ -4,53 +4,97 @@ export function approximateFraction(decimal, maxDenominator = 10000) {
   if (!Number.isFinite(decimal) || decimal === 0) return { numerator: 0, denominator: 1 };
   const sign = decimal < 0 ? -1 : 1;
   const target = Math.abs(decimal);
-  let best = {
-    numerator: Math.round(target),
-    denominator: 1,
-    error: Math.abs(Math.round(target) - target),
-  };
-  for (let denominator = 1; denominator <= maxDenominator; denominator += 1) {
-    const numerator = Math.round(target * denominator);
+
+  let best = { numerator: Math.round(target), denominator: 1 };
+  let bestError = Math.abs(best.numerator - target);
+
+  const consider = (numerator, denominator) => {
+    if (denominator < 1 || denominator > maxDenominator) return;
     const error = Math.abs(numerator / denominator - target);
-    if (error < best.error) best = { numerator, denominator, error };
-    if (error < 1e-10) break;
+    if (error < bestError) {
+      best = { numerator, denominator };
+      bestError = error;
+    }
+  };
+
+  // Continued-fraction convergents give the best rational approximation for a
+  // bounded denominator in a handful of steps, instead of scanning every
+  // denominator up to maxDenominator.
+  let previousNumerator = 0;
+  let previousDenominator = 1;
+  let currentNumerator = 1;
+  let currentDenominator = 0;
+  let remainder = target;
+
+  for (let step = 0; step < 64; step += 1) {
+    const whole = Math.floor(remainder);
+    const nextNumerator = whole * currentNumerator + previousNumerator;
+    const nextDenominator = whole * currentDenominator + previousDenominator;
+
+    if (nextDenominator > maxDenominator) {
+      // The convergent overshoots the budget; the best remaining candidate is
+      // the largest semiconvergent that still fits.
+      if (currentDenominator > 0) {
+        const room = Math.floor((maxDenominator - previousDenominator) / currentDenominator);
+        if (room >= 1) {
+          consider(
+            room * currentNumerator + previousNumerator,
+            room * currentDenominator + previousDenominator,
+          );
+        }
+      }
+      break;
+    }
+
+    consider(nextNumerator, nextDenominator);
+
+    previousNumerator = currentNumerator;
+    previousDenominator = currentDenominator;
+    currentNumerator = nextNumerator;
+    currentDenominator = nextDenominator;
+
+    const fractionalPart = remainder - whole;
+    if (fractionalPart < 1e-15) break;
+    remainder = 1 / fractionalPart;
   }
   return { numerator: best.numerator * sign, denominator: best.denominator };
 }
 
+const hasManualShare = (person) =>
+  person?.ownershipSharePercent !== undefined &&
+  person?.ownershipSharePercent !== null &&
+  person?.ownershipSharePercent !== "";
+
+/**
+ * Starting ownership is only ever what someone has explicitly entered.
+ *
+ * This previously spread ownership across everyone who was anyone's parent, at
+ * every generation, producing plausible-looking numbers nobody had chosen.
+ */
 export function buildStarterOwnership(people = []) {
   if (!people.length) return {};
 
-  const hasManualShare = (person) =>
-    person.ownershipSharePercent !== undefined &&
-    person.ownershipSharePercent !== null &&
-    person.ownershipSharePercent !== "";
-  const manualPeople = people.filter(hasManualShare);
-  if (people.length === 1 && !manualPeople.length) return {};
-
-  const parentIds = new Set();
-  people.forEach((person) => {
-    if (person.fatherId) parentIds.add(person.fatherId);
-    if (person.motherId) parentIds.add(person.motherId);
-  });
-
-  const candidateIds = new Set(parentIds.size ? [...parentIds] : [people[0].id]);
-  manualPeople.forEach((person) => candidateIds.add(person.id));
-  const candidates = people.filter((person) => candidateIds.has(person.id));
-  const manualTotal = candidates
-    .filter(hasManualShare)
-    .reduce((total, person) => total + value(person.ownershipSharePercent), 0);
-  const automaticPeople = candidates.filter((person) => !hasManualShare(person));
-  const automaticPercent = automaticPeople.length
-    ? Math.max(0, 100 - manualTotal) / automaticPeople.length
-    : 0;
-
   return Object.fromEntries(
-    candidates.map((person) => [
-      person.id,
-      (hasManualShare(person) ? value(person.ownershipSharePercent) : automaticPercent) / 100,
-    ]),
+    people
+      .filter((person) => person?.id && hasManualShare(person))
+      .map((person) => [person.id, value(person.ownershipSharePercent) / 100]),
   );
+}
+
+/**
+ * True when nobody has been given a starting share yet.
+ */
+export function startingOwnershipIsUnset(people = []) {
+  return !people.some((person) => person?.id && hasManualShare(person));
+}
+
+/**
+ * Total of the explicitly entered starting shares, as a percentage.
+ */
+export function startingOwnershipTotalPercent(people = []) {
+  return people
+    .filter((person) => person?.id && hasManualShare(person))
+    .reduce((total, person) => total + value(person.ownershipSharePercent), 0);
 }
 
 // Applies a sequence of transfers on top of starting holdings, shared by both the legacy

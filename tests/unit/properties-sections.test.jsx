@@ -130,4 +130,58 @@ describe("Properties section views", () => {
     expect(container.textContent).not.toContain("Inheritance date");
     expect(container.textContent).not.toContain("Accumulated causa mortis value");
   });
+
+  it("blocks calculated ownership until a starting owner is entered", () => {
+    act(() =>
+      root.render(
+        <Properties
+          properties={[{ ...properties[0], owners: [] }]}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          section="ownership"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("No starting ownership has been set.");
+    expect(container.textContent).toContain(
+      "Enter who owned this property before any transfers.",
+    );
+    expect(container.textContent).not.toContain("Calculated title after inheritance");
+    expect(container.textContent).not.toContain("Ownership transfers");
+  });
+
+  it("shows the actual under-allocation and withholds tax figures", () => {
+    act(() =>
+      root.render(
+        <Properties
+          properties={[
+            {
+              ...properties[0],
+              owners: [
+                {
+                  ...properties[0].owners[0],
+                  sharePercent: 60,
+                  shareNumerator: 3,
+                  shareDenominator: 5,
+                },
+              ],
+            },
+          ]}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          section="tax"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Starting ownership totals 60%.");
+    expect(container.textContent).toContain("must equal 100%");
+    expect(container.textContent).not.toContain("Seller tax lots");
+    expect(container.textContent).not.toContain("Tax payable by each living vendor");
+  });
 });

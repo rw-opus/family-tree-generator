@@ -21,8 +21,9 @@ export function isDeceasedPerson(person, variant = "") {
   return Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
 }
 
-export function personCardName(person, people, peopleById) {
-  const displayName = personDisplayName(person, people);
+export function personCardName(person, people, peopleById, displayNamesById) {
+  const displayName =
+    displayNamesById?.get(person?.id) || personDisplayName(person, people);
   if (person.isPlaceholder) return person.fullName;
   if (!String(person.fullName || "").trim()) return displayName;
 

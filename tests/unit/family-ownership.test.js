@@ -19,19 +19,20 @@ const person = (id, patch = {}) => ({
 });
 
 describe("automatic family ownership", () => {
-  it("assumes a sole living person owns the whole property", () => {
+  it("does not assume a sole living person owns the whole property", () => {
     const result = buildAutomaticFamilyOwnership([person("owner")]);
-    expect(result.ownershipByPerson.owner).toBe(1);
+    expect(result.ownershipByPerson).toEqual({});
   });
 
-  it("passes a deceased spouse's starting half to the surviving spouse and child", () => {
+  it("passes an explicitly entered starting half to the surviving spouse and child", () => {
     const people = [
       person("father", {
         isDeceased: true,
         dateOfDeath: "2020-01-01",
         spouseIds: ["mother"],
+        ownershipSharePercent: 50,
       }),
-      person("mother", { spouseIds: ["father"] }),
+      person("mother", { spouseIds: ["father"], ownershipSharePercent: 50 }),
       person("child", { fatherId: "father", motherId: "mother" }),
     ];
 
@@ -185,10 +186,11 @@ describe("automatic family ownership", () => {
         isDeceased: true,
         dateOfDeath: "2020-01-01",
         spouseIds: ["mother"],
+        ownershipSharePercent: 50,
         inheritanceBasis: "will",
         willHeirs: [{ id: "gift", personId: "child", sharePercent: 100 }],
       }),
-      person("mother", { spouseIds: ["father"] }),
+      person("mother", { spouseIds: ["father"], ownershipSharePercent: 50 }),
       person("child", { fatherId: "father", motherId: "mother" }),
     ];
 

@@ -265,17 +265,23 @@ export function App() {
     [activeProperty, currentTree.outsideParties, currentTree.people],
   );
   const ownershipByPerson = useMemo(
-    () =>
-      Object.fromEntries(
+    () => {
+      if (!propertyReport.startingOwnership.isComplete) return {};
+      return Object.fromEntries(
         propertyReport.ledger.owners
           .filter((owner) => owner.personId)
           .map((owner) => [owner.personId, owner.share]),
-      ),
-    [propertyReport.ledger.owners],
+      );
+    },
+    [propertyReport.ledger.owners, propertyReport.startingOwnership.isComplete],
   );
   const causaMortisCoverage = useMemo(
-    () => buildCausaMortisShareCoverage(currentTree.people, activeProperties),
-    [activeProperties, currentTree.people],
+    () =>
+      buildCausaMortisShareCoverage(
+        currentTree.people,
+        propertyReport.startingOwnership.isComplete ? activeProperties : [],
+      ),
+    [activeProperties, currentTree.people, propertyReport.startingOwnership.isComplete],
   );
   const selectedCaseDependencyLabels = useMemo(() => {
     const labels = [];
@@ -941,7 +947,9 @@ export function App() {
               />
               <ExternalOwnerDirectory
                 outsideParties={currentTree.outsideParties}
-                currentOwners={propertyReport.ledger.owners}
+                currentOwners={
+                  propertyReport.startingOwnership.isComplete ? propertyReport.ledger.owners : []
+                }
                 onCreateFamilyTree={createFamilyTreeForOutsideParty}
               />
             </div>

@@ -1,10 +1,34 @@
 import { declarationCoverage } from "./declarations.js";
 import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
-import { approximateFraction, buildPropertyLedger } from "./ownership.js";
+import {
+  approximateFraction,
+  buildPropertyLedger,
+  startingOwnershipIsUnset,
+  startingOwnershipTotalPercent,
+} from "./ownership.js";
 import { saleTaxLot, vendorTaxSummary } from "./propertyTax.js";
+
+const OWNERSHIP_EPSILON = 0.001;
+
+export function propertyStartingOwnershipStatus(property = {}) {
+  const entries = (property.owners || [])
+    .filter((owner) => owner?.personId)
+    .map((owner) => ({
+      id: owner.personId,
+      ownershipSharePercent: owner.sharePercent,
+    }));
+  const isUnset = startingOwnershipIsUnset(entries);
+  const totalPercent = startingOwnershipTotalPercent(entries);
+  return {
+    isUnset,
+    totalPercent,
+    isComplete: !isUnset && Math.abs(totalPercent - 100) < OWNERSHIP_EPSILON,
+  };
+}
 
 export function buildPropertyVendorTaxReport(property = {}, people = [], outsideParties = []) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const startingOwnership = propertyStartingOwnershipStatus(property);
   const ownership = buildPropertyOwnership(people, property);
   const declarationOwners = Object.entries(ownership.ownershipByPerson).map(
     ([personId, share]) => ({
@@ -57,6 +81,7 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
   const livingVendors = ledger.owners.filter((owner) => !deceasedVendorIds.has(owner.id));
   const taxSummary = vendorTaxSummary(ledger.owners, saleRows, [...deceasedVendorIds]);
   return {
+    startingOwnership,
     ownership,
     declarationOwners,
     ledger,

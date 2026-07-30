@@ -4,6 +4,8 @@ import {
   buildOwnershipLedger,
   buildPropertyLedger,
   buildStarterOwnership,
+  startingOwnershipIsUnset,
+  startingOwnershipTotalPercent,
 } from "../../src/domain/ownership.js";
 
 describe("ownership transfer ledger", () => {
@@ -13,14 +15,14 @@ describe("ownership transfer ledger", () => {
   it("leaves a lone first person without a displayed ownership share", () => {
     expect(buildStarterOwnership([{ id: "first" }])).toEqual({});
   });
-  it("defaults two top-level parents to one half each", () => {
+  it("never infers starting ownership from family relationships", () => {
     expect(
       buildStarterOwnership([
         { id: "father" },
         { id: "mother" },
         { id: "child", fatherId: "father", motherId: "mother" },
       ]),
-    ).toEqual({ father: 0.5, mother: 0.5 });
+    ).toEqual({});
   });
   it("lets one top-level parent own the whole property", () => {
     expect(
@@ -29,7 +31,23 @@ describe("ownership transfer ledger", () => {
         { id: "mother" },
         { id: "child", fatherId: "father", motherId: "mother" },
       ]),
-    ).toEqual({ father: 1, mother: 0 });
+    ).toEqual({ father: 1 });
+  });
+  it("reports whether explicit starting ownership is complete", () => {
+    const unset = [{ id: "owner" }];
+    const split = [
+      { id: "one", ownershipSharePercent: 60 },
+      { id: "two", ownershipSharePercent: 40 },
+    ];
+    const underAllocated = [{ id: "one", ownershipSharePercent: 60 }];
+
+    expect(startingOwnershipIsUnset(unset)).toBe(true);
+    expect(startingOwnershipTotalPercent(unset)).toBe(0);
+    expect(startingOwnershipIsUnset(split)).toBe(false);
+    expect(startingOwnershipTotalPercent(split)).toBe(100);
+    expect(startingOwnershipTotalPercent(underAllocated)).toBe(60);
+    expect(startingOwnershipIsUnset([{ id: "zero", ownershipSharePercent: 0 }])).toBe(false);
+    expect(startingOwnershipIsUnset([{ id: "blank", ownershipSharePercent: "" }])).toBe(true);
   });
   it("transfers a fraction of a seller's holding to a company", () => {
     const ledger = buildOwnershipLedger(

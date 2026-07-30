@@ -238,38 +238,6 @@ export function personAncestors(people = [], personId) {
   return ancestors;
 }
 
-export function assignSolePartnersAsMissingParents(people = []) {
-  const peopleById = new Map(
-    people.filter((person) => person?.id).map((person) => [person.id, person]),
-  );
-  const partnerIdsByPerson = new Map();
-  peopleById.forEach((person) => {
-    const partnerIds = new Set(person.spouseIds || []);
-    peopleById.forEach((candidate) => {
-      if ((candidate.spouseIds || []).includes(person.id)) {
-        partnerIds.add(candidate.id);
-      }
-    });
-    partnerIds.delete(person.id);
-    partnerIdsByPerson.set(
-      person.id,
-      [...partnerIds].filter((id) => peopleById.has(id)),
-    );
-  });
-
-  return people.map((person) => {
-    if (person.fatherId && !person.motherId && !person.motherExplicitlyUnassigned) {
-      const partners = partnerIdsByPerson.get(person.fatherId) || [];
-      if (partners.length === 1) return { ...person, motherId: partners[0] };
-    }
-    if (person.motherId && !person.fatherId && !person.fatherExplicitlyUnassigned) {
-      const partners = partnerIdsByPerson.get(person.motherId) || [];
-      if (partners.length === 1) return { ...person, fatherId: partners[0] };
-    }
-    return person;
-  });
-}
-
 export function formattedDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "";
   const [year, month, day] = value.split("-");

@@ -919,6 +919,44 @@ textarea {
   font-size: 0.67rem;
 }
 
+.parent-suggestion-list {
+  display: grid;
+  gap: 0.42rem;
+  margin-top: 0.55rem;
+}
+
+.parent-suggestion-list > strong {
+  color: #6d4b20;
+  font-size: 0.68rem;
+}
+
+.parent-suggestion {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid #dfbd82;
+  border-radius: 7px;
+  background: #fffaf0;
+  padding: 0.55rem;
+}
+
+.parent-suggestion p {
+  margin: 0;
+  color: #614a2f;
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.parent-suggestion > span {
+  display: flex;
+  gap: 0.38rem;
+}
+
+.parent-suggestion button {
+  min-height: 1.9rem;
+  padding: 0 0.55rem;
+  font-size: 0.64rem;
+}
+
 .inspector-fields {
   display: grid;
   grid-template-columns: 1fr;
@@ -2032,6 +2070,23 @@ textarea {
   display: grid;
   gap: 0.28rem;
   margin-top: 0.4rem;
+}
+
+.ownership-blocking-notice {
+  display: grid;
+  gap: 0.18rem;
+  margin: 0.55rem 0;
+  border: 1px solid #d8a96c;
+  border-radius: 7px;
+  background: #fff8eb;
+  padding: 0.65rem 0.75rem;
+  color: #79461d;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.ownership-blocking-notice strong {
+  font-size: 0.74rem;
 }
 
 .initial-owner-columns,

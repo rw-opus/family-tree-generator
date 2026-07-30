@@ -436,9 +436,6 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
 
 export function buildAutomaticFamilyOwnership(people = []) {
   const startingOwnership = buildStarterOwnership(people);
-  if (!Object.keys(startingOwnership).length && people.length === 1) {
-    startingOwnership[people[0].id] = 1;
-  }
   const { ownershipByPerson, transmissions, unresolved } = buildFamilyOwnershipCore(
     people,
     startingOwnership,

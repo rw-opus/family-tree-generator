@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  assignSolePartnersAsMissingParents,
   composeFullName,
   givenNamesFromFullName,
   hasDesignation,
@@ -107,20 +106,4 @@ describe("family tree people", () => {
     ]);
   });
 
-  it("migrates single-parent children to a sole partner unless removed manually", () => {
-    const migrated = assignSolePartnersAsMissingParents([
-      { id: "roland", spouseIds: ["partner"] },
-      { id: "partner", spouseIds: ["roland"] },
-      { id: "child", fatherId: "roland", motherId: "" },
-      {
-        id: "removed-child",
-        fatherId: "roland",
-        motherId: "",
-        motherExplicitlyUnassigned: true,
-      },
-    ]);
-
-    expect(migrated.find((person) => person.id === "child").motherId).toBe("partner");
-    expect(migrated.find((person) => person.id === "removed-child").motherId).toBe("");
-  });
 });

@@ -179,7 +179,7 @@ describe("PersonInspector", () => {
     expect(childButton.querySelector(".relationship-count").textContent).toBe("3");
   });
 
-  it("assigns a linked partner as the other parent of a new child", () => {
+  it("requires confirmation before assigning a sole partner as the other parent", () => {
     const onChange = vi.fn();
     const people = [
       {
@@ -212,6 +212,19 @@ describe("PersonInspector", () => {
     act(() =>
       [...container.querySelectorAll("button")]
         .find((button) => button.textContent.includes("Child"))
+        .click(),
+    );
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Choose the other parent for this child");
+    const partnerSelect = container.querySelector(`select[aria-label="Child's other parent"]`);
+    act(() => {
+      partnerSelect.value = "parent-b";
+      partnerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    act(() =>
+      [...container.querySelectorAll(".child-partner-chooser button")]
+        .find((button) => button.textContent.includes("Add child"))
         .click(),
     );
 
@@ -282,9 +295,9 @@ describe("PersonInspector", () => {
     });
   });
 
-  it("adds a partner to existing children as their missing parent", () => {
-    const onChange = vi.fn();
+  it("suggests a new partner as a missing parent and applies only confirmed links", () => {
     const onSelectPerson = vi.fn();
+    let latestPeople = [];
     const people = [
       {
         id: "parent",
@@ -308,25 +321,22 @@ describe("PersonInspector", () => {
         spouseIds: [],
         designations: [],
       },
-      {
-        id: "child-3",
-        fullName: "Child Three",
-        fatherId: "parent",
-        spouseIds: [],
-        designations: [],
-      },
     ];
 
-    act(() =>
-      root.render(
+    function Harness() {
+      const [currentPeople, setCurrentPeople] = useState(people);
+      latestPeople = currentPeople;
+      return (
         <PersonInspector
-          people={people}
+          people={currentPeople}
           selectedPersonId="parent"
-          onChange={onChange}
+          onChange={setCurrentPeople}
           onSelectPerson={onSelectPerson}
-        />,
-      ),
-    );
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
     act(() =>
       [...container.querySelectorAll("button")]
         .find((button) => button.textContent.includes("Partner"))
@@ -338,14 +348,22 @@ describe("PersonInspector", () => {
         .click(),
     );
 
-    const updatedPeople = onChange.mock.calls[0][0];
-    const partner = updatedPeople.at(-1);
-    expect(updatedPeople[0].spouseIds).toEqual([partner.id]);
+    const partner = latestPeople.at(-1);
+    expect(latestPeople[0].spouseIds).toEqual([partner.id]);
+    expect(latestPeople.find((person) => person.id === "child-1").motherId).toBeUndefined();
+    expect(latestPeople.find((person) => person.id === "child-2").motherId).toBeUndefined();
+    expect(container.querySelectorAll(".parent-suggestion")).toHaveLength(2);
+    expect(container.textContent).toContain("Parent links to confirm");
+
+    act(() => container.querySelector(".parent-suggestion .primary-button").click());
+    expect(latestPeople.find((person) => person.id === "child-1").motherId).toBe(partner.id);
+    expect(latestPeople.find((person) => person.id === "child-2").motherId).toBeUndefined();
+
+    act(() => container.querySelector(".parent-suggestion .secondary-button").click());
     expect(
-      updatedPeople
-        .filter((person) => person.id.startsWith("child-"))
-        .every((person) => person.motherId === partner.id),
+      latestPeople.find((person) => person.id === "child-2").motherExplicitlyUnassigned,
     ).toBe(true);
+    expect(container.querySelectorAll(".parent-suggestion")).toHaveLength(0);
     expect(onSelectPerson).not.toHaveBeenCalled();
   });
 
