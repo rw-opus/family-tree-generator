@@ -325,7 +325,7 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll(".family-child-stem")).toHaveLength(3);
   });
 
-  it("shows separate horizontal unions for multiple partners without text labels", () => {
+  it("keeps one anchored person connected to separate unions for multiple partners", () => {
     act(() =>
       root.render(
         <FamilyTreeCanvas
@@ -333,7 +333,7 @@ describe("FamilyTreeCanvas", () => {
             {
               id: "person",
               fullName: "Joseph Borg",
-              spouseIds: ["partner-1", "partner-2"],
+              spouseIds: ["partner-1", "partner-2", "partner-3"],
             },
             {
               id: "partner-1",
@@ -343,6 +343,11 @@ describe("FamilyTreeCanvas", () => {
             {
               id: "partner-2",
               fullName: "Anne Vella",
+              spouseIds: ["person"],
+            },
+            {
+              id: "partner-3",
+              fullName: "Elena Zammit",
               spouseIds: ["person"],
             },
             {
@@ -357,14 +362,27 @@ describe("FamilyTreeCanvas", () => {
               fatherId: "person",
               motherId: "partner-2",
             },
+            {
+              id: "child-3",
+              fullName: "Mark Borg",
+              fatherId: "person",
+              motherId: "partner-3",
+            },
           ]}
         />,
       ),
     );
-    expect(container.querySelectorAll(".family-partner-link")).toHaveLength(2);
+    expect(container.querySelectorAll('[data-person-id="person"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-person-id="partner-1"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-person-id="partner-2"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-person-id="partner-3"]')).toHaveLength(1);
     expect(
-      container.querySelectorAll(".family-household-unions.multiple > .family-union-block"),
-    ).toHaveLength(2);
+      container.querySelectorAll(
+        ".family-household-unions.anchored-multiple > .family-remarriage-layout > .family-remarriage-union",
+      ),
+    ).toHaveLength(3);
+    expect(container.querySelectorAll(".family-multi-anchor-node")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-remarriage-key]")).toHaveLength(3);
     expect(container.textContent).not.toContain("Partner");
     expect(
       container.querySelector('[data-person-id="child-1"] .family-node-name').textContent,
@@ -372,6 +390,9 @@ describe("FamilyTreeCanvas", () => {
     expect(
       container.querySelector('[data-person-id="child-2"] .family-node-name').textContent,
     ).toBe("Claire");
+    expect(
+      container.querySelector('[data-person-id="child-3"] .family-node-name').textContent,
+    ).toBe("Mark");
     expect(container.querySelector('[data-person-id="child-1"] .family-node-name').title).toBe(
       "Paul Borg",
     );

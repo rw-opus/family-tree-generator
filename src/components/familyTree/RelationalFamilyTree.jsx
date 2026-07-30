@@ -1,3 +1,4 @@
+import { MultiplePartnerHousehold } from "./MultiplePartnerHousehold.jsx";
 import { compactNodeWidth, PARTNER_LINK_WIDTH } from "./treePresentation.js";
 
 function buildChildrenByParent(people, peopleById) {
@@ -140,76 +141,125 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
     const childGroups = groupChildrenByUnion(people, householdIds);
     const unionGroups = includeChildlessUnions(childGroups, householdIds, unionNeighbours);
     const nextTrail = new Set([...trail, ...householdIds]);
+    const renderChildren = (children) => {
+      if (!children.length) return null;
+
+      return (
+        <>
+          <span className="family-union-stem" aria-hidden="true" />
+          <div className={`family-children-branch ${children.length === 1 ? "single" : ""}`}>
+            {children.map((child) => {
+              const childHousehold = renderHousehold(child.id, nextTrail);
+              const partnerIds = unionNeighbours(child.id);
+              const partner = peopleById.get(partnerIds[0]);
+              const partnerWidth = partner ? compactNodeWidth(cardName(partner)) : 0;
+              const branchAnchorOffset =
+                childHousehold && partnerIds.length === 1
+                  ? -(PARTNER_LINK_WIDTH + partnerWidth) / 2
+                  : 0;
+
+              return (
+                <div
+                  className="family-child-branch-item"
+                  key={child.id}
+                  style={{
+                    "--branch-anchor-offset": `${branchAnchorOffset}px`,
+                  }}
+                >
+                  <span className="family-child-stem" aria-hidden="true" />
+                  {childHousehold || renderCard(child)}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      );
+    };
+    const anchorId = householdIds.reduce((currentAnchorId, personId) => {
+      const currentPartners = unionNeighbours(currentAnchorId).filter((partnerId) =>
+        householdIds.includes(partnerId),
+      ).length;
+      const candidatePartners = unionNeighbours(personId).filter((partnerId) =>
+        householdIds.includes(partnerId),
+      ).length;
+
+      return candidatePartners > currentPartners ? personId : currentAnchorId;
+    }, startId);
+    const anchor = peopleById.get(anchorId);
+    const anchoredGroups = [...unionGroups.entries()].map(([key, group]) => {
+      const partnerId =
+        group.parentIds.length === 2 && group.parentIds.includes(anchorId)
+          ? group.parentIds.find((personId) => personId !== anchorId)
+          : null;
+      const partner = peopleById.get(partnerId);
+
+      return {
+        ...group,
+        key,
+        partner,
+        partnerName: partner ? displayName(partner) : "",
+        children: [...group.children].sort((first, second) =>
+          displayName(first).localeCompare(displayName(second)),
+        ),
+      };
+    });
+    const hasAnchoredMultiplePartners =
+      anchoredGroups.length > 1 &&
+      anchor &&
+      anchoredGroups.every((group) => group.partner) &&
+      new Set(anchoredGroups.map((group) => group.partner.id)).size === anchoredGroups.length;
 
     return (
       <div className="family-household" key={`household-${startId}`}>
-        <div className={`family-household-unions ${unionGroups.size > 1 ? "multiple" : ""}`}>
-          {[...unionGroups.entries()].map(([key, group]) => {
-            const parents = group.parentIds
-              .map((personId) => peopleById.get(personId))
-              .filter(Boolean)
-              .sort((first, second) => {
-                if (first.id === startId) return -1;
-                if (second.id === startId) return 1;
-                return displayName(first).localeCompare(displayName(second));
-              });
-            const children = [...group.children].sort((first, second) =>
-              displayName(first).localeCompare(displayName(second)),
-            );
+        <div
+          className={`family-household-unions ${unionGroups.size > 1 ? "multiple" : ""} ${
+            hasAnchoredMultiplePartners ? "anchored-multiple" : ""
+          }`}
+        >
+          {hasAnchoredMultiplePartners ? (
+            <MultiplePartnerHousehold
+              anchor={anchor}
+              groups={anchoredGroups}
+              renderCard={renderCard}
+              renderChildren={renderChildren}
+            />
+          ) : (
+            [...unionGroups.entries()].map(([key, group]) => {
+              const parents = group.parentIds
+                .map((personId) => peopleById.get(personId))
+                .filter(Boolean)
+                .sort((first, second) => {
+                  if (first.id === startId) return -1;
+                  if (second.id === startId) return 1;
+                  return displayName(first).localeCompare(displayName(second));
+                });
+              const children = [...group.children].sort((first, second) =>
+                displayName(first).localeCompare(displayName(second)),
+              );
 
-            return (
-              <div className="family-union-block" key={key}>
-                <div
-                  className={[
-                    "family-parent-row",
-                    parents.length === 1 && "single-parent",
-                    children.length && "has-children",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                >
-                  {parents.map((person, index) => (
-                    <span className="family-parent-node" key={`${key}-${person.id}`}>
-                      {index > 0 && <span className="family-partner-link" aria-hidden="true" />}
-                      {renderCard(person)}
-                    </span>
-                  ))}
+              return (
+                <div className="family-union-block" key={key}>
+                  <div
+                    className={[
+                      "family-parent-row",
+                      parents.length === 1 && "single-parent",
+                      children.length && "has-children",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    {parents.map((person, index) => (
+                      <span className="family-parent-node" key={`${key}-${person.id}`}>
+                        {index > 0 && <span className="family-partner-link" aria-hidden="true" />}
+                        {renderCard(person)}
+                      </span>
+                    ))}
+                  </div>
+                  {renderChildren(children)}
                 </div>
-                {children.length > 0 && (
-                  <>
-                    <span className="family-union-stem" aria-hidden="true" />
-                    <div
-                      className={`family-children-branch ${children.length === 1 ? "single" : ""}`}
-                    >
-                      {children.map((child) => {
-                        const childHousehold = renderHousehold(child.id, nextTrail);
-                        const partnerIds = unionNeighbours(child.id);
-                        const partner = peopleById.get(partnerIds[0]);
-                        const partnerWidth = partner ? compactNodeWidth(cardName(partner)) : 0;
-                        const branchAnchorOffset =
-                          childHousehold && partnerIds.length === 1
-                            ? -(PARTNER_LINK_WIDTH + partnerWidth) / 2
-                            : 0;
-
-                        return (
-                          <div
-                            className="family-child-branch-item"
-                            key={child.id}
-                            style={{
-                              "--branch-anchor-offset": `${branchAnchorOffset}px`,
-                            }}
-                          >
-                            <span className="family-child-stem" aria-hidden="true" />
-                            {childHousehold || renderCard(child)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
     );

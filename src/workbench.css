@@ -1795,6 +1795,53 @@ textarea {
   background: rgba(255, 255, 255, 0.35);
 }
 
+.tree-stage .family-household-unions.anchored-multiple {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.tree-stage .family-remarriage-layout {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: max-content;
+  gap: 64px;
+  padding-top: var(--remarriage-rail-space, 0);
+}
+
+.tree-stage .family-multi-anchor-node,
+.tree-stage .family-remarriage-union {
+  position: relative;
+  z-index: 1;
+}
+
+.tree-stage .family-multi-anchor-node {
+  display: flex;
+  align-items: flex-start;
+}
+
+.tree-stage .family-remarriage-connectors {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tree-stage .family-remarriage-link {
+  fill: none;
+  stroke: #566b60;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+}
+
 .tree-stage .family-parent-row,
 .tree-stage .family-parent-node {
   display: flex;
