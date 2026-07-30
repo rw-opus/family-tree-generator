@@ -244,6 +244,19 @@ export function App() {
     currentTree.familyGroups[0];
   const activePersonIds = new Set(activeFamilyGroup?.personIds || []);
   const visiblePeople = currentTree.people.filter((person) => activePersonIds.has(person.id));
+  const personPickerOptions = useMemo(() => {
+    const peopleById = new Map(currentTree.people.map((person) => [person.id, person]));
+    return currentTree.people.map((person) => {
+      const parents = [
+        person.fatherId ? `Father: ${peopleById.get(person.fatherId)?.fullName || "Unnamed"}` : "",
+        person.motherId ? `Mother: ${peopleById.get(person.motherId)?.fullName || "Unnamed"}` : "",
+      ].filter(Boolean);
+      return {
+        id: person.id,
+        label: `${person.fullName || "Unnamed person"}${parents.length ? ` — ${parents.join(" · ")}` : ""}`,
+      };
+    });
+  }, [currentTree.people]);
   const activeProperty = currentTree.properties[0] || makePrimaryProperty("primary-property");
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const propertyReport = useMemo(
@@ -847,9 +860,9 @@ export function App() {
                     value={selectedPersonId}
                     onChange={(event) => selectPerson(event.target.value)}
                   >
-                    {visiblePeople.map((person) => (
+                    {personPickerOptions.map((person) => (
                       <option key={person.id} value={person.id}>
-                        {person.fullName || "Unnamed person"}
+                        {person.label}
                       </option>
                     ))}
                   </select>

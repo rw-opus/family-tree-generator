@@ -61,11 +61,19 @@ describe("family-group navigation", () => {
     const openButton = container.querySelector(".family-name-button");
     expect(openButton).not.toBeNull();
     act(() => openButton.click());
-    const vellaResult = [...container.querySelectorAll(".inspector-results button")].find(
-      (button) => button.textContent.includes("Maria Vella"),
-    );
+    const personPicker = container.querySelector(".stage-person-picker select");
+    expect([...personPicker.options].map((option) => option.textContent)).toEqual([
+      "Joseph Borg",
+      "Maria Vella",
+    ]);
 
-    act(() => vellaResult.click());
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        personPicker,
+        "vella",
+      );
+      personPicker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
 
     expect(container.querySelectorAll('[data-person-id="vella"]')).toHaveLength(1);
     const savedWorkspace = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));

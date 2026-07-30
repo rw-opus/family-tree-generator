@@ -1561,71 +1561,6 @@ textarea {
   line-height: 1.35;
 }
 
-.inspector-search {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  border: 1px solid #ccd7d1;
-  border-radius: 7px;
-  background: #fff;
-  padding: 0 0.55rem;
-}
-
-.inspector-search input {
-  min-height: 2.35rem;
-  border: 0;
-  padding-inline: 0;
-}
-
-.inspector-search input:focus {
-  outline: 0;
-}
-
-.inspector-results {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
-  margin-top: 0.55rem;
-}
-
-.inspector-results button {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-  border: 1px solid #dde4e0;
-  border-radius: 6px;
-  background: #fff;
-  padding: 0.35rem;
-  text-align: left;
-}
-
-.inspector-results button.active {
-  border-color: var(--forest);
-  background: var(--forest-soft);
-}
-
-.inspector-results button span {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: #e7eeea;
-  color: var(--forest);
-  font-size: 0.58rem;
-  font-weight: 900;
-}
-
-.inspector-results button strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 0.68rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .gedcom-tool {
   display: grid;
   gap: 0.6rem;
@@ -3184,10 +3119,6 @@ textarea {
   .relationship-actions {
     grid-template-columns: repeat(5, minmax(48px, 1fr));
     overflow-x: auto;
-  }
-
-  .inspector-results {
-    grid-template-columns: 1fr;
   }
 
   .zoom-controls {

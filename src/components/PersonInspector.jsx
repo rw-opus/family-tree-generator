@@ -6,7 +6,6 @@ import {
   FileUp,
   Heart,
   Pencil,
-  Search,
   Trash2,
   UserRound,
   UsersRound,
@@ -83,7 +82,6 @@ export function PersonInspector({
   onChange,
   onSelectPerson,
 }) {
-  const [query, setQuery] = useState("");
   const [importMode, setImportMode] = useState("replace");
   const [importStatus, setImportStatus] = useState("");
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
@@ -103,17 +101,6 @@ export function PersonInspector({
   const previousSelectedPersonIdRef = useRef("");
   const displayName = useCallback((person) => personDisplayName(person, people), [people]);
   const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
-  const results = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return people.slice(0, 8);
-    return people
-      .filter((person) => {
-        const father = peopleById.get(person.fatherId)?.fullName || "";
-        const mother = peopleById.get(person.motherId)?.fullName || "";
-        return `${displayName(person)} ${father} ${mother}`.toLowerCase().includes(needle);
-      })
-      .slice(0, 12);
-  }, [displayName, people, peopleById, query]);
 
   useEffect(() => {
     const nextPersonId = selectedPerson?.id || "";
@@ -1244,32 +1231,6 @@ export function PersonInspector({
             <small>{deleteMessage}</small>
           </div>
         </fieldset>
-      </section>
-
-      <section className="inspector-section">
-        <p className="eyebrow">Find a person</p>
-        <label className="inspector-search">
-          <Search size={15} />
-          <input
-            aria-label="Search family members"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by name or parent"
-          />
-        </label>
-        <div className="inspector-results">
-          {results.map((person) => (
-            <button
-              type="button"
-              className={person.id === selectedPerson.id ? "active" : ""}
-              key={person.id}
-              onClick={() => onSelectPerson(person.id)}
-            >
-              <span>{initials(displayName(person))}</span>
-              <strong>{displayName(person)}</strong>
-            </button>
-          ))}
-        </div>
       </section>
 
       <section className="inspector-section gedcom-tool">
