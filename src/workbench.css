@@ -1131,6 +1131,172 @@ textarea {
   text-align: right;
 }
 
+.intestate-confirmation {
+  display: grid;
+  gap: 0.48rem;
+  border-top: 1px solid #dce5e0;
+  padding-top: 0.48rem;
+}
+
+.intestate-confirmation-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.intestate-confirmation-heading > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.intestate-confirmation-heading strong,
+.partner-survival > strong,
+.confirmed-intestate-heirs > strong {
+  color: var(--ink);
+  font-size: 0.68rem;
+}
+
+.intestate-confirmation-heading small,
+.calculated-intestacy > small,
+.partner-survival > small,
+.confirmed-intestate-heirs > small {
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.35;
+}
+
+.partner-survival,
+.calculated-intestacy,
+.confirmed-intestate-heirs {
+  display: grid;
+  gap: 0.3rem;
+  border: 1px solid #d9e3dd;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 0.42rem;
+}
+
+.partner-survival label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.partner-survival label > span {
+  color: #28704d;
+  font-size: 0.62rem;
+  text-align: right;
+}
+
+.link-button {
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--forest);
+  font: inherit;
+  font-size: 0.64rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.calculated-intestacy-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #425149;
+  font-size: 0.64rem;
+}
+
+.calculated-intestacy-row b {
+  color: var(--forest);
+  font-size: 0.62rem;
+}
+
+.confirmed-heir-row {
+  display: grid;
+  grid-template-columns: minmax(78px, 1fr) 76px 60px 28px;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.confirmed-heir-name {
+  overflow: hidden;
+  color: #33443b;
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirmed-heir-fraction,
+.confirmed-heir-percent {
+  display: grid;
+  align-items: center;
+  gap: 0.18rem;
+}
+
+.confirmed-heir-fraction {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.confirmed-heir-percent {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.confirmed-heir-fraction input,
+.confirmed-heir-percent input {
+  width: 100%;
+  padding-inline: 0.22rem;
+  text-align: center;
+}
+
+.confirmed-heir-fraction b,
+.confirmed-heir-percent b {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.confirmed-heir-row .icon-button {
+  width: 28px;
+  min-height: 1.9rem;
+  color: #922f2f;
+}
+
+.intestate-confirmation-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.compact-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  min-height: 1.8rem;
+  border: 1px solid #9db7a8;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.25rem 0.48rem;
+  color: var(--forest);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.compact-confirm.confirmed {
+  border-color: #74a287;
+  background: #eaf5ee;
+}
+
+.compact-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .succession-warning,
 .succession-total.invalid {
   color: #9b551d !important;

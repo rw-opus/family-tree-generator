@@ -221,6 +221,7 @@ function referencedPartyIds(caseData) {
   addDeclarations(caseData.declarations);
   (caseData.people || []).forEach((person) => {
     (person.willHeirs || []).forEach((heir) => add(heir.personId));
+    (person.intestateHeirs || []).forEach((heir) => add(heir.personId));
     (person.causaMortisDeclarations || []).forEach((declaration) =>
       (declaration.declarantPersonIds || []).forEach(add),
     );
