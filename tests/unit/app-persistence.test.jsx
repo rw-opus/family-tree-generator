@@ -99,6 +99,12 @@ describe("App local recovery", () => {
   let container;
   let root;
 
+  const openCurrentFamily = () => {
+    const openButton = container.querySelector(".family-name-button");
+    expect(openButton).not.toBeNull();
+    act(() => openButton.click());
+  };
+
   beforeEach(() => {
     window.localStorage.clear();
     container = document.createElement("div");
@@ -135,6 +141,7 @@ describe("App local recovery", () => {
     saveLocalWorkspace(trees, "tree-1", window.localStorage);
 
     act(() => root.render(<App />));
+    openCurrentFamily();
 
     const title = container.querySelector(".workbench-title input");
     const picker = container.querySelector('select[aria-label="Saved property cases"]');
@@ -194,6 +201,7 @@ describe("App local recovery", () => {
       window.localStorage,
     );
     act(() => root.render(<App />));
+    openCurrentFamily();
     const caseButton = [...container.querySelectorAll(".dashboard-tabs button")].find(
       (button) => button.textContent === "Property",
     );
@@ -278,6 +286,7 @@ describe("App local recovery", () => {
       window.localStorage,
     );
     act(() => root.render(<App />));
+    openCurrentFamily();
 
     expect(container.querySelectorAll(".family-node-ownership")).toHaveLength(0);
     expect(container.textContent).not.toContain("Starting property ownership");
@@ -316,6 +325,7 @@ describe("App local recovery", () => {
 
   it("lets the tree zoom out to a 25% overview", () => {
     act(() => root.render(<App />));
+    openCurrentFamily();
     const zoomOut = container.querySelector('button[aria-label="Zoom out"]');
 
     for (let index = 0; index < 8; index += 1) {
@@ -359,6 +369,7 @@ describe("App local recovery", () => {
     );
 
     act(() => root.render(<App />));
+    openCurrentFamily();
     expect(container.querySelectorAll('[data-person-id="borg"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-person-id="vella"]')).toHaveLength(0);
 
@@ -420,6 +431,7 @@ describe("App local recovery", () => {
     );
 
     act(() => root.render(<App />));
+    openCurrentFamily();
     const ownersTab = [...container.querySelectorAll(".case-view-tabs button")].find((button) =>
       button.textContent.includes("Owners & transfers"),
     );

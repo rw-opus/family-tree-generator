@@ -21,6 +21,7 @@ import {
   vendorTaxViewKey,
 } from "./components/CaseViewTabs.jsx";
 import { ExternalOwnerDirectory } from "./components/ExternalOwnerDirectory.jsx";
+import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonCardDisplayControl } from "./components/PersonCardDisplayControl.jsx";
@@ -35,10 +36,11 @@ import {
   promoteOutsideIndividual,
   reconcilePeopleUpdate,
 } from "./domain/caseModel.js";
+import { parseGedcom } from "./domain/gedcom.js";
 import { createPerson } from "./domain/people.js";
 import { normalisePersonCardFields } from "./domain/personCardDisplay.js";
 import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
-import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
+import { listFamilyTrees, removeFamilyTree, saveFamilyTree } from "./services/familyTrees.js";
 import {
   loadLocalWorkspace,
   saveLocalWorkspace,
@@ -134,6 +136,7 @@ const normaliseTree = (value) => {
   const settings = { ...defaultSettings, ...(caseData.settings || {}) };
   return {
     ...caseData,
+    createdAt: caseData.createdAt || caseData.created_at || caseData.updated_at || "",
     title: caseData.title || "New property succession",
     property: { ...defaultProperty, ...(caseData.property || {}) },
     properties: migratedProperties(caseData),
@@ -154,6 +157,7 @@ const initialTree = () => {
   const rootPerson = createPerson();
   return normaliseTree({
     id: caseId,
+    createdAt: new Date().toISOString(),
     title: "New property succession",
     people: [rootPerson],
     familyGroups: [
@@ -209,6 +213,7 @@ export function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showLogin, setShowLogin] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(true);
   const [panelTab, setPanelTab] = useState("person");
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
@@ -400,6 +405,39 @@ export function App() {
   const createNewTree = () => {
     const nextTree = initialTree();
     activateCase(nextTree, { openDashboard: true });
+    setShowLibrary(false);
+  };
+
+  const importNewTree = async (file) => {
+    try {
+      const result = parseGedcom(await file.text());
+      if (!result.people.length) throw new Error("No individual records were found.");
+
+      const baseTree = initialTree();
+      const familyGroupId = baseTree.activeFamilyGroupId;
+      const importedTitle =
+        file.name
+          .replace(/\.(ged|gedcom)$/i, "")
+          .replace(/[_-]+/g, " ")
+          .trim() || "Imported family";
+      const importedTree = reconcilePeopleUpdate(baseTree, familyGroupId, result.people, {
+        replaceFamilyGroup: true,
+      });
+      const nextTree = {
+        ...importedTree,
+        title: importedTitle,
+        familyGroups: importedTree.familyGroups.map((group) =>
+          group.id === familyGroupId ? { ...group, title: importedTitle } : group,
+        ),
+      };
+
+      activateCase(nextTree);
+      setShowLibrary(false);
+      setStatus(`Imported ${result.individualCount} people and ${result.familyCount} families.`);
+    } catch (error) {
+      setStatus(`Could not import GEDCOM: ${error.message}`);
+      throw error;
+    }
   };
 
   const createNewFamilyTree = () => {
@@ -419,6 +457,55 @@ export function App() {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return;
     activateCase(selectedTree);
+    setShowLibrary(false);
+  };
+
+  const renameTree = async (treeId, title) => {
+    const selectedTree = treeOptions.find((item) => item.id === treeId);
+    const nextTitle = String(title || "").trim();
+    if (!selectedTree || !nextTitle || nextTitle === selectedTree.title) return;
+
+    const renamed = { ...selectedTree, title: nextTitle };
+    setTrees((items) => items.map((item) => (item.id === treeId ? renamed : item)));
+    if (treeId === currentTree.id) setTree(renamed);
+    if (!session) return;
+
+    setStatus("Saving family name...");
+    try {
+      const saved = await saveFamilyTree(renamed);
+      setTrees((items) => items.map((item) => (item.id === treeId ? saved : item)));
+      if (treeId === currentTree.id) setTree(saved);
+      setStatus("Saved securely to your workspace.");
+    } catch (error) {
+      setStatus(`Could not rename family: ${error.message}`);
+    }
+  };
+
+  const removeTree = async (treeId) => {
+    const selectedTree = treeOptions.find((item) => item.id === treeId);
+    if (
+      !selectedTree ||
+      !window.confirm(`Remove ${selectedTree.title || "this family"}? This cannot be undone.`)
+    ) {
+      return;
+    }
+
+    const remainingTrees = treeOptions.filter((item) => item.id !== treeId);
+    const removedCurrentTree = treeId === currentTree.id;
+    const replacement = remainingTrees[0] || initialTree();
+    setTrees(remainingTrees);
+    if (removedCurrentTree) activateCase(replacement);
+    if (!session) return;
+
+    setStatus("Removing family...");
+    try {
+      await removeFamilyTree(treeId);
+      setStatus("Family removed from your secure workspace.");
+    } catch (error) {
+      setTrees((items) => upsertWorkspaceTree(items, selectedTree));
+      if (removedCurrentTree) activateCase(selectedTree);
+      setStatus(`Could not remove family: ${error.message}`);
+    }
   };
 
   const updatePeople = (people, options) => {
@@ -501,6 +588,38 @@ export function App() {
     }
   };
 
+  const signOut = async () => {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) {
+      setStatus(`Could not sign out: ${error.message}`);
+      return;
+    }
+    setSession(null);
+    setStatus("Signed out. Families remain saved on this device.");
+  };
+
+  if (showLibrary) {
+    return (
+      <FamilyLibrary
+        trees={treeOptions}
+        activeTreeId={currentTree.id}
+        session={session}
+        supabaseConfigured={supabaseConfigured}
+        onCreate={createNewTree}
+        onImport={importNewTree}
+        onOpen={openTree}
+        onRename={renameTree}
+        onRemove={removeTree}
+        onSignIn={() => {
+          setShowLibrary(false);
+          setShowLogin(true);
+        }}
+        onSignOut={signOut}
+      />
+    );
+  }
+
   return (
     <main className="tree-workbench">
       <header className="workbench-header">
@@ -545,6 +664,13 @@ export function App() {
           </label>
         </div>
         <div className="workbench-actions">
+          <button
+            type="button"
+            className="secondary-button compact"
+            onClick={() => setShowLibrary(true)}
+          >
+            <FolderTree size={16} /> Families
+          </button>
           <label className="saved-tree-picker">
             <span>Saved cases</span>
             <select

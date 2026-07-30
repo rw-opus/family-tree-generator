@@ -58,6 +58,9 @@ describe("family-group navigation", () => {
     );
 
     act(() => root.render(<App />));
+    const openButton = container.querySelector(".family-name-button");
+    expect(openButton).not.toBeNull();
+    act(() => openButton.click());
     const vellaResult = [...container.querySelectorAll(".inspector-results button")].find(
       (button) => button.textContent.includes("Maria Vella"),
     );

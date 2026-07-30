@@ -22,6 +22,8 @@ export function hydrateFamilyTree(record = {}) {
       Number(storedTree.schemaVersion) >= 2
         ? storedTree.people || record.people || []
         : record.people || storedTree.people || [],
+    createdAt: storedTree.createdAt || record.created_at || record.updated_at || "",
+    created_at: record.created_at,
     updated_at: record.updated_at,
   };
 }
@@ -29,7 +31,7 @@ export function hydrateFamilyTree(record = {}) {
 export async function listFamilyTrees() {
   const { data, error } = await supabase
     .from("family_trees")
-    .select("id,title,people,tree_data,updated_at")
+    .select("id,title,people,tree_data,created_at,updated_at")
     .order("updated_at", { ascending: false });
   if (error) throw error;
   return (data || []).map(hydrateFamilyTree);
@@ -43,4 +45,9 @@ export async function saveFamilyTree(tree) {
     .single();
   if (error) throw error;
   return hydrateFamilyTree(data);
+}
+
+export async function removeFamilyTree(id) {
+  const { error } = await supabase.from("family_trees").delete().eq("id", id);
+  if (error) throw error;
 }
