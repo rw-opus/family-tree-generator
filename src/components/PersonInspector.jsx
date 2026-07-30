@@ -1185,7 +1185,9 @@ export function PersonInspector({
                       >
                         {allSuccessionHeirsDeceased
                           ? "Declared immovable-property value is optional because every identified heir is now deceased."
-                          : "Declared immovable-property value is required because at least one identified heir is living."}
+                          : successionHeirs.length
+                            ? "Declared immovable-property value is required because at least one identified heir is living."
+                            : "Declared immovable-property value is required until the heirs are identified."}
                       </small>
                     </div>
                   ))}
