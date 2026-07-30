@@ -2480,6 +2480,14 @@ textarea {
   border-top-color: #171717;
 }
 
+.tree-stage .family-node.succession-date-incomplete {
+  border-color: #b45309;
+  border-top-color: #92400e;
+  box-shadow:
+    0 0 0 2px rgba(180, 83, 9, 0.13),
+    0 4px 14px rgba(28, 52, 40, 0.11);
+}
+
 .tree-stage .family-node.cm-share-incomplete {
   border-color: #b52b2b;
   border-top-color: #8e1717;
@@ -2569,6 +2577,18 @@ textarea {
 .tree-stage .family-node.cm-share-incomplete .family-node-ownership {
   background: #b52b2b;
   color: #fff;
+}
+
+.tree-stage .family-node-succession-alert {
+  margin-top: 0.32rem;
+  border-radius: 5px;
+  background: #fff3db;
+  color: #8a3f08;
+  padding: 0.22rem 0.34rem;
+  font-size: 0.54rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .tree-stage .family-node-cm-alert {

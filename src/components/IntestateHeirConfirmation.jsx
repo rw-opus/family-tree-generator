@@ -4,6 +4,8 @@ import {
   confirmedIntestacyAllocations,
   intestacyAllocationSignature,
   isPersonDeceased,
+  linkedSpousesFor,
+  linkedSpousesMissingDeathDates,
 } from "../domain/familyOwnership.js";
 import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
 
@@ -25,18 +27,8 @@ export function IntestateHeirConfirmation({
   const calculatedShares = new Map(calculatedEntries);
   const calculatedPersonIds = new Set(calculatedShares.keys());
   const selectedPersonIds = new Set(rows.map((row) => row.personId).filter(Boolean));
-  const linkedPartnerIds = new Set([
-    ...(deceased.spouseIds || []),
-    ...people
-      .filter((person) => (person.spouseIds || []).includes(deceased.id))
-      .map((person) => person.id),
-  ]);
-  const linkedPartners = [...linkedPartnerIds]
-    .map((personId) => people.find((person) => person.id === personId))
-    .filter(Boolean);
-  const partnersMissingDeathDate = linkedPartners.filter(
-    (partner) => isPersonDeceased(partner) && !partner.dateOfDeath,
-  );
+  const linkedPartners = linkedSpousesFor(people, deceased.id);
+  const partnersMissingDeathDate = linkedSpousesMissingDeathDates(people, deceased.id);
   const availableCalledPeople = people.filter(
     (person) => calculatedPersonIds.has(person.id) && !selectedPersonIds.has(person.id),
   );
@@ -53,7 +45,8 @@ export function IntestateHeirConfirmation({
     rows.every((row) => row.personId && Number(row.sharePercent) > 0) &&
     selectedPersonIds.size === rows.length &&
     Math.abs(total - 100) < 1e-8;
-  const canConfirm = hasCompleteRows && partnersMissingDeathDate.length === 0;
+  const canConfirm =
+    hasCompleteRows && Boolean(deceased.dateOfDeath) && partnersMissingDeathDate.length === 0;
 
   const patchDeceased = (patch) => onUpdatePerson(deceased.id, patch);
   const replaceRows = (nextRows) =>

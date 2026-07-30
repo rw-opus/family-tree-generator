@@ -41,6 +41,28 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson.father || 0).toBe(0);
   });
 
+  it("treats the other parent of shared children as the spouse when no explicit link exists", () => {
+    const people = [
+      person("edgar", {
+        fullName: "Edgar Wadge",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+      }),
+      person("wife", { fullName: "Maria Wadge" }),
+      person("son-1", { fatherId: "edgar", motherId: "wife" }),
+      person("son-2", { fatherId: "edgar", motherId: "wife" }),
+    ];
+
+    const result = buildPropertyOwnership(people, {
+      id: "property",
+      owners: [{ personId: "edgar", sharePercent: 100 }],
+    });
+
+    expect(result.ownershipByPerson.wife).toBeCloseTo(0.5);
+    expect(result.ownershipByPerson["son-1"]).toBeCloseTo(0.25);
+    expect(result.ownershipByPerson["son-2"]).toBeCloseTo(0.25);
+  });
+
   it("uses confirmed intestate heirs and user-directed shares when they total 100%", () => {
     const people = [
       person("deceased", {
@@ -92,6 +114,36 @@ describe("automatic family ownership", () => {
     expect(allocation.destination).toBe("spouse-survival-unresolved");
     expect(allocation.shares.size).toBe(0);
     expect(allocation.warnings.join(" ")).toContain("Enter the date of death");
+  });
+
+  it("does not assume intestate heirs while the deceased's own death date is missing", () => {
+    const people = [
+      person("edgar", {
+        fullName: "Edgar Wadge",
+        isDeceased: true,
+        dateOfDeath: "",
+        spouseIds: ["wife"],
+      }),
+      person("wife", {
+        isDeceased: true,
+        dateOfDeath: "2024-01-01",
+        spouseIds: ["edgar"],
+      }),
+      person("son-1", { fatherId: "edgar", motherId: "wife" }),
+      person("son-2", { fatherId: "edgar", motherId: "wife" }),
+    ];
+
+    const allocation = intestateAllocations(people, "edgar");
+    const ownership = buildPropertyOwnership(people, {
+      id: "property",
+      owners: [{ personId: "edgar", sharePercent: 100 }],
+    });
+
+    expect(allocation.destination).toBe("death-date-unresolved");
+    expect(allocation.shares.size).toBe(0);
+    expect(ownership.ownershipByPerson.edgar).toBe(1);
+    expect(ownership.ownershipByPerson["son-1"] || 0).toBe(0);
+    expect(ownership.unresolved).toHaveLength(1);
   });
 
   it("falls back to the statutory proposal when an earlier confirmation becomes stale", () => {
