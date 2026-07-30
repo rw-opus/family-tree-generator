@@ -75,13 +75,13 @@ describe("Properties section views", () => {
   });
 
   it.each([
-    ["property", "Initial owner/s of the property", ["Ownership transfers", "Seller tax lots"]],
-    ["ownership", "Ownership transfers", ["Initial owner/s of the property", "Seller tax lots"]],
-    ["tax", "Seller tax lots", ["Initial owner/s of the property", "Ownership transfers"]],
+    ["property", ["Initial owner/s of the property"], ["Ownership transfers", "Seller tax lots"]],
+    ["ownership", ["Initial owner/s of the property", "Ownership transfers"], ["Seller tax lots"]],
+    ["tax", ["Seller tax lots"], ["Initial owner/s of the property", "Ownership transfers"]],
   ])("renders only the %s section", (section, visibleText, hiddenText) => {
     renderSection(section);
 
-    expect(container.textContent).toContain(visibleText);
+    visibleText.forEach((text) => expect(container.textContent).toContain(text));
     hiddenText.forEach((text) => expect(container.textContent).not.toContain(text));
   });
 

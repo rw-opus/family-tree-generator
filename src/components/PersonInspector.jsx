@@ -64,6 +64,12 @@ function fractionLabel(share = 0) {
   return `${fraction.numerator}/${fraction.denominator}`;
 }
 
+const money = new Intl.NumberFormat("en-MT", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 2,
+});
+
 export function PersonInspector({
   people,
   properties = [],
@@ -71,6 +77,7 @@ export function PersonInspector({
   causaMortisCoverage = [],
   selectedPersonId,
   shareDisplay = "both",
+  onShareDisplayChange,
   caseDependencyLabels = [],
   familyPersonIds = null,
   onChange,
@@ -84,6 +91,9 @@ export function PersonInspector({
   const [childPartnerChooserOpen, setChildPartnerChooserOpen] = useState(false);
   const [childPartnerId, setChildPartnerId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [ownershipDisplay, setOwnershipDisplay] = useState(
+    shareDisplay === "percentage" ? "percentage" : "fraction",
+  );
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
@@ -115,6 +125,10 @@ export function PersonInspector({
     setChildPartnerId("");
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
   }, [selectedPerson]);
+
+  useEffect(() => {
+    setOwnershipDisplay(shareDisplay === "percentage" ? "percentage" : "fraction");
+  }, [shareDisplay]);
 
   const updateSelected = (patch) => {
     if (!selectedPerson) return;
@@ -151,6 +165,15 @@ export function PersonInspector({
       patch.surnameAtBirth = personSurname(selectedPerson);
     }
     updateSelected(patch);
+  };
+
+  const selectSex = (sex, checked) => {
+    updateSex(checked ? sex : "");
+  };
+
+  const changeOwnershipDisplay = (mode) => {
+    setOwnershipDisplay(mode);
+    onShareDisplayChange?.(mode);
   };
 
   const updateWillHeir = (heirId, patch) => {
@@ -225,9 +248,7 @@ export function PersonInspector({
           date: "",
           notaryName: "",
           immovablePropertyValue: "",
-          declarantPersonIds: declarationCandidates
-            .filter((person) => descendantIds.has(person.id))
-            .map((person) => person.id),
+          declarantPersonIds: declarationCandidates.map((person) => person.id),
         },
       ],
     });
@@ -492,11 +513,8 @@ export function PersonInspector({
   const ancestorIds = new Set(
     personAncestors(people, selectedPerson.id).map((person) => person.id),
   );
-  const declarationCandidateIds = new Set([...descendantIds, ...successionHeirIds]);
+  const declarationCandidateIds = new Set(successionHeirIds);
   const declarationCandidates = people.filter((person) => declarationCandidateIds.has(person.id));
-  const parentCandidates = people.filter(
-    (person) => person.id !== selectedPerson.id && !descendantIds.has(person.id),
-  );
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
   const requiresCausaMortisDetails =
     Boolean(selectedPerson.dateOfDeath) && selectedPerson.dateOfDeath > "1992-11-25";
@@ -505,6 +523,8 @@ export function PersonInspector({
     (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
   const displayedGivenNames = personGivenNames(selectedPerson);
   const displayedSurname = personSurname(selectedPerson);
+  const propertySaleValue = Number(properties[0]?.saleValue) || 0;
+  const estimatedPropertyValue = propertySaleValue * ownership;
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedSpouseIds = new Set([
     ...(selectedPerson.spouseIds || []),
@@ -569,7 +589,6 @@ export function PersonInspector({
         <div>
           <p className="eyebrow">Selected person</p>
           <h2>{selectedDisplayName}</h2>
-          {hasOwnership && <span>{ownershipLabel(ownership, shareDisplay)} ownership</span>}
         </div>
         <button
           type="button"
@@ -738,92 +757,74 @@ export function PersonInspector({
                 placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
               />
             </label>
-            <label>
-              <span>Sex</span>
-              <select
-                value={selectedPerson.sex || ""}
-                onChange={(event) => updateSex(event.target.value)}
-              >
-                <option value="">Not specified</option>
-                <option>Female</option>
-                <option>Male</option>
-                <option>Other</option>
-              </select>
-            </label>
-            {(selectedPerson.fatherId || selectedPerson.motherId) && (
-              <label>
-                <span>Father</span>
-                <select
-                  aria-label="Father"
-                  value={selectedPerson.fatherId}
-                  onChange={(event) =>
-                    updateSelected({
-                      fatherId: event.target.value,
-                      fatherExplicitlyUnassigned: !event.target.value,
-                    })
-                  }
-                >
-                  <option value="">Not assigned</option>
-                  {parentCandidates.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {displayName(person)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {(selectedPerson.fatherId || selectedPerson.motherId) && (
-              <label>
-                <span>Mother</span>
-                <select
-                  aria-label="Mother"
-                  value={selectedPerson.motherId}
-                  onChange={(event) =>
-                    updateSelected({
-                      motherId: event.target.value,
-                      motherExplicitlyUnassigned: !event.target.value,
-                    })
-                  }
-                >
-                  <option value="">Not assigned</option>
-                  {parentCandidates.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {displayName(person)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
           </div>
         </fieldset>
-        <label className="deceased-status-control">
-          <span>Status</span>
-          <span className="detail-checkbox">
-            <input
-              type="checkbox"
-              checked={isDeceased}
-              onChange={(event) => setDeceased(event.target.checked)}
-            />
-            This person is deceased.
-          </span>
-        </label>
+        <div className="person-status-controls">
+          <div className="person-status-control" role="group" aria-label="Sex">
+            <span>Sex</span>
+            <span className="sex-checkbox-options">
+              {["Female", "Male", "Other"].map((sex) => (
+                <label className="detail-checkbox" key={sex}>
+                  <input
+                    type="checkbox"
+                    checked={selectedPerson.sex === sex}
+                    onChange={(event) => selectSex(sex, event.target.checked)}
+                  />
+                  {sex}
+                </label>
+              ))}
+            </span>
+          </div>
+          <label className="person-status-control deceased-status-control">
+            <span>Status</span>
+            <span className="detail-checkbox">
+              <input
+                type="checkbox"
+                checked={isDeceased}
+                onChange={(event) => setDeceased(event.target.checked)}
+              />
+              This person is deceased.
+            </span>
+          </label>
+        </div>
+
+        <div className="person-share-summary">
+          <div className="person-share-heading">
+            <span>Estimated property share</span>
+            <span className="person-share-toggle" aria-label="Estimated share display">
+              <button
+                type="button"
+                className={ownershipDisplay === "fraction" ? "active" : ""}
+                aria-pressed={ownershipDisplay === "fraction"}
+                onClick={() => changeOwnershipDisplay("fraction")}
+              >
+                Fraction
+              </button>
+              <button
+                type="button"
+                className={ownershipDisplay === "percentage" ? "active" : ""}
+                aria-pressed={ownershipDisplay === "percentage"}
+                onClick={() => changeOwnershipDisplay("percentage")}
+              >
+                Percentage
+              </button>
+            </span>
+          </div>
+          <div className="person-share-value">
+            <strong>
+              {hasOwnership ? ownershipLabel(ownership, ownershipDisplay) : "Not yet calculated"}
+            </strong>
+            <small>
+              {hasOwnership && propertySaleValue > 0
+                ? `Estimated value ${money.format(estimatedPropertyValue)}`
+                : "Enter the initial owner and property selling price to calculate a value."}
+            </small>
+          </div>
+        </div>
+
         <fieldset className="person-edit-fields" disabled={!isEditing && !isDeceased}>
           {isDeceased && (
             <div className="person-succession">
-              <div className="person-succession-heading">
-                <div>
-                  <strong>Succession on death</strong>
-                  <small>Record how this person's ownership passes to the heirs.</small>
-                </div>
-                <select
-                  aria-label="Inheritance basis"
-                  value={inheritanceBasis}
-                  onChange={(event) => updateSelected({ inheritanceBasis: event.target.value })}
-                >
-                  <option value="intestacy">Intestate</option>
-                  <option value="will">Testate (will)</option>
-                </select>
-              </div>
               <label className="succession-detail-row">
                 <span>Date of death</span>
                 <input
@@ -831,6 +832,17 @@ export function PersonInspector({
                   value={selectedPerson.dateOfDeath || ""}
                   onChange={(event) => updateSelected({ dateOfDeath: event.target.value })}
                 />
+              </label>
+              <label className="succession-detail-row">
+                <span>Estate</span>
+                <select
+                  aria-label="Inheritance basis"
+                  value={inheritanceBasis}
+                  onChange={(event) => updateSelected({ inheritanceBasis: event.target.value })}
+                >
+                  <option value="intestacy">Intestate</option>
+                  <option value="will">Testate</option>
+                </select>
               </label>
 
               {inheritanceBasis === "intestacy" ? (
@@ -866,20 +878,11 @@ export function PersonInspector({
                     />
                   </label>
                   <label>
-                    <span>Will notary</span>
+                    <span>Will notary (optional)</span>
                     <input
                       value={selectedPerson.willNotaryName || ""}
                       onChange={(event) => updateSelected({ willNotaryName: event.target.value })}
                       placeholder="Notary's name"
-                    />
-                  </label>
-                  <label className="will-notes">
-                    <span>Will notes</span>
-                    <textarea
-                      rows="2"
-                      value={selectedPerson.willNotes || ""}
-                      onChange={(event) => updateSelected({ willNotes: event.target.value })}
-                      placeholder="Will details, references, institutes or other notes"
                     />
                   </label>
                   <div className="will-beneficiaries">
@@ -982,9 +985,10 @@ export function PersonInspector({
                 <div className="causa-mortis-records">
                   <div className="causa-mortis-heading">
                     <div>
-                      <strong>Causa mortis declarations</strong>
+                      <strong>Declarations Causa Mortis</strong>
                       <small>
-                        Death after 25 November 1992 · record each declaration separately.
+                        Required for a death after 25 November 1992. Add every declaration
+                        separately.
                       </small>
                     </div>
                     <button
@@ -1098,7 +1102,7 @@ export function PersonInspector({
                         </span>
                       </label>
                       <label>
-                        <span>Declaration date</span>
+                        <span>Date of Declaration Causa Mortis</span>
                         <input
                           type="date"
                           value={declaration.date || ""}
@@ -1110,7 +1114,7 @@ export function PersonInspector({
                         />
                       </label>
                       <label>
-                        <span>Notary</span>
+                        <span>Notary (optional)</span>
                         <input
                           value={declaration.notaryName || ""}
                           onChange={(event) =>
@@ -1123,7 +1127,7 @@ export function PersonInspector({
                       </label>
                       <label>
                         <span>
-                          Immovable property value
+                          Value declared
                           {allSuccessionHeirsDeceased ? " (optional)" : ""}
                         </span>
                         <span className="currency-input">
@@ -1144,10 +1148,10 @@ export function PersonInspector({
                         </span>
                       </label>
                       <div className="causa-mortis-declarants">
-                        <strong>Declarants</strong>
+                        <strong>Declarants / heirs</strong>
                         <small>
-                          Descendants are selected by default. Untick anyone who did not make this
-                          declaration.
+                          Identified heirs are selected by default. Untick anyone who did not make
+                          this declaration.
                         </small>
                         {declarationCandidates.length ? (
                           <div>
@@ -1163,14 +1167,12 @@ export function PersonInspector({
                                   }
                                 />
                                 {displayName(person)}
-                                {!descendantIds.has(person.id) && <small>heir</small>}
                               </label>
                             ))}
                           </div>
                         ) : (
                           <small>
-                            Add the deceased person's descendants or heirs to the tree to select the
-                            declarants.
+                            Add or identify the heirs on the tree before selecting declarants.
                           </small>
                         )}
                       </div>

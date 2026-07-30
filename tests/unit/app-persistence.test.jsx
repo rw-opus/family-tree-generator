@@ -157,7 +157,7 @@ describe("App local recovery", () => {
     );
     expect(
       [...container.querySelectorAll(".dashboard-tabs button")].some(
-        (button) => button.textContent === "Properties",
+        (button) => button.textContent === "Property",
       ),
     ).toBe(false);
     expect(
@@ -165,6 +165,7 @@ describe("App local recovery", () => {
         (button) => button.textContent === "Summary",
       ),
     ).toBe(false);
+    expect(container.querySelector(".dashboard-topline").textContent).toContain("Person Details");
 
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
@@ -178,7 +179,7 @@ describe("App local recovery", () => {
     expect(container.textContent).toContain("Maria Vella");
   });
 
-  it("places the single property's title tools under Property", () => {
+  it("keeps initial owner tools in Owners & transfers after removing the Property panel", () => {
     saveLocalWorkspace(
       [
         {
@@ -202,11 +203,11 @@ describe("App local recovery", () => {
     );
     act(() => root.render(<App />));
     openCurrentFamily();
-    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")].find(
-      (button) => button.textContent === "Property",
+    const ownersButton = [...container.querySelectorAll(".case-view-tabs button")].find((button) =>
+      button.textContent.includes("Owners & transfers"),
     );
 
-    act(() => caseButton.click());
+    act(() => ownersButton.click());
 
     expect(container.textContent).toContain("Initial owner/s of the property");
     expect(container.textContent).not.toContain("Who owns this property today");
@@ -291,10 +292,10 @@ describe("App local recovery", () => {
     expect(container.querySelectorAll(".family-node-ownership")).toHaveLength(0);
     expect(container.textContent).not.toContain("Starting property ownership");
 
-    const caseButton = [...container.querySelectorAll(".dashboard-tabs button")].find(
-      (button) => button.textContent === "Property",
+    const ownersButton = [...container.querySelectorAll(".case-view-tabs button")].find((button) =>
+      button.textContent.includes("Owners & transfers"),
     );
-    act(() => caseButton.click());
+    act(() => ownersButton.click());
     const addOwner = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Add initial owner"),
     );
@@ -316,6 +317,9 @@ describe("App local recovery", () => {
       );
       percentage.dispatchEvent(new Event("input", { bubbles: true }));
     });
+
+    const familyButton = container.querySelector(".family-view-tabs button:not(.add-family-view)");
+    act(() => familyButton.click());
 
     const ownershipBadges = container.querySelectorAll(".family-node-ownership");
     expect(ownershipBadges).toHaveLength(1);

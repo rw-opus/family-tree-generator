@@ -3,7 +3,6 @@ import {
   Cloud,
   CloudOff,
   FolderTree,
-  Landmark,
   LogIn,
   Menu,
   Minus,
@@ -188,8 +187,7 @@ export function caseActivationState(value) {
 }
 
 const dashboardTabs = [
-  { key: "person", label: "Person", icon: UserRound },
-  { key: "case", label: "Property", icon: Landmark },
+  { key: "person", label: "Details", icon: UserRound },
   { key: "settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -758,8 +756,11 @@ export function App() {
         <aside className={`context-dashboard ${dashboardOpen ? "open" : ""}`}>
           <div className="dashboard-topline">
             <div>
-              <p className="eyebrow">Case dashboard</p>
-              <strong>{currentTree.title}</strong>
+              <p className="eyebrow">Person Details</p>
+              <strong>
+                {currentTree.people.find((person) => person.id === selectedPersonId)?.fullName ||
+                  "New person"}
+              </strong>
             </div>
             <button
               type="button"
@@ -793,19 +794,15 @@ export function App() {
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}
+                onShareDisplayChange={(shareDisplay) =>
+                  setTree({
+                    ...currentTree,
+                    settings: { ...currentTree.settings, shareDisplay },
+                  })
+                }
                 caseDependencyLabels={selectedCaseDependencyLabels}
                 onSelectPerson={selectPerson}
                 onChange={updatePeople}
-              />
-            )}
-            {panelTab === "case" && (
-              <Properties
-                properties={activeProperties}
-                people={currentTree.people}
-                outsideParties={currentTree.outsideParties}
-                singleProperty
-                section="property"
-                onChange={updatePropertyCase}
               />
             )}
             {panelTab === "settings" && (

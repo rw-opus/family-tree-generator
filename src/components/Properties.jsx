@@ -61,7 +61,7 @@ export function Properties({
   section = "all",
   onChange,
 }) {
-  const showProperty = section === "all" || section === "property";
+  const showProperty = section === "all" || section === "property" || section === "ownership";
   const showOwnership = section === "all" || section === "ownership";
   const showTax = section === "all" || section === "tax";
   const peopleById = new Map(people.map((person) => [person.id, person]));

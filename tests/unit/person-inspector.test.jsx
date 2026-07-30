@@ -809,7 +809,53 @@ describe("PersonInspector", () => {
     const labels = [
       ...container.querySelectorAll(".inspector-fields > label > span:first-child"),
     ].map((span) => span.textContent);
-    expect(labels).toEqual(["Name", "Surname", "Surname at birth", "Sex"]);
+    expect(labels).toEqual(["Name", "Surname", "Surname at birth"]);
+    const statusRows = [...container.querySelectorAll(".person-status-control")];
+    expect(statusRows.map((row) => row.firstElementChild.textContent)).toEqual(["Sex", "Status"]);
+    expect(
+      [...statusRows[0].querySelectorAll('input[type="checkbox"]')].map(
+        (input) => input.parentElement.textContent,
+      ),
+    ).toEqual(["Female", "Male", "Other"]);
+  });
+
+  it("toggles the estimated share between fraction and percentage and derives its value", () => {
+    const onShareDisplayChange = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              fullName: "Maria Example",
+              sex: "Female",
+              designations: [],
+              spouseIds: [],
+            },
+          ]}
+          properties={[{ id: "property", saleValue: "400000" }]}
+          ownershipByPerson={{ person: 0.25 }}
+          selectedPersonId="person"
+          shareDisplay="fraction"
+          onShareDisplayChange={onShareDisplayChange}
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/4");
+    expect(container.querySelector(".person-share-value small").textContent).toContain(
+      "€100,000.00",
+    );
+
+    const percentageButton = [...container.querySelectorAll(".person-share-toggle button")].find(
+      (button) => button.textContent === "Percentage",
+    );
+    act(() => percentageButton.click());
+
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("25%");
+    expect(onShareDisplayChange).toHaveBeenCalledWith("percentage");
   });
 
   it("shows succession fields only for a deceased person", () => {
@@ -838,7 +884,8 @@ describe("PersonInspector", () => {
     expect(container.querySelector(".succession-detail-row input").value).toBe("2024-02-03");
     expect(container.querySelector(".succession-detail-row input").disabled).toBe(false);
     expect(container.querySelector('select[aria-label="Inheritance basis"]').disabled).toBe(false);
-    expect(container.textContent).toContain("Succession on death");
+    expect(container.textContent).not.toContain("Succession on death");
+    expect(container.textContent).toContain("Intestate");
   });
 
   it("prefills a man's surname at birth from his full name", () => {
@@ -1001,9 +1048,12 @@ describe("PersonInspector", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Testate (will)");
-    expect(container.textContent).toContain("Will notes");
-    expect(container.textContent).toContain("Causa mortis declarations");
+    expect(container.textContent).toContain("Testate");
+    expect(container.textContent).toContain("Will notary (optional)");
+    expect(container.textContent).not.toContain("Will notes");
+    expect(container.textContent).toContain("Declarations Causa Mortis");
+    expect(container.textContent).toContain("Date of Declaration Causa Mortis");
+    expect(container.textContent).toContain("Declarants / heirs");
     expect(container.textContent).toContain("Required 1/2");
     expect(container.textContent).toContain("Missing 1/2");
     expect(container.textContent).toContain("Declaration CM 1");
@@ -1020,7 +1070,7 @@ describe("PersonInspector", () => {
     expect(declarant.querySelector("input").checked).toBe(true);
   });
 
-  it("selects every descendant when adding a causa mortis declaration", () => {
+  it("selects the calculated heirs when adding a causa mortis declaration", () => {
     const onChange = vi.fn();
     const deceased = {
       id: "deceased",
@@ -1068,7 +1118,6 @@ describe("PersonInspector", () => {
     act(() => addButton.click());
     expect(onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations[0].declarantPersonIds).toEqual([
       "child",
-      "grandchild",
     ]);
   });
 
@@ -1123,7 +1172,7 @@ describe("PersonInspector", () => {
     );
   });
 
-  it("unlocks full details and assigned parent dropdowns with Edit", () => {
+  it("unlocks identity fields with Edit without showing parent-link dropdowns", () => {
     const people = [
       {
         id: "person",
@@ -1165,22 +1214,16 @@ describe("PersonInspector", () => {
     );
 
     const nameInput = container.querySelector(".inspector-fields input");
-    const fatherSelect = container.querySelector('select[aria-label="Father"]');
-    const motherSelect = container.querySelector('select[aria-label="Mother"]');
     expect(nameInput.matches(":disabled")).toBe(true);
-    expect(fatherSelect.matches(":disabled")).toBe(true);
-    expect(motherSelect.matches(":disabled")).toBe(true);
-    expect(fatherSelect.value).toBe("father");
-    expect(motherSelect.value).toBe("mother");
+    expect(container.querySelector('select[aria-label="Father"]')).toBeNull();
+    expect(container.querySelector('select[aria-label="Mother"]')).toBeNull();
 
     beginEditing();
     expect(nameInput.matches(":disabled")).toBe(false);
-    expect(fatherSelect.matches(":disabled")).toBe(false);
-    expect(motherSelect.matches(":disabled")).toBe(false);
     expect(container.textContent).toContain("Done");
   });
 
-  it("shows both parent dropdowns when only one parent is assigned", () => {
+  it("does not show parent-link dropdowns when one parent is assigned", () => {
     act(() =>
       root.render(
         <PersonInspector
@@ -1201,7 +1244,7 @@ describe("PersonInspector", () => {
       ),
     );
 
-    expect(container.querySelector('select[aria-label="Mother"]').value).toBe("mother");
-    expect(container.querySelector('select[aria-label="Father"]').value).toBe("");
+    expect(container.querySelector('select[aria-label="Mother"]')).toBeNull();
+    expect(container.querySelector('select[aria-label="Father"]')).toBeNull();
   });
 });
