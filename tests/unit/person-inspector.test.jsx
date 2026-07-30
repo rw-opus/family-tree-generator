@@ -57,6 +57,34 @@ describe("PersonInspector", () => {
     ).not.toBeNull();
   });
 
+  it("returns from an open person card to the tree", () => {
+    const onBackToTree = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              fullName: "Maria Borg",
+              sex: "Female",
+              spouseIds: [],
+            },
+          ]}
+          selectedPersonId="person"
+          onBackToTree={onBackToTree}
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const backButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Back to Tree",
+    );
+    act(() => backButton.click());
+    expect(onBackToTree).toHaveBeenCalledOnce();
+  });
+
   it("adds a father around the selected person without moving the selection", () => {
     const onChange = vi.fn();
     const onSelectPerson = vi.fn();
@@ -856,6 +884,14 @@ describe("PersonInspector", () => {
 
     expect(container.querySelector(".person-share-value strong").textContent).toBe("25%");
     expect(onShareDisplayChange).toHaveBeenCalledWith("percentage");
+
+    const bothButton = [...container.querySelectorAll(".person-share-toggle button")].find(
+      (button) => button.textContent === "Both",
+    );
+    act(() => bothButton.click());
+
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/4 · 25%");
+    expect(onShareDisplayChange).toHaveBeenCalledWith("both");
   });
 
   it("shows succession fields only for a deceased person", () => {
@@ -922,6 +958,7 @@ describe("PersonInspector", () => {
         <PersonInspector
           people={people}
           selectedPersonId="deceased"
+          shareDisplay="fraction"
           onChange={setPeople}
           onSelectPerson={vi.fn()}
         />
@@ -1200,7 +1237,9 @@ describe("PersonInspector", () => {
     );
 
     expect(container.textContent).toContain("Testate");
-    expect(container.textContent).toContain("Will notary (optional)");
+    expect(container.textContent).toContain("Publishing Notary (optional)");
+    expect(container.textContent).toContain("Suggested heirs if intestate");
+    expect(container.textContent).toContain("Use as beneficiaries");
     expect(container.textContent).not.toContain("Will notes");
     expect(container.textContent).toContain("Declarations Causa Mortis");
     expect(container.textContent).toContain("Date of Declaration Causa Mortis");
@@ -1217,9 +1256,9 @@ describe("PersonInspector", () => {
     ).not.toBeNull();
     expect(
       [...container.querySelectorAll("button")].find((button) =>
-        button.textContent.includes("New declaration"),
+        button.textContent.includes("Close CM Declaration"),
       ).disabled,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       container.querySelector('select[aria-label="Property declared causa mortis 1"]').value,
     ).toBe("property-1");
@@ -1231,6 +1270,88 @@ describe("PersonInspector", () => {
       (label) => label.textContent.includes("Maria Borg"),
     );
     expect(declarant.querySelector("input").checked).toBe(true);
+  });
+
+  it("suggests intestate heirs for a testate estate and allows editable will fractions", () => {
+    let latestPeople = [];
+    const initialPeople = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [],
+        designations: ["Deceased"],
+        spouseIds: ["spouse"],
+        siblingIds: [],
+      },
+      {
+        id: "spouse",
+        fullName: "Maria Borg",
+        sex: "Female",
+        spouseIds: ["deceased"],
+        designations: [],
+      },
+      {
+        id: "child",
+        fullName: "Paul Borg",
+        sex: "Male",
+        fatherId: "deceased",
+        motherId: "spouse",
+        spouseIds: [],
+        designations: [],
+      },
+    ];
+
+    function Harness() {
+      const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          shareDisplay="fraction"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    expect(container.textContent).toContain("Suggested heirs if intestate");
+    expect(container.textContent).toContain("Maria Borg");
+    expect(container.textContent).toContain("Paul Borg");
+    expect(container.textContent).toContain("1/2");
+
+    const applySuggestion = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Use as beneficiaries"),
+    );
+    act(() => applySuggestion.click());
+
+    expect(latestPeople[0].willHeirs).toHaveLength(2);
+    expect(latestPeople[0].willHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
+    expect(container.querySelectorAll(".will-heir-fraction")).toHaveLength(2);
+    expect(container.querySelectorAll(".will-heir-percent")).toHaveLength(0);
+
+    const denominator = container.querySelectorAll('input[aria-label="Will share denominator"]')[1];
+    const setNumberInput = (input, value) => {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    setNumberInput(denominator, "");
+
+    const updatedDenominator = container.querySelectorAll(
+      'input[aria-label="Will share denominator"]',
+    )[1];
+    expect(updatedDenominator.value).toBe("");
+
+    setNumberInput(updatedDenominator, "4");
+    expect(latestPeople[0].willHeirs[1].sharePercent).toBe(25);
   });
 
   it("selects the calculated heirs when adding a causa mortis declaration", () => {
@@ -1287,7 +1408,7 @@ describe("PersonInspector", () => {
     );
 
     const addButton = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("New declaration"),
+      button.textContent.includes("Insert CM Declaration"),
     );
     beginEditing();
     act(() => addButton.click());
@@ -1365,13 +1486,22 @@ describe("PersonInspector", () => {
 
     act(() => root.render(<Harness />));
 
-    const newDeclarationButton = () =>
+    const declarationActionButton = () =>
       [...container.querySelectorAll("button")].find((button) =>
-        button.textContent.includes("New declaration"),
+        button.textContent.includes("CM Declaration"),
       );
-    act(() => newDeclarationButton().click());
-    expect(newDeclarationButton().disabled).toBe(true);
+    act(() => declarationActionButton().click());
+    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
     expect(container.textContent).toContain("Declared 0/1");
+    expect(container.querySelector(".causa-mortis-card")).not.toBeNull();
+
+    act(() => declarationActionButton().click());
+    expect(declarationActionButton().textContent).toContain("Open CM Declaration");
+    expect(container.querySelector(".causa-mortis-card")).toBeNull();
+
+    act(() => declarationActionButton().click());
+    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
+    expect(container.querySelector(".causa-mortis-card")).not.toBeNull();
 
     const setInput = (selector, value) => {
       const input = container.querySelector(selector);
@@ -1393,11 +1523,12 @@ describe("PersonInspector", () => {
     act(() => okButton().click());
 
     expect(container.textContent).toContain("Declared 1/4");
-    expect(newDeclarationButton().disabled).toBe(false);
+    expect(declarationActionButton().disabled).toBe(false);
+    expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
     expect(container.textContent).toContain("Completed");
 
-    act(() => newDeclarationButton().click());
-    expect(newDeclarationButton().disabled).toBe(true);
+    act(() => declarationActionButton().click());
+    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
 
     setInput('input[aria-label="Date of Declaration Causa Mortis 2"]', "2021-04-02");
     setInput('input[aria-label="Notary for Declaration Causa Mortis 2"]', "Dr Paul Galea");
@@ -1405,8 +1536,9 @@ describe("PersonInspector", () => {
     act(() => okButton().click());
 
     expect(container.textContent).toContain("Declared 1/2");
-    expect(newDeclarationButton().disabled).toBe(true);
-    expect(newDeclarationButton().title).toBe("No undeclared share remains.");
+    expect(declarationActionButton().disabled).toBe(true);
+    expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
+    expect(declarationActionButton().title).toBe("No undeclared share remains.");
   });
 
   it("makes the declared value optional when every identified heir is deceased", () => {

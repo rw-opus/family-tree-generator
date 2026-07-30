@@ -764,6 +764,27 @@ textarea {
   font-weight: 850;
 }
 
+.person-profile-actions {
+  display: grid;
+  justify-items: stretch;
+  gap: 0.28rem;
+}
+
+.person-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  min-height: 1.8rem;
+  border: 1px solid #cbd9d1;
+  border-radius: 6px;
+  background: #fff;
+  color: #46554d;
+  padding: 0 0.45rem;
+  font-size: 0.61rem;
+  font-weight: 800;
+}
+
 .person-edit-button.active {
   border-color: var(--forest);
   background: var(--forest);
@@ -1231,6 +1252,10 @@ textarea {
   grid-template-columns: minmax(78px, 1fr) 60px 28px;
 }
 
+.confirmed-heir-row.both {
+  grid-template-columns: minmax(78px, 1fr) 76px 60px 28px;
+}
+
 .confirmed-heir-name {
   overflow: hidden;
   color: #33443b;
@@ -1348,9 +1373,20 @@ textarea {
 
 .will-heir-row {
   display: grid;
-  grid-template-columns: minmax(88px, 1fr) 76px 60px 28px;
   align-items: center;
   gap: 0.25rem;
+}
+
+.will-heir-row.fraction {
+  grid-template-columns: minmax(88px, 1fr) 76px 28px;
+}
+
+.will-heir-row.percentage {
+  grid-template-columns: minmax(88px, 1fr) 60px 28px;
+}
+
+.will-heir-row.both {
+  grid-template-columns: minmax(88px, 1fr) 76px 60px 28px;
 }
 
 .will-heir-fraction,

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   fractionForShare,
   shareFromFraction,
+  shareFromFractionInput,
   shareFromPercentage,
+  shareFromPercentageInput,
 } from "../../src/domain/shares.js";
 
 describe("inheritance share conversion", () => {
@@ -26,6 +28,31 @@ describe("inheritance share conversion", () => {
     expect(fractionForShare({ sharePercent: 25 })).toEqual({
       numerator: 1,
       denominator: 4,
+    });
+  });
+
+  it("preserves a cleared fraction field while the user types a replacement", () => {
+    expect(
+      shareFromFractionInput(
+        {
+          shareNumerator: 1,
+          shareDenominator: 2,
+          sharePercent: 50,
+        },
+        { denominator: "" },
+      ),
+    ).toEqual({
+      shareNumerator: 1,
+      shareDenominator: "",
+      sharePercent: 0,
+    });
+  });
+
+  it("preserves a cleared percentage field while the user types a replacement", () => {
+    expect(shareFromPercentageInput("")).toEqual({
+      sharePercent: "",
+      shareNumerator: 0,
+      shareDenominator: 1,
     });
   });
 });

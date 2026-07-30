@@ -167,6 +167,16 @@ describe("App local recovery", () => {
     ).toBe(false);
     expect(container.querySelector(".dashboard-topline").textContent).toContain("Person Details");
 
+    const personCard = container.querySelector('[data-person-id="person-1"]');
+    act(() => personCard.click());
+    expect(container.querySelector(".context-dashboard").classList.contains("open")).toBe(true);
+
+    const backToTree = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Back to Tree",
+    );
+    act(() => backToTree.click());
+    expect(container.querySelector(".context-dashboard").classList.contains("open")).toBe(false);
+
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
         picker,
@@ -244,6 +254,34 @@ describe("App local recovery", () => {
     });
     expect(container.querySelector('input[aria-label="Initial ownership percentage"]').value).toBe(
       "50",
+    );
+
+    const updatedDenominator = container.querySelector(
+      'input[aria-label="Initial ownership denominator"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        updatedDenominator,
+        "",
+      );
+      updatedDenominator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector('input[aria-label="Initial ownership denominator"]').value).toBe(
+      "",
+    );
+
+    const clearedDenominator = container.querySelector(
+      'input[aria-label="Initial ownership denominator"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        clearedDenominator,
+        "4",
+      );
+      clearedDenominator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector('input[aria-label="Initial ownership percentage"]').value).toBe(
+      "25",
     );
   });
 
