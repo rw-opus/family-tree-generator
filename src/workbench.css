@@ -1708,6 +1708,74 @@ textarea {
   min-height: 2.25rem;
 }
 
+.person-card-display-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.person-card-display-control summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  border: 1px solid #cbd5d0;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--forest);
+  padding: 0 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.person-card-display-control summary::-webkit-details-marker {
+  display: none;
+}
+
+.person-card-display-control[open] summary {
+  border-color: var(--forest);
+  box-shadow: 0 0 0 2px rgba(0, 66, 37, 0.1);
+}
+
+.person-card-display-menu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 0.45rem;
+  width: min(330px, calc(100vw - 1.2rem));
+  border: 1px solid #cbd5d0;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.2);
+  padding: 0.75rem;
+}
+
+.person-card-display-menu > strong {
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
+.person-card-display-menu label {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.person-card-display-menu input {
+  width: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  accent-color: var(--forest);
+}
+
 .zoom-controls {
   display: flex;
   align-items: center;
@@ -1945,6 +2013,15 @@ textarea {
   padding: 0.25rem 0.4rem;
   font-size: 0.58rem;
   font-weight: 500;
+}
+
+.tree-stage .family-node-detail {
+  margin-top: 0.28rem;
+  color: #475569;
+  font-size: 0.56rem;
+  font-weight: 400;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .tree-stage .family-node.cm-share-incomplete .family-node-ownership {
@@ -2607,6 +2684,16 @@ textarea {
   }
 
   .stage-context {
+    display: none;
+  }
+
+  .person-card-display-control summary {
+    width: 34px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .person-card-display-control summary span {
     display: none;
   }
 

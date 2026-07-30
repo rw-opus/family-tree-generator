@@ -23,6 +23,7 @@ import {
 import { ExternalOwnerDirectory } from "./components/ExternalOwnerDirectory.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
+import { PersonCardDisplayControl } from "./components/PersonCardDisplayControl.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
@@ -35,6 +36,7 @@ import {
   reconcilePeopleUpdate,
 } from "./domain/caseModel.js";
 import { createPerson } from "./domain/people.js";
+import { normalisePersonCardFields } from "./domain/personCardDisplay.js";
 import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
 import {
@@ -129,6 +131,7 @@ const normaliseTree = (value) => {
     showOwnershipOnTree: true,
     treeZoom: 100,
   };
+  const settings = { ...defaultSettings, ...(caseData.settings || {}) };
   return {
     ...caseData,
     title: caseData.title || "New property succession",
@@ -139,7 +142,10 @@ const normaliseTree = (value) => {
     outsideParties: caseData.outsideParties || [],
     transfers: caseData.transfers || [],
     saleLots: caseData.saleLots || [],
-    settings: { ...defaultSettings, ...(caseData.settings || {}) },
+    settings: {
+      ...settings,
+      personCardFields: normalisePersonCardFields(settings),
+    },
   };
 };
 
@@ -725,6 +731,15 @@ export function App() {
                     ))}
                   </select>
                 </label>
+                <PersonCardDisplayControl
+                  fields={currentTree.settings.personCardFields}
+                  onChange={(personCardFields) =>
+                    setTree({
+                      ...currentTree,
+                      settings: { ...currentTree.settings, personCardFields },
+                    })
+                  }
+                />
                 <div className="zoom-controls" aria-label="Tree zoom">
                   <button type="button" onClick={() => updateZoom(zoom - 10)} aria-label="Zoom out">
                     <Minus size={16} />
@@ -751,8 +766,8 @@ export function App() {
                 onSelectPerson={selectPerson}
                 zoom={zoom}
                 onZoomChange={updateZoom}
-                shareDisplay={currentTree.settings.shareDisplay}
-                showOwnership={currentTree.settings.showOwnershipOnTree}
+                personCardFields={currentTree.settings.personCardFields}
+                propertyValue={activeProperty.saleValue}
               />
             </>
           )}

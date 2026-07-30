@@ -73,8 +73,8 @@ export function FamilyTreeCanvas({
   onPrint = printTree,
   selectedPersonId,
   onSelectPerson,
-  shareDisplay = "both",
-  showOwnership = true,
+  personCardFields,
+  propertyValue = 0,
   zoom = 100,
   onZoomChange,
 }) {
@@ -118,8 +118,8 @@ export function FamilyTreeCanvas({
       cardName={cardName}
       ownershipByPerson={ownershipByPerson}
       causaMortisCoverageByPerson={causaMortisCoverageByPerson}
-      shareDisplay={shareDisplay}
-      showOwnership={showOwnership}
+      personCardFields={personCardFields}
+      propertyValue={propertyValue}
       selectedPersonId={selectedPersonId}
       onSelectPerson={onSelectPerson}
     />

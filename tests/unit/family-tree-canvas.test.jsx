@@ -267,6 +267,60 @@ describe("FamilyTreeCanvas", () => {
     expect(person.querySelector(".family-node-cm-alert")).toBeNull();
   });
 
+  it("shows only the person-card details selected in the separate control", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "deceased",
+              fullName: "Joseph Borg",
+              isDeceased: true,
+              dateOfDeath: "2020-01-02",
+              inheritanceBasis: "will",
+              willDate: "2019-03-04",
+              willNotaryName: "Dr Maria Vella",
+              causaMortisDeclarations: [
+                {
+                  id: "cm-1",
+                  date: "2020-05-06",
+                  notaryName: "Dr Paul Galea",
+                },
+                {
+                  id: "cm-2",
+                  date: "2021-07-08",
+                  notaryName: "Dr Anne Borg",
+                },
+              ],
+            },
+          ]}
+          ownershipByPerson={{ deceased: 0.25 }}
+          propertyValue={200000}
+          personCardFields={{
+            ownershipFraction: true,
+            ownershipPercentage: true,
+            ownershipValue: true,
+            dateOfDeath: true,
+            successionBasis: true,
+            willDetails: true,
+            causaMortisDetails: true,
+          }}
+        />,
+      ),
+    );
+
+    const person = container.querySelector('[data-person-id="deceased"]');
+    expect(person.textContent).toContain("1/4");
+    expect(person.textContent).toContain("25%");
+    expect(person.textContent).toContain("50,000");
+    expect(person.textContent).toContain("Died 02/01/2020");
+    expect(person.textContent).toContain("Testate");
+    expect(person.textContent).toContain("Will 04/03/2019 · Dr Maria Vella");
+    expect(person.textContent).toContain("CM 06/05/2020 · Dr Paul Galea");
+    expect(person.textContent).toContain("08/07/2021 · Dr Anne Borg");
+    expect(person.textContent).not.toContain("ownership");
+  });
+
   it("draws a direct stem from a single parent to the child", () => {
     act(() =>
       root.render(
