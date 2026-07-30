@@ -302,9 +302,7 @@ describe("FamilyTreeCanvas", () => {
     const edgar = container.querySelector('[data-person-id="edgar"]');
     expect(edgar.className).toContain("succession-date-incomplete");
     expect(edgar.textContent).toContain("Missing spouse death date: Maria Wadge");
-    expect(edgar.getAttribute("aria-label")).toContain(
-      "Missing spouse death date for Maria Wadge",
-    );
+    expect(edgar.getAttribute("aria-label")).toContain("Missing spouse death date for Maria Wadge");
   });
 
   it("shows only the person-card details selected in the separate control", () => {
@@ -323,11 +321,13 @@ describe("FamilyTreeCanvas", () => {
               causaMortisDeclarations: [
                 {
                   id: "cm-1",
+                  status: "complete",
                   date: "2020-05-06",
                   notaryName: "Dr Paul Galea",
                 },
                 {
                   id: "cm-2",
+                  status: "complete",
                   date: "2021-07-08",
                   notaryName: "Dr Anne Borg",
                 },

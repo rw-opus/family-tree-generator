@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildCausaMortisShareCoverage } from "../../src/domain/causaMortisCoverage.js";
+import {
+  buildCausaMortisShareCoverage,
+  validateCausaMortisDeclaration,
+} from "../../src/domain/causaMortisCoverage.js";
 
 const property = {
   id: "property-1",
@@ -37,12 +40,14 @@ describe("buildCausaMortisShareCoverage", () => {
       peopleWithDeclarations([
         {
           id: "cm-1",
+          status: "complete",
           propertyId: "property-1",
           declaredShareNumerator: 1,
           declaredShareDenominator: 4,
         },
         {
           id: "cm-2",
+          status: "complete",
           propertyId: "property-1",
           declaredShareNumerator: 1,
           declaredShareDenominator: 4,
@@ -60,6 +65,7 @@ describe("buildCausaMortisShareCoverage", () => {
       peopleWithDeclarations([
         {
           id: "cm-1",
+          status: "complete",
           propertyId: "property-1",
           declaredShareNumerator: 3,
           declaredShareDenominator: 4,
@@ -79,6 +85,7 @@ describe("buildCausaMortisShareCoverage", () => {
       peopleWithDeclarations([
         {
           id: "legacy-cm",
+          status: "complete",
           declaredShareNumerator: 1,
           declaredShareDenominator: 2,
         },
@@ -93,5 +100,70 @@ describe("buildCausaMortisShareCoverage", () => {
       property,
     ]);
     expect(result.rows).toEqual([]);
+  });
+
+  it("does not count an unfinished declaration toward declared coverage", () => {
+    const result = buildCausaMortisShareCoverage(
+      peopleWithDeclarations([
+        {
+          id: "draft-cm",
+          status: "draft",
+          propertyId: "property-1",
+          declaredShareNumerator: 1,
+          declaredShareDenominator: 2,
+        },
+      ]),
+      [property],
+    );
+
+    expect(result.rows[0]).toMatchObject({
+      requiredShare: 0.5,
+      declaredShare: 0,
+      status: "under",
+    });
+  });
+});
+
+describe("validateCausaMortisDeclaration", () => {
+  const completeDeclaration = {
+    propertyId: "property-1",
+    declaredShareNumerator: 1,
+    declaredShareDenominator: 4,
+    date: "2020-06-01",
+    notaryName: "Dr Maria Vella",
+    immovablePropertyValue: "100000",
+    declarantPersonIds: ["child"],
+  };
+
+  it("requires every non-optional field before completion", () => {
+    expect(validateCausaMortisDeclaration(completeDeclaration)).toBe("");
+    expect(validateCausaMortisDeclaration({ ...completeDeclaration, date: "" })).toBe(
+      "Enter the date of the Declaration Causa Mortis.",
+    );
+    expect(validateCausaMortisDeclaration({ ...completeDeclaration, notaryName: "" })).toBe(
+      "Enter the notary's name.",
+    );
+    expect(
+      validateCausaMortisDeclaration({
+        ...completeDeclaration,
+        declarantPersonIds: [],
+      }),
+    ).toBe("Select at least one declarant or heir.");
+  });
+
+  it("allows an omitted value only when it is explicitly optional", () => {
+    const withoutValue = { ...completeDeclaration, immovablePropertyValue: "" };
+    expect(validateCausaMortisDeclaration(withoutValue)).toBe(
+      "Enter the immovable-property value declared.",
+    );
+    expect(validateCausaMortisDeclaration(withoutValue, { valueRequired: false })).toBe("");
+  });
+
+  it("rejects a fraction larger than the remaining share", () => {
+    expect(
+      validateCausaMortisDeclaration(completeDeclaration, {
+        availableShare: 0.2,
+      }),
+    ).toBe("The declared fraction is greater than the deceased's remaining share.");
   });
 });

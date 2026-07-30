@@ -25,6 +25,11 @@ import {
 } from "../domain/people.js";
 import { parseGedcom } from "../domain/gedcom.js";
 import {
+  CAUSA_MORTIS_EPSILON,
+  isCompletedCausaMortisDeclaration,
+  validateCausaMortisDeclaration,
+} from "../domain/causaMortisCoverage.js";
+import {
   confirmedIntestacyAllocations,
   intestateAllocations,
   isPersonDeceased,
@@ -95,6 +100,7 @@ export function PersonInspector({
   const [childPartnerChooserOpen, setChildPartnerChooserOpen] = useState(false);
   const [childPartnerId, setChildPartnerId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [causaMortisErrors, setCausaMortisErrors] = useState({});
   const [ownershipDisplay, setOwnershipDisplay] = useState(
     shareDisplay === "percentage" ? "percentage" : "fraction",
   );
@@ -116,6 +122,7 @@ export function PersonInspector({
     setExistingSpouseId("");
     setChildPartnerChooserOpen(false);
     setChildPartnerId("");
+    setCausaMortisErrors({});
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
   }, [selectedPerson]);
 
@@ -216,16 +223,24 @@ export function PersonInspector({
   };
 
   const updateCausaMortisDeclaration = (declarationId, patch) => {
+    setCausaMortisErrors((current) => {
+      if (!current[declarationId]) return current;
+      const next = { ...current };
+      delete next[declarationId];
+      return next;
+    });
     updateSelected({
       causaMortisDeclarations: (selectedPerson.causaMortisDeclarations || []).map((declaration) =>
-        declaration.id === declarationId ? { ...declaration, ...patch } : declaration,
+        declaration.id === declarationId
+          ? { ...declaration, ...patch, status: "draft" }
+          : declaration,
       ),
     });
   };
 
   const addCausaMortisDeclaration = () => {
-    const coverageTarget =
-      causaMortisCoverage.find((row) => row.status !== "complete") || causaMortisCoverage[0];
+    if (!canAddCausaMortisDeclaration) return;
+    const coverageTarget = causaMortisCoverage.find((row) => row.status === "under");
     const propertyId =
       coverageTarget?.propertyId || (properties.length === 1 ? properties[0].id : "");
     const remainingShare = coverageTarget
@@ -237,6 +252,7 @@ export function PersonInspector({
         ...(selectedPerson.causaMortisDeclarations || []),
         {
           id: crypto.randomUUID(),
+          status: "draft",
           propertyId,
           declaredShareNumerator: remainingFraction.numerator,
           declaredShareDenominator: remainingFraction.denominator,
@@ -249,7 +265,48 @@ export function PersonInspector({
     });
   };
 
+  const completeCausaMortisDeclaration = (declaration) => {
+    const propertyId = declaration.propertyId || (properties.length === 1 ? properties[0].id : "");
+    const normalizedDeclaration = { ...declaration, propertyId };
+    const coverage = causaMortisCoverage.find((row) => row.propertyId === propertyId);
+    const availableShare = coverage
+      ? Math.max(0, coverage.requiredShare - coverage.declaredShare)
+      : 0;
+    const error = coverage
+      ? validateCausaMortisDeclaration(normalizedDeclaration, {
+          valueRequired: !allSuccessionHeirsDeceased,
+          availableShare,
+        })
+      : "Assign the deceased's property share before completing this declaration.";
+
+    if (error) {
+      setCausaMortisErrors((current) => ({ ...current, [declaration.id]: error }));
+      return;
+    }
+
+    setCausaMortisErrors((current) => {
+      const next = { ...current };
+      delete next[declaration.id];
+      return next;
+    });
+    updateSelected({
+      causaMortisDeclarations: (selectedPerson.causaMortisDeclarations || []).map((current) =>
+        current.id === declaration.id
+          ? {
+              ...normalizedDeclaration,
+              status: "complete",
+            }
+          : current,
+      ),
+    });
+  };
+
   const removeCausaMortisDeclaration = (declarationId) => {
+    setCausaMortisErrors((current) => {
+      const next = { ...current };
+      delete next[declarationId];
+      return next;
+    });
     updateSelected({
       causaMortisDeclarations: (selectedPerson.causaMortisDeclarations || []).filter(
         (declaration) => declaration.id !== declarationId,
@@ -519,6 +576,14 @@ export function PersonInspector({
   const declarationCandidateIds = new Set(successionHeirIds);
   const declarationCandidates = people.filter((person) => declarationCandidateIds.has(person.id));
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
+  const hasDraftCausaMortisDeclaration = causaMortisDeclarations.some(
+    (declaration) => !isCompletedCausaMortisDeclaration(declaration),
+  );
+  const hasRemainingCausaMortisShare = causaMortisCoverage.some(
+    (row) => row.status === "under" && row.requiredShare - row.declaredShare > CAUSA_MORTIS_EPSILON,
+  );
+  const canAddCausaMortisDeclaration =
+    !hasDraftCausaMortisDeclaration && hasRemainingCausaMortisShare;
   const requiresCausaMortisDetails =
     Boolean(selectedPerson.dateOfDeath) && selectedPerson.dateOfDeath > "1992-11-25";
   const displayedSurnameAtBirth =
@@ -846,6 +911,7 @@ export function PersonInspector({
                   deceased={selectedPerson}
                   people={people}
                   calculated={automaticIntestacy}
+                  shareDisplay={ownershipDisplay}
                   displayName={displayName}
                   onUpdatePerson={updatePerson}
                   onSelectPerson={onSelectPerson}
@@ -970,17 +1036,25 @@ export function PersonInspector({
                     <div>
                       <strong>Declarations Causa Mortis</strong>
                       <small>
-                        Required for a death after 25 November 1992. Add every declaration
-                        separately.
+                        Required for a death after 25 November 1992. Complete this form with OK
+                        before starting another declaration.
                       </small>
                     </div>
                     <button
                       type="button"
                       className="secondary-button"
+                      disabled={!canAddCausaMortisDeclaration}
                       onClick={addCausaMortisDeclaration}
+                      title={
+                        hasDraftCausaMortisDeclaration
+                          ? "Complete the open declaration with OK first."
+                          : hasRemainingCausaMortisShare
+                            ? "Start another Declaration Causa Mortis."
+                            : "No undeclared share remains."
+                      }
                     >
                       <FilePlus2 size={14} />
-                      Add declaration
+                      New declaration
                     </button>
                   </div>
 
@@ -1015,14 +1089,25 @@ export function PersonInspector({
 
                   {!causaMortisDeclarations.length && (
                     <small className="causa-mortis-empty">
-                      No causa mortis declaration recorded yet.
+                      No causa mortis declaration recorded yet. Start a new declaration to open the
+                      form.
                     </small>
                   )}
 
                   {causaMortisDeclarations.map((declaration, index) => (
-                    <div className="causa-mortis-card" key={declaration.id}>
+                    <div
+                      className={`causa-mortis-card ${
+                        isCompletedCausaMortisDeclaration(declaration) ? "complete" : "draft"
+                      }`}
+                      key={declaration.id}
+                    >
                       <div className="causa-mortis-card-heading">
-                        <strong>Declaration CM {index + 1}</strong>
+                        <span>
+                          <strong>Declaration CM {index + 1}</strong>
+                          <small>
+                            {isCompletedCausaMortisDeclaration(declaration) ? "Complete" : "Draft"}
+                          </small>
+                        </span>
                         <button
                           type="button"
                           className="icon-button"
@@ -1036,6 +1121,7 @@ export function PersonInspector({
                         <span>Property</span>
                         <select
                           aria-label={`Property declared causa mortis ${index + 1}`}
+                          required
                           value={
                             declaration.propertyId ||
                             (properties.length === 1 ? properties[0].id : "")
@@ -1062,6 +1148,7 @@ export function PersonInspector({
                             type="number"
                             min="0"
                             step="1"
+                            required
                             value={declaration.declaredShareNumerator ?? ""}
                             onChange={(event) =>
                               updateCausaMortisDeclaration(declaration.id, {
@@ -1075,6 +1162,7 @@ export function PersonInspector({
                             type="number"
                             min="1"
                             step="1"
+                            required
                             value={declaration.declaredShareDenominator ?? ""}
                             onChange={(event) =>
                               updateCausaMortisDeclaration(declaration.id, {
@@ -1087,7 +1175,9 @@ export function PersonInspector({
                       <label>
                         <span>Date of Declaration Causa Mortis</span>
                         <input
+                          aria-label={`Date of Declaration Causa Mortis ${index + 1}`}
                           type="date"
+                          required
                           value={declaration.date || ""}
                           onChange={(event) =>
                             updateCausaMortisDeclaration(declaration.id, {
@@ -1097,8 +1187,10 @@ export function PersonInspector({
                         />
                       </label>
                       <label>
-                        <span>Notary (optional)</span>
+                        <span>Notary</span>
                         <input
+                          aria-label={`Notary for Declaration Causa Mortis ${index + 1}`}
+                          required
                           value={declaration.notaryName || ""}
                           onChange={(event) =>
                             updateCausaMortisDeclaration(declaration.id, {
@@ -1172,6 +1264,20 @@ export function PersonInspector({
                             ? "Declared immovable-property value is required because at least one identified heir is living."
                             : "Declared immovable-property value is required until the heirs are identified."}
                       </small>
+                      <div className="causa-mortis-card-actions">
+                        {causaMortisErrors[declaration.id] && (
+                          <small role="alert">{causaMortisErrors[declaration.id]}</small>
+                        )}
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={isCompletedCausaMortisDeclaration(declaration)}
+                          onClick={() => completeCausaMortisDeclaration(declaration)}
+                        >
+                          <Check size={14} />
+                          {isCompletedCausaMortisDeclaration(declaration) ? "Completed" : "OK"}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
