@@ -823,6 +823,7 @@ export function App() {
                 }
                 caseDependencyLabels={selectedCaseDependencyLabels}
                 onSelectPerson={selectPerson}
+                onBackToTree={() => setDashboardOpen(false)}
                 onChange={updatePeople}
               />
             )}

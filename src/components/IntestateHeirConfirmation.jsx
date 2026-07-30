@@ -8,18 +8,68 @@ import {
   linkedSpousesMissingDeathDates,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
-import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
+import {
+  fractionForShare,
+  shareFromFractionInput,
+  shareFromPercentage,
+  shareFromPercentageInput,
+} from "../domain/shares.js";
 
 const OTHER_PERSON = "__other_person__";
 const totalPercentage = (rows = []) =>
   rows.reduce((total, row) => total + (Number(row.sharePercent) || 0), 0);
 
 function shareLabel(share, shareDisplay) {
-  if (shareDisplay === "fraction") {
-    const fraction = approximateFraction(share);
-    return `${fraction.numerator}/${fraction.denominator}`;
-  }
-  return `${(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 4 })}%`;
+  const fraction = approximateFraction(share);
+  const fractionText = `${fraction.numerator}/${fraction.denominator}`;
+  const percentageText = `${(share * 100).toLocaleString("en-MT", {
+    maximumFractionDigits: 4,
+  })}%`;
+  if (shareDisplay === "fraction") return fractionText;
+  if (shareDisplay === "percentage") return percentageText;
+  return `${fractionText} · ${percentageText}`;
+}
+
+export function IntestacyProposal({
+  calculated,
+  people,
+  displayName,
+  shareDisplay = "fraction",
+  title = "Proposed under intestacy",
+  actionLabel = "",
+  onApply,
+}) {
+  const entries = [...(calculated?.shares || new Map()).entries()];
+  return (
+    <div className="calculated-intestacy">
+      <div className="intestate-confirmation-heading">
+        <strong>{title}</strong>
+        {entries.length > 0 && actionLabel && onApply && (
+          <button type="button" className="text-button" onClick={onApply}>
+            {actionLabel}
+          </button>
+        )}
+      </div>
+      {entries.length > 0 ? (
+        entries.map(([personId, share]) => {
+          const person = people.find((candidate) => candidate.id === personId);
+          return (
+            <div className="calculated-intestacy-row" key={personId}>
+              <span>{displayName(person)}</span>
+              <b>{shareLabel(share, shareDisplay)}</b>
+            </div>
+          );
+        })
+      ) : (
+        <small>No statutory proposal can yet be calculated.</small>
+      )}
+      {(calculated?.warnings || []).map((warning) => (
+        <small className="succession-warning" key={warning}>
+          {warning}
+        </small>
+      ))}
+    </div>
+  );
 }
 
 export function IntestateHeirConfirmation({
@@ -68,20 +118,8 @@ export function IntestateHeirConfirmation({
   const updateRow = (rowId, patch) =>
     replaceRows(rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
   const updateRowPercentage = (rowId, percentage) =>
-    updateRow(rowId, {
-      ...shareFromPercentage(percentage),
-      sharePercent: percentage,
-    });
-  const updateRowFraction = (row, patch) => {
-    const current = fractionForShare(row);
-    const numerator = patch.numerator ?? row.shareNumerator ?? current.numerator;
-    const denominator = patch.denominator ?? row.shareDenominator ?? current.denominator;
-    updateRow(row.id, {
-      ...shareFromFraction(numerator, denominator),
-      shareNumerator: numerator,
-      shareDenominator: denominator,
-    });
-  };
+    updateRow(rowId, shareFromPercentageInput(percentage));
+  const updateRowFraction = (row, patch) => updateRow(row.id, shareFromFractionInput(row, patch));
   const addPerson = (personId) => {
     if (!personId || selectedPersonIds.has(personId)) return;
     const suggestedShare = calculatedShares.get(personId);
@@ -159,34 +197,14 @@ export function IntestateHeirConfirmation({
         </div>
       )}
 
-      <div className="calculated-intestacy">
-        <div className="intestate-confirmation-heading">
-          <strong>Proposed under intestacy</strong>
-          {calculatedEntries.length > 0 && (
-            <button type="button" className="text-button" onClick={applyCalculated}>
-              Use proposed shares
-            </button>
-          )}
-        </div>
-        {calculatedEntries.length > 0 ? (
-          calculatedEntries.map(([personId, share]) => {
-            const person = people.find((candidate) => candidate.id === personId);
-            return (
-              <div className="calculated-intestacy-row" key={personId}>
-                <span>{displayName(person)}</span>
-                <b>{shareLabel(share, shareDisplay)}</b>
-              </div>
-            );
-          })
-        ) : (
-          <small>No statutory proposal can yet be calculated.</small>
-        )}
-        {(calculated?.warnings || []).map((warning) => (
-          <small className="succession-warning" key={warning}>
-            {warning}
-          </small>
-        ))}
-      </div>
+      <IntestacyProposal
+        calculated={calculated}
+        people={people}
+        displayName={displayName}
+        shareDisplay={shareDisplay}
+        actionLabel="Use proposed shares"
+        onApply={applyCalculated}
+      />
 
       <div className="confirmed-intestate-heirs">
         <strong>Heirs to be confirmed</strong>
@@ -198,7 +216,7 @@ export function IntestateHeirConfirmation({
           return (
             <div className={`confirmed-heir-row ${shareDisplay}`} key={row.id}>
               <span className="confirmed-heir-name">{displayName(person)}</span>
-              {shareDisplay === "fraction" ? (
+              {shareDisplay !== "percentage" && (
                 <span className="confirmed-heir-fraction">
                   <input
                     aria-label={`Confirmed share numerator for ${displayName(person)}`}
@@ -220,7 +238,8 @@ export function IntestateHeirConfirmation({
                     }
                   />
                 </span>
-              ) : (
+              )}
+              {shareDisplay !== "fraction" && (
                 <span className="confirmed-heir-percent">
                   <input
                     aria-label={`Confirmed share percentage for ${displayName(person)}`}
@@ -290,7 +309,13 @@ export function IntestateHeirConfirmation({
             Total: {shareLabel(total / 100, shareDisplay)}{" "}
             {hasCompleteRows
               ? "Complete"
-              : `- must equal ${shareDisplay === "fraction" ? "1/1" : "100%"}`}
+              : `- must equal ${
+                  shareDisplay === "fraction"
+                    ? "1/1"
+                    : shareDisplay === "percentage"
+                      ? "100%"
+                      : "1/1 · 100%"
+                }`}
           </small>
           <button
             type="button"

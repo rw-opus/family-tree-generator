@@ -25,6 +25,24 @@ export function shareFromFraction(numerator, denominator) {
   };
 }
 
+export function shareFromFractionInput(share = {}, patch = {}) {
+  const current = fractionForShare(share);
+  const shareNumerator = patch.numerator ?? share.shareNumerator ?? current.numerator;
+  const shareDenominator = patch.denominator ?? share.shareDenominator ?? current.denominator;
+  return {
+    ...shareFromFraction(shareNumerator, shareDenominator),
+    shareNumerator,
+    shareDenominator,
+  };
+}
+
+export function shareFromPercentageInput(percentage) {
+  return {
+    ...shareFromPercentage(percentage),
+    sharePercent: percentage,
+  };
+}
+
 export function fractionForShare(share = {}) {
   const numerator = Number(share.shareNumerator);
   const denominator = Number(share.shareDenominator);

@@ -7,7 +7,12 @@ import {
   successionRuleset,
   suggestedIntestacyShares,
 } from "../domain/propertyTax.js";
-import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
+import {
+  fractionForShare,
+  shareFromFractionInput,
+  shareFromPercentage,
+  shareFromPercentageInput,
+} from "../domain/shares.js";
 import { OwnershipTransfers } from "./OwnershipTransfers.jsx";
 import { SuccessionDeclarations } from "./SuccessionDeclarations.jsx";
 
@@ -52,17 +57,16 @@ export function PropertyCalculator({ caseData, onChange }) {
     onChange({ ...caseData, succession: { ...succession, ...patch } });
   const updateHeir = (id, patch) =>
     setSuccession({ heirs: heirs.map((heir) => (heir.id === id ? { ...heir, ...patch } : heir)) });
-  const updateHeirPercentage = (id, percentage) => updateHeir(id, shareFromPercentage(percentage));
-  const updateHeirFraction = (heir, patch) => {
-    const current = fractionForShare(heir);
+  const updateHeirPercentage = (id, percentage) =>
+    updateHeir(id, shareFromPercentageInput(percentage));
+  const updateHeirFraction = (heir, patch) =>
     updateHeir(
       heir.id,
-      shareFromFraction(
-        patch.shareNumerator ?? current.numerator,
-        patch.shareDenominator ?? current.denominator,
-      ),
+      shareFromFractionInput(heir, {
+        numerator: patch.shareNumerator,
+        denominator: patch.shareDenominator,
+      }),
     );
-  };
   const updateLot = (id, patch) =>
     onChange({
       ...caseData,
@@ -241,6 +245,8 @@ export function PropertyCalculator({ caseData, onChange }) {
           {heirs.map((heir, heirIndex) => {
             const result = inheritanceDuty(property, heir, succession);
             const heirFraction = fractionForShare(heir);
+            const heirNumerator = heir.shareNumerator ?? heirFraction.numerator;
+            const heirDenominator = heir.shareDenominator ?? heirFraction.denominator;
             const possibleParents = heirs
               .slice(0, heirIndex)
               .filter((person) =>
@@ -370,7 +376,7 @@ export function PropertyCalculator({ caseData, onChange }) {
                           type="number"
                           min="0"
                           step="1"
-                          value={heirFraction.numerator}
+                          value={heirNumerator}
                           onChange={(e) =>
                             updateHeirFraction(heir, { shareNumerator: e.target.value })
                           }
@@ -381,7 +387,7 @@ export function PropertyCalculator({ caseData, onChange }) {
                           type="number"
                           min="1"
                           step="1"
-                          value={heirFraction.denominator}
+                          value={heirDenominator}
                           onChange={(e) =>
                             updateHeirFraction(heir, { shareDenominator: e.target.value })
                           }
@@ -398,7 +404,7 @@ export function PropertyCalculator({ caseData, onChange }) {
                           min="0"
                           max="100"
                           step="any"
-                          value={heir.sharePercent}
+                          value={heir.sharePercent ?? ""}
                           onChange={(e) => updateHeirPercentage(heir.id, e.target.value)}
                         />
                         <strong>%</strong>

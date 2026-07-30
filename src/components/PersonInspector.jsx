@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Baby,
   Check,
   FilePlus2,
@@ -36,8 +37,13 @@ import {
   linkedSpousesFor,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
-import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
-import { IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
+import {
+  fractionForShare,
+  shareFromFractionInput,
+  shareFromPercentage,
+  shareFromPercentageInput,
+} from "../domain/shares.js";
+import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 
 const relationshipActions = [
   { key: "father", label: "Father", icon: UserRound },
@@ -46,6 +52,9 @@ const relationshipActions = [
   { key: "child", label: "Child", icon: Baby },
   { key: "sibling", label: "Brother / sister", icon: UsersRound },
 ];
+
+const shareDisplayMode = (value) =>
+  ["fraction", "percentage", "both"].includes(value) ? value : "both";
 
 function initials(name) {
   const value = String(name || "").trim();
@@ -58,7 +67,6 @@ function initials(name) {
 }
 
 function ownershipLabel(share = 0, shareDisplay = "both") {
-  if (share === 0) return "0%";
   const fraction = approximateFraction(share);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
   const percentageText = `${(share * 100).toLocaleString("en-MT", {
@@ -92,6 +100,7 @@ export function PersonInspector({
   familyPersonIds = null,
   onChange,
   onSelectPerson,
+  onBackToTree,
 }) {
   const [importMode, setImportMode] = useState("replace");
   const [importStatus, setImportStatus] = useState("");
@@ -101,9 +110,8 @@ export function PersonInspector({
   const [childPartnerId, setChildPartnerId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [causaMortisErrors, setCausaMortisErrors] = useState({});
-  const [ownershipDisplay, setOwnershipDisplay] = useState(
-    shareDisplay === "percentage" ? "percentage" : "fraction",
-  );
+  const [causaMortisDraftOpen, setCausaMortisDraftOpen] = useState(true);
+  const [ownershipDisplay, setOwnershipDisplay] = useState(shareDisplayMode(shareDisplay));
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
@@ -123,11 +131,18 @@ export function PersonInspector({
     setChildPartnerChooserOpen(false);
     setChildPartnerId("");
     setCausaMortisErrors({});
+    setCausaMortisDraftOpen(
+      Boolean(
+        selectedPerson?.causaMortisDeclarations?.some(
+          (declaration) => !isCompletedCausaMortisDeclaration(declaration),
+        ),
+      ),
+    );
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
   }, [selectedPerson]);
 
   useEffect(() => {
-    setOwnershipDisplay(shareDisplay === "percentage" ? "percentage" : "fraction");
+    setOwnershipDisplay(shareDisplayMode(shareDisplay));
   }, [shareDisplay]);
 
   const updatePerson = (personId, patch) => {
@@ -187,18 +202,11 @@ export function PersonInspector({
   };
 
   const updateWillHeirPercentage = (heirId, percentage) => {
-    updateWillHeir(heirId, shareFromPercentage(percentage));
+    updateWillHeir(heirId, shareFromPercentageInput(percentage));
   };
 
   const updateWillHeirFraction = (heir, patch) => {
-    const current = fractionForShare(heir);
-    updateWillHeir(
-      heir.id,
-      shareFromFraction(
-        patch.numerator ?? current.numerator,
-        patch.denominator ?? current.denominator,
-      ),
-    );
+    updateWillHeir(heir.id, shareFromFractionInput(heir, patch));
   };
 
   const addWillHeir = () => {
@@ -223,6 +231,7 @@ export function PersonInspector({
   };
 
   const updateCausaMortisDeclaration = (declarationId, patch) => {
+    setCausaMortisDraftOpen(true);
     setCausaMortisErrors((current) => {
       if (!current[declarationId]) return current;
       const next = { ...current };
@@ -247,6 +256,7 @@ export function PersonInspector({
       ? Math.max(0, coverageTarget.requiredShare - coverageTarget.declaredShare)
       : 0;
     const remainingFraction = approximateFraction(remainingShare);
+    setCausaMortisDraftOpen(true);
     updateSelected({
       causaMortisDeclarations: [
         ...(selectedPerson.causaMortisDeclarations || []),
@@ -263,6 +273,14 @@ export function PersonInspector({
         },
       ],
     });
+  };
+
+  const handleCausaMortisDeclarationAction = () => {
+    if (hasDraftCausaMortisDeclaration) {
+      setCausaMortisDraftOpen((open) => !open);
+      return;
+    }
+    addCausaMortisDeclaration();
   };
 
   const completeCausaMortisDeclaration = (declaration) => {
@@ -547,11 +565,9 @@ export function PersonInspector({
   const inheritanceBasis = selectedPerson.inheritanceBasis || "intestacy";
   const willHeirs = selectedPerson.willHeirs || [];
   const willTotal = willHeirs.reduce((total, heir) => total + (Number(heir.sharePercent) || 0), 0);
-  const automaticIntestacy =
-    isDeceased && inheritanceBasis === "intestacy"
-      ? intestateAllocations(people, selectedPerson.id)
-      : null;
+  const automaticIntestacy = isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
   const confirmedIntestacy =
+    inheritanceBasis === "intestacy" &&
     automaticIntestacy &&
     confirmedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy);
   const successionHeirIds =
@@ -584,6 +600,20 @@ export function PersonInspector({
   );
   const canAddCausaMortisDeclaration =
     !hasDraftCausaMortisDeclaration && hasRemainingCausaMortisShare;
+  const visibleCausaMortisDeclarations = causaMortisDeclarations.filter(
+    (declaration) => isCompletedCausaMortisDeclaration(declaration) || causaMortisDraftOpen,
+  );
+  const applyIntestacySuggestionToWill = () => {
+    const suggestedHeirs = [...(automaticIntestacy?.shares || new Map()).entries()];
+    if (!suggestedHeirs.length) return;
+    updateSelected({
+      willHeirs: suggestedHeirs.map(([personId, share]) => ({
+        id: crypto.randomUUID(),
+        personId,
+        ...shareFromPercentage(share * 100),
+      })),
+    });
+  };
   const requiresCausaMortisDetails =
     Boolean(selectedPerson.dateOfDeath) && selectedPerson.dateOfDeath > "1992-11-25";
   const displayedSurnameAtBirth =
@@ -651,15 +681,23 @@ export function PersonInspector({
           <p className="eyebrow">Selected person</p>
           <h2>{selectedDisplayName}</h2>
         </div>
-        <button
-          type="button"
-          className={`person-edit-button ${isEditing ? "active" : ""}`}
-          aria-pressed={isEditing}
-          onClick={() => setIsEditing((editing) => !editing)}
-        >
-          {isEditing ? <Check size={15} /> : <Pencil size={15} />}
-          {isEditing ? "Done" : "Edit"}
-        </button>
+        <div className="person-profile-actions">
+          {onBackToTree && (
+            <button type="button" className="person-back-button" onClick={onBackToTree}>
+              <ArrowLeft size={15} />
+              Back to Tree
+            </button>
+          )}
+          <button
+            type="button"
+            className={`person-edit-button ${isEditing ? "active" : ""}`}
+            aria-pressed={isEditing}
+            onClick={() => setIsEditing((editing) => !editing)}
+          >
+            {isEditing ? <Check size={15} /> : <Pencil size={15} />}
+            {isEditing ? "Done" : "Edit"}
+          </button>
+        </div>
       </section>
 
       <section className="inspector-section">
@@ -869,6 +907,14 @@ export function PersonInspector({
               >
                 Percentage
               </button>
+              <button
+                type="button"
+                className={ownershipDisplay === "both" ? "active" : ""}
+                aria-pressed={ownershipDisplay === "both"}
+                onClick={() => changeOwnershipDisplay("both")}
+              >
+                Both
+              </button>
             </span>
           </div>
           <div className="person-share-value">
@@ -927,13 +973,22 @@ export function PersonInspector({
                     />
                   </label>
                   <label>
-                    <span>Will notary (optional)</span>
+                    <span>Publishing Notary (optional)</span>
                     <input
                       value={selectedPerson.willNotaryName || ""}
                       onChange={(event) => updateSelected({ willNotaryName: event.target.value })}
-                      placeholder="Notary's name"
+                      placeholder="Publishing Notary's name"
                     />
                   </label>
+                  <IntestacyProposal
+                    calculated={automaticIntestacy}
+                    people={people}
+                    displayName={displayName}
+                    shareDisplay={ownershipDisplay}
+                    title="Suggested heirs if intestate"
+                    actionLabel="Use as beneficiaries"
+                    onApply={applyIntestacySuggestionToWill}
+                  />
                   <div className="will-beneficiaries">
                     <div className="will-beneficiaries-heading">
                       <strong>Beneficiaries</strong>
@@ -943,8 +998,10 @@ export function PersonInspector({
                     </div>
                     {willHeirs.map((heir) => {
                       const fraction = fractionForShare(heir);
+                      const numerator = heir.shareNumerator ?? fraction.numerator;
+                      const denominator = heir.shareDenominator ?? fraction.denominator;
                       return (
-                        <div className="will-heir-row" key={heir.id}>
+                        <div className={`will-heir-row ${ownershipDisplay}`} key={heir.id}>
                           <select
                             aria-label="Will beneficiary"
                             value={heir.personId || ""}
@@ -961,47 +1018,51 @@ export function PersonInspector({
                                 </option>
                               ))}
                           </select>
-                          <span className="will-heir-fraction">
-                            <input
-                              aria-label="Will share numerator"
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={fraction.numerator}
-                              onChange={(event) =>
-                                updateWillHeirFraction(heir, {
-                                  numerator: event.target.value,
-                                })
-                              }
-                            />
-                            <b>/</b>
-                            <input
-                              aria-label="Will share denominator"
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={fraction.denominator}
-                              onChange={(event) =>
-                                updateWillHeirFraction(heir, {
-                                  denominator: event.target.value,
-                                })
-                              }
-                            />
-                          </span>
-                          <span className="will-heir-percent">
-                            <input
-                              aria-label="Will share percentage"
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="any"
-                              value={heir.sharePercent ?? 0}
-                              onChange={(event) =>
-                                updateWillHeirPercentage(heir.id, event.target.value)
-                              }
-                            />
-                            <b>%</b>
-                          </span>
+                          {ownershipDisplay !== "percentage" && (
+                            <span className="will-heir-fraction">
+                              <input
+                                aria-label="Will share numerator"
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={numerator}
+                                onChange={(event) =>
+                                  updateWillHeirFraction(heir, {
+                                    numerator: event.target.value,
+                                  })
+                                }
+                              />
+                              <b>/</b>
+                              <input
+                                aria-label="Will share denominator"
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={denominator}
+                                onChange={(event) =>
+                                  updateWillHeirFraction(heir, {
+                                    denominator: event.target.value,
+                                  })
+                                }
+                              />
+                            </span>
+                          )}
+                          {ownershipDisplay !== "fraction" && (
+                            <span className="will-heir-percent">
+                              <input
+                                aria-label="Will share percentage"
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="any"
+                                value={heir.sharePercent ?? ""}
+                                onChange={(event) =>
+                                  updateWillHeirPercentage(heir.id, event.target.value)
+                                }
+                              />
+                              <b>%</b>
+                            </span>
+                          )}
                           <button
                             type="button"
                             className="icon-button"
@@ -1020,11 +1081,16 @@ export function PersonInspector({
                           : "succession-total invalid"
                       }
                     >
-                      Total:{" "}
-                      {willTotal.toLocaleString("en-MT", {
-                        maximumFractionDigits: 4,
-                      })}
-                      % {Math.abs(willTotal - 100) < 1e-8 ? "✓" : "— must equal 100%"}
+                      Total: {ownershipLabel(willTotal / 100, ownershipDisplay)}{" "}
+                      {Math.abs(willTotal - 100) < 1e-8
+                        ? "✓"
+                        : `— must equal ${
+                            ownershipDisplay === "fraction"
+                              ? "1/1"
+                              : ownershipDisplay === "percentage"
+                                ? "100%"
+                                : "1/1 · 100%"
+                          }`}
                     </small>
                   </div>
                 </div>
@@ -1043,18 +1109,24 @@ export function PersonInspector({
                     <button
                       type="button"
                       className="secondary-button"
-                      disabled={!canAddCausaMortisDeclaration}
-                      onClick={addCausaMortisDeclaration}
+                      disabled={!hasDraftCausaMortisDeclaration && !canAddCausaMortisDeclaration}
+                      onClick={handleCausaMortisDeclarationAction}
                       title={
                         hasDraftCausaMortisDeclaration
-                          ? "Complete the open declaration with OK first."
+                          ? causaMortisDraftOpen
+                            ? "Close the draft Declaration Causa Mortis form."
+                            : "Reopen the draft Declaration Causa Mortis form."
                           : hasRemainingCausaMortisShare
-                            ? "Start another Declaration Causa Mortis."
+                            ? "Insert another Declaration Causa Mortis."
                             : "No undeclared share remains."
                       }
                     >
                       <FilePlus2 size={14} />
-                      New declaration
+                      {hasDraftCausaMortisDeclaration
+                        ? causaMortisDraftOpen
+                          ? "Close CM Declaration"
+                          : "Open CM Declaration"
+                        : "Insert CM Declaration"}
                     </button>
                   </div>
 
@@ -1089,12 +1161,18 @@ export function PersonInspector({
 
                   {!causaMortisDeclarations.length && (
                     <small className="causa-mortis-empty">
-                      No causa mortis declaration recorded yet. Start a new declaration to open the
+                      No causa mortis declaration recorded yet. Insert a declaration to open the
                       form.
                     </small>
                   )}
 
-                  {causaMortisDeclarations.map((declaration, index) => (
+                  {hasDraftCausaMortisDeclaration && !causaMortisDraftOpen && (
+                    <small className="causa-mortis-empty">
+                      Draft CM declaration closed. Use Open CM Declaration to continue.
+                    </small>
+                  )}
+
+                  {visibleCausaMortisDeclarations.map((declaration, index) => (
                     <div
                       className={`causa-mortis-card ${
                         isCompletedCausaMortisDeclaration(declaration) ? "complete" : "draft"

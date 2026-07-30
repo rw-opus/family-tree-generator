@@ -1,7 +1,11 @@
 import { Calculator, Home, Plus, Trash2 } from "lucide-react";
 import { approximateFraction } from "../domain/ownership.js";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
-import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
+import {
+  fractionForShare,
+  shareFromFractionInput,
+  shareFromPercentageInput,
+} from "../domain/shares.js";
 import { PropertyDeclarations } from "./PropertyDeclarations.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
 
@@ -82,19 +86,10 @@ export function Properties({
         owner.id === ownerId ? { ...owner, ...patch } : owner,
       ),
     });
-  const updateOwnerFraction = (property, owner, patch) => {
-    const current = fractionForShare(owner);
-    updateOwner(
-      property,
-      owner.id,
-      shareFromFraction(
-        patch.numerator ?? current.numerator,
-        patch.denominator ?? current.denominator,
-      ),
-    );
-  };
+  const updateOwnerFraction = (property, owner, patch) =>
+    updateOwner(property, owner.id, shareFromFractionInput(owner, patch));
   const updateOwnerPercentage = (property, owner, percentage) =>
-    updateOwner(property, owner.id, shareFromPercentage(percentage));
+    updateOwner(property, owner.id, shareFromPercentageInput(percentage));
   const removeOwner = (property, ownerId) =>
     updateProperty(property.id, {
       owners: (property.owners || []).filter((owner) => owner.id !== ownerId),
@@ -227,6 +222,8 @@ export function Properties({
                   )}
                   {owners.map((owner) => {
                     const ownerFraction = fractionForShare(owner);
+                    const ownerNumerator = owner.shareNumerator ?? ownerFraction.numerator;
+                    const ownerDenominator = owner.shareDenominator ?? ownerFraction.denominator;
                     return (
                       <div className="initial-owner-row" key={owner.id}>
                         <select
@@ -251,7 +248,7 @@ export function Properties({
                             type="number"
                             min="0"
                             step="1"
-                            value={ownerFraction.numerator}
+                            value={ownerNumerator}
                             onChange={(event) =>
                               updateOwnerFraction(property, owner, {
                                 numerator: event.target.value,
@@ -264,7 +261,7 @@ export function Properties({
                             type="number"
                             min="1"
                             step="1"
-                            value={ownerFraction.denominator}
+                            value={ownerDenominator}
                             onChange={(event) =>
                               updateOwnerFraction(property, owner, {
                                 denominator: event.target.value,
@@ -279,7 +276,7 @@ export function Properties({
                             min="0"
                             max="100"
                             step="any"
-                            value={owner.sharePercent}
+                            value={owner.sharePercent ?? ""}
                             onChange={(event) =>
                               updateOwnerPercentage(property, owner, event.target.value)
                             }
