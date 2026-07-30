@@ -39,6 +39,7 @@ export function OwnershipTransfers({ heirs, familyPeople, outsideParties, transf
   const addTransfer = (event) => {
     event.preventDefault();
     const next = { id: crypto.randomUUID(), ...transferDraft };
+    delete next.error;
     const check = buildOwnershipLedger(
       heirs,
       outsideParties,
@@ -180,7 +181,9 @@ export function OwnershipTransfers({ heirs, familyPeople, outsideParties, transf
               <input
                 type="date"
                 value={transferDraft.date}
-                onChange={(e) => setTransferDraft({ ...transferDraft, date: e.target.value })}
+                onChange={(e) =>
+                  setTransferDraft({ ...transferDraft, date: e.target.value, error: "" })
+                }
               />
             </label>
             <label>
@@ -190,7 +193,11 @@ export function OwnershipTransfers({ heirs, familyPeople, outsideParties, transf
                 min="0"
                 value={transferDraft.consideration}
                 onChange={(e) =>
-                  setTransferDraft({ ...transferDraft, consideration: e.target.value })
+                  setTransferDraft({
+                    ...transferDraft,
+                    consideration: e.target.value,
+                    error: "",
+                  })
                 }
               />
             </label>

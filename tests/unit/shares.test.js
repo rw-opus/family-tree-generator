@@ -45,14 +45,25 @@ describe("inheritance share conversion", () => {
       shareNumerator: 1,
       shareDenominator: "",
       sharePercent: 0,
+      sharePercentInput: undefined,
     });
   });
 
   it("preserves a cleared percentage field while the user types a replacement", () => {
     expect(shareFromPercentageInput("")).toEqual({
-      sharePercent: "",
+      sharePercent: 0,
       shareNumerator: 0,
       shareDenominator: 1,
+      sharePercentInput: "",
+    });
+  });
+
+  it("stores a numeric percentage separately from its raw editing text", () => {
+    expect(shareFromPercentageInput("45")).toEqual({
+      sharePercent: 45,
+      shareNumerator: 9,
+      shareDenominator: 20,
+      sharePercentInput: "45",
     });
   });
 });

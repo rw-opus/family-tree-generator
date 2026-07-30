@@ -1535,7 +1535,8 @@ textarea {
 }
 
 .causa-mortis-coverage-row.under,
-.causa-mortis-coverage-row.over {
+.causa-mortis-coverage-row.over,
+.causa-mortis-coverage-row.date-unknown {
   border-color: #dda7a7;
   background: #fff3f3;
 }
@@ -1543,7 +1544,9 @@ textarea {
 .causa-mortis-coverage-row.under strong,
 .causa-mortis-coverage-row.under b,
 .causa-mortis-coverage-row.over strong,
-.causa-mortis-coverage-row.over b {
+.causa-mortis-coverage-row.over b,
+.causa-mortis-coverage-row.date-unknown strong,
+.causa-mortis-coverage-row.date-unknown b {
   color: #a12828;
 }
 

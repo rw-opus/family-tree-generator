@@ -102,33 +102,35 @@ export function startingOwnershipTotalPercent(people = []) {
 function resolveTransfers(parties, startingHoldings, transfers) {
   const holdings = new Map(parties.map((party) => [party.id, startingHoldings.get(party.id) || 0]));
   const entries = transfers.map((transfer) => {
+    const cleanTransfer = { ...transfer };
+    delete cleanTransfer.error;
     const sellerHolding = holdings.get(transfer.sellerId) || 0;
     const numerator = value(transfer.numerator);
     const denominator = value(transfer.denominator);
     if (!transfer.sellerId || !transfer.buyerId)
-      return { ...transfer, error: "Select a seller and buyer.", amount: 0 };
+      return { ...cleanTransfer, error: "Select a seller and buyer.", amount: 0 };
     if (transfer.sellerId === transfer.buyerId)
-      return { ...transfer, error: "Seller and buyer must be different.", amount: 0 };
+      return { ...cleanTransfer, error: "Seller and buyer must be different.", amount: 0 };
     if (!denominator)
-      return { ...transfer, error: "The denominator must be greater than zero.", amount: 0 };
+      return { ...cleanTransfer, error: "The denominator must be greater than zero.", amount: 0 };
     const fraction = numerator / denominator;
     const amount = transfer.amountType === "whole-property" ? fraction : sellerHolding * fraction;
     if (fraction <= 0)
       return {
-        ...transfer,
+        ...cleanTransfer,
         error: "The transferred fraction must be greater than zero.",
         amount: 0,
       };
     if (amount > sellerHolding + 1e-10)
       return {
-        ...transfer,
+        ...cleanTransfer,
         error: "The seller does not own enough to complete this transfer.",
         amount: 0,
       };
     holdings.set(transfer.sellerId, Math.max(0, sellerHolding - amount));
     holdings.set(transfer.buyerId, (holdings.get(transfer.buyerId) || 0) + amount);
     return {
-      ...transfer,
+      ...cleanTransfer,
       amount,
       sellerBefore: sellerHolding,
       sellerAfter: sellerHolding - amount,

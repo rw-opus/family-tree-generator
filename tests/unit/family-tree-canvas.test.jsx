@@ -278,14 +278,14 @@ describe("FamilyTreeCanvas", () => {
               isDeceased: true,
               dateOfDeath: "2020-01-01",
               inheritanceBasis: "intestacy",
-              spouseIds: [],
+              spouseIds: ["wife"],
             },
             {
               id: "wife",
               fullName: "Maria Wadge",
               isDeceased: true,
               dateOfDeath: "",
-              spouseIds: [],
+              spouseIds: ["edgar"],
             },
             {
               id: "son",

@@ -16,7 +16,13 @@ const isActive = (heir) => !["renounced", "predeceased", "incapable"].includes(h
 const blocksRepresentation = (heir) => heir?.status === "renounced";
 const allowsRepresentation = (heir) => !heir || ["predeceased", "incapable"].includes(heir.status);
 
-function allocateBranches(heirs, rootRelationship, representativeRelationship, totalShare) {
+function allocateBranches(
+  heirs,
+  rootRelationship,
+  representativeRelationship,
+  totalShare,
+  warnings = [],
+) {
   const roots = heirs.filter((heir) => heir.relationship === rootRelationship);
   const representatives = heirs.filter((heir) => heir.relationship === representativeRelationship);
   const allNodes = [...roots, ...representatives];
@@ -27,18 +33,12 @@ function allocateBranches(heirs, rootRelationship, representativeRelationship, t
     childrenByParent.get(person.branchId).push(person);
   });
   const shares = new Map();
-  const viableMemo = new Map();
   const isViable = (person, trail = new Set()) => {
     if (!person || blocksRepresentation(person) || trail.has(person.id)) return false;
     if (isActive(person)) return true;
     if (!allowsRepresentation(person)) return false;
-    if (viableMemo.has(person.id)) return viableMemo.get(person.id);
     const nextTrail = new Set(trail).add(person.id);
-    const viable = (childrenByParent.get(person.id) || []).some((child) =>
-      isViable(child, nextTrail),
-    );
-    viableMemo.set(person.id, viable);
-    return viable;
+    return (childrenByParent.get(person.id) || []).some((child) => isViable(child, nextTrail));
   };
   const allocateLevel = (people, amount, trail = new Set()) => {
     const viable = people.filter((person) => isViable(person, trail));
@@ -58,6 +58,12 @@ function allocateBranches(heirs, rootRelationship, representativeRelationship, t
   const orphanRepresentatives = representatives.filter(
     (person) => !person.branchId || !nodeIds.has(person.branchId),
   );
+  orphanRepresentatives.forEach((person) => {
+    const warning = `${
+      person.name || person.id || "Unnamed representative"
+    } has no valid parent branch and was provisionally placed at root level. Fix the branch link before relying on these shares.`;
+    if (!warnings.includes(warning)) warnings.push(warning);
+  });
   allocateLevel([...roots, ...orphanRepresentatives], totalShare);
   return shares;
 }
@@ -66,10 +72,16 @@ export function allocateCurrentIntestacy(heirs = []) {
   const shares = new Map(heirs.map((heir) => [heir.id, 0]));
   const warnings = [];
   const spouse = heirs.find((heir) => heir.relationship === "Surviving spouse" && isActive(heir));
-  const descendantProbe = allocateBranches(heirs, "Child", "Descendant", 100);
+  const descendantProbe = allocateBranches(heirs, "Child", "Descendant", 100, warnings);
   const hasDescendants = [...descendantProbe.values()].some((share) => share > 0);
   if (hasDescendants) {
-    const descendantShares = allocateBranches(heirs, "Child", "Descendant", spouse ? 50 : 100);
+    const descendantShares = allocateBranches(
+      heirs,
+      "Child",
+      "Descendant",
+      spouse ? 50 : 100,
+      warnings,
+    );
     descendantShares.forEach((share, id) => shares.set(id, share));
     if (spouse) shares.set(spouse.id, 50);
     return { shares, warnings, destination: "descendants-and-spouse" };
@@ -90,7 +102,7 @@ export function allocateCurrentIntestacy(heirs = []) {
   const nearestAscendants = activeAscendants.filter(
     (heir) => (number(heir.degree) || (heir.relationship === "Parent" ? 1 : 2)) === nearestDegree,
   );
-  const collateralProbe = allocateBranches(heirs, "Sibling", "Sibling descendant", 100);
+  const collateralProbe = allocateBranches(heirs, "Sibling", "Sibling descendant", 100, warnings);
   const hasDirectCollaterals = [...collateralProbe.values()].some((share) => share > 0);
   if (nearestAscendants.length || hasDirectCollaterals) {
     const ascendantTotal = nearestAscendants.length ? (hasDirectCollaterals ? 50 : 100) : 0;
@@ -102,6 +114,7 @@ export function allocateCurrentIntestacy(heirs = []) {
       "Sibling",
       "Sibling descendant",
       nearestAscendants.length ? 50 : 100,
+      warnings,
     );
     collateralShares.forEach((share, id) => shares.set(id, share));
     return {
@@ -134,7 +147,7 @@ export function allocateCurrentIntestacy(heirs = []) {
   return { shares, warnings, destination: "government" };
 }
 
-export function suggestedIntestacyShares(heirs = [], dateOfDeath = CURRENT_SUCCESSION_START) {
+export function suggestedIntestacyShares(heirs = [], dateOfDeath = "") {
   const ruleset = successionRuleset(dateOfDeath);
   if (!ruleset.supported) return heirs;
   const allocation = allocateCurrentIntestacy(heirs);
@@ -155,12 +168,14 @@ export function inheritanceDuty(property, heir, options = {}) {
   if (heir.exemption === "full") return { inheritedValue: value, duty: 0, rebate: 0 };
   const reducedBand = heir.soleResidence ? Math.min(value, 200000) : 0;
   let duty = reducedBand * 0.035 + (value - reducedBand) * 0.05;
-  const rebate = options.deedWithinSixMonths && duty > 0 && duty <= 2300 ? Math.min(250, duty) : 0;
+  const rebate = options.deedWithinSixMonths && duty > 0 && duty < 2300 ? Math.min(250, duty) : 0;
   duty -= rebate;
   return { inheritedValue: value, duty, rebate };
 }
 
 export function saleTaxLot(lot) {
+  // transferValue is already the sale price attributable to this lot's inherited fraction.
+  // share identifies and validates that fraction; multiplying by it again would understate tax.
   const transferValue = number(lot.transferValue);
   const declaredValue = number(lot.acquisitionValue);
   const inherited = String(lot.inheritanceDate || "");

@@ -217,9 +217,7 @@ export function Properties({
                   Select any person already on the family tree and enter the fraction originally
                   owned. Initial owners may be added whenever they are identified.
                 </p>
-                <p
-                  className={`share-status ${startingOwnership.isComplete ? "valid" : "invalid"}`}
-                >
+                <p className={`share-status ${startingOwnership.isComplete ? "valid" : "invalid"}`}>
                   Initial title allocated: {ownershipTotalLabel}%{" "}
                   {startingOwnership.isComplete ? "— valid" : "— must equal 100%"}
                 </p>
@@ -288,7 +286,7 @@ export function Properties({
                             min="0"
                             max="100"
                             step="any"
-                            value={owner.sharePercent ?? ""}
+                            value={owner.sharePercentInput ?? owner.sharePercent ?? ""}
                             onChange={(event) =>
                               updateOwnerPercentage(property, owner, event.target.value)
                             }
@@ -566,7 +564,7 @@ export function Properties({
                             <label className="check-label full-width">
                               <input
                                 type="checkbox"
-                                disabled={!declaredCoverage?.publishedCount}
+                                disabled={!declaredCoverage?.hasUsablePublishedValues}
                                 checked={usePublishedValues}
                                 onChange={(event) =>
                                   updateLot(property, lot.id, {
@@ -608,6 +606,16 @@ export function Properties({
                             <p className="tax-lot-source attention">
                               No published CM value is linked to this owner. Enter the fraction and
                               its declared value manually.
+                            </p>
+                          )}
+                        {lot.taxTreatment !== "manual" &&
+                          Boolean(declaredCoverage?.publishedCount) &&
+                          !declaredCoverage?.hasUsablePublishedValues &&
+                          livingVendorIds.has(lot.ownerId) && (
+                            <p className="tax-lot-source attention">
+                              Published CM records cannot be used automatically because their
+                              fractions or values need correction. Enter this lot&apos;s fraction
+                              and declared value manually.
                             </p>
                           )}
                         {lotResult.warning && livingVendorIds.has(lot.ownerId) && (

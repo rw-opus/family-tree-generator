@@ -360,9 +360,9 @@ describe("PersonInspector", () => {
     expect(latestPeople.find((person) => person.id === "child-2").motherId).toBeUndefined();
 
     act(() => container.querySelector(".parent-suggestion .secondary-button").click());
-    expect(
-      latestPeople.find((person) => person.id === "child-2").motherExplicitlyUnassigned,
-    ).toBe(true);
+    expect(latestPeople.find((person) => person.id === "child-2").motherExplicitlyUnassigned).toBe(
+      true,
+    );
     expect(container.querySelectorAll(".parent-suggestion")).toHaveLength(0);
     expect(onSelectPerson).not.toHaveBeenCalled();
   });
@@ -1034,6 +1034,19 @@ describe("PersonInspector", () => {
     expect(container.querySelectorAll(".confirmed-heir-fraction")).toHaveLength(0);
     expect(container.querySelectorAll(".confirmed-heir-percent")).toHaveLength(2);
 
+    const childPercentage = container.querySelector(
+      'input[aria-label="Confirmed share percentage for Paul Borg"]',
+    );
+    setNumberInput(childPercentage, "45");
+    expect(latestPeople[0].intestateHeirs.find((heir) => heir.personId === "child")).toMatchObject({
+      sharePercent: 45,
+      sharePercentInput: "45",
+    });
+    setNumberInput(
+      container.querySelector('input[aria-label="Confirmed share percentage for Paul Borg"]'),
+      "50",
+    );
+
     const confirm = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Confirm heirs"),
     );
@@ -1043,6 +1056,46 @@ describe("PersonInspector", () => {
     expect(latestPeople[0].intestateHeirsConfirmed).toBe(true);
     expect(latestPeople[0].intestateHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
     expect(container.textContent).toContain("Confirmed");
+  });
+
+  it("keeps confirmation disabled when an heir row points to a deleted person", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2024-02-03",
+        inheritanceBasis: "intestacy",
+        designations: ["Deceased"],
+        spouseIds: [],
+        intestateHeirs: [{ id: "missing-row", personId: "missing", sharePercent: 100 }],
+      },
+      {
+        id: "child",
+        fullName: "Paul Borg",
+        fatherId: "deceased",
+        spouseIds: [],
+        designations: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          shareDisplay="percentage"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const confirm = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Confirm heirs"),
+    );
+    expect(confirm.disabled).toBe(true);
+    expect(container.textContent).toContain("no longer on the family tree");
   });
 
   it("allows a deceased linked partner's death date to be completed in the succession workflow", () => {

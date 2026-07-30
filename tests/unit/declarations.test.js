@@ -57,4 +57,67 @@ describe("succession declarations", () => {
       }),
     ).toContain("notary");
   });
+
+  it("keeps unquantified legacy declarations visible but unusable for tax values", () => {
+    const [coverage] = declarationCoverage(
+      [{ id: "a", name: "Anna", share: 0.5 }],
+      [
+        {
+          id: "legacy",
+          status: "published",
+          heirIds: ["a"],
+        },
+      ],
+    );
+
+    expect(coverage).toMatchObject({
+      publishedCount: 1,
+      publishedFraction: 0,
+      publishedValue: 0,
+      status: "invalid",
+      unusablePublishedCount: 1,
+      hasUsablePublishedValues: false,
+    });
+    expect(validateDeclaration({ status: "published", heirIds: ["a"] })).toContain(
+      "legacy declaration",
+    );
+  });
+
+  it("rejects malformed published fractions and zero published values", () => {
+    const malformed = {
+      status: "published",
+      date: "2026-01-01",
+      notaryName: "Dr Vella",
+      participants: [{ heirId: "a", numerator: 5, denominator: 0, declaredValue: 100 }],
+    };
+    const zeroValue = {
+      ...malformed,
+      participants: [{ heirId: "a", numerator: 1, denominator: 2, declaredValue: 0 }],
+    };
+
+    expect(validateDeclaration(malformed)).toContain("ownership fraction");
+    expect(validateDeclaration(zeroValue)).toContain("positive declared value");
+    const [coverage] = declarationCoverage([{ id: "a", share: 0.5 }], [malformed]);
+    expect(coverage).toMatchObject({
+      publishedFraction: 0,
+      status: "invalid",
+      hasUsablePublishedValues: false,
+    });
+  });
+
+  it("reports under, complete, and over declaration coverage against the actual share", () => {
+    const heir = { id: "a", share: 0.5 };
+    const declaration = (id, numerator) => ({
+      id,
+      status: "published",
+      participants: [{ heirId: "a", numerator, denominator: 4, declaredValue: 100 }],
+    });
+
+    expect(declarationCoverage([heir], [declaration("under", 1)])[0].status).toBe("under");
+    expect(declarationCoverage([heir], [declaration("complete", 2)])[0].status).toBe("complete");
+    expect(declarationCoverage([heir], [declaration("over", 3)])[0]).toMatchObject({
+      status: "over",
+      hasUsablePublishedValues: false,
+    });
+  });
 });

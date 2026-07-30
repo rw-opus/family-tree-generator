@@ -1,13 +1,62 @@
+const COVERAGE_EPSILON = 1e-10;
+
+function participantsOf(declaration = {}) {
+  if (Array.isArray(declaration.participants)) {
+    return { participants: declaration.participants, legacyUnquantified: false };
+  }
+  return {
+    participants: (declaration.heirIds || []).map((heirId) => ({ heirId })),
+    legacyUnquantified: Boolean((declaration.heirIds || []).length),
+  };
+}
+
+function participantValues(participant = {}) {
+  return {
+    numerator: Number(participant.numerator),
+    denominator: Number(participant.denominator),
+    declaredValue: Number(participant.declaredValue),
+  };
+}
+
+function isUsablePublishedParticipant(participant = {}) {
+  const { numerator, denominator, declaredValue } = participantValues(participant);
+  return (
+    Boolean(participant.heirId) &&
+    Number.isFinite(numerator) &&
+    numerator > 0 &&
+    Number.isFinite(denominator) &&
+    denominator > 0 &&
+    Number.isFinite(declaredValue) &&
+    declaredValue > 0
+  );
+}
+
+function expectedShare(heir = {}) {
+  if (
+    heir.share !== undefined &&
+    heir.share !== null &&
+    heir.share !== "" &&
+    Number.isFinite(Number(heir.share))
+  ) {
+    return Math.max(0, Number(heir.share));
+  }
+  if (
+    heir.sharePercent !== undefined &&
+    heir.sharePercent !== null &&
+    heir.sharePercent !== "" &&
+    Number.isFinite(Number(heir.sharePercent))
+  ) {
+    return Math.max(0, Number(heir.sharePercent)) / 100;
+  }
+  return 0;
+}
+
 export function validateDeclaration(declaration) {
-  const participants =
-    declaration.participants ||
-    (declaration.heirIds || []).map((heirId) => ({
-      heirId,
-      numerator: 0,
-      denominator: 1,
-      declaredValue: 0,
-    }));
+  const { participants, legacyUnquantified } = participantsOf(declaration);
   if (!participants.length) return "Select at least one declarant.";
+  if (legacyUnquantified) {
+    return "This legacy declaration needs an ownership fraction and declared value for every declarant.";
+  }
   if (new Set(participants.map((participant) => participant.heirId)).size !== participants.length)
     return "An heir can appear only once in the same declaration.";
   if (
@@ -25,6 +74,12 @@ export function validateDeclaration(declaration) {
     )
   )
     return "Enter a valid declared value for every declarant.";
+  if (
+    declaration.status === "published" &&
+    participants.some((participant) => !(Number(participant.declaredValue) > 0))
+  ) {
+    return "Enter a positive declared value for every declarant before publishing.";
+  }
   if (declaration.status === "published" && !declaration.date) return "Enter the publication date.";
   if (declaration.status === "published" && !String(declaration.notaryName || "").trim())
     return "Enter the notary's name.";
@@ -34,35 +89,58 @@ export function validateDeclaration(declaration) {
 export function declarationCoverage(heirs = [], declarations = []) {
   return heirs.map((heir) => {
     const records = declarations.filter((declaration) => {
-      const participants =
-        declaration.participants ||
-        (declaration.heirIds || []).map((heirId) => ({
-          heirId,
-          numerator: 0,
-          denominator: 1,
-          declaredValue: 0,
-        }));
+      const { participants } = participantsOf(declaration);
       return participants.some((participant) => participant.heirId === heir.id);
     });
-    const publishedParticipants = records
-      .filter((record) => record.status === "published")
-      .flatMap((record) => record.participants || [])
-      .filter((participant) => participant.heirId === heir.id);
+    const publishedRecords = records.filter((record) => record.status === "published");
+    const publishedParticipants = publishedRecords.flatMap((record) => {
+      const { participants, legacyUnquantified } = participantsOf(record);
+      return participants
+        .filter((participant) => participant.heirId === heir.id)
+        .map((participant) => ({ participant, legacyUnquantified }));
+    });
+    const usablePublishedParticipants = publishedParticipants.filter(
+      ({ participant, legacyUnquantified }) =>
+        !legacyUnquantified && isUsablePublishedParticipant(participant),
+    );
+    const unusablePublishedCount =
+      publishedParticipants.length - usablePublishedParticipants.length;
+    const publishedFraction = usablePublishedParticipants.reduce((sum, { participant }) => {
+      const { numerator, denominator } = participantValues(participant);
+      return sum + numerator / denominator;
+    }, 0);
+    const publishedValue = usablePublishedParticipants.reduce(
+      (sum, { participant }) => sum + participantValues(participant).declaredValue,
+      0,
+    );
+    const requiredFraction = expectedShare(heir);
+    const difference = publishedFraction - requiredFraction;
+    const status = unusablePublishedCount
+      ? "invalid"
+      : Math.abs(difference) <= COVERAGE_EPSILON
+        ? "complete"
+        : difference < 0
+          ? "under"
+          : "over";
+    const hasUsablePublishedValues =
+      publishedRecords.length > 0 &&
+      unusablePublishedCount === 0 &&
+      publishedFraction > COVERAGE_EPSILON &&
+      publishedValue > 0 &&
+      status !== "over";
     return {
       heirId: heir.id,
       name: heir.name || "Unnamed heir",
       declarationCount: records.length,
-      publishedCount: records.filter((record) => record.status === "published").length,
+      publishedCount: publishedRecords.length,
       declarationIds: records.map((record) => record.id),
-      publishedFraction: publishedParticipants.reduce(
-        (sum, participant) =>
-          sum + Number(participant.numerator || 0) / Number(participant.denominator || 1),
-        0,
-      ),
-      publishedValue: publishedParticipants.reduce(
-        (sum, participant) => sum + Number(participant.declaredValue || 0),
-        0,
-      ),
+      publishedFraction,
+      publishedValue,
+      requiredFraction,
+      difference,
+      status,
+      unusablePublishedCount,
+      hasUsablePublishedValues,
     };
   });
 }

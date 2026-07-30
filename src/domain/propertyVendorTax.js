@@ -52,7 +52,7 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       : storedLot;
     const declaredCoverage = coverage.find((item) => item.heirId === lot.ownerId);
     const usePublishedValues =
-      lot.useDeclaredValues !== false && Boolean(declaredCoverage?.publishedCount);
+      lot.useDeclaredValues !== false && Boolean(declaredCoverage?.hasUsablePublishedValues);
     const declaredFraction = approximateFraction(declaredCoverage?.publishedFraction || 0);
     const effectiveLot = usePublishedValues
       ? {

@@ -115,4 +115,92 @@ describe("property vendor tax reports", () => {
     });
     expect(report.taxSummary.vendors[0].tax).toBe(35);
   });
+
+  it("does not replace a tax lot with zero values from a legacy published declaration", () => {
+    const property = {
+      id: "property",
+      owners: [{ id: "owner-record", personId: "owner", sharePercent: 100 }],
+      declarations: [{ id: "legacy", status: "published", heirIds: ["owner"] }],
+      transfers: [],
+      saleLots: [
+        {
+          id: "owner-lot",
+          ownerId: "owner",
+          inheritanceDate: "2020-01-01",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 80,
+          transferValue: 120,
+          useDeclaredValues: true,
+          selectedTaxMethod: "increase",
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(
+      property,
+      [{ id: "owner", fullName: "Joseph Borg" }],
+      [],
+    );
+    expect(report.saleRows[0]).toMatchObject({
+      usePublishedValues: false,
+      effectiveLot: {
+        acquisitionValue: 80,
+        shareNumerator: 1,
+        shareDenominator: 1,
+      },
+      declaredCoverage: {
+        status: "invalid",
+        hasUsablePublishedValues: false,
+      },
+    });
+    expect(report.saleRows[0].result.methods[0].tax).toBeCloseTo(4.8);
+  });
+
+  it("uses valid positive published declaration values for the matching tax lot", () => {
+    const property = {
+      id: "property",
+      owners: [{ id: "owner-record", personId: "owner", sharePercent: 100 }],
+      declarations: [
+        {
+          id: "published",
+          status: "published",
+          participants: [{ heirId: "owner", numerator: 1, denominator: 1, declaredValue: 100 }],
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "owner-lot",
+          ownerId: "owner",
+          inheritanceDate: "2020-01-01",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionValue: 50,
+          transferValue: 120,
+          useDeclaredValues: true,
+          selectedTaxMethod: "increase",
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(
+      property,
+      [{ id: "owner", fullName: "Joseph Borg" }],
+      [],
+    );
+    expect(report.saleRows[0]).toMatchObject({
+      usePublishedValues: true,
+      effectiveLot: {
+        acquisitionValue: 100,
+        shareNumerator: 1,
+        shareDenominator: 1,
+      },
+      declaredCoverage: {
+        status: "complete",
+        hasUsablePublishedValues: true,
+      },
+    });
+    expect(report.saleRows[0].result.methods[0].tax).toBeCloseTo(2.4);
+  });
 });

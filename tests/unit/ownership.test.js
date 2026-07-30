@@ -143,6 +143,29 @@ describe("ownership transfer ledger", () => {
     expect(ledger.entries[0].error).toContain("does not own enough");
     expect(ledger.owners.find((owner) => owner.id === "a").share).toBe(0.25);
   });
+  it("drops a stale stored error when a transfer later becomes valid", () => {
+    const ledger = buildOwnershipLedger(
+      [
+        { id: "a", sharePercent: 100 },
+        { id: "b", sharePercent: 0 },
+      ],
+      [],
+      [
+        {
+          id: "sale",
+          sellerId: "a",
+          buyerId: "b",
+          numerator: 1,
+          denominator: 2,
+          amountType: "seller-holding",
+          error: "Old validation failure",
+        },
+      ],
+    );
+
+    expect(ledger.entries[0].error).toBeUndefined();
+    expect(ledger.entries[0].amount).toBeCloseTo(0.5);
+  });
 });
 
 describe("per-property ownership ledger", () => {

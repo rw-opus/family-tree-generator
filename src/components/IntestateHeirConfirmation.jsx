@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Check, Trash2 } from "lucide-react";
 import {
   confirmedIntestacyAllocations,
+  intestacyConfirmationReadiness,
   intestacyAllocationSignature,
+  intestacyShareTotalIsComplete,
   isPersonDeceased,
   linkedSpousesFor,
   linkedSpousesMissingDeathDates,
@@ -30,6 +32,11 @@ function shareLabel(share, shareDisplay) {
   return `${fractionText} · ${percentageText}`;
 }
 
+function totalLabel(totalPercent, shareDisplay) {
+  if (intestacyShareTotalIsComplete(totalPercent)) return shareLabel(1, shareDisplay);
+  return `${totalPercent.toLocaleString("en-MT", { maximumFractionDigits: 8 })}%`;
+}
+
 export function IntestacyProposal({
   calculated,
   people,
@@ -40,6 +47,7 @@ export function IntestacyProposal({
   onApply,
 }) {
   const entries = [...(calculated?.shares || new Map()).entries()];
+  const peopleById = new Map(people.map((person) => [person.id, person]));
   return (
     <div className="calculated-intestacy">
       <div className="intestate-confirmation-heading">
@@ -52,7 +60,7 @@ export function IntestacyProposal({
       </div>
       {entries.length > 0 ? (
         entries.map(([personId, share]) => {
-          const person = people.find((candidate) => candidate.id === personId);
+          const person = peopleById.get(personId);
           return (
             <div className="calculated-intestacy-row" key={personId}>
               <span>{displayName(person)}</span>
@@ -63,8 +71,8 @@ export function IntestacyProposal({
       ) : (
         <small>No statutory proposal can yet be calculated.</small>
       )}
-      {(calculated?.warnings || []).map((warning) => (
-        <small className="succession-warning" key={warning}>
+      {(calculated?.warnings || []).map((warning, index) => (
+        <small className="succession-warning" key={`${index}-${warning}`}>
           {warning}
         </small>
       ))}
@@ -82,6 +90,7 @@ export function IntestateHeirConfirmation({
   onSelectPerson,
 }) {
   const [showOtherPerson, setShowOtherPerson] = useState(false);
+  const peopleById = new Map(people.map((person) => [person.id, person]));
   const rows = deceased.intestateHeirs || [];
   const calculatedEntries = [...(calculated?.shares || new Map()).entries()];
   const calculatedShares = new Map(calculatedEntries);
@@ -100,13 +109,9 @@ export function IntestateHeirConfirmation({
   );
   const total = totalPercentage(rows);
   const confirmation = confirmedIntestacyAllocations(people, deceased.id, calculated);
-  const hasCompleteRows =
-    rows.length > 0 &&
-    rows.every((row) => row.personId && Number(row.sharePercent) > 0) &&
-    selectedPersonIds.size === rows.length &&
-    Math.abs(total - 100) < 1e-8;
-  const canConfirm =
-    hasCompleteRows && Boolean(deceased.dateOfDeath) && partnersMissingDeathDate.length === 0;
+  const readiness = intestacyConfirmationReadiness(people, deceased.id, calculated);
+  const totalComplete = readiness.totalComplete;
+  const canConfirm = readiness.valid;
 
   const patchDeceased = (patch) => onUpdatePerson(deceased.id, patch);
   const replaceRows = (nextRows) =>
@@ -157,8 +162,9 @@ export function IntestateHeirConfirmation({
         <div>
           <strong>Confirm who inherited</strong>
           <small>
-            Linked partners are treated as spouses. The proposed persons and shares come from the
-            intestacy calculation.
+            Only explicitly linked partners are treated as spouses. Sharing a recorded child alone
+            does not create a spouse share. The proposed persons and shares come from the intestacy
+            calculation.
           </small>
         </div>
       </div>
@@ -209,7 +215,7 @@ export function IntestateHeirConfirmation({
       <div className="confirmed-intestate-heirs">
         <strong>Heirs to be confirmed</strong>
         {rows.map((row) => {
-          const person = people.find((candidate) => candidate.id === row.personId);
+          const person = peopleById.get(row.personId);
           const fraction = fractionForShare(row);
           const numerator = row.shareNumerator ?? fraction.numerator;
           const denominator = row.shareDenominator ?? fraction.denominator;
@@ -247,7 +253,7 @@ export function IntestateHeirConfirmation({
                     min="0"
                     max="100"
                     step="any"
-                    value={row.sharePercent ?? ""}
+                    value={row.sharePercentInput ?? row.sharePercent ?? ""}
                     onChange={(event) => updateRowPercentage(row.id, event.target.value)}
                   />
                   <b>%</b>
@@ -303,11 +309,9 @@ export function IntestateHeirConfirmation({
         )}
 
         <div className="intestate-confirmation-footer">
-          <small
-            className={hasCompleteRows ? "succession-total valid" : "succession-total invalid"}
-          >
-            Total: {shareLabel(total / 100, shareDisplay)}{" "}
-            {hasCompleteRows
+          <small className={totalComplete ? "succession-total valid" : "succession-total invalid"}>
+            Total: {totalLabel(total, shareDisplay)}{" "}
+            {totalComplete
               ? "Complete"
               : `- must equal ${
                   shareDisplay === "fraction"
@@ -327,6 +331,15 @@ export function IntestateHeirConfirmation({
             {confirmation.valid ? "Confirmed" : "Confirm heirs"}
           </button>
         </div>
+        {!canConfirm &&
+          totalComplete &&
+          readiness.issues
+            .filter((issue) => issue !== "The heir shares must total 100%.")
+            .map((issue, index) => (
+              <small className="succession-warning" key={`${index}-${issue}`}>
+                {issue}
+              </small>
+            ))}
         {deceased.intestateHeirsConfirmed && !confirmation.valid && (
           <small className="succession-warning">
             The earlier confirmation needs review because the family details or calculated

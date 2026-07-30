@@ -177,9 +177,7 @@ export function PersonInspector({
 
   const dismissParentSuggestion = (suggestion) => {
     const flag =
-      suggestion.field === "motherId"
-        ? "motherExplicitlyUnassigned"
-        : "fatherExplicitlyUnassigned";
+      suggestion.field === "motherId" ? "motherExplicitlyUnassigned" : "fatherExplicitlyUnassigned";
     onChange(
       people.map((person) =>
         person.id === suggestion.personId ? { ...person, [flag]: true } : person,
@@ -629,8 +627,12 @@ export function PersonInspector({
       })),
     });
   };
+  const hasUnknownCausaMortisDeathDate = causaMortisCoverage.some(
+    (row) => row.status === "date-unknown",
+  );
   const requiresCausaMortisDetails =
-    Boolean(selectedPerson.dateOfDeath) && selectedPerson.dateOfDeath > "1992-11-25";
+    hasUnknownCausaMortisDeathDate ||
+    (Boolean(selectedPerson.dateOfDeath) && selectedPerson.dateOfDeath > "1992-11-25");
   const displayedSurnameAtBirth =
     selectedPerson.surnameAtBirth ||
     (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
@@ -1110,7 +1112,7 @@ export function PersonInspector({
                                 min="0"
                                 max="100"
                                 step="any"
-                                value={heir.sharePercent ?? ""}
+                                value={heir.sharePercentInput ?? heir.sharePercent ?? ""}
                                 onChange={(event) =>
                                   updateWillHeirPercentage(heir.id, event.target.value)
                                 }
@@ -1157,8 +1159,9 @@ export function PersonInspector({
                     <div>
                       <strong>Declarations Causa Mortis</strong>
                       <small>
-                        Required for a death after 25 November 1992. Complete this form with OK
-                        before starting another declaration.
+                        {hasUnknownCausaMortisDeathDate
+                          ? "The exact death date is needed to decide whether a Declaration Causa Mortis is required."
+                          : "Required for a death after 25 November 1992. Complete this form with OK before starting another declaration."}
                       </small>
                     </div>
                     <button
@@ -1190,11 +1193,15 @@ export function PersonInspector({
                       {causaMortisCoverage.map((row) => {
                         const difference = Math.abs(row.difference);
                         const differenceLabel =
-                          row.status === "under"
-                            ? `Missing ${fractionLabel(difference)}`
-                            : row.status === "over"
-                              ? `Excess ${fractionLabel(difference)}`
-                              : "Complete";
+                          row.status === "date-unknown"
+                            ? row.deathDateText
+                              ? `Resolve date (${row.deathDateText})`
+                              : "Enter exact death date"
+                            : row.status === "under"
+                              ? `Missing ${fractionLabel(difference)}`
+                              : row.status === "over"
+                                ? `Excess ${fractionLabel(difference)}`
+                                : "Complete";
                         return (
                           <div
                             className={`causa-mortis-coverage-row ${row.status}`}
@@ -1203,8 +1210,11 @@ export function PersonInspector({
                             <span>
                               <strong>{row.propertyAddress}</strong>
                               <small>
-                                Required {fractionLabel(row.requiredShare)} · Declared{" "}
-                                {fractionLabel(row.declaredShare)}
+                                {row.status === "date-unknown"
+                                  ? "Coverage cannot be decided from an unknown or approximate death date."
+                                  : `Required ${fractionLabel(
+                                      row.requiredShare,
+                                    )} · Declared ${fractionLabel(row.declaredShare)}`}
                               </small>
                             </span>
                             <b>{differenceLabel}</b>

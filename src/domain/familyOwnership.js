@@ -2,6 +2,12 @@ import { approximateFraction, buildStarterOwnership } from "./ownership.js";
 import { CURRENT_SUCCESSION_START } from "./propertyTax.js";
 
 const number = (input) => Math.max(0, Number(input) || 0);
+export const INTESTACY_SHARE_EPSILON = 1e-8;
+const SURVIVAL_UNRESOLVED_DESTINATIONS = new Set([
+  "spouse-survival-unresolved",
+  "death-date-unresolved",
+  "survival-date-unresolved",
+]);
 
 export function isPersonDeceased(person = {}) {
   return (
@@ -16,6 +22,10 @@ function wasAliveAt(person, date) {
   if (!isPersonDeceased(person)) return true;
   if (!date || !person.dateOfDeath) return false;
   return person.dateOfDeath > date;
+}
+
+function personName(person = {}) {
+  return String(person.fullName || "").trim() || "Unnamed person";
 }
 
 function addShare(shares, personId, amount) {
@@ -94,12 +104,6 @@ function linkedSpouses(person, people, peopleById) {
   const spouseIds = new Set(person.spouseIds || []);
   people.forEach((candidate) => {
     if ((candidate.spouseIds || []).includes(person.id)) spouseIds.add(candidate.id);
-    if (candidate.fatherId === person.id && candidate.motherId) {
-      spouseIds.add(candidate.motherId);
-    }
-    if (candidate.motherId === person.id && candidate.fatherId) {
-      spouseIds.add(candidate.fatherId);
-    }
   });
   spouseIds.delete(person.id);
   return [...spouseIds].map((id) => peopleById.get(id)).filter(Boolean);
@@ -117,6 +121,35 @@ export function linkedSpousesMissingDeathDates(people = [], deceasedId) {
   );
 }
 
+function branchesMissingSurvivalDates(roots, atDate, index) {
+  const missing = [];
+  const visited = new Set();
+  const inspect = (person) => {
+    if (!person || visited.has(person.id)) return;
+    visited.add(person.id);
+    if (!isPersonDeceased(person)) return;
+    if (!person.dateOfDeath) {
+      missing.push(person);
+      return;
+    }
+    if (person.dateOfDeath > atDate) return;
+    (index.childrenByParent.get(person.id) || []).forEach(inspect);
+  };
+  roots.forEach(inspect);
+  return missing;
+}
+
+export function descendantsMissingDeathDates(people = [], deceasedId) {
+  const index = familyIndex(people);
+  const deceased = index.peopleById.get(deceasedId);
+  if (!deceased?.dateOfDeath) return [];
+  return branchesMissingSurvivalDates(
+    index.childrenByParent.get(deceasedId) || [],
+    deceased.dateOfDeath,
+    index,
+  );
+}
+
 function linkedSiblings(person, people, peopleById) {
   const siblingIds = new Set(person.siblingIds || []);
   people.forEach((candidate) => {
@@ -130,7 +163,7 @@ function linkedSiblings(person, people, peopleById) {
   return [...siblingIds].map((id) => peopleById.get(id)).filter(Boolean);
 }
 
-function nearestLivingAscendants(person, atDate, peopleById) {
+function nearestAscendantStatus(person, atDate, peopleById) {
   let current = [person.fatherId, person.motherId].map((id) => peopleById.get(id)).filter(Boolean);
   const visited = new Set([person.id]);
   while (current.length) {
@@ -139,13 +172,17 @@ function nearestLivingAscendants(person, atDate, peopleById) {
       visited.add(candidate.id);
       return true;
     });
+    const missing = unique.filter(
+      (candidate) => isPersonDeceased(candidate) && !candidate.dateOfDeath,
+    );
+    if (missing.length) return { living: [], missing };
     const living = unique.filter((candidate) => wasAliveAt(candidate, atDate));
-    if (living.length) return living;
+    if (living.length) return { living, missing: [] };
     current = unique.flatMap((candidate) =>
       [candidate.fatherId, candidate.motherId].map((id) => peopleById.get(id)).filter(Boolean),
     );
   }
-  return [];
+  return { living: [], missing: [] };
 }
 
 function collateralDegree(deceasedId, candidateId, index, maxDegree = 12) {
@@ -204,6 +241,15 @@ export function intestateAllocations(people = [], deceasedId) {
   const atDate = deceased.dateOfDeath;
   const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
   const children = index.childrenByParent.get(deceased.id) || [];
+  const descendantsWithUnknownSurvival = descendantsMissingDeathDates(people, deceased.id);
+  if (descendantsWithUnknownSurvival.length) {
+    warnings.push(
+      `Enter the date of death for ${descendantsWithUnknownSurvival
+        .map(personName)
+        .join(", ")} before deciding which descendant branches survived the deceased.`,
+    );
+    return { shares, warnings, destination: "survival-date-unresolved" };
+  }
   const descendantProbe = allocateBranches(children, atDate, 1, index);
   if (descendantProbe.size) {
     const spouseTotal = livingSpouses.length ? 0.5 : 0;
@@ -224,8 +270,26 @@ export function intestateAllocations(people = [], deceasedId) {
     return { shares, warnings, destination: "spouse" };
   }
 
-  const ascendants = nearestLivingAscendants(deceased, atDate, index.peopleById);
+  const ascendantStatus = nearestAscendantStatus(deceased, atDate, index.peopleById);
+  if (ascendantStatus.missing.length) {
+    warnings.push(
+      `Enter the date of death for ${ascendantStatus.missing
+        .map(personName)
+        .join(", ")} before deciding which ascendants survived the deceased.`,
+    );
+    return { shares, warnings, destination: "survival-date-unresolved" };
+  }
+  const ascendants = ascendantStatus.living;
   const siblings = linkedSiblings(deceased, people, index.peopleById);
+  const siblingBranchesWithUnknownSurvival = branchesMissingSurvivalDates(siblings, atDate, index);
+  if (siblingBranchesWithUnknownSurvival.length) {
+    warnings.push(
+      `Enter the date of death for ${siblingBranchesWithUnknownSurvival
+        .map(personName)
+        .join(", ")} before deciding which sibling branches survived the deceased.`,
+    );
+    return { shares, warnings, destination: "survival-date-unresolved" };
+  }
   const siblingProbe = allocateSiblingBranches(siblings, atDate, 1, index);
   if (ascendants.length || siblingProbe.size) {
     const ascendantTotal = ascendants.length ? (siblingProbe.size ? 0.5 : 1) : 0;
@@ -251,19 +315,32 @@ export function intestateAllocations(people = [], deceasedId) {
     };
   }
 
-  const otherCollaterals = people
+  const collateralCandidates = people
     .filter(
       (candidate) =>
-        candidate.id !== deceased.id &&
-        wasAliveAt(candidate, atDate) &&
-        !livingSpouses.some((spouse) => spouse.id === candidate.id),
+        candidate.id !== deceased.id && !livingSpouses.some((spouse) => spouse.id === candidate.id),
     )
     .map((candidate) => ({
       person: candidate,
       degree: collateralDegree(deceased.id, candidate.id, index),
     }))
     .filter(({ degree }) => degree >= 3 && degree <= 12);
+  const otherCollaterals = collateralCandidates.filter(({ person }) => wasAliveAt(person, atDate));
   const nearestDegree = Math.min(...otherCollaterals.map(({ degree }) => degree));
+  const collateralsWithUnknownSurvival = collateralCandidates.filter(
+    ({ person, degree }) =>
+      isPersonDeceased(person) &&
+      !person.dateOfDeath &&
+      (!Number.isFinite(nearestDegree) || degree <= nearestDegree),
+  );
+  if (collateralsWithUnknownSurvival.length) {
+    warnings.push(
+      `Enter the date of death for ${collateralsWithUnknownSurvival
+        .map(({ person }) => personName(person))
+        .join(", ")} before deciding which collateral relatives survived the deceased.`,
+    );
+    return { shares, warnings, destination: "survival-date-unresolved" };
+  }
   const nearestCollaterals = otherCollaterals.filter(({ degree }) => degree === nearestDegree);
   if (nearestCollaterals.length) {
     nearestCollaterals.forEach(({ person }) =>
@@ -286,6 +363,66 @@ export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
   return [deceased.dateOfDeath || "", allocation.destination || "", shares].join("::");
 }
 
+export function intestacyShareTotalIsComplete(totalPercent) {
+  return Math.abs(number(totalPercent) / 100 - 1) <= INTESTACY_SHARE_EPSILON;
+}
+
+export function intestacyConfirmationReadiness(
+  people = [],
+  deceasedId,
+  calculatedAllocation = null,
+) {
+  const deceased = people.find((person) => person.id === deceasedId);
+  if (!deceased) {
+    return {
+      valid: false,
+      rowsValid: false,
+      totalComplete: false,
+      totalPercent: 0,
+      currentSignature: "",
+      issues: ["Deceased person not found."],
+    };
+  }
+
+  const calculated = calculatedAllocation || intestateAllocations(people, deceasedId);
+  const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
+  const selectedIds = rows.map((row) => row.personId).filter(Boolean);
+  const uniqueIds = new Set(selectedIds);
+  const validPersonIds = new Set(people.map((person) => person.id));
+  const totalPercent = rows.reduce((sum, row) => sum + number(row.sharePercent), 0);
+  const totalComplete = intestacyShareTotalIsComplete(totalPercent);
+  const issues = [];
+
+  if (!rows.length) issues.push("Add at least one heir.");
+  if (rows.some((row) => !row.personId)) issues.push("Choose a person for every heir row.");
+  if (rows.some((row) => number(row.sharePercent) <= 0)) {
+    issues.push("Enter a positive share for every heir.");
+  }
+  if (selectedIds.length !== rows.length || uniqueIds.size !== rows.length) {
+    issues.push("Each heir must be selected once.");
+  }
+  if (uniqueIds.has(deceasedId)) issues.push("The deceased cannot be selected as their own heir.");
+  if (selectedIds.some((personId) => !validPersonIds.has(personId))) {
+    issues.push("Remove or replace heirs who are no longer on the family tree.");
+  }
+  if (!totalComplete) issues.push("The heir shares must total 100%.");
+
+  const rowsValid = issues.length === 0;
+  if (!deceased.dateOfDeath) issues.push("Enter the deceased person's date of death.");
+  if (SURVIVAL_UNRESOLVED_DESTINATIONS.has(calculated.destination)) {
+    issues.push("Complete the missing survival dates before confirming the heirs.");
+  }
+
+  return {
+    valid: issues.length === 0,
+    rowsValid,
+    totalComplete,
+    totalPercent,
+    currentSignature: intestacyAllocationSignature(deceased, calculated),
+    issues,
+  };
+}
+
 export function confirmedIntestacyAllocations(
   people = [],
   deceasedId,
@@ -299,22 +436,13 @@ export function confirmedIntestacyAllocations(
   }
 
   const calculated = calculatedAllocation || intestateAllocations(people, deceasedId);
-  const currentSignature = intestacyAllocationSignature(deceased, calculated);
+  const readiness = intestacyConfirmationReadiness(people, deceasedId, calculated);
+  const currentSignature = readiness.currentSignature;
   const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
-  const selectedIds = rows.map((row) => row.personId).filter(Boolean);
-  const uniqueIds = new Set(selectedIds);
-  const total = rows.reduce((sum, row) => sum + number(row.sharePercent) / 100, 0);
   const valid =
     deceased.intestateHeirsConfirmed === true &&
-    !["spouse-survival-unresolved", "death-date-unresolved"].includes(calculated.destination) &&
     deceased.intestateConfirmationBasis === currentSignature &&
-    rows.length > 0 &&
-    rows.every((row) => number(row.sharePercent) > 0) &&
-    selectedIds.length === rows.length &&
-    uniqueIds.size === rows.length &&
-    !uniqueIds.has(deceasedId) &&
-    selectedIds.every((personId) => people.some((person) => person.id === personId)) &&
-    Math.abs(total - 1) < 1e-8;
+    readiness.valid;
 
   if (!valid) {
     if (deceased.intestateHeirsConfirmed) {
@@ -356,7 +484,19 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
   };
 
   const distribute = (personId, amount, via, trail = new Set()) => {
-    if (!personId || amount <= 1e-12 || trail.has(personId)) return;
+    if (!personId || amount <= 1e-12) return;
+    if (trail.has(personId)) {
+      const path = [...trail];
+      const loopStart = Math.max(0, path.indexOf(personId));
+      const loopIds = [...path.slice(loopStart), personId];
+      const loopNames = loopIds.map((id) => personName(peopleById.get(id)));
+      const warning = `Circular inheritance path ${loopNames.join(
+        " → ",
+      )}; this share could not be allocated.`;
+      record(personId, amount, "unresolved");
+      unresolved.push({ personId, amount, warnings: [warning] });
+      return;
+    }
     const person = peopleById.get(personId);
     if (!person) return;
     if (!isPersonDeceased(person)) {
@@ -434,7 +574,7 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
   };
 }
 
-export function buildAutomaticFamilyOwnership(people = []) {
+export function buildFamilyOwnershipFromExplicitShares(people = []) {
   const startingOwnership = buildStarterOwnership(people);
   const { ownershipByPerson, transmissions, unresolved } = buildFamilyOwnershipCore(
     people,
@@ -442,6 +582,10 @@ export function buildAutomaticFamilyOwnership(people = []) {
   );
   return { ownershipByPerson, transmissions, unresolved };
 }
+
+// Kept as a compatibility alias for saved imports. New code should use the name
+// that makes the explicit-starting-share requirement clear.
+export const buildAutomaticFamilyOwnership = buildFamilyOwnershipFromExplicitShares;
 
 // Converts a property's explicit owners list into a { personId: fraction } starting map.
 function propertyStartingOwnership(property = {}) {

@@ -55,7 +55,9 @@ export function buildCausaMortisShareCoverage(people = [], properties = []) {
 
     requiredByPerson.forEach((requiredShare, personId) => {
       const person = peopleById.get(personId);
-      if (!person?.dateOfDeath || person.dateOfDeath <= CUTOFF_DATE) return;
+      if (!person) return;
+      const deathDateUnknown = !person.dateOfDeath;
+      if (!deathDateUnknown && person.dateOfDeath <= CUTOFF_DATE) return;
 
       const declarations = (person.causaMortisDeclarations || []).filter(
         (declaration) =>
@@ -68,8 +70,9 @@ export function buildCausaMortisShareCoverage(people = [], properties = []) {
         0,
       );
       const difference = totalDeclaredShare - requiredShare;
-      const status =
-        Math.abs(difference) <= CAUSA_MORTIS_EPSILON
+      const status = deathDateUnknown
+        ? "date-unknown"
+        : Math.abs(difference) <= CAUSA_MORTIS_EPSILON
           ? "complete"
           : difference < 0
             ? "under"
@@ -83,6 +86,9 @@ export function buildCausaMortisShareCoverage(people = [], properties = []) {
         declaredShare: totalDeclaredShare,
         difference,
         status,
+        deathDateText: deathDateUnknown
+          ? String(person.gedcomDeathDate || "").trim()
+          : person.dateOfDeath,
       });
     });
   });

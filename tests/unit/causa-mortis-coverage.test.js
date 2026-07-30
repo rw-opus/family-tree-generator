@@ -102,6 +102,22 @@ describe("buildCausaMortisShareCoverage", () => {
     expect(result.rows).toEqual([]);
   });
 
+  it("flags an approximate or missing death date instead of omitting coverage", () => {
+    const people = peopleWithDeclarations([], "");
+    people[0].gedcomDeathDate = "ABT 1990";
+
+    const result = buildCausaMortisShareCoverage(people, [property]);
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      personId: "deceased",
+      propertyId: "property-1",
+      requiredShare: 0.5,
+      status: "date-unknown",
+      deathDateText: "ABT 1990",
+    });
+  });
+
   it("does not count an unfinished declaration toward declared coverage", () => {
     const result = buildCausaMortisShareCoverage(
       peopleWithDeclarations([

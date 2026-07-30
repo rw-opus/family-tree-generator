@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAutomaticFamilyOwnership,
+  buildFamilyOwnershipFromExplicitShares,
   buildFamilyPropertyOwnership,
   buildPropertyOwnership,
+  descendantsMissingDeathDates,
   intestacyAllocationSignature,
+  intestacyConfirmationReadiness,
+  intestacyShareTotalIsComplete,
   intestateAllocations,
 } from "../../src/domain/familyOwnership.js";
 
@@ -20,7 +24,7 @@ const person = (id, patch = {}) => ({
 
 describe("automatic family ownership", () => {
   it("does not assume a sole living person owns the whole property", () => {
-    const result = buildAutomaticFamilyOwnership([person("owner")]);
+    const result = buildFamilyOwnershipFromExplicitShares([person("owner")]);
     expect(result.ownershipByPerson).toEqual({});
   });
 
@@ -42,7 +46,7 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson.father || 0).toBe(0);
   });
 
-  it("treats the other parent of shared children as the spouse when no explicit link exists", () => {
+  it("does not treat shared parenthood alone as a legal spouse link", () => {
     const people = [
       person("edgar", {
         fullName: "Edgar Wadge",
@@ -59,9 +63,9 @@ describe("automatic family ownership", () => {
       owners: [{ personId: "edgar", sharePercent: 100 }],
     });
 
-    expect(result.ownershipByPerson.wife).toBeCloseTo(0.5);
-    expect(result.ownershipByPerson["son-1"]).toBeCloseTo(0.25);
-    expect(result.ownershipByPerson["son-2"]).toBeCloseTo(0.25);
+    expect(result.ownershipByPerson.wife || 0).toBe(0);
+    expect(result.ownershipByPerson["son-1"]).toBeCloseTo(0.5);
+    expect(result.ownershipByPerson["son-2"]).toBeCloseTo(0.5);
   });
 
   it("uses confirmed intestate heirs and user-directed shares when they total 100%", () => {
@@ -93,6 +97,35 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson.spouse).toBeCloseTo(0.6);
     expect(result.ownershipByPerson.child).toBeCloseTo(0.4);
     expect(result.transmissions[0].destination).toBe("confirmed-intestacy");
+  });
+
+  it("uses one readiness check for dangling, duplicate, and self-heir rows", () => {
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        intestateHeirs: [
+          { id: "missing-row", personId: "missing", sharePercent: 50 },
+          { id: "self-row", personId: "deceased", sharePercent: 50 },
+        ],
+      }),
+      person("child", { fatherId: "deceased" }),
+    ];
+    const calculated = intestateAllocations(people, "deceased");
+    const readiness = intestacyConfirmationReadiness(people, "deceased", calculated);
+
+    expect(readiness.valid).toBe(false);
+    expect(readiness.totalComplete).toBe(true);
+    expect(readiness.issues).toContain("The deceased cannot be selected as their own heir.");
+    expect(readiness.issues).toContain(
+      "Remove or replace heirs who are no longer on the family tree.",
+    );
+  });
+
+  it("uses the same tolerance for validating and displaying a 100% total", () => {
+    expect(intestacyShareTotalIsComplete(100)).toBe(true);
+    expect(intestacyShareTotalIsComplete(99.999999)).toBe(true);
+    expect(intestacyShareTotalIsComplete(99.9999)).toBe(false);
   });
 
   it("requires a deceased linked spouse's date of death before calculating survivorship", () => {
@@ -145,6 +178,46 @@ describe("automatic family ownership", () => {
     expect(ownership.ownershipByPerson.edgar).toBe(1);
     expect(ownership.ownershipByPerson["son-1"] || 0).toBe(0);
     expect(ownership.unresolved).toHaveLength(1);
+  });
+
+  it("blocks allocation when a descendant's survival date is unknown", () => {
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+      }),
+      person("child", {
+        fatherId: "deceased",
+        isDeceased: true,
+        dateOfDeath: "",
+      }),
+      person("grandchild", { fatherId: "child" }),
+    ];
+
+    expect(descendantsMissingDeathDates(people, "deceased").map(({ id }) => id)).toEqual(["child"]);
+    const allocation = intestateAllocations(people, "deceased");
+    expect(allocation.destination).toBe("survival-date-unresolved");
+    expect(allocation.shares.size).toBe(0);
+    expect(allocation.warnings.join(" ")).toContain("child");
+  });
+
+  it("blocks allocation when a material ascendant's survival date is unknown", () => {
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        fatherId: "father",
+      }),
+      person("father", {
+        isDeceased: true,
+        dateOfDeath: "",
+      }),
+    ];
+
+    const allocation = intestateAllocations(people, "deceased");
+    expect(allocation.destination).toBe("survival-date-unresolved");
+    expect(allocation.shares.size).toBe(0);
+    expect(allocation.warnings.join(" ")).toContain("father");
   });
 
   it("falls back to the statutory proposal when an earlier confirmation becomes stale", () => {
@@ -488,5 +561,32 @@ describe("per-property ownership", () => {
     expect(ownerRow.via).toBe("unresolved");
     expect(ownerRow.sharePercent).toBeCloseTo(60);
     expect(unresolved).toHaveLength(1);
+  });
+
+  it("records a circular inheritance path as unresolved instead of losing the share", () => {
+    const people = [
+      person("owner", {
+        fullName: "Owner Person",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "owner-to-heir", personId: "heir", sharePercent: 100 }],
+      }),
+      person("heir", {
+        fullName: "Heir Person",
+        isDeceased: true,
+        dateOfDeath: "2021-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "heir-to-owner", personId: "owner", sharePercent: 100 }],
+      }),
+    ];
+    const property = { id: "flat-1", owners: [{ personId: "owner", sharePercent: 100 }] };
+
+    const result = buildPropertyOwnership(people, property);
+    expect(result.ownershipByPerson.owner).toBeCloseTo(1);
+    expect(result.unresolved).toHaveLength(1);
+    expect(result.unresolved[0].warnings.join(" ")).toContain(
+      "Owner Person → Heir Person → Owner Person",
+    );
   });
 });

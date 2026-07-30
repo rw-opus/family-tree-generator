@@ -404,7 +404,7 @@ export function PropertyCalculator({ caseData, onChange }) {
                           min="0"
                           max="100"
                           step="any"
-                          value={heir.sharePercent ?? ""}
+                          value={heir.sharePercentInput ?? heir.sharePercent ?? ""}
                           onChange={(e) => updateHeirPercentage(heir.id, e.target.value)}
                         />
                         <strong>%</strong>

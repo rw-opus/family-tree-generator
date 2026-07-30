@@ -262,7 +262,11 @@ export function PropertyDeclarations({ property, owners, declarations, onChange 
                 </span>
                 <strong
                   className={
-                    item.publishedCount ? "covered" : item.declarationCount ? "draft" : "missing"
+                    item.status === "complete"
+                      ? "covered"
+                      : !item.publishedCount && item.declarationCount
+                        ? "draft"
+                        : "missing"
                   }
                 >
                   {item.publishedCount ? (
@@ -270,6 +274,15 @@ export function PropertyDeclarations({ property, owners, declarations, onChange 
                       {approximateFraction(item.publishedFraction).numerator}/
                       {approximateFraction(item.publishedFraction).denominator}
                       <small>{money.format(item.publishedValue)}</small>
+                      <small>
+                        {item.status === "invalid"
+                          ? "Needs fraction/value details"
+                          : item.status === "over"
+                            ? "Over-declared"
+                            : item.status === "under"
+                              ? "Under-declared"
+                              : "Complete"}
+                      </small>
                     </>
                   ) : item.declarationCount ? (
                     "Draft only"

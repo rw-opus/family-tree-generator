@@ -1,4 +1,10 @@
-const integer = (value) => Number.parseInt(value, 10);
+const integer = (value) => {
+  if (typeof value === "number") return Number.isSafeInteger(value) ? value : Number.NaN;
+  const input = String(value ?? "").trim();
+  if (!/^[+-]?\d+$/.test(input)) return Number.NaN;
+  const parsed = Number(input);
+  return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
+};
 
 function divisor(a, b) {
   let left = Math.abs(a);

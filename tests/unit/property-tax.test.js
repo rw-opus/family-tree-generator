@@ -11,11 +11,14 @@ import {
 
 describe("Maltese inherited property estimates", () => {
   it("splits intestacy equally between spouse and descendants", () => {
-    const heirs = suggestedIntestacyShares([
-      { id: "s", relationship: "Surviving spouse" },
-      { id: "a", relationship: "Child" },
-      { id: "b", relationship: "Child" },
-    ]);
+    const heirs = suggestedIntestacyShares(
+      [
+        { id: "s", relationship: "Surviving spouse" },
+        { id: "a", relationship: "Child" },
+        { id: "b", relationship: "Child" },
+      ],
+      "2020-01-01",
+    );
     expect(heirs.map((heir) => heir.sharePercent)).toEqual([50, 25, 25]);
   });
   it("allocates a predeceased child's branch per stirpes", () => {
@@ -70,6 +73,29 @@ describe("Maltese inherited property estimates", () => {
     expect(successionRuleset("2005-02-28").supported).toBe(false);
     expect(successionRuleset("2005-03-01").supported).toBe(true);
   });
+  it("does not apply current intestacy rules when the death date is missing", () => {
+    const heirs = [
+      { id: "s", relationship: "Surviving spouse" },
+      { id: "a", relationship: "Child" },
+    ];
+
+    expect(suggestedIntestacyShares(heirs)).toEqual(heirs);
+  });
+  it("warns when an orphaned representative is provisionally promoted to root level", () => {
+    const result = allocateCurrentIntestacy([
+      { id: "a", name: "Anna", relationship: "Child", status: "accepted" },
+      {
+        id: "orphan",
+        name: "Carlo",
+        relationship: "Descendant",
+        branchId: "missing-parent",
+        status: "accepted",
+      },
+    ]);
+
+    expect(result.warnings.join(" ")).toContain("Carlo");
+    expect(result.warnings.join(" ")).toContain("no valid parent branch");
+  });
   it("calculates inherited value and standard duty", () => {
     const result = inheritanceDuty(
       { marketValueAtDeath: 600000, deceasedOwnershipPercent: 50, rightPercent: 100 },
@@ -77,6 +103,27 @@ describe("Maltese inherited property estimates", () => {
     );
     expect(result.inheritedValue).toBeCloseTo(100000);
     expect(result.duty).toBeCloseTo(5000);
+  });
+  it("applies the €250 rebate only when duty is strictly below €2,300", () => {
+    const propertyForValue = (marketValueAtDeath) => ({
+      marketValueAtDeath,
+      deceasedOwnershipPercent: 100,
+      rightPercent: 100,
+    });
+    const heir = { sharePercent: 100, soleResidence: false };
+
+    expect(
+      inheritanceDuty(propertyForValue(45980), heir, { deedWithinSixMonths: true }),
+    ).toMatchObject({
+      duty: 2049,
+      rebate: 250,
+    });
+    expect(
+      inheritanceDuty(propertyForValue(46000), heir, { deedWithinSixMonths: true }),
+    ).toMatchObject({
+      duty: 2300,
+      rebate: 0,
+    });
   });
   it("compares post-2003 sale methods", () => {
     const result = saleTaxLot({

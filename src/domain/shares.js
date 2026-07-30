@@ -33,13 +33,14 @@ export function shareFromFractionInput(share = {}, patch = {}) {
     ...shareFromFraction(shareNumerator, shareDenominator),
     shareNumerator,
     shareDenominator,
+    sharePercentInput: undefined,
   };
 }
 
 export function shareFromPercentageInput(percentage) {
   return {
     ...shareFromPercentage(percentage),
-    sharePercent: percentage,
+    sharePercentInput: String(percentage ?? ""),
   };
 }
 
