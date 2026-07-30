@@ -731,15 +731,6 @@ export function App() {
                     ))}
                   </select>
                 </label>
-                <PersonCardDisplayControl
-                  fields={currentTree.settings.personCardFields}
-                  onChange={(personCardFields) =>
-                    setTree({
-                      ...currentTree,
-                      settings: { ...currentTree.settings, personCardFields },
-                    })
-                  }
-                />
                 <div className="zoom-controls" aria-label="Tree zoom">
                   <button type="button" onClick={() => updateZoom(zoom - 10)} aria-label="Zoom out">
                     <Minus size={16} />
@@ -756,6 +747,15 @@ export function App() {
                 >
                   <Menu size={16} /> Dashboard
                 </button>
+                <PersonCardDisplayControl
+                  fields={currentTree.settings.personCardFields}
+                  onChange={(personCardFields) =>
+                    setTree({
+                      ...currentTree,
+                      settings: { ...currentTree.settings, personCardFields },
+                    })
+                  }
+                />
               </div>
               <FamilyTreeCanvas
                 treeTitle={activeFamilyGroup.title}
