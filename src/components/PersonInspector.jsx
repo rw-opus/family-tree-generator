@@ -254,6 +254,7 @@ export function PersonInspector({
     const current = personDesignations(selectedPerson).filter(
       (designation) => designation !== "Deceased",
     );
+    if (checked) setIsEditing(true);
     updateSelected({
       designations: checked ? ["Deceased", ...current] : current,
       isDeceased: checked,
@@ -806,7 +807,7 @@ export function PersonInspector({
             This person is deceased.
           </span>
         </label>
-        <fieldset className="person-edit-fields" disabled={!isEditing}>
+        <fieldset className="person-edit-fields" disabled={!isEditing && !isDeceased}>
           {isDeceased && (
             <div className="person-succession">
               <div className="person-succession-heading">

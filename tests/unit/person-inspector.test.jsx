@@ -690,6 +690,99 @@ describe("PersonInspector", () => {
     });
   });
 
+  it("immediately unlocks every succession field when a person is marked deceased", () => {
+    let people = [
+      {
+        id: "person",
+        fullName: "Joseph Borg",
+        givenNames: "Joseph",
+        surname: "Borg",
+        surnameAtBirth: "Borg",
+        sex: "Male",
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willDate: "2019-02-03",
+        willNotaryName: "Notary Test",
+        willNotes: "Test will",
+        willHeirs: [
+          {
+            id: "heir-record",
+            personId: "child",
+            sharePercent: 100,
+          },
+        ],
+        causaMortisDeclarations: [
+          {
+            id: "cm-1",
+            propertyId: "property",
+            date: "2020-02-01",
+            notaryName: "Notary Test",
+            immovablePropertyValue: "100000",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            declarantPersonIds: ["child"],
+          },
+        ],
+        designations: [],
+        spouseIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Maria Borg",
+        fatherId: "person",
+        spouseIds: [],
+      },
+    ];
+    const onChange = vi.fn((nextPeople) => {
+      people = nextPeople;
+      act(() =>
+        root.render(
+          <PersonInspector
+            people={people}
+            properties={[{ id: "property", address: "1 Republic Street" }]}
+            selectedPersonId="person"
+            onChange={onChange}
+            onSelectPerson={vi.fn()}
+          />,
+        ),
+      );
+    });
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[{ id: "property", address: "1 Republic Street" }]}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-succession")).toBeNull();
+    const deceasedCheckbox = [...container.querySelectorAll('input[type="checkbox"]')].find(
+      (input) => input.parentElement.textContent.includes("This person is deceased."),
+    );
+    act(() => deceasedCheckbox.click());
+
+    const succession = container.querySelector(".person-succession");
+    expect(succession).not.toBeNull();
+    expect(succession.querySelector('.succession-detail-row input[type="date"]').value).toBe(
+      "2020-01-01",
+    );
+    expect(
+      [...succession.querySelectorAll("input, select, textarea, button")].filter(
+        (control) => control.disabled,
+      ),
+    ).toEqual([]);
+    expect(
+      [...container.querySelectorAll("button")].some(
+        (button) => button.textContent.trim() === "Done",
+      ),
+    ).toBe(true);
+  });
+
   it("shows only the requested personal fields in the requested order", () => {
     const person = {
       id: "person",
@@ -743,6 +836,8 @@ describe("PersonInspector", () => {
 
     expect(container.querySelector(".person-succession")).not.toBeNull();
     expect(container.querySelector(".succession-detail-row input").value).toBe("2024-02-03");
+    expect(container.querySelector(".succession-detail-row input").disabled).toBe(false);
+    expect(container.querySelector('select[aria-label="Inheritance basis"]').disabled).toBe(false);
     expect(container.textContent).toContain("Succession on death");
   });
 
