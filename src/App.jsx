@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Cloud,
   CloudOff,
@@ -14,13 +14,27 @@ import {
   X,
   ZoomIn,
 } from "lucide-react";
+import {
+  CaseViewTabs,
+  familyViewKey,
+  ownerViewKey,
+  vendorTaxViewKey,
+} from "./components/CaseViewTabs.jsx";
+import { ExternalOwnerDirectory } from "./components/ExternalOwnerDirectory.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
-import { assignSolePartnersAsMissingParents, createPerson } from "./domain/people.js";
+import {
+  createFamilyGroup,
+  findFamilyGroupsForPerson,
+  normaliseCase,
+  promoteOutsideIndividual,
+  reconcilePeopleUpdate,
+} from "./domain/caseModel.js";
+import { createPerson } from "./domain/people.js";
 import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
 import { listFamilyTrees, saveFamilyTree } from "./services/familyTrees.js";
 import {
@@ -40,82 +54,132 @@ const makePrimaryProperty = (id = crypto.randomUUID()) => ({
   saleLots: [],
 });
 
-const initialTree = () => ({
-  id: crypto.randomUUID(),
-  title: "New property succession",
-  people: [createPerson()],
-  property: {
+const migratedProperties = (value) => {
+  if (Array.isArray(value.properties) && value.properties.length) return value.properties;
+  const legacy =
+    value.property && typeof value.property === "object" && !Array.isArray(value.property)
+      ? value.property
+      : {};
+  const collection = (field) => {
+    if (Object.prototype.hasOwnProperty.call(legacy, field)) {
+      return Array.isArray(legacy[field]) ? legacy[field] : [];
+    }
+    return Array.isArray(value[field]) ? value[field] : [];
+  };
+  const owners = collection("owners");
+  const declarations = collection("declarations");
+  const transfers = collection("transfers");
+  const saleLots = collection("saleLots");
+  const hasLegacyRecords =
+    owners.length || declarations.length || transfers.length || saleLots.length;
+  if (
+    !(
+      legacy.address ||
+      legacy.description ||
+      legacy.marketValue ||
+      legacy.marketValueAtDeath ||
+      legacy.saleValue
+    ) &&
+    !hasLegacyRecords
+  ) {
+    return [makePrimaryProperty("primary-property")];
+  }
+  return [
+    {
+      ...legacy,
+      id: legacy.id || "legacy-property",
+      address: legacy.address || "",
+      description: legacy.description || "",
+      marketValue: legacy.marketValue ?? legacy.marketValueAtDeath ?? "",
+      saleValue: legacy.saleValue || "",
+      owners,
+      declarations,
+      transfers,
+      saleLots,
+    },
+  ];
+};
+
+const normaliseTree = (value) => {
+  let caseData = normaliseCase(value);
+  if (!caseData.people.length) {
+    const rootPerson = createPerson();
+    caseData = createFamilyGroup({ ...caseData, people: [rootPerson] }, rootPerson, {
+      title: "Family tree 1",
+    });
+  }
+  const defaultProperty = {
     address: "",
     description: "",
     marketValueAtDeath: "",
     saleValue: "",
     deceasedOwnershipPercent: 100,
     rightPercent: 100,
-  },
-  properties: [makePrimaryProperty()],
-  succession: {
+  };
+  const defaultSuccession = {
     basis: "intestacy",
     dateOfDeath: "",
     willDate: "",
     notaryName: "",
     deedWithinSixMonths: false,
     heirs: [],
-  },
-  declarations: [],
-  outsideParties: [],
-  transfers: [],
-  saleLots: [],
-  settings: {
+  };
+  const defaultSettings = {
     shareDisplay: "both",
     showOwnershipOnTree: true,
     treeZoom: 100,
-  },
-});
-
-const migratedProperties = (value) => {
-  if (value.properties?.length) return value.properties;
-  const legacy = value.property;
-  if (
-    !legacy ||
-    !(legacy.address || legacy.description || legacy.marketValueAtDeath || legacy.saleValue)
-  ) {
-    return [makePrimaryProperty("primary-property")];
-  }
-  return [
-    {
-      id: "legacy-property",
-      address: legacy.address || "",
-      description: legacy.description || "",
-      marketValue: legacy.marketValueAtDeath || "",
-      saleValue: legacy.saleValue || "",
-      owners: [],
-      declarations: [],
-      transfers: [],
-      saleLots: [],
-    },
-  ];
-};
-
-const normaliseTree = (value) => {
-  const defaults = initialTree();
+  };
   return {
-    ...defaults,
-    ...value,
-    people: assignSolePartnersAsMissingParents(value.people || defaults.people),
-    property: { ...defaults.property, ...(value.property || {}) },
-    properties: migratedProperties(value),
-    succession: { ...defaults.succession, ...(value.succession || {}) },
-    declarations: value.declarations || [],
-    outsideParties: value.outsideParties || [],
-    transfers: value.transfers || [],
-    saleLots: value.saleLots || [],
-    settings: { ...defaults.settings, ...(value.settings || {}) },
+    ...caseData,
+    title: caseData.title || "New property succession",
+    property: { ...defaultProperty, ...(caseData.property || {}) },
+    properties: migratedProperties(caseData),
+    succession: { ...defaultSuccession, ...(caseData.succession || {}) },
+    declarations: caseData.declarations || [],
+    outsideParties: caseData.outsideParties || [],
+    transfers: caseData.transfers || [],
+    saleLots: caseData.saleLots || [],
+    settings: { ...defaultSettings, ...(caseData.settings || {}) },
   };
 };
 
+const initialTree = () => {
+  const caseId = crypto.randomUUID();
+  const rootPerson = createPerson();
+  return normaliseTree({
+    id: caseId,
+    title: "New property succession",
+    people: [rootPerson],
+    familyGroups: [
+      {
+        id: `${caseId}:family-group:1`,
+        title: "Family tree 1",
+        rootPersonId: rootPerson.id,
+        personIds: [rootPerson.id],
+      },
+    ],
+    activeFamilyGroupId: `${caseId}:family-group:1`,
+    properties: [makePrimaryProperty()],
+  });
+};
+
+export function caseActivationState(value) {
+  const caseData = normaliseTree(value);
+  const activeFamilyGroup =
+    caseData.familyGroups.find((group) => group.id === caseData.activeFamilyGroupId) ||
+    caseData.familyGroups[0];
+  return {
+    caseData,
+    activeFamilyGroupId: activeFamilyGroup?.id || "",
+    activeView: familyViewKey(activeFamilyGroup?.id || ""),
+    selectedPersonId: activeFamilyGroup?.rootPersonId || activeFamilyGroup?.personIds[0] || "",
+    zoom: Number(caseData.settings?.treeZoom) || 100,
+  };
+}
+
 const dashboardTabs = [
   { key: "person", label: "Person", icon: UserRound },
-  { key: "case", label: "Property & tax", icon: Landmark },
+  { key: "case", label: "Property", icon: Landmark },
   { key: "settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -143,18 +207,49 @@ export function App() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
+  const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
+    () => normaliseTree(tree).activeFamilyGroupId,
+  );
+  const [activeView, setActiveView] = useState(() =>
+    familyViewKey(normaliseTree(tree).activeFamilyGroupId),
+  );
+  const activateCase = useCallback((value, options = {}) => {
+    const activation = caseActivationState(value);
+    setTree(activation.caseData);
+    setZoom(activation.zoom);
+    setActiveFamilyGroupId(activation.activeFamilyGroupId);
+    setActiveView(activation.activeView);
+    setSelectedPersonId(activation.selectedPersonId);
+    setPanelTab("person");
+    if (options.openDashboard) setDashboardOpen(true);
+    return activation.caseData;
+  }, []);
 
   const currentTree = normaliseTree(tree);
+  const requestedActiveFamilyGroup = currentTree.familyGroups.find(
+    (group) => group.id === activeFamilyGroupId,
+  );
+  const activeFamilyGroup =
+    requestedActiveFamilyGroup ||
+    currentTree.familyGroups.find((group) => group.id === currentTree.activeFamilyGroupId) ||
+    currentTree.familyGroups[0];
+  const activePersonIds = new Set(activeFamilyGroup?.personIds || []);
+  const visiblePeople = currentTree.people.filter((person) => activePersonIds.has(person.id));
   const activeProperty = currentTree.properties[0] || makePrimaryProperty("primary-property");
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
+  const propertyReport = useMemo(
+    () =>
+      buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties),
+    [activeProperty, currentTree.outsideParties, currentTree.people],
+  );
   const ownershipByPerson = useMemo(
     () =>
       Object.fromEntries(
-        buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties)
-          .ledger.owners.filter((owner) => owner.personId)
+        propertyReport.ledger.owners
+          .filter((owner) => owner.personId)
           .map((owner) => [owner.personId, owner.share]),
       ),
-    [activeProperty, currentTree.outsideParties, currentTree.people],
+    [propertyReport.ledger.owners],
   );
   const causaMortisCoverage = useMemo(
     () => buildCausaMortisShareCoverage(currentTree.people, activeProperties),
@@ -166,25 +261,49 @@ export function App() {
       labels.push("the linked heir record");
     }
     if (
-      currentTree.transfers.some(
+      (activeProperty.transfers || []).some(
         (transfer) =>
           transfer.sellerId === selectedPersonId || transfer.buyerId === selectedPersonId,
       )
     ) {
       labels.push("the linked ownership transfer");
     }
+    if ((activeProperty.saleLots || []).some((lot) => lot.ownerId === selectedPersonId)) {
+      labels.push("the linked vendor tax lot");
+    }
     return labels;
-  }, [currentTree.succession.heirs, currentTree.transfers, selectedPersonId]);
+  }, [
+    activeProperty.saleLots,
+    activeProperty.transfers,
+    currentTree.succession.heirs,
+    selectedPersonId,
+  ]);
 
   useEffect(() => {
-    if (!currentTree.people.length) {
+    if (!activeFamilyGroup) {
+      setActiveFamilyGroupId("");
+      if (activeView.startsWith("family:")) {
+        setActiveView(familyViewKey(""));
+      }
+      return;
+    }
+    if (activeFamilyGroup.id !== activeFamilyGroupId) {
+      setActiveFamilyGroupId(activeFamilyGroup.id);
+      if (activeView.startsWith("family:")) {
+        setActiveView(familyViewKey(activeFamilyGroup.id));
+      }
+    }
+    if (!visiblePeople.length) {
       setSelectedPersonId("");
       return;
     }
-    if (!currentTree.people.some((person) => person.id === selectedPersonId)) {
-      setSelectedPersonId(currentTree.people[0].id);
+    if (!visiblePeople.some((person) => person.id === selectedPersonId)) {
+      setSelectedPersonId(
+        visiblePeople.find((person) => person.id === activeFamilyGroup.rootPersonId)?.id ||
+          visiblePeople[0].id,
+      );
     }
-  }, [currentTree.people, selectedPersonId]);
+  }, [activeFamilyGroup, activeFamilyGroupId, activeView, selectedPersonId, visiblePeople]);
 
   useEffect(() => {
     setTrees((items) => upsertWorkspaceTree(items, normaliseTree(tree)));
@@ -217,20 +336,50 @@ export function App() {
           ...currentItems.filter((item) => !items.some((cloudTree) => cloudTree.id === item.id)),
         ]);
         if (!startupWorkspace.trees.length && items[0]) {
-          setTree(normaliseTree(items[0]));
+          activateCase(items[0]);
         }
         setStatus("Saved securely to your workspace.");
       })
       .catch((error) => setStatus(`Cloud storage needs attention: ${error.message}`));
-  }, [session, startupWorkspace.trees.length]);
+  }, [activateCase, session, startupWorkspace.trees.length]);
 
   const treeOptions = useMemo(() => upsertWorkspaceTree(trees, normaliseTree(tree)), [tree, trees]);
   const treeCount = treeOptions.length;
 
   const selectPerson = (personId) => {
+    const targetGroup =
+      findFamilyGroupsForPerson(currentTree, personId).find(
+        (group) => group.id === activeFamilyGroupId,
+      ) || findFamilyGroupsForPerson(currentTree, personId)[0];
+    if (targetGroup && !activePersonIds.has(personId)) {
+      setActiveFamilyGroupId(targetGroup.id);
+      setActiveView(familyViewKey(targetGroup.id));
+      setTree({ ...currentTree, activeFamilyGroupId: targetGroup.id });
+    }
     setSelectedPersonId(personId);
     setPanelTab("person");
     setDashboardOpen(true);
+  };
+
+  const selectFamilyGroup = (groupId) => {
+    const group = currentTree.familyGroups.find((candidate) => candidate.id === groupId);
+    if (!group) return;
+    setActiveFamilyGroupId(group.id);
+    setActiveView(familyViewKey(group.id));
+    setSelectedPersonId(
+      group.personIds.find((personId) => personId === group.rootPersonId) ||
+        group.personIds[0] ||
+        "",
+    );
+    setTree({ ...currentTree, activeFamilyGroupId: group.id });
+  };
+
+  const selectCaseView = (viewKey) => {
+    if (viewKey.startsWith("family:")) {
+      selectFamilyGroup(viewKey.slice("family:".length));
+      return;
+    }
+    setActiveView(viewKey);
   };
 
   const updateZoom = (nextZoom) => {
@@ -244,9 +393,18 @@ export function App() {
 
   const createNewTree = () => {
     const nextTree = initialTree();
+    activateCase(nextTree, { openDashboard: true });
+  };
+
+  const createNewFamilyTree = () => {
+    const rootPerson = createPerson();
+    const nextTree = createFamilyGroup(currentTree, rootPerson, {
+      title: `Family tree ${currentTree.familyGroups.length + 1}`,
+    });
     setTree(nextTree);
-    setZoom(nextTree.settings.treeZoom);
-    setSelectedPersonId(nextTree.people[0].id);
+    setActiveFamilyGroupId(nextTree.activeFamilyGroupId);
+    setActiveView(familyViewKey(nextTree.activeFamilyGroupId));
+    setSelectedPersonId(rootPerson.id);
     setPanelTab("person");
     setDashboardOpen(true);
   };
@@ -254,11 +412,33 @@ export function App() {
   const openTree = (treeId) => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return;
-    const nextTree = normaliseTree(selectedTree);
+    activateCase(selectedTree);
+  };
+
+  const updatePeople = (people, options) => {
+    setTree(reconcilePeopleUpdate(currentTree, activeFamilyGroupId, people, options));
+  };
+
+  const updateFamilyGroupTitle = (title) => {
+    setTree({
+      ...currentTree,
+      familyGroups: currentTree.familyGroups.map((group) =>
+        group.id === activeFamilyGroupId ? { ...group, title } : group,
+      ),
+    });
+  };
+
+  const createFamilyTreeForOutsideParty = (party) => {
+    const nextTree = promoteOutsideIndividual(currentTree, party.id, {
+      title: `${party.name || "New owner"} family`,
+    });
+    if (nextTree.outsideParties.some((candidate) => candidate.id === party.id)) return;
     setTree(nextTree);
-    setZoom(Number(nextTree.settings.treeZoom) || 100);
-    setSelectedPersonId(selectedTree.people?.[0]?.id || "");
+    setActiveFamilyGroupId(nextTree.activeFamilyGroupId);
+    setActiveView(familyViewKey(nextTree.activeFamilyGroupId));
+    setSelectedPersonId(party.id);
     setPanelTab("person");
+    setDashboardOpen(true);
   };
 
   const updateActiveProperty = (patch) => {
@@ -296,7 +476,7 @@ export function App() {
     }
     setStatus("Saving...");
     try {
-      const saved = await saveFamilyTree(tree);
+      const saved = await saveFamilyTree(currentTree);
       setTree(saved);
       setTrees((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
       setStatus("Saved securely to your workspace.");
@@ -327,10 +507,10 @@ export function App() {
         </div>
         <div className="workbench-case-fields">
           <label className="workbench-title">
-            <span>Tree name</span>
+            <span>Case name</span>
             <input
-              value={tree.title}
-              onChange={(event) => setTree({ ...tree, title: event.target.value })}
+              value={currentTree.title}
+              onChange={(event) => setTree({ ...currentTree, title: event.target.value })}
             />
           </label>
           <label className="property-header-address">
@@ -360,21 +540,21 @@ export function App() {
         </div>
         <div className="workbench-actions">
           <label className="saved-tree-picker">
-            <span>Saved trees</span>
+            <span>Saved cases</span>
             <select
-              aria-label="Saved family trees"
-              value={tree.id}
+              aria-label="Saved property cases"
+              value={currentTree.id}
               onChange={(event) => openTree(event.target.value)}
             >
               {treeOptions.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.title || "Untitled family tree"}
+                  {item.title || "Untitled property case"}
                 </option>
               ))}
             </select>
           </label>
           <span className="tree-count">
-            {treeCount} {treeCount === 1 ? "tree" : "trees"}
+            {treeCount} {treeCount === 1 ? "case" : "cases"}
           </span>
           <span className="cloud-state">
             {session ? (
@@ -388,7 +568,7 @@ export function App() {
             )}
           </span>
           <button type="button" className="secondary-button compact" onClick={createNewTree}>
-            <Plus size={16} /> New
+            <Plus size={16} /> New case
           </button>
           <button type="button" className="primary-button compact" onClick={save}>
             <Save size={16} /> Save
@@ -447,7 +627,7 @@ export function App() {
           <div className="dashboard-topline">
             <div>
               <p className="eyebrow">Case dashboard</p>
-              <strong>{tree.title}</strong>
+              <strong>{currentTree.title}</strong>
             </div>
             <button
               type="button"
@@ -475,6 +655,7 @@ export function App() {
             {panelTab === "person" && (
               <PersonInspector
                 people={currentTree.people}
+                familyPersonIds={activeFamilyGroup?.personIds || []}
                 properties={activeProperties}
                 ownershipByPerson={ownershipByPerson}
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
@@ -482,7 +663,7 @@ export function App() {
                 shareDisplay={currentTree.settings.shareDisplay}
                 caseDependencyLabels={selectedCaseDependencyLabels}
                 onSelectPerson={selectPerson}
-                onChange={(people) => setTree({ ...currentTree, people })}
+                onChange={updatePeople}
               />
             )}
             {panelTab === "case" && (
@@ -491,6 +672,7 @@ export function App() {
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
                 singleProperty
+                section="property"
                 onChange={updatePropertyCase}
               />
             )}
@@ -509,53 +691,126 @@ export function App() {
         </aside>
 
         <section className="tree-stage" style={{ "--tree-zoom": zoom / 100 }}>
-          <div className="tree-stage-toolbar">
-            <div className="stage-context">
-              <p className="eyebrow">Interactive family tree</p>
-              <strong>Tap a person to view or edit their details</strong>
-            </div>
-            <label className="stage-person-picker">
-              <span>Find person</span>
-              <select
-                value={selectedPersonId}
-                onChange={(event) => selectPerson(event.target.value)}
-              >
-                {currentTree.people.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.fullName || "Unnamed person"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="zoom-controls" aria-label="Tree zoom">
-              <button type="button" onClick={() => updateZoom(zoom - 10)} aria-label="Zoom out">
-                <Minus size={16} />
-              </button>
-              <span>{zoom}%</span>
-              <button type="button" onClick={() => updateZoom(zoom + 10)} aria-label="Zoom in">
-                <ZoomIn size={16} />
-              </button>
-            </div>
-            <button
-              type="button"
-              className="stage-dashboard-button"
-              onClick={() => setDashboardOpen(true)}
-            >
-              <Menu size={16} /> Dashboard
-            </button>
-          </div>
-          <FamilyTreeCanvas
-            treeTitle={currentTree.title}
-            people={currentTree.people}
-            ownershipByPerson={ownershipByPerson}
-            causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
-            selectedPersonId={selectedPersonId}
-            onSelectPerson={selectPerson}
-            zoom={zoom}
-            onZoomChange={updateZoom}
-            shareDisplay={currentTree.settings.shareDisplay}
-            showOwnership={currentTree.settings.showOwnershipOnTree}
+          <CaseViewTabs
+            familyGroups={currentTree.familyGroups}
+            activeView={activeView}
+            onSelectView={selectCaseView}
+            onAddFamilyTree={createNewFamilyTree}
           />
+          {activeView.startsWith("family:") && activeFamilyGroup && (
+            <>
+              <div className="tree-stage-toolbar">
+                <label className="stage-family-title">
+                  <span>Family tree name</span>
+                  <input
+                    aria-label="Family tree name"
+                    value={activeFamilyGroup.title}
+                    onChange={(event) => updateFamilyGroupTitle(event.target.value)}
+                  />
+                </label>
+                <div className="stage-context">
+                  <p className="eyebrow">Interactive family tree</p>
+                  <strong>Tap a person to view or edit their details</strong>
+                </div>
+                <label className="stage-person-picker">
+                  <span>Find person</span>
+                  <select
+                    value={selectedPersonId}
+                    onChange={(event) => selectPerson(event.target.value)}
+                  >
+                    {visiblePeople.map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.fullName || "Unnamed person"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="zoom-controls" aria-label="Tree zoom">
+                  <button type="button" onClick={() => updateZoom(zoom - 10)} aria-label="Zoom out">
+                    <Minus size={16} />
+                  </button>
+                  <span>{zoom}%</span>
+                  <button type="button" onClick={() => updateZoom(zoom + 10)} aria-label="Zoom in">
+                    <ZoomIn size={16} />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="stage-dashboard-button"
+                  onClick={() => setDashboardOpen(true)}
+                >
+                  <Menu size={16} /> Dashboard
+                </button>
+              </div>
+              <FamilyTreeCanvas
+                treeTitle={activeFamilyGroup.title}
+                people={visiblePeople}
+                ownershipByPerson={ownershipByPerson}
+                causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
+                selectedPersonId={selectedPersonId}
+                onSelectPerson={selectPerson}
+                zoom={zoom}
+                onZoomChange={updateZoom}
+                shareDisplay={currentTree.settings.shareDisplay}
+                showOwnership={currentTree.settings.showOwnershipOnTree}
+              />
+            </>
+          )}
+          {activeView === ownerViewKey && (
+            <div className="case-workspace-view">
+              <header className="case-workspace-header">
+                <div>
+                  <p className="eyebrow">Property-wide ownership</p>
+                  <h1>Owners and transfer history</h1>
+                </div>
+                <button
+                  type="button"
+                  className="stage-dashboard-button"
+                  onClick={() => setDashboardOpen(true)}
+                >
+                  <Menu size={16} /> Dashboard
+                </button>
+              </header>
+              <Properties
+                properties={activeProperties}
+                people={currentTree.people}
+                outsideParties={currentTree.outsideParties}
+                singleProperty
+                section="ownership"
+                onChange={updatePropertyCase}
+              />
+              <ExternalOwnerDirectory
+                outsideParties={currentTree.outsideParties}
+                currentOwners={propertyReport.ledger.owners}
+                onCreateFamilyTree={createFamilyTreeForOutsideParty}
+              />
+            </div>
+          )}
+          {activeView === vendorTaxViewKey && (
+            <div className="case-workspace-view">
+              <header className="case-workspace-header">
+                <div>
+                  <p className="eyebrow">Every current owner</p>
+                  <h1>Vendors and tax</h1>
+                </div>
+                <button
+                  type="button"
+                  className="stage-dashboard-button"
+                  onClick={() => setDashboardOpen(true)}
+                >
+                  <Menu size={16} /> Dashboard
+                </button>
+              </header>
+              <Properties
+                properties={activeProperties}
+                people={currentTree.people}
+                outsideParties={currentTree.outsideParties}
+                singleProperty
+                section="tax"
+                onChange={updatePropertyCase}
+              />
+            </div>
+          )}
         </section>
       </div>
       <FractionCalculator />

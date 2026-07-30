@@ -102,6 +102,15 @@ function ledgerFromParties(parties, startingHoldings, transfers) {
   return { parties, owners, entries, total: owners.reduce((sum, owner) => sum + owner.share, 0) };
 }
 
+function uniqueParties(parties = []) {
+  const byId = new Map();
+  parties.forEach((party) => {
+    if (!party?.id) return;
+    byId.set(party.id, { ...(byId.get(party.id) || {}), ...party });
+  });
+  return [...byId.values()];
+}
+
 export function buildOwnershipLedger(
   heirs = [],
   outsideParties = [],
@@ -109,7 +118,7 @@ export function buildOwnershipLedger(
   familyPeople = [],
 ) {
   const linkedPersonIds = new Set(heirs.map((heir) => heir.personId).filter(Boolean));
-  const parties = [
+  const parties = uniqueParties([
     ...heirs.map((heir) => ({
       id: heir.id,
       personId: heir.personId || "",
@@ -131,7 +140,7 @@ export function buildOwnershipLedger(
       name: party.name || (party.type === "company" ? "Unnamed company" : "Unnamed individual"),
       source: "outside",
     })),
-  ];
+  ]);
   const startingHoldings = new Map(heirs.map((heir) => [heir.id, value(heir.sharePercent) / 100]));
   return ledgerFromParties(parties, startingHoldings, transfers);
 }
@@ -145,7 +154,7 @@ export function buildPropertyLedger(
   transfers = [],
   startingOwnership = {},
 ) {
-  const parties = [
+  const parties = uniqueParties([
     ...people.map((person) => ({
       id: person.id,
       personId: person.id,
@@ -158,7 +167,7 @@ export function buildPropertyLedger(
       name: party.name || (party.type === "company" ? "Unnamed company" : "Unnamed individual"),
       source: "outside",
     })),
-  ];
+  ]);
   const startingHoldings = new Map(Object.entries(startingOwnership));
   return ledgerFromParties(parties, startingHoldings, transfers);
 }

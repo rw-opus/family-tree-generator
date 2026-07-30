@@ -76,4 +76,20 @@ describe("cloud family-tree serialization", () => {
       }),
     ).toMatchObject(completeTree);
   });
+
+  it("prefers the canonical version-two people registry over a stale mirror", () => {
+    expect(
+      hydrateFamilyTree({
+        id: "case",
+        title: "Case",
+        people: [{ id: "stale", fullName: "Stale mirror" }],
+        tree_data: {
+          schemaVersion: 2,
+          id: "case",
+          people: [{ id: "canonical", fullName: "Canonical person" }],
+          familyGroups: [],
+        },
+      }).people,
+    ).toEqual([{ id: "canonical", fullName: "Canonical person" }]);
+  });
 });

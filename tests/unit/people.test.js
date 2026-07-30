@@ -4,6 +4,7 @@ import {
   composeFullName,
   givenNamesFromFullName,
   hasDesignation,
+  personAncestors,
   personDesignations,
   personDescendants,
   personDisplayName,
@@ -90,6 +91,19 @@ describe("family tree people", () => {
     expect(personDescendants(people, "ancestor").map((person) => person.id)).toEqual([
       "child",
       "grandchild",
+    ]);
+  });
+
+  it("finds every known ancestor without including the person", () => {
+    const people = [
+      { id: "grandfather" },
+      { id: "father", fatherId: "grandfather" },
+      { id: "child", fatherId: "father" },
+      { id: "unrelated" },
+    ];
+    expect(personAncestors(people, "child").map((person) => person.id)).toEqual([
+      "father",
+      "grandfather",
     ]);
   });
 

@@ -151,6 +151,109 @@ describe("PersonInspector", () => {
     expect(childButton.querySelector(".relationship-count").textContent).toBe("3");
   });
 
+  it("assigns a linked partner as the other parent of a new child", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "parent-a",
+        fullName: "Mark Borg",
+        sex: "Male",
+        spouseIds: ["parent-b"],
+        designations: [],
+      },
+      {
+        id: "parent-b",
+        fullName: "Elena Borg",
+        sex: "Female",
+        spouseIds: ["parent-a"],
+        designations: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="parent-a"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Child"))
+        .click(),
+    );
+
+    expect(onChange.mock.calls[0][0].at(-1)).toMatchObject({
+      fatherId: "parent-a",
+      motherId: "parent-b",
+      designations: ["Child"],
+    });
+  });
+
+  it("asks which partnership applies when a person has several partners", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "parent",
+        fullName: "Roland Wadge",
+        sex: "Male",
+        spouseIds: ["partner-a", "partner-b"],
+        designations: [],
+      },
+      {
+        id: "partner-a",
+        fullName: "Anna Borg",
+        sex: "Female",
+        spouseIds: ["parent"],
+      },
+      {
+        id: "partner-b",
+        fullName: "Maria Vella",
+        sex: "Female",
+        spouseIds: ["parent"],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="parent"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Child"))
+        .click(),
+    );
+    const partnerSelect = container.querySelector(`select[aria-label="Child's other parent"]`);
+    expect(partnerSelect).not.toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => {
+      partnerSelect.value = "partner-b";
+      partnerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    act(() =>
+      [...container.querySelectorAll(".child-partner-chooser button")]
+        .find((button) => button.textContent.includes("Add child"))
+        .click(),
+    );
+
+    expect(onChange.mock.calls[0][0].at(-1)).toMatchObject({
+      fatherId: "parent",
+      motherId: "partner-b",
+    });
+  });
+
   it("adds a partner to existing children as their missing parent", () => {
     const onChange = vi.fn();
     const onSelectPerson = vi.fn();
@@ -310,6 +413,65 @@ describe("PersonInspector", () => {
     ]);
   });
 
+  it("keeps a shared-parent partnership linked until the child is reassigned", () => {
+    const onChange = vi.fn();
+    const people = [
+      { id: "person", fullName: "Maria Borg", spouseIds: ["partner"] },
+      { id: "partner", fullName: "Joseph Borg", spouseIds: ["person"] },
+      {
+        id: "child",
+        fullName: "Anna Borg",
+        fatherId: "partner",
+        motherId: "person",
+        spouseIds: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    beginEditing();
+
+    const unlinkButton = container.querySelector(
+      'button[aria-label="Remove partner link to Joseph Borg"]',
+    );
+    expect(unlinkButton.disabled).toBe(true);
+    expect(unlinkButton.title).toContain("Reassign");
+    act(() => unlinkButton.click());
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("does not delete the sole person from one family tab because another tab has people", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            { id: "person", fullName: "Maria Borg", spouseIds: [] },
+            { id: "other-family", fullName: "Paul Vella", spouseIds: [] },
+          ]}
+          familyPersonIds={["person"]}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    beginEditing();
+
+    const deleteButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Delete person"),
+    );
+    expect(deleteButton.disabled).toBe(true);
+    expect(container.textContent).toContain("A tree must contain at least one person.");
+  });
+
   it("asks for confirmation before deleting a person without dependencies", () => {
     const onChange = vi.fn();
     const onSelectPerson = vi.fn();
@@ -403,6 +565,54 @@ describe("PersonInspector", () => {
     const updatedPeople = onChange.mock.calls.at(-1)[0];
     expect(updatedPeople[0].spouseIds).toEqual(["person-b"]);
     expect(updatedPeople[1].spouseIds).toEqual(["person-a"]);
+  });
+
+  it("links an existing partner without silently assigning that person to earlier children", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "person-a",
+        fullName: "Maria Borg",
+        sex: "Female",
+        surnameAtBirth: "Borg",
+        spouseIds: [],
+      },
+      { id: "person-b", fullName: "Joseph Vella", spouseIds: [] },
+      { id: "child", fullName: "Child Borg", motherId: "person-a", fatherId: "" },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person-a"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    const partnerButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Partner"),
+    );
+    act(() => partnerButton.click());
+    const spouseSelect = container.querySelector('select[aria-label="Existing partner"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        spouseSelect,
+        "person-b",
+      );
+      spouseSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const linkButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Link partner"),
+    );
+    act(() => linkButton.click());
+
+    const updatedPeople = onChange.mock.calls.at(-1)[0];
+    expect(updatedPeople.find((person) => person.id === "child")).toMatchObject({
+      motherId: "person-a",
+      fatherId: "",
+    });
   });
 
   it("keeps parent creation buttons but omits father and mother detail selectors", () => {
@@ -873,5 +1083,30 @@ describe("PersonInspector", () => {
     expect(fatherSelect.matches(":disabled")).toBe(false);
     expect(motherSelect.matches(":disabled")).toBe(false);
     expect(container.textContent).toContain("Done");
+  });
+
+  it("shows both parent dropdowns when only one parent is assigned", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "child",
+              fullName: "Anna Borg",
+              motherId: "mother",
+              spouseIds: [],
+            },
+            { id: "mother", fullName: "Maria Borg", spouseIds: [] },
+            { id: "father", fullName: "Joseph Borg", spouseIds: [] },
+          ]}
+          selectedPersonId="child"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector('select[aria-label="Mother"]').value).toBe("mother");
+    expect(container.querySelector('select[aria-label="Father"]').value).toBe("");
   });
 });

@@ -18,7 +18,10 @@ export function hydrateFamilyTree(record = {}) {
     ...storedTree,
     id: record.id || storedTree.id,
     title: record.title || storedTree.title || "Untitled family tree",
-    people: record.people || storedTree.people || [],
+    people:
+      Number(storedTree.schemaVersion) >= 2
+        ? storedTree.people || record.people || []
+        : record.people || storedTree.people || [],
     updated_at: record.updated_at,
   };
 }

@@ -69,4 +69,50 @@ describe("property vendor tax reports", () => {
     expect(report.taxSummary.total).toBeCloseTo(2.4);
     expect(report.taxSummary.excludedLotCount).toBe(1);
   });
+
+  it("forces a company vendor onto manual tax treatment", () => {
+    const property = {
+      id: "property",
+      owners: [{ id: "owner-record", personId: "owner", sharePercent: 100 }],
+      declarations: [],
+      transfers: [
+        {
+          id: "sale",
+          sellerId: "owner",
+          buyerId: "company",
+          numerator: 1,
+          denominator: 1,
+          amountType: "whole-property",
+        },
+      ],
+      saleLots: [
+        {
+          id: "company-lot",
+          ownerId: "company",
+          taxTreatment: "inheritance",
+          inheritanceDate: "2020-01-01",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 100,
+          transferValue: 500,
+          manualTaxAmount: 35,
+          selectedTaxMethod: "increase",
+          useDeclaredValues: false,
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(
+      property,
+      [{ id: "owner", fullName: "Joseph Borg" }],
+      [{ id: "company", name: "Buyer Limited", type: "company" }],
+    );
+
+    expect(report.saleRows[0].lot.taxTreatment).toBe("manual");
+    expect(report.saleRows[0].result).toMatchObject({
+      selected: "manual",
+      methods: [{ key: "manual", tax: 35 }],
+    });
+    expect(report.taxSummary.vendors[0].tax).toBe(35);
+  });
 });

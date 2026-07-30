@@ -1,0 +1,21 @@
+.family-remarriage-descendants {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+}
+
+.family-remarriage-child-link {
+  fill: none;
+  stroke: #566b60;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+}
+
+.family-remarriage-junction {
+  fill: #566b60;
+}

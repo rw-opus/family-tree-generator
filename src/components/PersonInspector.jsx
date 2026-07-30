@@ -17,6 +17,7 @@ import {
   hasDesignation,
   personDescendants,
   personDisplayName,
+  personAncestors,
   personGivenNames,
   personIdentityIssues,
   personRelationshipCounts,
@@ -71,6 +72,7 @@ export function PersonInspector({
   selectedPersonId,
   shareDisplay = "both",
   caseDependencyLabels = [],
+  familyPersonIds = null,
   onChange,
   onSelectPerson,
 }) {
@@ -79,8 +81,15 @@ export function PersonInspector({
   const [importStatus, setImportStatus] = useState("");
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
   const [existingSpouseId, setExistingSpouseId] = useState("");
+  const [childPartnerChooserOpen, setChildPartnerChooserOpen] = useState(false);
+  const [childPartnerId, setChildPartnerId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
-  const selectedPerson = people.find((person) => person.id === selectedPersonId) || people[0];
+  const selectedPerson =
+    people.find((person) => person.id === selectedPersonId) ||
+    (familyPersonIds === null ? people[0] : undefined);
+  const currentFamilyPersonIds = Array.isArray(familyPersonIds)
+    ? familyPersonIds
+    : people.map((person) => person.id);
   const previousSelectedPersonIdRef = useRef("");
   const displayName = useCallback((person) => personDisplayName(person, people), [people]);
   const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
@@ -102,6 +111,8 @@ export function PersonInspector({
     previousSelectedPersonIdRef.current = nextPersonId;
     setSpouseChooserOpen(false);
     setExistingSpouseId("");
+    setChildPartnerChooserOpen(false);
+    setChildPartnerId("");
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
   }, [selectedPerson]);
 
@@ -250,7 +261,7 @@ export function PersonInspector({
     });
   };
 
-  const addRelative = (kind) => {
+  const addRelative = (kind, secondParentId = "") => {
     if (!selectedPerson || personIdentityIssues(selectedPerson).length) return;
     const counts = personRelationshipCounts(people, selectedPerson);
     if ((kind === "father" && counts.father) || (kind === "mother" && counts.mother)) {
@@ -284,8 +295,17 @@ export function PersonInspector({
     }
     if (kind === "child") {
       Object.assign(relative, { designations: ["Child"] });
-      if (selectedPerson.sex === "Female") relative.motherId = selectedPerson.id;
-      else relative.fatherId = selectedPerson.id;
+      const secondParent = people.find((person) => person.id === secondParentId);
+      if (
+        selectedPerson.sex === "Female" ||
+        (selectedPerson.sex !== "Male" && secondParent?.sex === "Male")
+      ) {
+        relative.motherId = selectedPerson.id;
+        relative.fatherId = secondParent?.id || "";
+      } else {
+        relative.fatherId = selectedPerson.id;
+        relative.motherId = secondParent?.id || "";
+      }
     }
     if (kind === "sibling") {
       Object.assign(relative, {
@@ -343,20 +363,6 @@ export function PersonInspector({
             spouseIds: [...new Set([...(person.spouseIds || []), selectedPerson.id])],
           };
         }
-        if (
-          person.fatherId === selectedPerson.id &&
-          !person.motherId &&
-          !person.motherExplicitlyUnassigned
-        ) {
-          return { ...person, motherId: existingPerson.id };
-        }
-        if (
-          person.motherId === selectedPerson.id &&
-          !person.fatherId &&
-          !person.fatherExplicitlyUnassigned
-        ) {
-          return { ...person, fatherId: existingPerson.id };
-        }
         return person;
       }),
     );
@@ -365,7 +371,9 @@ export function PersonInspector({
   };
 
   const removeSelected = () => {
-    if (!selectedPerson || people.length === 1 || deleteBlockers.length) return;
+    if (!selectedPerson || currentFamilyPersonIds.length <= 1 || deleteBlockers.length) {
+      return;
+    }
     const confirmed = window.confirm(
       `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
     );
@@ -381,11 +389,16 @@ export function PersonInspector({
           siblingIds: (person.siblingIds || []).filter((id) => id !== selectedPerson.id),
         })),
     );
-    onSelectPerson(people.find((person) => person.id !== selectedPerson.id)?.id || "");
+    onSelectPerson(currentFamilyPersonIds.find((personId) => personId !== selectedPerson.id) || "");
   };
 
   const removePartnerLink = (partnerId) => {
     if (!selectedPerson || !partnerId) return;
+    const hasSharedChildren = people.some((person) => {
+      const parentIds = new Set([person.fatherId, person.motherId].filter(Boolean));
+      return parentIds.has(selectedPerson.id) && parentIds.has(partnerId);
+    });
+    if (hasSharedChildren) return;
     onChange(
       people.map((person) => {
         if (person.id === selectedPerson.id) {
@@ -412,7 +425,7 @@ export function PersonInspector({
       const result = parseGedcom(await file.text());
       if (!result.people.length) throw new Error("No individual records were found.");
       const nextPeople = importMode === "replace" ? result.people : [...people, ...result.people];
-      onChange(nextPeople);
+      onChange(nextPeople, { replaceFamilyGroup: importMode === "replace" });
       onSelectPerson(nextPeople[0]?.id || "");
       setImportStatus(
         `Imported ${result.individualCount} people and ${result.familyCount} families.`,
@@ -435,7 +448,7 @@ export function PersonInspector({
           className="primary-button"
           onClick={() => {
             const person = createPerson();
-            onChange([person]);
+            onChange([...people, person]);
             onSelectPerson(person.id);
           }}
         >
@@ -475,6 +488,9 @@ export function PersonInspector({
     successionHeirs.length > 0 && successionHeirs.every((person) => isPersonDeceased(person));
   const descendants = personDescendants(people, selectedPerson.id);
   const descendantIds = new Set(descendants.map((person) => person.id));
+  const ancestorIds = new Set(
+    personAncestors(people, selectedPerson.id).map((person) => person.id),
+  );
   const declarationCandidateIds = new Set([...descendantIds, ...successionHeirIds]);
   const declarationCandidates = people.filter((person) => declarationCandidateIds.has(person.id));
   const parentCandidates = people.filter(
@@ -498,8 +514,28 @@ export function PersonInspector({
   const linkedPartners = [...linkedSpouseIds]
     .map((personId) => peopleById.get(personId))
     .filter(Boolean);
+  const sharedChildrenByPartnerId = new Map(
+    linkedPartners.map((partner) => [
+      partner.id,
+      people.filter((person) => {
+        const parentIds = new Set([person.fatherId, person.motherId].filter(Boolean));
+        return parentIds.has(selectedPerson.id) && parentIds.has(partner.id);
+      }),
+    ]),
+  );
+  const addChild = () => {
+    if (linkedPartners.length > 1) {
+      setChildPartnerChooserOpen((open) => !open);
+      return;
+    }
+    addRelative("child", linkedPartners[0]?.id);
+  };
   const existingSpouseCandidates = people.filter(
-    (person) => person.id !== selectedPerson.id && !linkedSpouseIds.has(person.id),
+    (person) =>
+      person.id !== selectedPerson.id &&
+      !linkedSpouseIds.has(person.id) &&
+      !descendantIds.has(person.id) &&
+      !ancestorIds.has(person.id),
   );
   const deleteBlockers = [
     ...(linkedPartners.length
@@ -515,9 +551,9 @@ export function PersonInspector({
     ...(hasOwnership && ownership > 1e-10 ? ["the person's property ownership"] : []),
     ...caseDependencyLabels,
   ];
-  const deleteDisabled = people.length === 1 || deleteBlockers.length > 0;
+  const deleteDisabled = currentFamilyPersonIds.length <= 1 || deleteBlockers.length > 0;
   const deleteMessage =
-    people.length === 1
+    currentFamilyPersonIds.length <= 1
       ? "A tree must contain at least one person."
       : deleteBlockers.length
         ? `Remove ${deleteBlockers.join(" and ")} first.`
@@ -570,7 +606,11 @@ export function PersonInspector({
               }
               aria-expanded={key === "spouse" ? spouseChooserOpen : undefined}
               onClick={() =>
-                key === "spouse" ? setSpouseChooserOpen((open) => !open) : addRelative(key)
+                key === "spouse"
+                  ? setSpouseChooserOpen((open) => !open)
+                  : key === "child"
+                    ? addChild()
+                    : addRelative(key)
               }
             >
               <Icon size={16} />
@@ -635,6 +675,37 @@ export function PersonInspector({
             </div>
           </div>
         )}
+        {childPartnerChooserOpen && identityComplete && (
+          <div className="spouse-chooser child-partner-chooser">
+            <span>Choose the other parent for this child</span>
+            <div>
+              <select
+                aria-label="Child's other parent"
+                value={childPartnerId}
+                onChange={(event) => setChildPartnerId(event.target.value)}
+              >
+                <option value="">No other parent assigned yet</option>
+                {linkedPartners.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {displayName(person)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  addRelative("child", childPartnerId);
+                  setChildPartnerChooserOpen(false);
+                  setChildPartnerId("");
+                }}
+              >
+                <Baby size={15} />
+                Add child
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="inspector-section">
@@ -678,7 +749,7 @@ export function PersonInspector({
                 <option>Other</option>
               </select>
             </label>
-            {selectedPerson.fatherId && (
+            {(selectedPerson.fatherId || selectedPerson.motherId) && (
               <label>
                 <span>Father</span>
                 <select
@@ -700,7 +771,7 @@ export function PersonInspector({
                 </select>
               </label>
             )}
-            {selectedPerson.motherId && (
+            {(selectedPerson.fatherId || selectedPerson.motherId) && (
               <label>
                 <span>Mother</span>
                 <select
@@ -1123,18 +1194,35 @@ export function PersonInspector({
             <div className="person-partner-links">
               <span>Partner links</span>
               <div>
-                {linkedPartners.map((partner) => (
-                  <span key={partner.id}>
-                    <strong>{displayName(partner)}</strong>
-                    <button
-                      type="button"
-                      onClick={() => removePartnerLink(partner.id)}
-                      aria-label={`Remove partner link to ${displayName(partner)}`}
-                    >
-                      Remove link
-                    </button>
-                  </span>
-                ))}
+                {linkedPartners.map((partner) => {
+                  const sharedChildren = sharedChildrenByPartnerId.get(partner.id) || [];
+                  return (
+                    <span key={partner.id}>
+                      <span className="person-partner-link-identity">
+                        <strong>{displayName(partner)}</strong>
+                        {sharedChildren.length > 0 && (
+                          <small>
+                            Reassign {sharedChildren.length} shared{" "}
+                            {sharedChildren.length === 1 ? "child" : "children"} first.
+                          </small>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={sharedChildren.length > 0}
+                        title={
+                          sharedChildren.length
+                            ? "Reassign the shared children's parents before removing this link."
+                            : "Remove this partner link"
+                        }
+                        onClick={() => removePartnerLink(partner.id)}
+                        aria-label={`Remove partner link to ${displayName(partner)}`}
+                      >
+                        Remove link
+                      </button>
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -173,4 +173,17 @@ describe("per-property ownership ledger", () => {
     expect(ledgerA.owners.map((owner) => owner.id)).toEqual(["a"]);
     expect(ledgerB.owners.map((owner) => owner.id)).toEqual(["b"]);
   });
+
+  it("keeps one canonical party when an outside individual is promoted to a tree person", () => {
+    const ledger = buildPropertyLedger(
+      [{ id: "buyer", fullName: "Maria Vella" }],
+      [{ id: "buyer", name: "Maria Vella", type: "individual" }],
+      [],
+      { buyer: 1 },
+    );
+
+    expect(ledger.parties.filter((party) => party.id === "buyer")).toHaveLength(1);
+    expect(ledger.owners).toHaveLength(1);
+    expect(ledger.total).toBe(1);
+  });
 });

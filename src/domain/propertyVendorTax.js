@@ -20,7 +20,12 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     ownership.ownershipByPerson,
   );
   const coverage = declarationCoverage(declarationOwners, property.declarations || []);
-  const saleRows = (property.saleLots || []).map((lot) => {
+  const saleRows = (property.saleLots || []).map((storedLot) => {
+    const ownerIsCompany =
+      ledger.parties.find((party) => party.id === storedLot.ownerId)?.type === "company";
+    const lot = ownerIsCompany
+      ? { ...storedLot, taxTreatment: "manual", selectedTaxMethod: "manual" }
+      : storedLot;
     const declaredCoverage = coverage.find((item) => item.heirId === lot.ownerId);
     const usePublishedValues =
       lot.useDeclaredValues !== false && Boolean(declaredCoverage?.publishedCount);
@@ -45,7 +50,7 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     ledger.parties
       .filter((party) => {
         const person = peopleById.get(party.personId);
-        return person && isPersonDeceased(person);
+        return (person && isPersonDeceased(person)) || party.isDeceased;
       })
       .map((party) => party.id),
   );

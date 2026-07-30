@@ -1,5 +1,5 @@
 import { approximateFraction } from "../../domain/ownership.js";
-import { formattedDate, personDisplayName } from "../../domain/people.js";
+import { personDisplayName } from "../../domain/people.js";
 import { capitalisedName, compactNodeWidth, isDeceasedPerson } from "./treePresentation.js";
 
 function ownershipLabel(ownership, shareDisplay) {
@@ -14,18 +14,6 @@ function ownershipLabel(ownership, shareDisplay) {
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;
   return `${fractionText} · ${percentageText}`;
-}
-
-function CausaMortisAlert({ row }) {
-  const required = approximateFraction(row.requiredShare);
-  const declared = approximateFraction(row.declaredShare);
-
-  return (
-    <div className="family-node-cm-alert">
-      CM share {declared.numerator}/{declared.denominator} of {required.numerator}/
-      {required.denominator}
-    </div>
-  );
 }
 
 export function FamilyPersonCard({
@@ -79,11 +67,6 @@ export function FamilyPersonCard({
         <div className="family-node-ownership">
           {ownershipLabel(ownership, shareDisplay)} ownership
         </div>
-      )}
-      {!person.isPlaceholder &&
-        incompleteCausaMortis.map((row) => <CausaMortisAlert key={row.propertyId} row={row} />)}
-      {isDeceased && person.dateOfDeath && (
-        <div className="family-node-meta">d. {formattedDate(person.dateOfDeath)}</div>
       )}
     </button>
   );

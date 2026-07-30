@@ -167,6 +167,25 @@ export function saleTaxLot(lot) {
   const numerator = Math.max(0, number(lot.shareNumerator));
   const denominator = Math.max(0, number(lot.shareDenominator));
   const share = denominator > 0 ? numerator / denominator : 0;
+  if (lot.taxTreatment === "manual") {
+    const tax = number(lot.manualTaxAmount);
+    return {
+      methods: [
+        {
+          key: "manual",
+          label: "Manually assessed tax",
+          rate: null,
+          basis: transferValue,
+          tax,
+        },
+      ],
+      recommended: "manual",
+      selected: "manual",
+      transferValue,
+      declaredValue,
+      share,
+    };
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(inherited)) {
     return {
       methods: [],

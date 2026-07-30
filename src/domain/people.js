@@ -214,6 +214,30 @@ export function personDescendants(people = [], personId) {
   return descendants;
 }
 
+export function personAncestors(people = [], personId) {
+  if (!personId) return [];
+  const peopleById = new Map(
+    people.filter((person) => person?.id).map((person) => [person.id, person]),
+  );
+  const ancestors = [];
+  const visited = new Set([personId]);
+  const queue = [peopleById.get(personId)?.fatherId, peopleById.get(personId)?.motherId].filter(
+    Boolean,
+  );
+
+  while (queue.length) {
+    const ancestorId = queue.shift();
+    if (!ancestorId || visited.has(ancestorId)) continue;
+    visited.add(ancestorId);
+    const ancestor = peopleById.get(ancestorId);
+    if (!ancestor) continue;
+    ancestors.push(ancestor);
+    queue.push(ancestor.fatherId, ancestor.motherId);
+  }
+
+  return ancestors;
+}
+
 export function assignSolePartnersAsMissingParents(people = []) {
   const peopleById = new Map(
     people.filter((person) => person?.id).map((person) => [person.id, person]),

@@ -167,6 +167,23 @@ describe("Maltese inherited property estimates", () => {
     expect(result.warning).toContain("inherited fraction");
   });
 
+  it("includes a manually assessed vendor where inherited-property methods do not apply", () => {
+    const result = saleTaxLot({
+      taxTreatment: "manual",
+      manualTaxAmount: 4500,
+      transferValue: 100000,
+      shareNumerator: 1,
+      shareDenominator: 4,
+    });
+
+    expect(result.selected).toBe("manual");
+    expect(result.methods[0]).toMatchObject({
+      key: "manual",
+      basis: 100000,
+      tax: 4500,
+    });
+  });
+
   it("summarises each living vendor and excludes deceased vendors and their taxes", () => {
     const livingLot = {
       ownerId: "living",
