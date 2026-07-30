@@ -267,6 +267,46 @@ describe("FamilyTreeCanvas", () => {
     expect(person.querySelector(".family-node-cm-alert")).toBeNull();
   });
 
+  it("shows a missing spouse death date directly on the deceased person's card", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "edgar",
+              fullName: "Edgar Wadge",
+              isDeceased: true,
+              dateOfDeath: "2020-01-01",
+              inheritanceBasis: "intestacy",
+              spouseIds: [],
+            },
+            {
+              id: "wife",
+              fullName: "Maria Wadge",
+              isDeceased: true,
+              dateOfDeath: "",
+              spouseIds: [],
+            },
+            {
+              id: "son",
+              fullName: "Paul Wadge",
+              fatherId: "edgar",
+              motherId: "wife",
+              spouseIds: [],
+            },
+          ]}
+        />,
+      ),
+    );
+
+    const edgar = container.querySelector('[data-person-id="edgar"]');
+    expect(edgar.className).toContain("succession-date-incomplete");
+    expect(edgar.textContent).toContain("Missing spouse death date: Maria Wadge");
+    expect(edgar.getAttribute("aria-label")).toContain(
+      "Missing spouse death date for Maria Wadge",
+    );
+  });
+
   it("shows only the person-card details selected in the separate control", () => {
     act(() =>
       root.render(

@@ -1,4 +1,5 @@
 import { approximateFraction } from "../../domain/ownership.js";
+import { linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
 import { formattedDate, personDisplayName } from "../../domain/people.js";
 import {
   DEFAULT_PERSON_CARD_FIELDS,
@@ -61,17 +62,28 @@ export function FamilyPersonCard({
   const ownershipValue = Number(propertyValue) * ownership;
   const causaMortisDetails = availableCausaMortisDetails(person);
   const isTestate = person.inheritanceBasis === "will";
+  const spousesMissingDeathDates =
+    isDeceased && !isTestate ? linkedSpousesMissingDeathDates(people, person.id) : [];
+  const missingSpouseNames = spousesMissingDeathDates.map((spouse) =>
+    capitalisedName(personDisplayName(spouse, people)),
+  );
   const name = cardName(person);
-  const accessibleName =
+  const personName =
     !person.isPlaceholder && String(person.fullName || "").trim()
       ? capitalisedName(personDisplayName(person, people))
       : name;
+  const accessibleName = `${personName}${
+    missingSpouseNames.length
+      ? `. Missing spouse death ${missingSpouseNames.length === 1 ? "date" : "dates"} for ${missingSpouseNames.join(", ")}`
+      : ""
+  }`;
   const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
   const classNames = [
     "family-node",
     sexClass,
     isDeceased && "deceased",
     incompleteCausaMortis.length && "cm-share-incomplete",
+    spousesMissingDeathDates.length && "succession-date-incomplete",
     person.isPlaceholder && "placeholder",
     selectedPersonId === person.id && "selected",
   ]
@@ -90,6 +102,12 @@ export function FamilyPersonCard({
       <div className="family-node-name" title={accessibleName}>
         {name}
       </div>
+      {!person.isPlaceholder && missingSpouseNames.length > 0 && (
+        <div className="family-node-succession-alert">
+          Missing spouse death {missingSpouseNames.length === 1 ? "date" : "dates"}:{" "}
+          {missingSpouseNames.join(", ")}
+        </div>
+      )}
       {!person.isPlaceholder && shareParts.length > 0 && (
         <div className="family-node-ownership">{shareParts.join(" · ")}</div>
       )}

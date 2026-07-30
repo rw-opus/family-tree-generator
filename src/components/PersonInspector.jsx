@@ -28,6 +28,7 @@ import {
   confirmedIntestacyAllocations,
   intestateAllocations,
   isPersonDeceased,
+  linkedSpousesFor,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { fractionForShare, shareFromFraction, shareFromPercentage } from "../domain/shares.js";
@@ -528,15 +529,8 @@ export function PersonInspector({
   const propertySaleValue = Number(properties[0]?.saleValue) || 0;
   const estimatedPropertyValue = propertySaleValue * ownership;
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
-  const linkedSpouseIds = new Set([
-    ...(selectedPerson.spouseIds || []),
-    ...people
-      .filter((person) => (person.spouseIds || []).includes(selectedPerson.id))
-      .map((person) => person.id),
-  ]);
-  const linkedPartners = [...linkedSpouseIds]
-    .map((personId) => peopleById.get(personId))
-    .filter(Boolean);
+  const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
+  const linkedSpouseIds = new Set(linkedPartners.map((person) => person.id));
   const sharedChildrenByPartnerId = new Map(
     linkedPartners.map((partner) => [
       partner.id,

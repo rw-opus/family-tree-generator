@@ -94,8 +94,27 @@ function linkedSpouses(person, people, peopleById) {
   const spouseIds = new Set(person.spouseIds || []);
   people.forEach((candidate) => {
     if ((candidate.spouseIds || []).includes(person.id)) spouseIds.add(candidate.id);
+    if (candidate.fatherId === person.id && candidate.motherId) {
+      spouseIds.add(candidate.motherId);
+    }
+    if (candidate.motherId === person.id && candidate.fatherId) {
+      spouseIds.add(candidate.fatherId);
+    }
   });
+  spouseIds.delete(person.id);
   return [...spouseIds].map((id) => peopleById.get(id)).filter(Boolean);
+}
+
+export function linkedSpousesFor(people = [], personId) {
+  const index = familyIndex(people);
+  const person = index.peopleById.get(personId);
+  return person ? linkedSpouses(person, people, index.peopleById) : [];
+}
+
+export function linkedSpousesMissingDeathDates(people = [], deceasedId) {
+  return linkedSpousesFor(people, deceasedId).filter(
+    (person) => isPersonDeceased(person) && !person.dateOfDeath,
+  );
 }
 
 function linkedSiblings(person, people, peopleById) {
@@ -164,15 +183,8 @@ export function intestateAllocations(people = [], deceasedId) {
     warnings.push("Historical intestacy rules before 1 March 2005 are not yet automated.");
     return { shares, warnings, destination: "historical-unresolved" };
   }
-  if (!deceased.dateOfDeath) {
-    warnings.push("Current intestacy rules are being used until a date of death is entered.");
-  }
-
-  const atDate = deceased.dateOfDeath || "";
   const spouses = linkedSpouses(deceased, people, index.peopleById);
-  const spousesWithUnknownSurvival = deceased.dateOfDeath
-    ? spouses.filter((person) => isPersonDeceased(person) && !person.dateOfDeath)
-    : [];
+  const spousesWithUnknownSurvival = linkedSpousesMissingDeathDates(people, deceased.id);
   if (spousesWithUnknownSurvival.length) {
     const names = spousesWithUnknownSurvival.map((person) => person.fullName || "Unnamed partner");
     warnings.push(
@@ -182,6 +194,14 @@ export function intestateAllocations(people = [], deceasedId) {
     );
     return { shares, warnings, destination: "spouse-survival-unresolved" };
   }
+  if (!deceased.dateOfDeath) {
+    warnings.push(
+      `Enter the date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
+    );
+    return { shares, warnings, destination: "death-date-unresolved" };
+  }
+
+  const atDate = deceased.dateOfDeath;
   const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
   const children = index.childrenByParent.get(deceased.id) || [];
   const descendantProbe = allocateBranches(children, atDate, 1, index);
@@ -286,7 +306,7 @@ export function confirmedIntestacyAllocations(
   const total = rows.reduce((sum, row) => sum + number(row.sharePercent) / 100, 0);
   const valid =
     deceased.intestateHeirsConfirmed === true &&
-    calculated.destination !== "spouse-survival-unresolved" &&
+    !["spouse-survival-unresolved", "death-date-unresolved"].includes(calculated.destination) &&
     deceased.intestateConfirmationBasis === currentSignature &&
     rows.length > 0 &&
     rows.every((row) => number(row.sharePercent) > 0) &&
