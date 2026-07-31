@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   A3_PRINT_LAYOUT,
+  A3_PRINT_VIEWPORT_HEIGHT_PX,
   a3PrintableWidthForColumns,
   calculateA3Tiles,
+  resolveA3HeightScale,
   resolveA3PrintArea,
 } from "../../src/domain/a3PrintPreview.js";
+import { buildFamilyTreeLayout } from "../../src/components/familyTree/treeLayout.js";
 
 describe("A3 print pagination", () => {
   it("keeps a small tree on one landscape A3 sheet", () => {
@@ -158,5 +161,61 @@ describe("A3 print pagination", () => {
         requestedColumns: "auto",
       }),
     ).toMatchObject({ scale: 0.85, requestedColumns: 0, limitedByMinimumScale: false });
+  });
+});
+
+describe("A3 landscape height fitting", () => {
+  const generationChain = (count) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `p${index}`,
+      fullName: `Person ${index}`,
+      fatherId: index > 0 ? `p${index - 1}` : "",
+      motherId: "",
+      spouseIds: [],
+      siblingIds: [],
+    }));
+
+  it("leaves a short tree at its preferred scale", () => {
+    const fit = resolveA3HeightScale({ contentHeight: 400, preferredScale: 1 });
+
+    expect(fit.scale).toBe(1);
+    expect(fit.fitsAtPreferredScale).toBe(true);
+  });
+
+  it("scales a tall tree down to one sheet of height", () => {
+    const fit = resolveA3HeightScale({ contentHeight: 4000, preferredScale: 1 });
+
+    expect(fit.fitsAtPreferredScale).toBe(false);
+    expect(4000 * fit.scale).toBeLessThanOrEqual(A3_PRINT_VIEWPORT_HEIGHT_PX + 0.001);
+  });
+
+  it("never scales a tree up beyond the requested scale", () => {
+    expect(resolveA3HeightScale({ contentHeight: 100, preferredScale: 0.7 }).scale).toBe(0.7);
+  });
+
+  it("puts ten generations on a single row of landscape A3 sheets", () => {
+    const layout = buildFamilyTreeLayout(generationChain(10));
+    expect(layout.generationCount).toBe(10);
+
+    const fit = resolveA3HeightScale({ contentHeight: layout.height, preferredScale: 1 });
+    const tiles = calculateA3Tiles({
+      contentWidth: layout.width,
+      contentHeight: layout.height,
+      scale: fit.scale,
+    });
+
+    // Height is what must not break: a tree is read down the generations.
+    expect(tiles.rows).toBe(1);
+  });
+
+  it("still splits a very deep tree across sheets when height fitting is off", () => {
+    const layout = buildFamilyTreeLayout(generationChain(10));
+    const tiles = calculateA3Tiles({
+      contentWidth: layout.width,
+      contentHeight: layout.height,
+      scale: 1,
+    });
+
+    expect(tiles.rows).toBeGreaterThan(1);
   });
 });

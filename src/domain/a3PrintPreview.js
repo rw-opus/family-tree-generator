@@ -128,6 +128,32 @@ export function resolveA3PrintArea({
   };
 }
 
+/**
+ * Scale that lands the whole tree inside one sheet's height.
+ *
+ * resolveA3PrintArea only ever fitted width, so a tall tree was tiled onto a
+ * second row of sheets instead of being scaled down. A family tree is read down
+ * the generations, so breaking it across sheets vertically is far worse than
+ * printing it a little smaller.
+ */
+export function resolveA3HeightScale({
+  contentHeight,
+  preferredScale = 1,
+  viewportHeight = defaultViewportHeight,
+}) {
+  const height = positiveNumber(contentHeight, 1);
+  const preferred = positiveNumber(preferredScale, 1);
+  const pageHeight = positiveNumber(viewportHeight, defaultViewportHeight);
+  // Half a pixel of headroom: an exact fit rounds a hair over the page in
+  // floating point and tips the tree onto a second row of sheets.
+  const scaleNeeded = Math.max(0, pageHeight - 0.5) / height;
+
+  return {
+    scale: Math.min(preferred, scaleNeeded),
+    fitsAtPreferredScale: height * preferred <= pageHeight,
+  };
+}
+
 const previewCss = `
   :root {
     color: #10231c;
@@ -278,8 +304,8 @@ const previewCss = `
     -webkit-print-color-adjust: exact;
   }
 
-  .a3-print-tree .relational-forest {
-    padding: 0 !important;
+  .a3-print-tree .layered-family-tree {
+    margin: 0 !important;
   }
 
   .a3-print-tree .family-chart-title {
@@ -538,6 +564,9 @@ export async function openA3PrintPreview(node, title = "Family tree") {
   const areaLabel = makeElement(previewWindow.document, "label", "");
   const areaText = makeElement(previewWindow.document, "span", "", "Print area width");
   const areaSelect = makeElement(previewWindow.document, "select", "");
+  const heightLabel = makeElement(previewWindow.document, "label", "");
+  const heightText = makeElement(previewWindow.document, "span", "", "Sheet height");
+  const heightSelect = makeElement(previewWindow.document, "select", "");
   const printButton = makeElement(previewWindow.document, "button", "", "Print all A3 pages");
   const closeButton = makeElement(previewWindow.document, "button", "", "Close");
   const pages = makeElement(previewWindow.document, "main", "a3-preview-pages");
@@ -562,13 +591,23 @@ export async function openA3PrintPreview(node, title = "Family tree") {
     areaSelect.append(option);
   });
 
+  [
+    ["fit", "Fit all generations on one sheet"],
+    ["actual", "Actual size · split across sheets"],
+  ].forEach(([value, label]) => {
+    const option = makeElement(previewWindow.document, "option", "", label);
+    option.value = value;
+    heightSelect.append(option);
+  });
+
   heading.append(headingTitle, headingHelp);
   scaleLabel.append(scaleText, scaleSelect);
   areaLabel.append(areaText, areaSelect);
+  heightLabel.append(heightText, heightSelect);
   printButton.type = "button";
   printButton.dataset.action = "print";
   closeButton.type = "button";
-  toolbar.append(heading, scaleLabel, areaLabel, printButton, closeButton);
+  toolbar.append(heading, scaleLabel, areaLabel, heightLabel, printButton, closeButton);
   previewWindow.document.body.append(toolbar, pages);
 
   await waitForPreviewStyles(previewWindow);
@@ -579,10 +618,19 @@ export async function openA3PrintPreview(node, title = "Family tree") {
       preferredScale: scaleSelect.value,
       requestedColumns: areaSelect.value,
     });
+    // Height is fitted after width, so a tall tree is scaled onto a single row
+    // of sheets rather than being cut across two.
+    const heightFit =
+      heightSelect.value === "fit"
+        ? resolveA3HeightScale({
+            contentHeight: dimensions.height,
+            preferredScale: printArea.scale,
+          })
+        : { scale: printArea.scale, fitsAtPreferredScale: true };
     const layout = calculateA3Tiles({
       contentWidth: dimensions.width,
       contentHeight: dimensions.height,
-      scale: printArea.scale,
+      scale: heightFit.scale,
     });
     pages.replaceChildren(
       ...layout.tiles.map((tile, index) =>
@@ -609,6 +657,7 @@ export async function openA3PrintPreview(node, title = "Family tree") {
 
   scaleSelect.addEventListener("change", renderPages);
   areaSelect.addEventListener("change", renderPages);
+  heightSelect.addEventListener("change", renderPages);
   printButton.addEventListener("click", () => {
     previewWindow.focus();
     previewWindow.print();
