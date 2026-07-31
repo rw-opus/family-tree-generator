@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CARD_GAP,
   CARD_WIDTH,
   assignGenerations,
   buildFamilyTreeLayout,
@@ -340,5 +341,57 @@ describe("separate families on one chart", () => {
     // The families must not interleave, and must not sit oceans apart.
     expect(secondLeft).toBeGreaterThanOrEqual(firstRight);
     expect(secondLeft - firstRight).toBeLessThanOrEqual(CARD_WIDTH * 1.5);
+  });
+});
+
+describe("which generation sets the width", () => {
+  /** Eight uncles and aunts above, one couple with two children below. */
+  const wideOlderGeneration = () => [
+    person("gf", { spouseIds: ["gm"] }),
+    person("gm", { spouseIds: ["gf"] }),
+    ...Array.from({ length: 8 }, (_, index) =>
+      person(`uncle-${index}`, { fatherId: "gf", motherId: "gm" }),
+    ),
+    person("spouse", { spouseIds: ["uncle-0"] }),
+    person("child-a", { fatherId: "uncle-0", motherId: "spouse" }),
+    person("child-b", { fatherId: "uncle-0", motherId: "spouse" }),
+  ];
+
+  const rowsOf = (layout) => {
+    const rows = new Map();
+    layout.nodes.forEach((node) => {
+      rows.set(node.generation, [...(rows.get(node.generation) || []), node]);
+    });
+    rows.forEach((nodes, generation) =>
+      rows.set(
+        generation,
+        [...nodes].sort((first, second) => first.x - second.x),
+      ),
+    );
+    return rows;
+  };
+
+  it("packs the denser generation adjacently when the uncles outnumber the descendants", () => {
+    const rows = rowsOf(buildFamilyTreeLayout(wideOlderGeneration()));
+    const row = rows.get(1);
+
+    // The uncles are the crowded row here, so it is their boxes that end up
+    // adjacent rather than being spread to centre over two grandchildren.
+    const gaps = row.slice(1).map((node, index) => node.x - (row[index].x + row[index].width));
+
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(CARD_GAP);
+  });
+
+  it("takes the chart width from the widest generation, not a sparse one", () => {
+    const layout = buildFamilyTreeLayout(wideOlderGeneration());
+    const rows = rowsOf(layout);
+    const widest = [...rows.values()].reduce(
+      (best, nodes) => (nodes.length > best.length ? nodes : best),
+      [],
+    );
+    const widestSpan = widest.at(-1).x + CARD_WIDTH - widest[0].x;
+
+    // Everything else has to fit inside the room the biggest generation needs.
+    expect(layout.width).toBeLessThan(widestSpan + CARD_WIDTH * 2);
   });
 });

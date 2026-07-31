@@ -394,41 +394,65 @@ function centreRows(rows, unions) {
     return centres.length ? mean(centres) : null;
   };
 
-  for (let pass = 0; pass < CENTRING_PASSES; pass += 1) {
-    // Pull each row of children under the unions that produced them.
-    for (let rowIndex = 1; rowIndex < blocksByRow.length; rowIndex += 1) {
-      const desired = new Map();
-      blocksByRow[rowIndex].forEach((block) => {
-        const targets = block.memberIds
-          .map((childId) => {
-            const union = unions.find((candidate) => candidate.childIds.includes(childId));
-            return union ? unionCentre(union) : null;
-          })
-          .filter((value) => value !== null);
-        if (targets.length) desired.set(block, mean(targets));
-      });
-      packRow(blocksByRow[rowIndex], desired);
-    }
+  // A block of children wants to sit under the union that produced them.
+  const childDesire = (block) => {
+    const targets = block.memberIds
+      .map((childId) => {
+        const union = unions.find((candidate) => candidate.childIds.includes(childId));
+        return union ? unionCentre(union) : null;
+      })
+      .filter((value) => value !== null);
+    return targets.length ? mean(targets) : null;
+  };
 
-    // Then lift each row of parents over the middle of their children.
-    for (let rowIndex = blocksByRow.length - 2; rowIndex >= 0; rowIndex -= 1) {
-      const desired = new Map();
-      blocksByRow[rowIndex].forEach((block) => {
-        const targets = unions
-          .filter(
-            (union) =>
-              union.childIds.length &&
-              union.parentIds.some((parentId) => block.memberIds.includes(parentId)),
-          )
-          .flatMap((union) => union.childIds.map(centreOf))
-          .filter((value) => value !== null);
-        if (targets.length) desired.set(block, mean(targets));
-      });
-      packRow(blocksByRow[rowIndex], desired);
+  // A block of parents wants to sit over the middle of its children.
+  const parentDesire = (block) => {
+    const targets = unions
+      .filter(
+        (union) =>
+          union.childIds.length &&
+          union.parentIds.some((parentId) => block.memberIds.includes(parentId)),
+      )
+      .flatMap((union) => union.childIds.map(centreOf))
+      .filter((value) => value !== null);
+    return targets.length ? mean(targets) : null;
+  };
+
+  const place = (rowIndex, desireFor) => {
+    const desired = new Map();
+    blocksByRow[rowIndex].forEach((block) => {
+      const value = desireFor(block);
+      if (value !== null) desired.set(block, value);
+    });
+    packRow(blocksByRow[rowIndex], desired);
+  };
+
+  // The generation holding the most people is packed tight and sets the width
+  // of the chart. Every other row is then placed working outwards from it, so a
+  // sparse row can never stretch the chart wider than the generation that
+  // actually needs the room. Where a row is locally the denser one — more uncles
+  // and aunts than descendants, say — its own minimum spacing binds first and it
+  // is that row whose boxes end up adjacent.
+  const packedWidth = (blocks) =>
+    blocks.reduce((total, block) => total + blockWidth(block), 0) +
+    Math.max(0, blocks.length - 1) * CARD_GAP;
+  const anchorRow = blocksByRow.reduce(
+    (widest, blocks, index) =>
+      packedWidth(blocks) > packedWidth(blocksByRow[widest]) ? index : widest,
+    0,
+  );
+
+  for (let pass = 0; pass < CENTRING_PASSES; pass += 1) {
+    packRow(blocksByRow[anchorRow], new Map());
+    for (let rowIndex = anchorRow - 1; rowIndex >= 0; rowIndex -= 1) {
+      place(rowIndex, parentDesire);
+    }
+    for (let rowIndex = anchorRow + 1; rowIndex < blocksByRow.length; rowIndex += 1) {
+      place(rowIndex, childDesire);
     }
   }
 
-  return { blocksByRow, centreOf, unionCentre, blockOfPerson };
+  return { blocksByRow, centreOf, unionCentre, blockOfPerson, anchorRow };
 }
 
 /**
