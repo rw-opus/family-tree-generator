@@ -8,6 +8,7 @@ import {
 } from "../domain/people.js";
 import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
+import { shouldUseDenseChildrenLayout } from "./familyTree/DenseChildrenBranch.jsx";
 import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
 import { RelationalFamilyTree } from "./familyTree/RelationalFamilyTree.jsx";
 import { personCardName } from "./familyTree/treePresentation.js";
@@ -93,6 +94,7 @@ export function FamilyTreeCanvas({
   const printHandler = onPrint || ((node) => openA3PrintPreview(node, title));
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
+  const usesStackedLegalCards = shouldUseDenseChildrenLayout(relationalPeople.length);
 
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
@@ -122,6 +124,7 @@ export function FamilyTreeCanvas({
       propertyValue={propertyValue}
       selectedPersonId={selectedPersonId}
       onSelectPerson={onSelectPerson}
+      stackedLegalDetails={usesStackedLegalCards}
     />
   );
 

@@ -51,3 +51,19 @@
   stroke-dasharray: 7 6;
   stroke-linecap: butt;
 }
+
+.family-svg-marriage-rail {
+  fill: none;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+.family-svg-marriage-outer {
+  stroke: var(--family-connector-color, #71645c);
+  stroke-width: 7px;
+}
+
+.family-svg-marriage-gap {
+  stroke: #fff;
+  stroke-width: 3px;
+}

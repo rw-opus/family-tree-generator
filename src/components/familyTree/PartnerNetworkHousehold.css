@@ -49,13 +49,12 @@
 .family-partner-network-child-link,
 .family-partner-network-incoming-link {
   fill: none;
-  stroke: #566b60;
+  stroke: var(--family-connector-color, #71645c);
   stroke-linecap: square;
   stroke-linejoin: miter;
   stroke-width: 3px;
-  vector-effect: non-scaling-stroke;
 }
 
 .family-partner-network-junction {
-  fill: #566b60;
+  fill: var(--family-connector-color, #71645c);
 }

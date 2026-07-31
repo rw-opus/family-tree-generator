@@ -14,6 +14,7 @@ import {
 import {
   composeFullName,
   createPerson,
+  fatherSurnameDefaultPatch,
   hasDesignation,
   personDescendants,
   personDisplayName,
@@ -233,7 +234,20 @@ export function PersonInspector({
   };
 
   const acceptParentSuggestion = (suggestion) => {
-    onChange(applyParentSuggestions(people, [suggestion]));
+    const suggestedPeople = applyParentSuggestions(people, [suggestion]);
+    if (suggestion.field !== "fatherId") {
+      onChange(suggestedPeople);
+      return;
+    }
+
+    const father = suggestedPeople.find((person) => person.id === suggestion.suggestedPersonId);
+    onChange(
+      suggestedPeople.map((person) =>
+        person.id === suggestion.personId
+          ? { ...person, ...fatherSurnameDefaultPatch(person, father) }
+          : person,
+      ),
+    );
   };
 
   const dismissParentSuggestion = (suggestion) => {
@@ -503,6 +517,11 @@ export function PersonInspector({
       selectedPatch = {
         siblingIds: [...new Set([...(selectedPerson.siblingIds || []), relative.id])],
       };
+    }
+
+    if ((kind === "child" || kind === "sibling") && relative.fatherId) {
+      const father = people.find((person) => person.id === relative.fatherId);
+      Object.assign(relative, fatherSurnameDefaultPatch(relative, father));
     }
 
     const updatedPeople = people.map((person) =>
@@ -878,6 +897,9 @@ export function PersonInspector({
     updateSelected({
       [activeParentLink.field]: candidate.id,
       [activeParentLink.explicitUnassignedField]: false,
+      ...(activeParentLink.field === "fatherId"
+        ? fatherSurnameDefaultPatch(selectedPerson, candidate)
+        : {}),
     });
     closeParentChooser();
   };

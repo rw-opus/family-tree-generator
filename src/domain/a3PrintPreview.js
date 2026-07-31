@@ -8,12 +8,28 @@ export const A3_PRINT_LAYOUT = Object.freeze({
   pageHeightMm: 277,
   treeWidthMm: 390,
   treeHeightMm: 249,
-  overlapMm: 8,
+  overlapMm: 20,
 });
 
-const defaultViewportWidth = mmToPixels(A3_PRINT_LAYOUT.treeWidthMm);
-const defaultViewportHeight = mmToPixels(A3_PRINT_LAYOUT.treeHeightMm);
-const defaultOverlap = mmToPixels(A3_PRINT_LAYOUT.overlapMm);
+export const A3_PRINT_VIEWPORT_WIDTH_PX = mmToPixels(A3_PRINT_LAYOUT.treeWidthMm);
+export const A3_PRINT_VIEWPORT_HEIGHT_PX = mmToPixels(A3_PRINT_LAYOUT.treeHeightMm);
+export const A3_PRINT_OVERLAP_PX = mmToPixels(A3_PRINT_LAYOUT.overlapMm);
+
+const defaultViewportWidth = A3_PRINT_VIEWPORT_WIDTH_PX;
+const defaultViewportHeight = A3_PRINT_VIEWPORT_HEIGHT_PX;
+const defaultOverlap = A3_PRINT_OVERLAP_PX;
+
+export const A3_MIN_READABLE_SCALE = 0.7;
+
+export function a3PrintableWidthForColumns(
+  columns,
+  { viewportWidth = defaultViewportWidth, overlap = defaultOverlap } = {},
+) {
+  const columnCount = Math.max(1, Number.parseInt(columns, 10) || 1);
+  const pageWidth = positiveNumber(viewportWidth, defaultViewportWidth);
+  const sharedEdge = Math.min(positiveNumber(overlap, defaultOverlap), pageWidth / 3);
+  return pageWidth + (columnCount - 1) * (pageWidth - sharedEdge);
+}
 
 const positiveNumber = (value, fallback) => {
   const number = Number(value);
@@ -70,6 +86,45 @@ export function calculateA3Tiles({
     viewportHeight: pageHeight,
     overlap: sharedEdge,
     tiles,
+  };
+}
+
+export function resolveA3PrintArea({
+  contentWidth,
+  preferredScale = 1,
+  requestedColumns = "auto",
+  viewportWidth = defaultViewportWidth,
+  overlap = defaultOverlap,
+  minimumScale = A3_MIN_READABLE_SCALE,
+}) {
+  const width = positiveNumber(contentWidth, 1);
+  const preferred = positiveNumber(preferredScale, 1);
+  const minimum = Math.min(preferred, positiveNumber(minimumScale, A3_MIN_READABLE_SCALE));
+  const pageWidth = positiveNumber(viewportWidth, defaultViewportWidth);
+  const sharedEdge = Math.min(positiveNumber(overlap, defaultOverlap), pageWidth / 3);
+  const columnCount = Number.parseInt(requestedColumns, 10);
+
+  if (!Number.isFinite(columnCount) || columnCount < 1) {
+    return {
+      scale: preferred,
+      requestedColumns: 0,
+      targetWidth: 0,
+      limitedByMinimumScale: false,
+    };
+  }
+
+  const targetWidth = a3PrintableWidthForColumns(columnCount, {
+    viewportWidth: pageWidth,
+    overlap: sharedEdge,
+  });
+  const scaleNeeded = targetWidth / width;
+  const scale = Math.min(preferred, Math.max(minimum, scaleNeeded));
+
+  return {
+    scale,
+    requestedColumns: columnCount,
+    targetWidth,
+    limitedByMinimumScale: scaleNeeded < minimum,
   };
 }
 
@@ -152,6 +207,13 @@ const previewCss = `
 
   .a3-page-shell {
     position: relative;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .a3-page-shell:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 
   .a3-page {
@@ -167,13 +229,6 @@ const previewCss = `
     padding: 5mm;
     transform-origin: top left;
     box-shadow: 0 10px 34px rgba(15, 35, 25, 0.2);
-    break-after: page;
-    page-break-after: always;
-  }
-
-  .a3-page:last-child {
-    break-after: auto;
-    page-break-after: auto;
   }
 
   .a3-page-header,
@@ -216,10 +271,15 @@ const previewCss = `
     min-width: 0 !important;
     min-height: 0 !important;
     margin: 0 !important;
+    padding: 0 !important;
     zoom: 1 !important;
     transform-origin: top left;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+
+  .a3-print-tree .relational-forest {
+    padding: 0 !important;
   }
 
   .a3-print-tree .family-chart-title {
@@ -475,6 +535,9 @@ export async function openA3PrintPreview(node, title = "Family tree") {
   const scaleLabel = makeElement(previewWindow.document, "label", "");
   const scaleText = makeElement(previewWindow.document, "span", "", "Tree scale");
   const scaleSelect = makeElement(previewWindow.document, "select", "");
+  const areaLabel = makeElement(previewWindow.document, "label", "");
+  const areaText = makeElement(previewWindow.document, "span", "", "Print area width");
+  const areaSelect = makeElement(previewWindow.document, "select", "");
   const printButton = makeElement(previewWindow.document, "button", "", "Print all A3 pages");
   const closeButton = makeElement(previewWindow.document, "button", "", "Close");
   const pages = makeElement(previewWindow.document, "main", "a3-preview-pages");
@@ -489,21 +552,37 @@ export async function openA3PrintPreview(node, title = "Family tree") {
     scaleSelect.append(option);
   });
 
+  [
+    ["auto", "Automatic"],
+    ["1", "1 A3 sheet wide"],
+    ["2", "2 A3 sheets wide"],
+  ].forEach(([value, label]) => {
+    const option = makeElement(previewWindow.document, "option", "", label);
+    option.value = value;
+    areaSelect.append(option);
+  });
+
   heading.append(headingTitle, headingHelp);
   scaleLabel.append(scaleText, scaleSelect);
+  areaLabel.append(areaText, areaSelect);
   printButton.type = "button";
   printButton.dataset.action = "print";
   closeButton.type = "button";
-  toolbar.append(heading, scaleLabel, printButton, closeButton);
+  toolbar.append(heading, scaleLabel, areaLabel, printButton, closeButton);
   previewWindow.document.body.append(toolbar, pages);
 
   await waitForPreviewStyles(previewWindow);
   const dimensions = measurePrintableTree(sourceCanvas, previewWindow.document);
   const renderPages = () => {
+    const printArea = resolveA3PrintArea({
+      contentWidth: dimensions.width,
+      preferredScale: scaleSelect.value,
+      requestedColumns: areaSelect.value,
+    });
     const layout = calculateA3Tiles({
       contentWidth: dimensions.width,
       contentHeight: dimensions.height,
-      scale: scaleSelect.value,
+      scale: printArea.scale,
     });
     pages.replaceChildren(
       ...layout.tiles.map((tile, index) =>
@@ -518,13 +597,18 @@ export async function openA3PrintPreview(node, title = "Family tree") {
         }),
       ),
     );
+    const minimumScaleNote =
+      printArea.requestedColumns && layout.columns > printArea.requestedColumns
+        ? ` · minimum ${Math.round(A3_MIN_READABLE_SCALE * 100)}% readability requires ${layout.columns} sheets wide`
+        : "";
     headingHelp.textContent = `A3 landscape · ${layout.tiles.length} ${
       layout.tiles.length === 1 ? "sheet" : "sheets"
-    } · print at 100% / actual size · disable browser headers and footers`;
+    } · tree at ${Math.round(layout.scale * 100)}%${minimumScaleNote} · ${A3_PRINT_LAYOUT.overlapMm} mm overlap · print at 100% / actual size · disable browser headers and footers`;
     applyScreenPageScale(previewWindow);
   };
 
   scaleSelect.addEventListener("change", renderPages);
+  areaSelect.addEventListener("change", renderPages);
   printButton.addEventListener("click", () => {
     previewWindow.focus();
     previewWindow.print();

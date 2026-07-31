@@ -27,15 +27,14 @@
 .family-cross-partner-link,
 .family-cross-child-link {
   fill: none;
-  stroke: #566b60;
+  stroke: var(--family-connector-color, #71645c);
   stroke-linecap: square;
   stroke-linejoin: miter;
   stroke-width: 3px;
-  vector-effect: non-scaling-stroke;
 }
 
 .family-cross-union-junction {
-  fill: #566b60;
+  fill: var(--family-connector-color, #71645c);
 }
 
 .family-cross-union-descendants-row {

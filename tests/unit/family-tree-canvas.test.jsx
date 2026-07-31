@@ -25,6 +25,20 @@ function measuredRect({ left = 0, top = 0, width = 0, height = 0 } = {}) {
   };
 }
 
+function expectDoubleRailMarriage(connector) {
+  expect(connector).not.toBeNull();
+  expect(connector.tagName.toLowerCase()).toBe("g");
+  expect(connector.querySelectorAll(".family-svg-marriage-rail")).toHaveLength(2);
+  expect(connector.querySelector(".family-svg-marriage-outer")).not.toBeNull();
+  expect(connector.querySelector(".family-svg-marriage-gap")).not.toBeNull();
+}
+
+function expectSinglePathPartnership(connector) {
+  expect(connector).not.toBeNull();
+  expect(connector.tagName.toLowerCase()).toBe("path");
+  expect(connector.querySelectorAll(".family-svg-marriage-rail")).toHaveLength(0);
+}
+
 describe("FamilyTreeCanvas", () => {
   let container;
   let root;
@@ -144,11 +158,16 @@ describe("FamilyTreeCanvas", () => {
       ),
     );
 
-    const expectedOffset = (compactNodeWidth(firstName) - compactNodeWidth(secondName)) / 2;
+    const expectedBalance = compactNodeWidth(firstName) - compactNodeWidth(secondName);
+    const expectedOffset = expectedBalance / 2;
     const union = container.querySelector(".family-union-block");
 
     expect(union.style.getPropertyValue("--family-union-junction-offset")).toBe(
       `${expectedOffset}px`,
+    );
+    expect(union.style.getPropertyValue("--family-union-balance-before")).toBe("0px");
+    expect(union.style.getPropertyValue("--family-union-balance-after")).toBe(
+      `${expectedBalance}px`,
     );
     expect(union.querySelector(".family-partner-link")).not.toBeNull();
     expect(union.querySelector(".family-union-stem")).not.toBeNull();
@@ -340,6 +359,48 @@ describe("FamilyTreeCanvas", () => {
     expect(person.textContent).toBe("Roland Wadge");
     expect(person.querySelector(".family-node-meta")).toBeNull();
     expect(person.style.getPropertyValue("--family-node-width")).toBe("112px");
+  });
+
+  it("stacks identity and legal dates in narrow cards for a very large tree", () => {
+    const people = [
+      {
+        id: "root",
+        fullName: "Pandolfo Testaferrata de Noto",
+        givenNames: "Pandolfo",
+        surname: "Testaferrata de Noto",
+        surnameAtBirth: "Testaferrata de Noto",
+        isDeceased: true,
+        dateOfDeath: "1950-04-03",
+        inheritanceBasis: "will",
+        willDate: "1949-05-06",
+        willNotaryName: "Mario Borg",
+        causaMortisDeclarations: [
+          {
+            status: "complete",
+            date: "1950-06-07",
+            notaryName: "Anna Vella",
+          },
+        ],
+      },
+      ...Array.from({ length: 79 }, (_, index) => ({
+        id: `descendant-${index}`,
+        fullName: `Descendant ${index}`,
+        fatherId: index === 0 ? "root" : `descendant-${index - 1}`,
+      })),
+    ];
+
+    act(() => root.render(<FamilyTreeCanvas people={people} />));
+
+    const person = container.querySelector('[data-person-id="root"]');
+    expect(person.classList.contains("stacked-legal-details")).toBe(true);
+    expect(person.style.getPropertyValue("--family-node-width")).toBe("132px");
+    expect(person.querySelector(".family-node-name").textContent).toBe("Pandolfo");
+    expect(person.querySelector(".family-node-surname").textContent).toBe("Testaferrata De Noto");
+    expect(person.textContent).toContain("Died 03-04-1950");
+    expect(person.textContent).toContain("Will 06-05-1949");
+    expect(person.textContent).toContain("Publishing Notary Not. Mario Borg");
+    expect(person.textContent).toContain("CM deed 07-06-1950");
+    expect(person.textContent).toContain("CM Notary Not. Anna Vella");
   });
 
   it("omits a surname only when it matches a recorded parent", () => {
@@ -770,8 +831,13 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll(".family-remarriage-child-link")).toHaveLength(3);
     expect(container.querySelectorAll(".family-remarriage-junction")).toHaveLength(3);
     expect(container.querySelectorAll(".family-remarriage-descendants")).toHaveLength(3);
-    expect(container.querySelectorAll(".family-remarriage-link.marriage")).toHaveLength(2);
-    expect(container.querySelectorAll(".family-remarriage-link.partnership")).toHaveLength(1);
+    const marriageLinks = container.querySelectorAll(".family-remarriage-link.marriage");
+    const partnershipLink = container.querySelector(".family-remarriage-link.partnership");
+    expect(marriageLinks).toHaveLength(2);
+    marriageLinks.forEach(expectDoubleRailMarriage);
+    expectSinglePathPartnership(partnershipLink);
+    expect(partnershipLink.closest(".family-remarriage-relationship")).not.toBeNull();
+    expect(partnershipLink.querySelector(".family-remarriage-child-link")).toBeNull();
     expect(container.textContent).toContain("m. 2004");
     expect(container.textContent).toContain("03-02-2015");
     expect(container.textContent).toContain("m. 2020");
@@ -980,7 +1046,7 @@ describe("FamilyTreeCanvas", () => {
       '.family-cross-union[data-cross-union-key="cousin-a::cousin-b"]',
     );
     expect(crossUnion).not.toBeNull();
-    expect(crossUnion.querySelector(".family-cross-partner-link.partnership")).not.toBeNull();
+    expectSinglePathPartnership(crossUnion.querySelector(".family-cross-partner-link.partnership"));
     expect(crossUnion.querySelector(".family-union-annotation").textContent).toBe("05-04-2012");
     expect(crossUnion.querySelector(".family-cross-child-link")).not.toBeNull();
     expect(crossUnion.querySelector(".family-cross-union-junction")).not.toBeNull();
@@ -1042,9 +1108,14 @@ describe("FamilyTreeCanvas", () => {
         1,
       );
     });
+    const crossUnion = container.querySelector(
+      '.family-cross-union[data-cross-union-key="partner-a::partner-b"]',
+    );
+    expect(crossUnion).not.toBeNull();
+    expectDoubleRailMarriage(crossUnion.querySelector(".family-cross-partner-link.marriage"));
     expect(
-      container.querySelector('.family-cross-union[data-cross-union-key="partner-a::partner-b"]'),
-    ).not.toBeNull();
+      crossUnion.querySelector(".family-cross-partner-link.marriage .family-cross-child-link"),
+    ).toBeNull();
     expect(
       container.querySelector('[data-person-id="partner-a"]').closest(".family-household"),
     ).not.toBe(
@@ -1208,8 +1279,12 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll(".family-partner-network-person")).toHaveLength(4);
     expect(container.querySelectorAll(".family-partner-network-relationship")).toHaveLength(3);
     expect(container.querySelectorAll(".family-partner-network-child-link")).toHaveLength(3);
-    expect(container.querySelectorAll(".family-partner-network-link.marriage")).toHaveLength(2);
-    expect(container.querySelectorAll(".family-partner-network-link.partnership")).toHaveLength(1);
+    const marriageLinks = container.querySelectorAll(".family-partner-network-link.marriage");
+    const partnershipLink = container.querySelector(".family-partner-network-link.partnership");
+    expect(marriageLinks).toHaveLength(2);
+    marriageLinks.forEach(expectDoubleRailMarriage);
+    expectSinglePathPartnership(partnershipLink);
+    expect(partnershipLink.querySelector(".family-partner-network-child-link")).toBeNull();
     expect(container.textContent).toContain("m. 2000");
     expect(container.textContent).toContain("2010");
 

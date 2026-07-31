@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composeFullName,
+  fatherSurnameDefaultPatch,
   givenNamesFromFullName,
   hasDesignation,
   personAncestors,
@@ -28,6 +29,27 @@ describe("family tree people", () => {
     expect(composeFullName("Joseph Paul", "Borg")).toBe("Joseph Paul Borg");
     expect(personGivenNames({ fullName: "Joseph Borg" })).toBe("Joseph");
     expect(personSurname({ fullName: "Joseph Borg" })).toBe("Borg");
+  });
+
+  it("defaults empty descendant surnames from the father without overwriting edits", () => {
+    const father = { givenNames: "Joseph", surname: "Testaferrata de Noto" };
+
+    expect(fatherSurnameDefaultPatch({ givenNames: "Maria" }, father)).toEqual({
+      surname: "Testaferrata de Noto",
+      surnameAtBirth: "Testaferrata de Noto",
+      fullName: "Maria Testaferrata de Noto",
+    });
+    expect(
+      fatherSurnameDefaultPatch(
+        {
+          givenNames: "Maria",
+          surname: "Vella",
+          surnameAtBirth: "Borg",
+          fullName: "Maria Vella",
+        },
+        father,
+      ),
+    ).toEqual({});
   });
 
   it("counts reciprocal and parent-based relationships", () => {

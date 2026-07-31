@@ -10,13 +10,12 @@
 .family-remarriage-child-link,
 .family-remarriage-incoming-link {
   fill: none;
-  stroke: #566b60;
+  stroke: var(--family-connector-color, #71645c);
   stroke-linecap: square;
   stroke-linejoin: miter;
   stroke-width: 3px;
-  vector-effect: non-scaling-stroke;
 }
 
 .family-remarriage-junction {
-  fill: #566b60;
+  fill: var(--family-connector-color, #71645c);
 }

@@ -3142,6 +3142,8 @@ button.family-link-person:hover {
 .tree-stage .family-household,
 .tree-stage .family-union-block {
   --family-union-junction-offset: 0px;
+  --family-union-balance-before: 0px;
+  --family-union-balance-after: 0px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3202,11 +3204,10 @@ button.family-link-person:hover {
 
 .tree-stage .family-remarriage-link {
   fill: none;
-  stroke: #566b60;
+  stroke: var(--family-connector-color, #71645c);
   stroke-linecap: square;
   stroke-linejoin: miter;
   stroke-width: 3px;
-  vector-effect: non-scaling-stroke;
 }
 
 .tree-stage .family-parent-row,
@@ -3220,6 +3221,7 @@ button.family-link-person:hover {
   position: relative;
   align-items: center;
   min-height: 0;
+  margin-inline: var(--family-union-balance-before) var(--family-union-balance-after);
 }
 
 .tree-stage .family-parent-row.has-children:not(.single-parent)::after {
@@ -3228,25 +3230,34 @@ button.family-link-person:hover {
   bottom: -1px;
   left: calc(50% + var(--family-union-junction-offset, 0px));
   width: 3px;
-  background: #566b60;
+  background: var(--family-connector-color, #71645c);
   content: "";
   pointer-events: none;
   transform: translateX(-50%);
+}
+
+.tree-stage .family-parent-row.has-children:not(.single-parent):not(.dense-descendants)::after {
+  bottom: -25px;
+}
+
+.tree-stage
+  .family-parent-row.has-children:not(.single-parent):not(.dense-descendants)
+  + .family-union-stem {
+  background: transparent;
 }
 
 .tree-stage .family-partner-link {
   display: block;
   width: 64px;
   height: 3px;
-  background: #566b60;
+  background: var(--family-connector-color, #71645c);
 }
 
 .tree-stage .family-union-stem {
   display: block;
   width: 3px;
   height: 24px;
-  background: #566b60;
-  transform: translateX(var(--family-union-junction-offset, 0px));
+  background: var(--family-connector-color, #71645c);
 }
 
 .tree-stage .family-children-branch {
@@ -3257,7 +3268,6 @@ button.family-link-person:hover {
   align-items: flex-start;
   justify-content: center;
   column-gap: 0;
-  transform: translateX(var(--family-union-junction-offset, 0px));
 }
 
 .tree-stage .family-child-branch-item {
@@ -3274,7 +3284,7 @@ button.family-link-person:hover {
   left: 0;
   width: calc(50% + var(--branch-anchor-offset, 0px));
   height: 24px;
-  border-top: 3px solid #566b60;
+  border-top: 3px solid var(--family-connector-color, #71645c);
   content: "";
 }
 
@@ -3294,11 +3304,11 @@ button.family-link-person:hover {
 
 .tree-stage .family-child-stem {
   position: absolute;
-  top: 0;
+  top: 3px;
   left: calc(50% + var(--branch-anchor-offset, 0px));
   width: 3px;
-  height: 24px;
-  background: #566b60;
+  height: 21px;
+  background: var(--family-connector-color, #71645c);
   transform: translateX(-50%);
 }
 
@@ -3307,7 +3317,7 @@ button.family-link-person:hover {
 .tree-stage .family-down-line,
 .tree-stage .family-branch-row::before,
 .tree-stage .family-branch-item::before {
-  background: #6f8177;
+  background: var(--family-connector-color, #71645c);
 }
 
 .tree-stage .helper-text {
@@ -3445,6 +3455,7 @@ button.family-link-person:hover {
 
 .tree-stage,
 .tree-stage .family-chart {
+  --family-connector-color: #71645c;
   background-color: #fff;
 }
 

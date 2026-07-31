@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { partnerRelationshipAnnotation, partnerRelationshipClass } from "./partnerRelationship.js";
+import { partnerRelationshipAnnotation } from "./partnerRelationship.js";
+import { SvgPartnerRelationshipPath } from "./SvgPartnerRelationshipPath.jsx";
 import "./MultiplePartnerHousehold.css";
 
 export function anchoredBranchOffset(anchorRect, branchRect, scaleX = 1) {
@@ -15,6 +16,69 @@ export function anchoredIncomingPath(anchorRect, layoutRect, scaleX = 1, scaleY 
   return anchorTop > 0 ? `M ${anchorCenter} 0 V ${anchorTop}` : "";
 }
 
+export function descendantChildPath({
+  junctionX,
+  junctionY,
+  descendantsCenter,
+  descendantsTop,
+  denseLayout,
+}) {
+  if (!denseLayout) return `M ${junctionX} ${junctionY} V ${descendantsTop}`;
+
+  const approachY = Math.max(junctionY, descendantsTop - 12);
+  return `M ${junctionX} ${junctionY} V ${approachY} H ${descendantsCenter} V ${descendantsTop}`;
+}
+
+function rectanglesOverlapHorizontally(first, second) {
+  return Math.min(first.right, second.right) > Math.max(first.left, second.left);
+}
+
+export function denseDescendantLaneOffsets(columns, verticalGap = 6) {
+  const placedCards = [];
+  const offsets = {};
+
+  [...columns]
+    .sort((first, second) => first.left - second.left)
+    .forEach((column) => {
+      const forbiddenOffsets = [];
+
+      column.cards.forEach((card) => {
+        placedCards.forEach((placedCard) => {
+          if (!rectanglesOverlapHorizontally(card, placedCard)) return;
+
+          const start = placedCard.top - verticalGap - card.bottom;
+          const end = placedCard.bottom + verticalGap - card.top;
+          if (end > 0) forbiddenOffsets.push({ start, end });
+        });
+      });
+
+      let offset = 0;
+      forbiddenOffsets
+        .sort((first, second) => first.start - second.start || first.end - second.end)
+        .forEach((interval) => {
+          if (offset >= interval.start && offset < interval.end) {
+            offset = interval.end;
+          }
+        });
+      offset = Math.max(0, Math.ceil(offset));
+      offsets[column.key] = offset;
+      column.cards.forEach((card) => {
+        placedCards.push({
+          ...card,
+          top: card.top + offset,
+          bottom: card.bottom + offset,
+        });
+      });
+    });
+
+  return offsets;
+}
+
+function laneOffsetsChanged(current, next) {
+  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+  return [...keys].some((key) => (current[key] || 0) !== (next[key] || 0));
+}
+
 function relationshipOrder(group) {
   const relationship = group.relationship || {};
   return (
@@ -22,7 +86,13 @@ function relationshipOrder(group) {
   );
 }
 
-export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups, renderCard }) {
+export function MultiplePartnerHousehold({
+  anchor,
+  branchAnchor = anchor,
+  denseLayout = false,
+  groups,
+  renderCard,
+}) {
   const layoutRef = useRef(null);
   const [connectorGeometry, setConnectorGeometry] = useState({
     width: 0,
@@ -30,6 +100,7 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
     incomingPath: "",
     unions: {},
   });
+  const [descendantLaneOffsets, setDescendantLaneOffsets] = useState({});
   const orderedGroups = useMemo(
     () =>
       [...groups].sort((first, second) => {
@@ -78,6 +149,40 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
       const anchorLeft = (anchorRect.left - layoutRect.left) / scaleX;
       const anchorRight = anchorLeft + anchorRect.width / scaleX;
       const nextUnions = {};
+      if (denseLayout) {
+        const descendantColumns = positionedGroups
+          .map((group) => {
+            const descendants = [
+              ...layout.querySelectorAll("[data-remarriage-descendants-key]"),
+            ].find((element) => element.dataset.remarriageDescendantsKey === group.key);
+            if (!descendants) return null;
+
+            const currentOffset = descendantLaneOffsets[group.key] || 0;
+            const descendantsRect = descendants.getBoundingClientRect();
+            const cards = [...descendants.querySelectorAll("[data-person-id]")].map((card) => {
+              const rect = card.getBoundingClientRect();
+              return {
+                left: (rect.left - layoutRect.left) / scaleX,
+                right: (rect.right - layoutRect.left) / scaleX,
+                top: (rect.top - layoutRect.top) / scaleY - currentOffset,
+                bottom: (rect.bottom - layoutRect.top) / scaleY - currentOffset,
+              };
+            });
+
+            return {
+              key: group.key,
+              left: (descendantsRect.left - layoutRect.left) / scaleX,
+              cards,
+            };
+          })
+          .filter(Boolean);
+        const nextLaneOffsets = denseDescendantLaneOffsets(descendantColumns);
+
+        if (laneOffsetsChanged(descendantLaneOffsets, nextLaneOffsets)) {
+          setDescendantLaneOffsets(nextLaneOffsets);
+          return;
+        }
+      }
       const branchItem = layout.closest(".family-child-branch-item");
       const branchAnchorNode = [...layout.querySelectorAll("[data-person-id]")].find(
         (element) => element.dataset.personId === branchAnchor.id,
@@ -129,13 +234,22 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
         const descendantsTop = descendantsRect
           ? (descendantsRect.top - layoutRect.top) / scaleY
           : 0;
+        const descendantsCenter = descendantsRect
+          ? (descendantsRect.left - layoutRect.left + descendantsRect.width / 2) / scaleX
+          : 0;
         const childOffset = junctionX - (partnerLeft + partnerRight) / 2;
 
         nextUnions[group.key] = {
           partnerPath,
           childPath:
             group.children.length && descendantsRect
-              ? `M ${junctionX} ${junctionY} V ${descendantsTop}`
+              ? descendantChildPath({
+                  junctionX,
+                  junctionY,
+                  descendantsCenter,
+                  descendantsTop,
+                  denseLayout,
+                })
               : "",
           childOffset,
           junctionX,
@@ -163,11 +277,11 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
       observer?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [branchAnchor.id, positionedGroups]);
+  }, [branchAnchor.id, denseLayout, descendantLaneOffsets, positionedGroups]);
 
   return (
     <div
-      className="family-remarriage-layout"
+      className={`family-remarriage-layout ${denseLayout ? "dense" : ""}`}
       data-branch-anchor-id={branchAnchor.id}
       ref={layoutRef}
       style={{ "--remarriage-rail-space": `${Math.max(0, railLevels) * 14}px` }}
@@ -190,9 +304,10 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
               data-remarriage-relationship-key={group.key}
               key={group.key}
             >
-              <path
-                className={`family-remarriage-link ${partnerRelationshipClass(group.relationship)}`}
+              <SvgPartnerRelationshipPath
+                className="family-remarriage-link"
                 d={geometry.partnerPath || ""}
+                relationship={group.relationship}
               />
               {partnerRelationshipAnnotation(group.relationship) && (
                 <text
@@ -218,6 +333,7 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
       </svg>
       {positionedGroups.map((group, index) => {
         const order = index < leftCount ? index : index + 1;
+        const childOffset = connectorGeometry.unions[group.key]?.childOffset || 0;
 
         return (
           <div
@@ -233,9 +349,12 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
               <div
                 className="family-remarriage-descendants"
                 data-remarriage-descendants-key={group.key}
-                style={{
-                  transform: `translateX(${connectorGeometry.unions[group.key]?.childOffset || 0}px)`,
-                }}
+                data-dense-lane-offset={denseLayout ? descendantLaneOffsets[group.key] || 0 : null}
+                style={
+                  denseLayout
+                    ? { marginTop: `${descendantLaneOffsets[group.key] || 0}px` }
+                    : { transform: `translateX(${childOffset}px)` }
+                }
               >
                 {group.childrenContent}
               </div>

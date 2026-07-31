@@ -57,6 +57,25 @@ export function personSurname(person = {}) {
     : surnameFromFullName(person.fullName);
 }
 
+export function fatherSurnameDefaultPatch(person = {}, father = {}) {
+  const inheritedSurname = personSurname(father).trim();
+  if (!inheritedSurname) return {};
+
+  const currentSurname = personSurname(person).trim();
+  const givenNames = personGivenNames(person).trim();
+  const patch = {};
+
+  if (!currentSurname) {
+    patch.surname = inheritedSurname;
+    if (givenNames) patch.fullName = composeFullName(givenNames, inheritedSurname);
+  }
+  if (!String(person.surnameAtBirth || "").trim()) {
+    patch.surnameAtBirth = inheritedSurname;
+  }
+
+  return patch;
+}
+
 export function personIdentityIssues(person = {}) {
   const issues = [];
   if (!personGivenNames(person).trim()) issues.push("Names");
