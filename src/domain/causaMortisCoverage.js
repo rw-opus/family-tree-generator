@@ -40,18 +40,20 @@ export function validateCausaMortisDeclaration(
   return "";
 }
 
-export function buildCausaMortisShareCoverage(people = [], properties = []) {
+export function buildCausaMortisShareCoverage(people = [], properties = [], outsideParties = []) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const rows = [];
 
   properties.forEach((property) => {
     const requiredByPerson = new Map();
-    buildPropertyOwnership(people, property).transmissions.forEach((transmission) => {
-      requiredByPerson.set(
-        transmission.deceasedId,
-        (requiredByPerson.get(transmission.deceasedId) || 0) + transmission.amount,
-      );
-    });
+    buildPropertyOwnership(people, property, outsideParties).transmissions.forEach(
+      (transmission) => {
+        requiredByPerson.set(
+          transmission.deceasedId,
+          (requiredByPerson.get(transmission.deceasedId) || 0) + transmission.amount,
+        );
+      },
+    );
 
     requiredByPerson.forEach((requiredShare, personId) => {
       const person = peopleById.get(personId);

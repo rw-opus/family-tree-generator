@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { partnerRelationshipAnnotation, partnerRelationshipClass } from "./partnerRelationship.js";
 import "./MultiplePartnerHousehold.css";
 
 export function anchoredBranchOffset(anchorRect, branchRect, scaleX = 1) {
@@ -14,6 +15,13 @@ export function anchoredIncomingPath(anchorRect, layoutRect, scaleX = 1, scaleY 
   return anchorTop > 0 ? `M ${anchorCenter} 0 V ${anchorTop}` : "";
 }
 
+function relationshipOrder(group) {
+  const relationship = group.relationship || {};
+  return (
+    relationship.startDate || (relationship.startYear ? `${relationship.startYear}-00-00` : "")
+  );
+}
+
 export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups, renderCard }) {
   const layoutRef = useRef(null);
   const [connectorGeometry, setConnectorGeometry] = useState({
@@ -23,7 +31,16 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
     unions: {},
   });
   const orderedGroups = useMemo(
-    () => [...groups].sort((first, second) => first.partnerName.localeCompare(second.partnerName)),
+    () =>
+      [...groups].sort((first, second) => {
+        const firstDate = relationshipOrder(first);
+        const secondDate = relationshipOrder(second);
+        if (firstDate && secondDate && firstDate !== secondDate) {
+          return firstDate.localeCompare(secondDate);
+        }
+        if (firstDate !== secondDate) return firstDate ? -1 : 1;
+        return first.partnerName.localeCompare(second.partnerName);
+      }),
     [groups],
   );
   const leftCount = Math.floor(orderedGroups.length / 2);
@@ -123,6 +140,8 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
           childOffset,
           junctionX,
           junctionY,
+          annotationX: junctionX,
+          annotationY: junctionY - 6,
         };
       });
 
@@ -171,7 +190,19 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
               data-remarriage-relationship-key={group.key}
               key={group.key}
             >
-              <path className="family-remarriage-link" d={geometry.partnerPath || ""} />
+              <path
+                className={`family-remarriage-link ${partnerRelationshipClass(group.relationship)}`}
+                d={geometry.partnerPath || ""}
+              />
+              {partnerRelationshipAnnotation(group.relationship) && (
+                <text
+                  className="family-union-annotation svg-annotation"
+                  x={geometry.annotationX || 0}
+                  y={geometry.annotationY || 0}
+                >
+                  {partnerRelationshipAnnotation(group.relationship)}
+                </text>
+              )}
               {group.children.length > 0 && (
                 <path className="family-remarriage-child-link" d={geometry.childPath || ""} />
               )}

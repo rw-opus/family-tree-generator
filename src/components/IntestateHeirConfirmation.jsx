@@ -6,7 +6,7 @@ import {
   intestacyAllocationSignature,
   intestacyShareTotalIsComplete,
   isPersonDeceased,
-  linkedSpousesFor,
+  linkedLegalSpousesFor,
   linkedSpousesMissingDeathDates,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
@@ -17,8 +17,9 @@ import {
   shareFromPercentageInput,
 } from "../domain/shares.js";
 import { DateInput } from "./DateInput.jsx";
+import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 
-const OTHER_PERSON = "__other_person__";
+const CREATE_OUTSIDE_PARTY = "__create_outside_party__";
 const totalPercentage = (rows = []) =>
   rows.reduce((total, row) => total + (Number(row.sharePercent) || 0), 0);
 
@@ -84,21 +85,28 @@ export function IntestacyProposal({
 export function IntestateHeirConfirmation({
   deceased,
   people,
+  outsideParties = [],
   calculated,
   shareDisplay = "fraction",
   displayName,
   onUpdatePerson,
+  onCreateOutsideParty,
   onSelectPerson,
 }) {
-  const [showOtherPerson, setShowOtherPerson] = useState(false);
+  const [showOutsidePartyCreator, setShowOutsidePartyCreator] = useState(false);
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const rows = deceased.intestateHeirs || [];
   const calculatedEntries = [...(calculated?.shares || new Map()).entries()];
   const calculatedShares = new Map(calculatedEntries);
   const calculatedPersonIds = new Set(calculatedShares.keys());
   const selectedPersonIds = new Set(rows.map((row) => row.personId).filter(Boolean));
-  const linkedPartners = linkedSpousesFor(people, deceased.id);
-  const partnersMissingDeathDate = linkedSpousesMissingDeathDates(people, deceased.id);
+  const linkedPartners = linkedLegalSpousesFor(people, deceased.id, deceased.dateOfDeath);
+  const partnersMissingDeathDate = linkedSpousesMissingDeathDates(
+    people,
+    deceased.id,
+    deceased.dateOfDeath,
+  );
   const availableCalledPeople = people.filter(
     (person) => calculatedPersonIds.has(person.id) && !selectedPersonIds.has(person.id),
   );
@@ -108,9 +116,17 @@ export function IntestateHeirConfirmation({
       !calculatedPersonIds.has(person.id) &&
       !selectedPersonIds.has(person.id),
   );
+  const availableOutsideParties = outsideParties.filter(
+    (party) => !selectedPersonIds.has(party.id),
+  );
   const total = totalPercentage(rows);
-  const confirmation = confirmedIntestacyAllocations(people, deceased.id, calculated);
-  const readiness = intestacyConfirmationReadiness(people, deceased.id, calculated);
+  const confirmation = confirmedIntestacyAllocations(
+    people,
+    deceased.id,
+    calculated,
+    outsideParties,
+  );
+  const readiness = intestacyConfirmationReadiness(people, deceased.id, calculated, outsideParties);
   const totalComplete = readiness.totalComplete;
   const canConfirm = readiness.valid;
 
@@ -139,7 +155,11 @@ export function IntestateHeirConfirmation({
         ),
       },
     ]);
-    setShowOtherPerson(false);
+    setShowOutsidePartyCreator(false);
+  };
+  const createOutsideParty = (party) => {
+    onCreateOutsideParty?.(party);
+    addPerson(party.id);
   };
   const applyCalculated = () =>
     replaceRows(
@@ -163,16 +183,16 @@ export function IntestateHeirConfirmation({
         <div>
           <strong>Confirm who inherited</strong>
           <small>
-            Only explicitly linked partners are treated as spouses. Sharing a recorded child alone
-            does not create a spouse share. The proposed persons and shares come from the intestacy
-            calculation.
+            Only relationships marked as married are treated as spouses. An unmarried partnership or
+            a shared child does not create a spouse share. You may still override the proposal, but
+            all confirmed shares must total 100%.
           </small>
         </div>
       </div>
 
       {linkedPartners.length > 0 && (
         <div className="partner-survival">
-          <strong>Partners at the date of death</strong>
+          <strong>Spouses at the date of death</strong>
           {linkedPartners.map((partner) => (
             <label key={partner.id}>
               <button
@@ -213,7 +233,7 @@ export function IntestateHeirConfirmation({
       <div className="confirmed-intestate-heirs">
         <strong>Heirs to be confirmed</strong>
         {rows.map((row) => {
-          const person = peopleById.get(row.personId);
+          const person = peopleById.get(row.personId) || outsidePartiesById.get(row.personId);
           const fraction = fractionForShare(row);
           const numerator = row.shareNumerator ?? fraction.numerator;
           const denominator = row.shareDenominator ?? fraction.denominator;
@@ -270,40 +290,55 @@ export function IntestateHeirConfirmation({
         })}
 
         <select
-          aria-label="Add person called to intestate succession"
+          aria-label="Add an heir or override the intestacy proposal"
           value=""
           onChange={(event) => {
-            if (event.target.value === OTHER_PERSON) {
-              setShowOtherPerson(true);
+            if (event.target.value === CREATE_OUTSIDE_PARTY) {
+              setShowOutsidePartyCreator(true);
               return;
             }
             addPerson(event.target.value);
           }}
         >
-          <option value="">Add an heir</option>
-          {availableCalledPeople.map((person) => (
-            <option key={person.id} value={person.id}>
-              {displayName(person)}
-            </option>
-          ))}
+          <option value="">Add any heir</option>
+          {availableCalledPeople.length > 0 && (
+            <optgroup label="Statutory proposal">
+              {availableCalledPeople.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {displayName(person)}
+                </option>
+              ))}
+            </optgroup>
+          )}
           {availableOtherPeople.length > 0 && (
-            <option value={OTHER_PERSON}>Choose any other person...</option>
+            <optgroup label="Other people on the family tree">
+              {availableOtherPeople.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {displayName(person)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {availableOutsideParties.length > 0 && (
+            <optgroup label="Unconnected people and companies">
+              {availableOutsideParties.map((party) => (
+                <option key={party.id} value={party.id}>
+                  {displayName(party)}
+                  {party.type === "company" ? " (company)" : " (unconnected)"}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {onCreateOutsideParty && (
+            <option value={CREATE_OUTSIDE_PARTY}>Create unconnected person or company...</option>
           )}
         </select>
 
-        {showOtherPerson && (
-          <select
-            aria-label="Choose any other person as heir"
-            value=""
-            onChange={(event) => addPerson(event.target.value)}
-          >
-            <option value="">Choose another person</option>
-            {availableOtherPeople.map((person) => (
-              <option key={person.id} value={person.id}>
-                {displayName(person)}
-              </option>
-            ))}
-          </select>
+        {showOutsidePartyCreator && (
+          <OutsidePartyCreator
+            onCreate={createOutsideParty}
+            onCancel={() => setShowOutsidePartyCreator(false)}
+          />
         )}
 
         <div className="intestate-confirmation-footer">

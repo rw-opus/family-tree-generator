@@ -28,12 +28,16 @@ export function propertyStartingOwnershipStatus(property = {}) {
 
 export function buildPropertyVendorTaxReport(property = {}, people = [], outsideParties = []) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const startingOwnership = propertyStartingOwnershipStatus(property);
-  const ownership = buildPropertyOwnership(people, property);
+  const ownership = buildPropertyOwnership(people, property, outsideParties);
   const declarationOwners = Object.entries(ownership.ownershipByPerson).map(
     ([personId, share]) => ({
       id: personId,
-      name: peopleById.get(personId)?.fullName || "Unnamed person",
+      name:
+        peopleById.get(personId)?.fullName ||
+        outsidePartiesById.get(personId)?.name ||
+        "Unnamed party",
       share,
     }),
   );

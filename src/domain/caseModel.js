@@ -1,3 +1,5 @@
+import { normalizePartnerRelationships } from "./partnerRelationships.js";
+
 export const CASE_SCHEMA_VERSION = 2;
 
 const DEFAULT_CASE_ID = "legacy-case";
@@ -43,13 +45,14 @@ function nextFamilyGroupId(caseData) {
 function normalizePeople(people = []) {
   if (!Array.isArray(people)) return [];
   const seen = new Set();
-  return people.filter(isRecord).reduce((result, person) => {
+  const normalized = people.filter(isRecord).reduce((result, person) => {
     const id = text(person.id);
     if (!id || seen.has(id)) return result;
     seen.add(id);
     result.push({ ...cloneValue(person), id });
     return result;
   }, []);
+  return normalizePartnerRelationships(normalized);
 }
 
 function normalizeFamilyGroup(group, index, caseData, validPersonIds) {

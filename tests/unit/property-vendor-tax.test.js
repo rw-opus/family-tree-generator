@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  intestacyAllocationSignature,
+  intestateAllocations,
+} from "../../src/domain/familyOwnership.js";
 import { buildPropertyVendorTaxReport } from "../../src/domain/propertyVendorTax.js";
 
 describe("property vendor tax reports", () => {
@@ -72,6 +76,107 @@ describe("property vendor tax reports", () => {
     });
     expect(report.taxSummary.total).toBeCloseTo(2.4);
     expect(report.taxSummary.excludedLotCount).toBe(1);
+  });
+
+  it("keeps an unconnected company inherited under a will in the owner and vendor ledger", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "legacy", personId: "company", sharePercent: 100 }],
+        spouseIds: [],
+      },
+    ];
+    const outsideParties = [{ id: "company", name: "Legacy Holdings Limited", type: "company" }];
+    const property = {
+      id: "property",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+
+    const report = buildPropertyVendorTaxReport(property, people, outsideParties);
+
+    expect(report.declarationOwners).toEqual([
+      { id: "company", name: "Legacy Holdings Limited", share: 1 },
+    ]);
+    expect(report.ledger.owners[0]).toMatchObject({
+      id: "company",
+      name: "Legacy Holdings Limited",
+      type: "company",
+      share: 1,
+    });
+    expect(report.livingVendors.map((vendor) => vendor.id)).toEqual(["company"]);
+  });
+
+  it("carries a confirmed outside intestate heir through CM values and the vendor tax total", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+        spouseIds: [],
+      },
+      { id: "child", fullName: "Maria Borg", fatherId: "deceased", spouseIds: [] },
+    ];
+    const calculated = intestateAllocations(people, "deceased");
+    people[0] = {
+      ...people[0],
+      intestateHeirs: [{ id: "company-heir", personId: "company", sharePercent: 100 }],
+      intestateHeirsConfirmed: true,
+      intestateConfirmationBasis: intestacyAllocationSignature(people[0], calculated),
+    };
+    const outsideParties = [{ id: "company", name: "Legacy Holdings Limited", type: "company" }];
+    const property = {
+      id: "property",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+      declarations: [
+        {
+          id: "published-cm",
+          status: "published",
+          participants: [{ heirId: "company", numerator: 1, denominator: 1, declaredValue: 100 }],
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "company-sale",
+          ownerId: "company",
+          inheritanceDate: "2020-01-01",
+          transferDate: "2026-07-31",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 0,
+          acquisitionValueBasis: "cm-declared",
+          cmValueEligibilityConfirmed: true,
+          transferValue: 200,
+          useDeclaredValues: true,
+          selectedTaxMethod: "increase-12",
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(property, people, outsideParties);
+
+    expect(report.ownership.ownershipByParty.company).toBeCloseTo(1);
+    expect(report.saleRows[0]).toMatchObject({
+      usePublishedValues: true,
+      effectiveLot: { acquisitionValue: 100 },
+      result: {
+        selected: "increase-12",
+        methods: expect.arrayContaining([expect.objectContaining({ key: "increase-12", tax: 12 })]),
+      },
+    });
+    expect(report.taxSummary.vendors).toEqual([
+      expect.objectContaining({ id: "company", lotCount: 1, tax: 12 }),
+    ]);
+    expect(report.taxSummary.total).toBeCloseTo(12);
   });
 
   it("keeps a manually selected company assessment in the vendor report", () => {

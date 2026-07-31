@@ -1,10 +1,17 @@
 import { approximateFraction, buildStarterOwnership } from "./ownership.js";
+import {
+  findPartnerRelationship,
+  legalSpouseIdsForPerson,
+  partnerIdsForPerson,
+  partnerRelationshipStatusAt,
+} from "./partnerRelationships.js";
 import { CURRENT_SUCCESSION_START } from "./propertyTax.js";
 
 const number = (input) => Math.max(0, Number(input) || 0);
 export const INTESTACY_SHARE_EPSILON = 1e-8;
 const SURVIVAL_UNRESOLVED_DESTINATIONS = new Set([
   "spouse-survival-unresolved",
+  "spouse-status-unresolved",
   "death-date-unresolved",
   "survival-date-unresolved",
 ]);
@@ -115,10 +122,32 @@ export function linkedSpousesFor(people = [], personId) {
   return person ? linkedSpouses(person, people, index.peopleById) : [];
 }
 
-export function linkedSpousesMissingDeathDates(people = [], deceasedId) {
-  return linkedSpousesFor(people, deceasedId).filter(
+export function linkedLegalSpousesFor(people = [], personId, atDate = "") {
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  return legalSpouseIdsForPerson(people, personId, atDate)
+    .map((spouseId) => peopleById.get(spouseId))
+    .filter(Boolean);
+}
+
+export function linkedSpousesMissingDeathDates(people = [], deceasedId, atDate = "") {
+  return linkedLegalSpousesFor(people, deceasedId, atDate).filter(
     (person) => isPersonDeceased(person) && !person.dateOfDeath,
   );
+}
+
+export function linkedMarriagesMissingEndDates(people = [], personId, atDate = "") {
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  return partnerIdsForPerson(people, personId)
+    .map((partnerId) => ({
+      partner: peopleById.get(partnerId),
+      relationship: findPartnerRelationship(people, personId, partnerId),
+    }))
+    .filter(
+      ({ relationship }) =>
+        partnerRelationshipStatusAt(relationship, atDate) === "end-date-missing",
+    )
+    .map(({ partner }) => partner)
+    .filter(Boolean);
 }
 
 function branchesMissingSurvivalDates(roots, atDate, index) {
@@ -220,8 +249,43 @@ export function intestateAllocations(people = [], deceasedId) {
     warnings.push("Historical intestacy rules before 1 March 2005 are not yet automated.");
     return { shares, warnings, destination: "historical-unresolved" };
   }
-  const spouses = linkedSpouses(deceased, people, index.peopleById);
-  const spousesWithUnknownSurvival = linkedSpousesMissingDeathDates(people, deceased.id);
+  if (!deceased.dateOfDeath) {
+    warnings.push(
+      `Enter the date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
+    );
+    return { shares, warnings, destination: "death-date-unresolved" };
+  }
+
+  const atDate = deceased.dateOfDeath;
+  const marriagesNotStarted = partnerIdsForPerson(people, deceased.id)
+    .map((partnerId) => ({
+      partner: index.peopleById.get(partnerId),
+      relationship: findPartnerRelationship(people, deceased.id, partnerId),
+    }))
+    .filter(
+      ({ relationship }) => partnerRelationshipStatusAt(relationship, atDate) === "not-started",
+    )
+    .map(({ partner }) => partner)
+    .filter(Boolean);
+  if (marriagesNotStarted.length) {
+    warnings.push(
+      `The recorded marriage to ${marriagesNotStarted
+        .map(personName)
+        .join(", ")} starts after the date of death and was excluded.`,
+    );
+  }
+  const marriagesMissingEndDates = linkedMarriagesMissingEndDates(people, deceased.id, atDate);
+  if (marriagesMissingEndDates.length) {
+    warnings.push(
+      `Enter the date on which the marriage to ${marriagesMissingEndDates
+        .map(personName)
+        .join(", ")} ended before calculating the intestate succession.`,
+    );
+    return { shares, warnings, destination: "spouse-status-unresolved" };
+  }
+
+  const spouses = linkedLegalSpousesFor(people, deceased.id, atDate);
+  const spousesWithUnknownSurvival = linkedSpousesMissingDeathDates(people, deceased.id, atDate);
   if (spousesWithUnknownSurvival.length) {
     const names = spousesWithUnknownSurvival.map((person) => person.fullName || "Unnamed partner");
     warnings.push(
@@ -231,15 +295,13 @@ export function intestateAllocations(people = [], deceasedId) {
     );
     return { shares, warnings, destination: "spouse-survival-unresolved" };
   }
-  if (!deceased.dateOfDeath) {
-    warnings.push(
-      `Enter the date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
-    );
-    return { shares, warnings, destination: "death-date-unresolved" };
-  }
-
-  const atDate = deceased.dateOfDeath;
   const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
+  if (livingSpouses.length > 1) {
+    warnings.push(
+      `More than one marriage appears active on ${atDate}. Record the end date of every former marriage before calculating the intestate succession.`,
+    );
+    return { shares, warnings, destination: "spouse-status-unresolved" };
+  }
   const children = index.childrenByParent.get(deceased.id) || [];
   const descendantsWithUnknownSurvival = descendantsMissingDeathDates(people, deceased.id);
   if (descendantsWithUnknownSurvival.length) {
@@ -371,6 +433,7 @@ export function intestacyConfirmationReadiness(
   people = [],
   deceasedId,
   calculatedAllocation = null,
+  outsideParties = [],
 ) {
   const deceased = people.find((person) => person.id === deceasedId);
   if (!deceased) {
@@ -388,7 +451,10 @@ export function intestacyConfirmationReadiness(
   const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
   const selectedIds = rows.map((row) => row.personId).filter(Boolean);
   const uniqueIds = new Set(selectedIds);
-  const validPersonIds = new Set(people.map((person) => person.id));
+  const validPersonIds = new Set([
+    ...people.map((person) => person.id),
+    ...outsideParties.map((party) => party.id),
+  ]);
   const totalPercent = rows.reduce((sum, row) => sum + number(row.sharePercent), 0);
   const totalComplete = intestacyShareTotalIsComplete(totalPercent);
   const issues = [];
@@ -427,6 +493,7 @@ export function confirmedIntestacyAllocations(
   people = [],
   deceasedId,
   calculatedAllocation = null,
+  outsideParties = [],
 ) {
   const deceased = people.find((person) => person.id === deceasedId);
   const shares = new Map();
@@ -436,7 +503,7 @@ export function confirmedIntestacyAllocations(
   }
 
   const calculated = calculatedAllocation || intestateAllocations(people, deceasedId);
-  const readiness = intestacyConfirmationReadiness(people, deceasedId, calculated);
+  const readiness = intestacyConfirmationReadiness(people, deceasedId, calculated, outsideParties);
   const currentSignature = readiness.currentSignature;
   const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
   const valid =
@@ -471,8 +538,9 @@ export function willAllocations(person = {}) {
 // Runs the intestacy/will cascade against an arbitrary starting-ownership map, so the
 // same family logic can be shared between the legacy single-property view and the
 // per-property engine below. startingOwnership is { personId: fraction (0..1) }.
-function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
+function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsideParties = []) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const outsidePartyIds = new Set(outsideParties.map((party) => party.id).filter(Boolean));
   const ownership = new Map();
   const contributions = [];
   const transmissions = [];
@@ -498,7 +566,16 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
       return;
     }
     const person = peopleById.get(personId);
-    if (!person) return;
+    if (!person) {
+      if (outsidePartyIds.has(personId)) {
+        record(personId, amount, via);
+        return;
+      }
+      const warning = `The heir or owner identified by ${personId} is no longer in this case.`;
+      record(personId, amount, "unresolved");
+      unresolved.push({ personId, amount, warnings: [warning] });
+      return;
+    }
     if (!isPersonDeceased(person)) {
       record(personId, amount, via);
       return;
@@ -510,7 +587,7 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}) {
       result = { shares: willAllocations(person), warnings: [], destination: "will" };
     } else {
       const calculated = intestateAllocations(people, personId);
-      const confirmed = confirmedIntestacyAllocations(people, personId, calculated);
+      const confirmed = confirmedIntestacyAllocations(people, personId, calculated, outsideParties);
       result = confirmed.valid
         ? {
             shares: confirmed.shares,
@@ -600,9 +677,9 @@ function propertyStartingOwnership(property = {}) {
 
 // Runs the same automatic cascade for a single property's explicit starting owners, and
 // returns a flat per-owner breakdown suitable for future tax integration.
-export function buildPropertyOwnership(people = [], property = {}) {
+export function buildPropertyOwnership(people = [], property = {}, outsideParties = []) {
   const startingOwnership = propertyStartingOwnership(property);
-  const core = buildFamilyOwnershipCore(people, startingOwnership);
+  const core = buildFamilyOwnershipCore(people, startingOwnership, outsideParties);
   const breakdown = core.contributions
     .filter((contribution) => contribution.amount > 1e-12)
     .map((contribution) => {
@@ -619,6 +696,7 @@ export function buildPropertyOwnership(people = [], property = {}) {
   return {
     propertyId: property.id,
     ownershipByPerson: core.ownershipByPerson,
+    ownershipByParty: core.ownershipByPerson,
     breakdown,
     transmissions: core.transmissions,
     unresolved: core.unresolved,
@@ -626,11 +704,11 @@ export function buildPropertyOwnership(people = [], property = {}) {
 }
 
 // Runs buildPropertyOwnership across every property, for views that need the whole picture.
-export function buildFamilyPropertyOwnership(people = [], properties = []) {
+export function buildFamilyPropertyOwnership(people = [], properties = [], outsideParties = []) {
   const byProperty = {};
   const breakdown = [];
   properties.forEach((property) => {
-    const result = buildPropertyOwnership(people, property);
+    const result = buildPropertyOwnership(people, property, outsideParties);
     byProperty[property.id] = result;
     breakdown.push(...result.breakdown);
   });

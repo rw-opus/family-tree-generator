@@ -3,6 +3,7 @@ import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonInspector } from "../../src/components/PersonInspector.jsx";
+import { findPartnerRelationship } from "../../src/domain/partnerRelationships.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -1204,7 +1205,7 @@ describe("PersonInspector", () => {
     const statusRows = [...container.querySelectorAll(".person-status-control")];
     expect(statusRows.map((row) => row.firstElementChild.textContent)).toEqual(["Sex", "Status"]);
     expect(
-      [...statusRows[0].querySelectorAll('input[type="checkbox"]')].map(
+      [...statusRows[0].querySelectorAll('input[type="radio"]')].map(
         (input) => input.parentElement.textContent,
       ),
     ).toEqual(["Female", "Male", "Other"]);
@@ -2082,5 +2083,209 @@ describe("PersonInspector", () => {
 
     expect(container.querySelector('select[aria-label="Mother"]')).toBeNull();
     expect(container.querySelector('select[aria-label="Father"]')).toBeNull();
+  });
+
+  it("creates marriages and unmarried partnerships as distinct relationships", () => {
+    let latestPeople;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "roland",
+          fullName: "Roland Wadge",
+          givenNames: "Roland",
+          surname: "Wadge",
+          surnameAtBirth: "Wadge",
+          sex: "Male",
+          spouseIds: [],
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="roland"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    act(() =>
+      [...container.querySelectorAll(".relationship-actions button")]
+        .find((button) => button.textContent.includes("Wife / husband"))
+        .click(),
+    );
+    const marriageDate = container.querySelector(".partner-date-field input");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        marriageDate,
+        "15-06-2015",
+      );
+      marriageDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() =>
+      [...container.querySelectorAll(".spouse-chooser button")]
+        .find((button) => button.textContent.includes("Create new wife / husband"))
+        .click(),
+    );
+    const spouseId = latestPeople.find((person) => person.id !== "roland").id;
+    expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
+      type: "marriage",
+      startDate: "2015-06-15",
+    });
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Edit")
+        .click(),
+    );
+    const relationshipType = container.querySelector(".person-partner-link-row select");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        relationshipType,
+        "former-marriage",
+      );
+      relationshipType.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const marriageEndDate = container.querySelector('input[aria-label^="Marriage end date with"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        marriageEndDate,
+        "01-03-2020",
+      );
+      marriageEndDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
+      type: "marriage",
+      endDate: "2020-03-01",
+      endReason: "divorce",
+    });
+
+    act(() =>
+      [...container.querySelectorAll(".relationship-actions button")]
+        .find((button) => button.textContent.includes("Partner"))
+        .click(),
+    );
+    act(() =>
+      [...container.querySelectorAll(".spouse-chooser button")]
+        .find((button) => button.textContent.includes("Create new partner"))
+        .click(),
+    );
+    const partnerId = latestPeople.at(-1).id;
+    expect(findPartnerRelationship(latestPeople, "roland", partnerId)).toMatchObject({
+      type: "partnership",
+    });
+    expect(latestPeople.find((person) => person.id === "roland").spouseIds).toHaveLength(2);
+  });
+
+  it("adds another tree person or a new unconnected company directly as an heir", () => {
+    let latestPeople;
+    let latestOutsideParties;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "deceased",
+          fullName: "Joseph Borg",
+          givenNames: "Joseph",
+          surname: "Borg",
+          surnameAtBirth: "Borg",
+          sex: "Male",
+          isDeceased: true,
+          designations: ["Deceased"],
+          dateOfDeath: "2020-01-01",
+          spouseIds: [],
+        },
+        {
+          id: "child",
+          fullName: "Maria Borg",
+          givenNames: "Maria",
+          surname: "Borg",
+          surnameAtBirth: "Borg",
+          sex: "Female",
+          fatherId: "deceased",
+          spouseIds: [],
+        },
+        {
+          id: "friend",
+          fullName: "Anna Vella",
+          givenNames: "Anna",
+          surname: "Vella",
+          surnameAtBirth: "Vella",
+          sex: "Female",
+          spouseIds: [],
+        },
+      ]);
+      const [outsideParties, setOutsideParties] = useState([]);
+      latestPeople = people;
+      latestOutsideParties = outsideParties;
+      return (
+        <PersonInspector
+          people={people}
+          outsideParties={outsideParties}
+          selectedPersonId="deceased"
+          onChange={setPeople}
+          onOutsidePartiesChange={setOutsideParties}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    let heirSelect = container.querySelector(
+      'select[aria-label="Add an heir or override the intestacy proposal"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        heirSelect,
+        "friend",
+      );
+      heirSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(latestPeople[0].intestateHeirs[0].personId).toBe("friend");
+
+    heirSelect = container.querySelector(
+      'select[aria-label="Add an heir or override the intestacy proposal"]',
+    );
+    const createOption = [...heirSelect.options].find((option) =>
+      option.textContent.includes("Create unconnected"),
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        heirSelect,
+        createOption.value,
+      );
+      heirSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const typeSelect = container.querySelector('select[aria-label="Unconnected heir type"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        typeSelect,
+        "company",
+      );
+      typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const nameInput = container.querySelector('input[aria-label="Unconnected heir name"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        nameInput,
+        "Legacy Holdings Ltd",
+      );
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() =>
+      [...container.querySelectorAll(".outside-party-creator button")]
+        .find((button) => button.textContent.includes("Add as heir"))
+        .click(),
+    );
+
+    expect(latestOutsideParties).toHaveLength(1);
+    expect(latestOutsideParties[0]).toMatchObject({
+      name: "Legacy Holdings Ltd",
+      type: "company",
+    });
+    expect(latestPeople).toHaveLength(3);
+    expect(latestPeople[0].intestateHeirs.map((heir) => heir.personId)).toContain(
+      latestOutsideParties[0].id,
+    );
   });
 });
