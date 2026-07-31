@@ -74,11 +74,6 @@ export function denseDescendantLaneOffsets(columns, verticalGap = 6) {
   return offsets;
 }
 
-function laneOffsetsChanged(current, next) {
-  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
-  return [...keys].some((key) => (current[key] || 0) !== (next[key] || 0));
-}
-
 function relationshipOrder(group) {
   const relationship = group.relationship || {};
   return (
@@ -100,7 +95,6 @@ export function MultiplePartnerHousehold({
     incomingPath: "",
     unions: {},
   });
-  const [descendantLaneOffsets, setDescendantLaneOffsets] = useState({});
   const orderedGroups = useMemo(
     () =>
       [...groups].sort((first, second) => {
@@ -114,30 +108,26 @@ export function MultiplePartnerHousehold({
       }),
     [groups],
   );
-  const leftCount = Math.floor(orderedGroups.length / 2);
+  const leftCount = orderedGroups.length;
   const positionedGroups = useMemo(
-    () => [
-      ...orderedGroups.slice(0, leftCount).map((group, sideIndex) => ({
+    () =>
+      orderedGroups.map((group, sideIndex) => ({
         ...group,
         side: "left",
         sideIndex: leftCount - sideIndex - 1,
       })),
-      ...orderedGroups.slice(leftCount).map((group, sideIndex) => ({
-        ...group,
-        side: "right",
-        sideIndex,
-      })),
-    ],
     [leftCount, orderedGroups],
   );
-  const railLevels = Math.max(leftCount, orderedGroups.length - leftCount) - 1;
+  const railLevels = leftCount - 1;
 
   useLayoutEffect(() => {
     const layout = layoutRef.current;
     if (!layout) return undefined;
 
     const measure = () => {
-      const anchorNode = layout.querySelector(".family-multi-anchor-node > [data-person-id]");
+      const anchorNode = layout.querySelector(
+        ":scope > .family-multi-anchor-node > [data-person-id]",
+      );
       if (!anchorNode || !layout.offsetWidth || !layout.offsetHeight) return;
 
       const layoutRect = layout.getBoundingClientRect();
@@ -149,40 +139,6 @@ export function MultiplePartnerHousehold({
       const anchorLeft = (anchorRect.left - layoutRect.left) / scaleX;
       const anchorRight = anchorLeft + anchorRect.width / scaleX;
       const nextUnions = {};
-      if (denseLayout) {
-        const descendantColumns = positionedGroups
-          .map((group) => {
-            const descendants = [
-              ...layout.querySelectorAll("[data-remarriage-descendants-key]"),
-            ].find((element) => element.dataset.remarriageDescendantsKey === group.key);
-            if (!descendants) return null;
-
-            const currentOffset = descendantLaneOffsets[group.key] || 0;
-            const descendantsRect = descendants.getBoundingClientRect();
-            const cards = [...descendants.querySelectorAll("[data-person-id]")].map((card) => {
-              const rect = card.getBoundingClientRect();
-              return {
-                left: (rect.left - layoutRect.left) / scaleX,
-                right: (rect.right - layoutRect.left) / scaleX,
-                top: (rect.top - layoutRect.top) / scaleY - currentOffset,
-                bottom: (rect.bottom - layoutRect.top) / scaleY - currentOffset,
-              };
-            });
-
-            return {
-              key: group.key,
-              left: (descendantsRect.left - layoutRect.left) / scaleX,
-              cards,
-            };
-          })
-          .filter(Boolean);
-        const nextLaneOffsets = denseDescendantLaneOffsets(descendantColumns);
-
-        if (laneOffsetsChanged(descendantLaneOffsets, nextLaneOffsets)) {
-          setDescendantLaneOffsets(nextLaneOffsets);
-          return;
-        }
-      }
       const branchItem = layout.closest(".family-child-branch-item");
       const branchAnchorNode = [...layout.querySelectorAll("[data-person-id]")].find(
         (element) => element.dataset.personId === branchAnchor.id,
@@ -198,7 +154,7 @@ export function MultiplePartnerHousehold({
       }
 
       positionedGroups.forEach((group) => {
-        const union = [...layout.querySelectorAll("[data-remarriage-key]")].find(
+        const union = [...layout.querySelectorAll(":scope > [data-remarriage-key]")].find(
           (element) => element.dataset.remarriageKey === group.key,
         );
         const partnerNode = [...(union?.querySelectorAll("[data-person-id]") || [])].find(
@@ -229,7 +185,7 @@ export function MultiplePartnerHousehold({
           partnerPath = `M ${startX} ${anchorMiddle} V ${railY} H ${endX} V ${partnerMiddle}`;
         }
 
-        const descendants = union.querySelector(".family-remarriage-descendants");
+        const descendants = union.querySelector(":scope > .family-remarriage-descendants");
         const descendantsRect = descendants?.getBoundingClientRect();
         const descendantsTop = descendantsRect
           ? (descendantsRect.top - layoutRect.top) / scaleY
@@ -277,7 +233,7 @@ export function MultiplePartnerHousehold({
       observer?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [branchAnchor.id, denseLayout, descendantLaneOffsets, positionedGroups]);
+  }, [branchAnchor.id, denseLayout, positionedGroups]);
 
   return (
     <div
@@ -332,12 +288,14 @@ export function MultiplePartnerHousehold({
         })}
       </svg>
       {positionedGroups.map((group, index) => {
-        const order = index < leftCount ? index : index + 1;
+        const order = index;
         const childOffset = connectorGeometry.unions[group.key]?.childOffset || 0;
 
         return (
           <div
-            className={`family-union-block family-remarriage-union ${group.side}`}
+            className={`family-union-block family-remarriage-union ${group.side} ${
+              group.children.length ? "has-descendants" : "childless"
+            }`}
             data-remarriage-key={group.key}
             key={group.key}
             style={{ order }}
@@ -349,12 +307,7 @@ export function MultiplePartnerHousehold({
               <div
                 className="family-remarriage-descendants"
                 data-remarriage-descendants-key={group.key}
-                data-dense-lane-offset={denseLayout ? descendantLaneOffsets[group.key] || 0 : null}
-                style={
-                  denseLayout
-                    ? { marginTop: `${descendantLaneOffsets[group.key] || 0}px` }
-                    : { transform: `translateX(${childOffset}px)` }
-                }
+                style={{ transform: `translateX(${childOffset}px)` }}
               >
                 {group.childrenContent}
               </div>

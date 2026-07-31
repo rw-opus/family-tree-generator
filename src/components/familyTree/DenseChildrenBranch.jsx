@@ -72,7 +72,6 @@ export function groupDenseChildRows(anchors, tolerance = ROW_TOLERANCE) {
 export function denseChildrenConnectorGeometry({
   width,
   anchors,
-  sideGutter = DENSE_CHILDREN_SIDE_GUTTER,
   rowGutter = DENSE_CHILDREN_ROW_GUTTER,
 }) {
   const rows = groupDenseChildRows(anchors);
@@ -94,15 +93,15 @@ export function denseChildrenConnectorGeometry({
     };
   }
 
-  const trunkX = rounded(sideGutter / 2);
   const rowGeometry = rows.map((row) => {
     const railY = rounded(row.itemTop + rowGutter / 2);
-    const furthestAnchorX = rounded(
-      Math.max(trunkX, ...row.anchors.map((anchor) => anchor.centerX)),
-    );
+    const firstAnchorX = rounded(Math.min(...row.anchors.map((anchor) => anchor.centerX)));
+    const lastAnchorX = rounded(Math.max(...row.anchors.map((anchor) => anchor.centerX)));
+    const railStart = rounded(Math.min(parentX, firstAnchorX));
+    const railEnd = rounded(Math.max(parentX, lastAnchorX));
 
     return {
-      railPath: `M ${trunkX} ${railY} H ${furthestAnchorX}`,
+      railPath: `M ${railStart} ${railY} H ${railEnd}`,
       railY,
       stems: row.anchors.map((anchor) => ({
         key: anchor.key,
@@ -110,12 +109,9 @@ export function denseChildrenConnectorGeometry({
       })),
     };
   });
-  const firstRailY = rowGeometry[0].railY;
   const lastRailY = rowGeometry.at(-1).railY;
   return {
-    parentPath: `M ${parentX} 0 V ${firstRailY} H ${trunkX}${
-      lastRailY === firstRailY ? "" : ` V ${lastRailY}`
-    }`,
+    parentPath: `M ${parentX} 0 V ${lastRailY}`,
     rows: rowGeometry,
   };
 }

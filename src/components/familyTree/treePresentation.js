@@ -5,7 +5,7 @@ import {
   personSurname,
 } from "../../domain/people.js";
 
-export const PARTNER_LINK_WIDTH = 64;
+export const PARTNER_LINK_WIDTH = 40;
 
 export function capitalisedName(value = "") {
   return String(value).replace(/(^|[\s'-])\p{L}/gu, (match) => match.toLocaleUpperCase("en-MT"));

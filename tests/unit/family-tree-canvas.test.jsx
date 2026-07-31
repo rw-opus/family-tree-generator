@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
+import { FamilyTreeCanvas as ProductionFamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
 import {
   anchoredBranchOffset,
   anchoredIncomingPath,
@@ -10,6 +10,10 @@ import {
 import { compactNodeWidth } from "../../src/components/familyTree/treePresentation.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+function FamilyTreeCanvas(props) {
+  return <ProductionFamilyTreeCanvas {...props} forceLegacyRenderer />;
+}
 
 function measuredRect({ left = 0, top = 0, width = 0, height = 0 } = {}) {
   return {
@@ -393,7 +397,7 @@ describe("FamilyTreeCanvas", () => {
 
     const person = container.querySelector('[data-person-id="root"]');
     expect(person.classList.contains("stacked-legal-details")).toBe(true);
-    expect(person.style.getPropertyValue("--family-node-width")).toBe("132px");
+    expect(person.style.getPropertyValue("--family-node-width")).toBe("112px");
     expect(person.querySelector(".family-node-name").textContent).toBe("Pandolfo");
     expect(person.querySelector(".family-node-surname").textContent).toBe("Testaferrata De Noto");
     expect(person.textContent).toContain("Died 03-04-1950");
@@ -846,6 +850,11 @@ describe("FamilyTreeCanvas", () => {
         (union) => union.querySelector('[data-person-id^="partner-"]').dataset.personId,
       ),
     ).toEqual(["partner-1", "partner-2", "partner-3"]);
+    expect(
+      [...container.querySelectorAll(".family-remarriage-union")].every((union) =>
+        union.classList.contains("left"),
+      ),
+    ).toBe(true);
     expect(container.querySelectorAll('[data-person-id="child-1"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-person-id="child-2"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-person-id="child-3"]')).toHaveLength(1);
@@ -972,7 +981,7 @@ describe("FamilyTreeCanvas", () => {
         .querySelector('[data-person-id="roland"]')
         .closest(".family-child-branch-item")
         .style.getPropertyValue("--branch-anchor-offset"),
-    ).toBe("-127px");
+    ).toBe("-115px");
   });
 
   it("keeps partnered cousins in their own branches and renders their child once", () => {
@@ -1308,5 +1317,39 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector(".family-partner-network-incoming-link").getAttribute("d")).toBe(
       "M 260 0 V 56",
     );
+  });
+
+  it("keeps large trees grouped into visible family households", () => {
+    const people = [
+      { id: "father", fullName: "Father Borg", spouseIds: ["mother"] },
+      { id: "mother", fullName: "Mother Borg", spouseIds: ["father"] },
+      ...Array.from({ length: 78 }, (_, index) => ({
+        id: `child-${index + 1}`,
+        fullName: `Child ${index + 1} Borg`,
+        fatherId: "father",
+        motherId: "mother",
+      })),
+    ];
+
+    act(() => root.render(<FamilyTreeCanvas people={people} />));
+
+    expect(container.querySelector(".family-generation-layout")).toBeNull();
+    expect(container.querySelector(".relational-forest")).not.toBeNull();
+    expect(container.querySelector(".family-household")).not.toBeNull();
+    expect(container.querySelector(".family-parent-row")).not.toBeNull();
+    expect(container.querySelector(".family-partner-link.marriage")).not.toBeNull();
+    expect(container.querySelectorAll("[data-person-id]")).toHaveLength(people.length);
+  });
+
+  it("uses the proven genealogy renderer for very dense imported trees", () => {
+    const people = Array.from({ length: 120 }, (_, index) => ({
+      id: `person-${index}`,
+      fullName: `Person ${index}`,
+      fatherId: index > 0 ? `person-${index - 1}` : "",
+    }));
+
+    act(() => root.render(<ProductionFamilyTreeCanvas people={people} />));
+
+    expect(container.querySelector('[data-genealogy-renderer="family-chart"]')).not.toBeNull();
   });
 });

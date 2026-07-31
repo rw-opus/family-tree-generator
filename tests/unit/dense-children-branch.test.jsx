@@ -89,7 +89,7 @@ describe("dense descendant layout geometry", () => {
     ).toBe("M 500 0 V 32");
   });
 
-  it("uses a reserved elbow instead of translating dense remarriage descendants", () => {
+  it("routes dense remarriage descendants through a reserved elbow", () => {
     expect(
       descendantChildPath({
         junctionX: 400,
@@ -160,8 +160,11 @@ describe("dense descendant layout geometry", () => {
       ],
     });
 
-    expect(geometry.parentPath).toBe("M 500 0 V 16 H 14 V 116");
-    expect(geometry.rows.map((row) => row.railPath)).toEqual(["M 14 16 H 300", "M 14 116 H 200"]);
+    expect(geometry.parentPath).toBe("M 500 0 V 116");
+    expect(geometry.rows.map((row) => row.railPath)).toEqual([
+      "M 100 16 H 500",
+      "M 200 116 H 500",
+    ]);
     expect(geometry.rows.flatMap((row) => row.stems.map((stem) => stem.path))).toEqual([
       "M 100 17.5 V 32",
       "M 300 17.5 V 32",

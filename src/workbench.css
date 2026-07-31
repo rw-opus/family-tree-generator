@@ -3385,10 +3385,6 @@ button.family-link-person:hover {
   padding: 0.5rem 0.5rem 2rem;
 }
 
-.tree-stage .relational-forest:has(.family-node[data-widest-generation="true"]) {
-  gap: 0;
-}
-
 .tree-stage .family-household,
 .tree-stage .family-union-block {
   --family-union-junction-offset: 0px;
@@ -3405,23 +3401,6 @@ button.family-link-person:hover {
   align-items: flex-start;
   justify-content: center;
   gap: 1rem;
-}
-
-.tree-stage .family-household-unions:has(.family-node[data-widest-generation="true"]),
-.tree-stage .family-partner-network-unions:has(.family-node[data-widest-generation="true"]) {
-  gap: 0;
-}
-
-.tree-stage
-  .family-parent-row:has(.family-node[data-widest-generation="true"])
-  .family-partner-link {
-  flex-basis: 8px;
-  width: 8px;
-}
-
-.tree-stage .family-partner-network-people:has(.family-node[data-widest-generation="true"]),
-.tree-stage .family-remarriage-layout:has(.family-node[data-widest-generation="true"]) {
-  gap: 8px;
 }
 
 .tree-stage .family-household-unions.multiple {
@@ -3443,7 +3422,7 @@ button.family-link-person:hover {
   align-items: flex-start;
   justify-content: center;
   width: max-content;
-  gap: 64px;
+  gap: 32px;
   padding-top: var(--remarriage-rail-space, 0);
 }
 
@@ -3456,6 +3435,14 @@ button.family-link-person:hover {
 .tree-stage .family-multi-anchor-node {
   display: flex;
   align-items: flex-start;
+}
+
+.tree-stage .family-remarriage-union.left {
+  align-items: flex-end;
+}
+
+.tree-stage .family-remarriage-union.left > .family-parent-row {
+  align-self: flex-end;
 }
 
 .tree-stage .family-remarriage-connectors {
@@ -3481,14 +3468,6 @@ button.family-link-person:hover {
 .tree-stage .family-parent-node {
   display: flex;
   justify-content: center;
-}
-
-.tree-stage .family-parent-row {
-  align-items: flex-start;
-}
-
-.tree-stage .family-parent-node {
-  align-items: center;
 }
 
 .tree-stage .family-parent-row {
@@ -3522,7 +3501,7 @@ button.family-link-person:hover {
 
 .tree-stage .family-partner-link {
   display: block;
-  width: 64px;
+  width: 40px;
   height: 3px;
   background: var(--family-connector-color, #71645c);
 }

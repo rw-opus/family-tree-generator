@@ -10,13 +10,13 @@ import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { shouldUseDenseChildrenLayout } from "./familyTree/DenseChildrenBranch.jsx";
 import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
-import { GenerationRowFamilyTree } from "./familyTree/GenerationRowFamilyTree.jsx";
 import {
   alignFamilyGenerationRows,
   familyGenerationById,
   widestFamilyGeneration,
 } from "./familyTree/generationRows.js";
 import { RelationalFamilyTree } from "./familyTree/RelationalFamilyTree.jsx";
+import { OpenSourceFamilyChart } from "./familyTree/OpenSourceFamilyChart.jsx";
 import { personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
 
@@ -73,6 +73,7 @@ export function FamilyTreeCanvas({
   propertyValue = 0,
   zoom = 100,
   onZoomChange,
+  forceLegacyRenderer = false,
 }) {
   const treeRef = useRef(null);
   const cleanPeople = useMemo(
@@ -100,6 +101,7 @@ export function FamilyTreeCanvas({
   const printHandler = onPrint || ((node) => openA3PrintPreview(node, title));
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
+  const usesOpenSourceLayout = usesRelationalLayout && !forceLegacyRenderer;
   const usesStackedLegalCards = shouldUseDenseChildrenLayout(relationalPeople.length);
   const generationByPerson = useMemo(
     () => familyGenerationById(relationalPeople),
@@ -109,7 +111,6 @@ export function FamilyTreeCanvas({
     () => widestFamilyGeneration(generationByPerson),
     [generationByPerson],
   );
-  const usesGenerationRows = usesRelationalLayout && usesStackedLegalCards;
 
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
@@ -127,7 +128,7 @@ export function FamilyTreeCanvas({
   usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);
 
   useLayoutEffect(() => {
-    if (!usesRelationalLayout || usesGenerationRows || !treeRef.current) return undefined;
+    if (!usesRelationalLayout || usesOpenSourceLayout || !treeRef.current) return undefined;
 
     const alignRows = () => alignFamilyGenerationRows(treeRef.current);
     let clearAlignment = alignRows();
@@ -135,9 +136,11 @@ export function FamilyTreeCanvas({
       clearAlignment();
       clearAlignment = alignRows();
     };
+    const settlingTimers = [80, 220, 500].map((delay) => window.setTimeout(realign, delay));
     window.addEventListener("resize", realign);
 
     return () => {
+      settlingTimers.forEach((timer) => window.clearTimeout(timer));
       window.removeEventListener("resize", realign);
       clearAlignment();
     };
@@ -147,7 +150,7 @@ export function FamilyTreeCanvas({
     ownershipByPerson,
     personCardFields,
     propertyValue,
-    usesGenerationRows,
+    usesOpenSourceLayout,
     usesRelationalLayout,
   ]);
 
@@ -180,12 +183,20 @@ export function FamilyTreeCanvas({
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
       >
-        {usesGenerationRows ? (
-          <GenerationRowFamilyTree
+        {usesOpenSourceLayout ? (
+          <OpenSourceFamilyChart
             people={relationalPeople}
-            generationByPerson={generationByPerson}
-            widestGeneration={widestGeneration}
             renderCard={renderCard}
+            onSelectPerson={onSelectPerson}
+            focusPersonId={selectedPersonId}
+            fallback={
+              <RelationalFamilyTree
+                people={relationalPeople}
+                displayName={displayName}
+                cardName={cardName}
+                renderCard={renderCard}
+              />
+            }
           />
         ) : (
           <RelationalFamilyTree
