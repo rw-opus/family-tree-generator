@@ -129,4 +129,35 @@ describe("FamilyLibrary", () => {
     act(() => input.dispatchEvent(new Event("change", { bubbles: true })));
     expect(handlers.onImport).toHaveBeenCalledWith(file);
   });
+
+  it("shows the five-free pricing state and blocks creation until a paid credit exists", () => {
+    const handlers = renderLibrary(root, {
+      commercialMode: true,
+      entitlement: {
+        freeTreeLimit: 5,
+        freeTreesUsed: 5,
+        freeTreesRemaining: 0,
+        paidTreeCredits: 0,
+        totalTreesCreated: 5,
+        canCreate: false,
+      },
+      canCreate: false,
+      billingMessage: "Payment required",
+      onBuyTree: vi.fn(),
+    });
+
+    expect(container.textContent).toContain("Additional tree · €30");
+    expect(container.textContent).toContain("Payment required");
+    expect(container.querySelector('input[type="file"]').disabled).toBe(true);
+    const create = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Create new family"),
+    );
+    expect(create.disabled).toBe(true);
+
+    const buy = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Buy one tree"),
+    );
+    act(() => buy.click());
+    expect(handlers.onBuyTree).toHaveBeenCalledOnce();
+  });
 });

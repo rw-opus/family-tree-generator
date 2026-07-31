@@ -20,13 +20,23 @@ import { parseGedcom } from "./domain/gedcom.js";
 import { createPerson } from "./domain/people.js";
 import { normalisePersonCardFields } from "./domain/personCardDisplay.js";
 import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
-import { listFamilyTrees, removeFamilyTree, saveFamilyTree } from "./services/familyTrees.js";
+import {
+  createFamilyTree,
+  listFamilyTrees,
+  removeFamilyTree,
+  saveFamilyTree,
+} from "./services/familyTrees.js";
 import {
   loadLocalWorkspace,
   saveLocalWorkspace,
   upsertWorkspaceTree,
 } from "./services/localWorkspace.js";
-import { supabase, supabaseConfigured } from "./supabaseClient.js";
+import {
+  defaultTreeEntitlement,
+  isTreePaymentRequiredError,
+  loadTreeEntitlement,
+  startTreeCreditCheckout,
+} from "./services/treeBilling.js";
 
 const makePrimaryProperty = (id = crypto.randomUUID()) => ({
   id,
@@ -172,8 +182,11 @@ const dashboardTabs = [
   { key: "settings", label: "Settings", icon: Settings2 },
 ];
 
-export function App() {
-  const [startupWorkspace] = useState(() => loadLocalWorkspace());
+export function App({ localOnlyMode = true, session = null, onSignOut = () => {} }) {
+  const cloudMode = Boolean(session?.user?.id) && !localOnlyMode;
+  const [startupWorkspace] = useState(() =>
+    cloudMode ? { trees: [], activeTreeId: "" } : loadLocalWorkspace(),
+  );
   const [tree, setTree] = useState(() => {
     const restoredTree =
       startupWorkspace.trees.find((item) => item.id === startupWorkspace.activeTreeId) ||
@@ -181,17 +194,16 @@ export function App() {
     return restoredTree ? normaliseTree(restoredTree) : initialTree();
   });
   const [trees, setTrees] = useState(startupWorkspace.trees);
-  const [session, setSession] = useState(null);
   const [status, setStatus] = useState(
     startupWorkspace.trees.length
       ? "Recovered automatically from this device."
-      : supabaseConfigured
+      : cloudMode
         ? "Connecting to secure storage..."
         : "Automatically saved on this device.",
   );
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showLogin, setShowLogin] = useState(false);
+  const [entitlement, setEntitlement] = useState(localOnlyMode ? defaultTreeEntitlement : null);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingMessage, setBillingMessage] = useState("");
   const [showLibrary, setShowLibrary] = useState(true);
   const [workspaceView, setWorkspaceView] = useState("tree");
   const [activeTreeIsListed, setActiveTreeIsListed] = useState(
@@ -214,6 +226,16 @@ export function App() {
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
   }, []);
+
+  const refreshTreeEntitlement = useCallback(async () => {
+    if (!cloudMode) {
+      setEntitlement(defaultTreeEntitlement);
+      return defaultTreeEntitlement;
+    }
+    const nextEntitlement = await loadTreeEntitlement(session.user.id);
+    setEntitlement(nextEntitlement);
+    return nextEntitlement;
+  }, [cloudMode, session]);
 
   const currentTree = normaliseTree(tree);
   const requestedActiveFamilyGroup = currentTree.familyGroups.find(
@@ -291,39 +313,93 @@ export function App() {
   }, [activeTreeIsListed, tree]);
 
   useEffect(() => {
+    if (cloudMode) return;
     const saved = saveLocalWorkspace(trees, activeTreeIsListed ? tree.id : "");
-    if (!session) {
-      setStatus(
-        saved
-          ? "Automatically saved on this device."
-          : "This browser could not save the current tree. Keep this page open and use cloud save when available.",
-      );
-    }
-  }, [activeTreeIsListed, session, tree.id, trees]);
+    setStatus(
+      saved
+        ? "Automatically saved on this device."
+        : "This browser could not save the current tree. Keep this page open.",
+    );
+  }, [activeTreeIsListed, cloudMode, tree.id, trees]);
 
   useEffect(() => {
-    if (!supabase) return undefined;
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    return supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession)).data
-      .subscription.unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    if (!session) return;
-    listFamilyTrees()
-      .then((items) => {
-        setTrees((currentItems) => [
-          ...items,
-          ...currentItems.filter((item) => !items.some((cloudTree) => cloudTree.id === item.id)),
-        ]);
-        if (!startupWorkspace.trees.length && items[0]) {
+    if (!cloudMode) return;
+    Promise.all([listFamilyTrees(session.user.id), refreshTreeEntitlement()])
+      .then(([items]) => {
+        setTrees(items);
+        if (items[0]) {
           setActiveTreeIsListed(true);
           activateCase(items[0]);
+        } else {
+          setActiveTreeIsListed(false);
         }
         setStatus("Saved securely to your workspace.");
       })
       .catch((error) => setStatus(`Cloud storage needs attention: ${error.message}`));
-  }, [activateCase, session, startupWorkspace.trees.length]);
+  }, [activateCase, cloudMode, refreshTreeEntitlement, session]);
+
+  useEffect(() => {
+    if (!cloudMode || !activeTreeIsListed) return undefined;
+    const timeout = window.setTimeout(() => {
+      setStatus("Saving securely...");
+      saveFamilyTree(normaliseTree(tree), session.user.id)
+        .then(() => setStatus("Saved securely to your workspace."))
+        .catch((error) => setStatus(`Cloud save needs attention: ${error.message}`));
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [activeTreeIsListed, cloudMode, session, tree]);
+
+  useEffect(() => {
+    if (!cloudMode) return undefined;
+    const returnUrl = new URL(window.location.href);
+    const checkoutState = returnUrl.searchParams.get("checkout");
+    let cancelled = false;
+    let retryTimer;
+
+    const clearCheckoutParameters = () => {
+      returnUrl.searchParams.delete("checkout");
+      returnUrl.searchParams.delete("session_id");
+      window.history.replaceState(
+        {},
+        "",
+        `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`,
+      );
+    };
+
+    if (checkoutState === "success") {
+      setBillingMessage("Payment received. Your tree credit is being confirmed.");
+      let attempts = 0;
+      const pollForCredit = async () => {
+        attempts += 1;
+        try {
+          const nextEntitlement = await refreshTreeEntitlement();
+          if (cancelled) return;
+          if (nextEntitlement.paidTreeCredits > 0) {
+            setBillingMessage("Payment confirmed. Your new tree credit is ready to use.");
+            return;
+          }
+        } catch {
+          // A short retry handles normal webhook and network delays after Stripe redirects back.
+        }
+        if (!cancelled && attempts < 10) {
+          retryTimer = window.setTimeout(pollForCredit, 2000);
+        } else if (!cancelled) {
+          setBillingMessage(
+            "Payment is still being confirmed. Refresh shortly; you will not be charged twice.",
+          );
+        }
+      };
+      pollForCredit();
+      clearCheckoutParameters();
+    } else if (checkoutState === "cancelled") {
+      setBillingMessage("Checkout was cancelled. No payment was taken.");
+      clearCheckoutParameters();
+    }
+    return () => {
+      cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [cloudMode, refreshTreeEntitlement]);
 
   const treeOptions = useMemo(
     () => (activeTreeIsListed ? upsertWorkspaceTree(trees, normaliseTree(tree)) : trees),
@@ -353,11 +429,37 @@ export function App() {
     });
   };
 
-  const createNewTree = () => {
-    const nextTree = initialTree();
+  const openCreatedTree = (nextTree, options = {}) => {
     setActiveTreeIsListed(true);
-    activateCase(nextTree, { openDashboard: true });
+    activateCase(nextTree, options);
     setShowLibrary(false);
+  };
+
+  const handleCreationError = async (error) => {
+    if (isTreePaymentRequiredError(error)) {
+      setBillingMessage("Your five free trees have been used. Buy one tree credit for €30.");
+      await refreshTreeEntitlement().catch(() => {});
+      return;
+    }
+    setStatus(`Could not create family: ${error.message}`);
+  };
+
+  const createNewTree = async () => {
+    const nextTree = initialTree();
+    if (!cloudMode) {
+      openCreatedTree(nextTree, { openDashboard: true });
+      return;
+    }
+    setStatus("Creating secure family tree...");
+    try {
+      const saved = await createFamilyTree(nextTree);
+      setTrees((items) => upsertWorkspaceTree(items, saved));
+      openCreatedTree(saved, { openDashboard: true });
+      await refreshTreeEntitlement();
+      setStatus("New family created and saved securely.");
+    } catch (error) {
+      await handleCreationError(error);
+    }
   };
 
   const importNewTree = async (file) => {
@@ -383,13 +485,33 @@ export function App() {
         ),
       };
 
-      activateCase(nextTree);
-      setActiveTreeIsListed(true);
-      setShowLibrary(false);
+      if (cloudMode) {
+        setStatus("Importing and securing this family tree...");
+        const saved = await createFamilyTree(nextTree);
+        setTrees((items) => upsertWorkspaceTree(items, saved));
+        openCreatedTree(saved);
+        await refreshTreeEntitlement();
+      } else {
+        openCreatedTree(nextTree);
+      }
       setStatus(`Imported ${result.individualCount} people and ${result.familyCount} families.`);
     } catch (error) {
-      setStatus(`Could not import GEDCOM: ${error.message}`);
+      if (isTreePaymentRequiredError(error)) await handleCreationError(error);
+      else setStatus(`Could not import GEDCOM: ${error.message}`);
       throw error;
+    }
+  };
+
+  const buyTreeCredit = async () => {
+    if (!cloudMode || billingBusy) return;
+    setBillingBusy(true);
+    setBillingMessage("Opening secure Stripe checkout...");
+    try {
+      const checkoutUrl = await startTreeCreditCheckout();
+      window.location.assign(checkoutUrl);
+    } catch (error) {
+      setBillingMessage(`Could not open checkout: ${error.message}`);
+      setBillingBusy(false);
     }
   };
 
@@ -418,11 +540,11 @@ export function App() {
     };
     setTrees((items) => items.map((item) => (item.id === treeId ? renamed : item)));
     if (treeId === currentTree.id) setTree(renamed);
-    if (!session) return;
+    if (!cloudMode) return;
 
     setStatus("Saving family name...");
     try {
-      const saved = await saveFamilyTree(renamed);
+      const saved = await saveFamilyTree(renamed, session.user.id);
       setTrees((items) => items.map((item) => (item.id === treeId ? saved : item)));
       if (treeId === currentTree.id) setTree(saved);
       setStatus("Saved securely to your workspace.");
@@ -452,12 +574,12 @@ export function App() {
         activateCase(initialTree());
       }
     }
-    if (!session) return;
+    if (!cloudMode) return;
 
     setStatus("Removing family...");
     try {
-      await removeFamilyTree(treeId);
-      setStatus("Family removed from your secure workspace.");
+      await removeFamilyTree(treeId, session.user.id);
+      setStatus("Family removed. Its free or paid generation credit is not restored.");
     } catch (error) {
       setTrees((items) => upsertWorkspaceTree(items, selectedTree));
       if (removedCurrentTree) {
@@ -505,13 +627,13 @@ export function App() {
     setDashboardOpen(false);
     setWorkspaceView("tree");
     setShowLibrary(true);
-    if (!session) {
+    if (!cloudMode) {
       setStatus("Automatically saved on this device.");
       return;
     }
     setStatus("Saving before returning Home...");
     try {
-      const saved = await saveFamilyTree(currentTree);
+      const saved = await saveFamilyTree(currentTree, session.user.id);
       setTree(saved);
       setTrees((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
       setStatus("Saved securely to your workspace.");
@@ -520,45 +642,25 @@ export function App() {
     }
   };
 
-  const signIn = async (event) => {
-    event.preventDefault();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setStatus(error.message);
-    else {
-      setShowLogin(false);
-      setStatus("Signed in. Loading your family trees...");
-    }
-  };
-
-  const signOut = async () => {
-    if (!supabase) return;
-    const { error } = await supabase.auth.signOut({ scope: "local" });
-    if (error) {
-      setStatus(`Could not sign out: ${error.message}`);
-      return;
-    }
-    setSession(null);
-    setStatus("Signed out. Families remain saved on this device.");
-  };
-
   if (showLibrary) {
     return (
       <FamilyLibrary
         trees={treeOptions}
         activeTreeId={activeTreeIsListed ? currentTree.id : ""}
         session={session}
-        supabaseConfigured={supabaseConfigured}
+        commercialMode={cloudMode}
+        entitlement={entitlement}
+        canCreate={!cloudMode || Boolean(entitlement?.canCreate)}
+        billingBusy={billingBusy}
+        billingMessage={billingMessage}
         onCreate={createNewTree}
         onImport={importNewTree}
         onOpen={openTree}
         onOpenProperty={(treeId) => openTree(treeId, "property")}
         onRename={renameTree}
         onRemove={removeTree}
-        onSignIn={() => {
-          setShowLibrary(false);
-          setShowLogin(true);
-        }}
-        onSignOut={signOut}
+        onBuyTree={buyTreeCredit}
+        onSignOut={onSignOut}
       />
     );
   }
@@ -654,35 +756,6 @@ export function App() {
 
   return (
     <main className="tree-workbench">
-      {showLogin && supabaseConfigured && (
-        <form className="workbench-login" onSubmit={signIn}>
-          <label>
-            Email
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-          </label>
-          <button className="primary-button" type="submit">
-            Sign in
-          </button>
-          <button type="button" className="secondary-button" onClick={() => setShowLogin(false)}>
-            Cancel
-          </button>
-        </form>
-      )}
-
       <div className="workbench-body">
         <aside className={`context-dashboard ${dashboardOpen ? "open" : ""}`}>
           <div className="dashboard-topline">

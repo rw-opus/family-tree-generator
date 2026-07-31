@@ -2,10 +2,10 @@ import { useState } from "react";
 import {
   Check,
   Calculator,
+  CreditCard,
   FileUp,
   FolderOpen,
   FolderPlus,
-  LogIn,
   LogOut,
   Pencil,
   Search,
@@ -33,14 +33,18 @@ export function FamilyLibrary({
   trees,
   activeTreeId,
   session,
-  supabaseConfigured,
+  commercialMode = false,
+  entitlement = null,
+  canCreate = true,
+  billingBusy = false,
+  billingMessage = "",
   onCreate,
   onImport,
   onOpen,
   onOpenProperty,
   onRename,
   onRemove,
-  onSignIn,
+  onBuyTree,
   onSignOut,
 }) {
   const [query, setQuery] = useState("");
@@ -53,6 +57,7 @@ export function FamilyLibrary({
       .includes(query.trim().toLocaleLowerCase()),
   );
   const signedIn = Boolean(session);
+  const allowanceLoading = commercialMode && !entitlement;
 
   const startRename = (tree) => {
     setRenamingId(tree.id);
@@ -74,6 +79,11 @@ export function FamilyLibrary({
   const importGedcom = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!canCreate) {
+      setImportStatus("Your five free trees have been used. Buy a €30 tree credit first.");
+      event.target.value = "";
+      return;
+    }
     setImportStatus(`Importing ${file.name}...`);
     try {
       await onImport(file);
@@ -92,11 +102,7 @@ export function FamilyLibrary({
           <span>Family Tree Generator</span>
         </div>
         <span className={`library-storage-state ${signedIn ? "connected" : ""}`}>
-          {signedIn
-            ? "Secure workspace"
-            : supabaseConfigured
-              ? "Not signed in"
-              : "Saved on this device"}
+          {signedIn ? "Secure workspace" : "Development workspace"}
         </span>
       </header>
 
@@ -124,16 +130,68 @@ export function FamilyLibrary({
               <dt>Storage</dt>
               <dd>{signedIn ? "Secure cloud workspace" : "This device"}</dd>
             </div>
+            {commercialMode && entitlement && (
+              <>
+                <div>
+                  <dt>Trees generated</dt>
+                  <dd>{entitlement.totalTreesCreated}</dd>
+                </div>
+                <div>
+                  <dt>Free trees remaining</dt>
+                  <dd>
+                    {entitlement.freeTreesRemaining} of {entitlement.freeTreeLimit}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Paid tree credits</dt>
+                  <dd>{entitlement.paidTreeCredits}</dd>
+                </div>
+              </>
+            )}
           </dl>
-          {!signedIn && supabaseConfigured && (
-            <button type="button" className="library-account-action" onClick={onSignIn}>
-              <LogIn size={15} /> Sign in to your workspace
-            </button>
-          )}
           {signedIn && (
             <button type="button" className="library-account-action" onClick={onSignOut}>
               <LogOut size={15} /> Sign out
             </button>
+          )}
+          {commercialMode && (
+            <div
+              className={`tree-pricing-card ${
+                allowanceLoading ? "loading" : canCreate ? "available" : "payment-needed"
+              }`}
+            >
+              <span className="tree-pricing-icon">
+                <CreditCard size={18} />
+              </span>
+              <div>
+                <strong>
+                  {allowanceLoading
+                    ? "Checking your tree allowance..."
+                    : canCreate
+                      ? "Tree creation available"
+                      : "Additional tree · €30"}
+                </strong>
+                <p>
+                  The first five lifetime trees are free. Each later creation or GEDCOM import uses
+                  one paid credit. Editing remains free.
+                </p>
+              </div>
+              {!allowanceLoading && !canCreate && (
+                <button
+                  type="button"
+                  className="library-primary-button"
+                  onClick={onBuyTree}
+                  disabled={billingBusy}
+                >
+                  {billingBusy ? "Opening checkout..." : "Buy one tree · €30"}
+                </button>
+              )}
+            </div>
+          )}
+          {billingMessage && (
+            <p className="library-billing-message" aria-live="polite">
+              {billingMessage}
+            </p>
           )}
         </section>
 
@@ -145,16 +203,26 @@ export function FamilyLibrary({
               <p>Choose a family to open its tree, people and property work.</p>
             </div>
             <div className="library-create-actions">
-              <button type="button" className="library-primary-button" onClick={onCreate}>
+              <button
+                type="button"
+                className="library-primary-button"
+                onClick={onCreate}
+                disabled={!canCreate}
+                title={canCreate ? "Create new family" : "Buy a tree credit to continue"}
+              >
                 <FolderPlus size={16} /> Create new family
               </button>
-              <label className="library-secondary-button">
+              <label
+                className={`library-secondary-button ${canCreate ? "" : "disabled"}`}
+                title={canCreate ? "Import GEDCOM" : "Buy a tree credit to continue"}
+              >
                 <FileUp size={16} /> Import GEDCOM
                 <input
                   className="library-file-input"
                   type="file"
                   accept=".ged,.gedcom,text/plain"
                   onChange={importGedcom}
+                  disabled={!canCreate}
                 />
               </label>
             </div>
@@ -261,6 +329,12 @@ export function FamilyLibrary({
               {trees.length
                 ? "No family matches that search."
                 : "No families yet. Create a new family or import a GEDCOM file."}
+            </p>
+          )}
+          {commercialMode && (
+            <p className="library-credit-policy">
+              Tree credits are consumed when a tree is generated. Deleting a tree does not restore
+              its free or paid credit.
             </p>
           )}
         </section>

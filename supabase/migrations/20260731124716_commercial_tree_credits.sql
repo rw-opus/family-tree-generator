@@ -1,7 +1,6 @@
 -- Family Tree Generator commercial schema.
--- Run this only in the Family Tree Generator's own Supabase project.
--- Commercial rule: the first five lifetime tree generations are free;
--- every later creation or GEDCOM import consumes one paid EUR 30 credit.
+-- Kept in sync with supabase/schema.sql so new and existing projects receive
+-- the same quota, payment ledger and RLS protections.
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
@@ -66,8 +65,6 @@ create table if not exists public.tree_generations (
 create index if not exists tree_generations_owner_created_idx
   on public.tree_generations (owner_id, created_at desc);
 
--- No anon or authenticated policy is created for this idempotency ledger.
--- Only the Stripe webhook's secret-key client may read or write it.
 create table if not exists public.stripe_tree_events (
   event_id text primary key,
   event_type text not null,
@@ -102,13 +99,8 @@ create trigger tree_credit_orders_set_updated_at
 before update on public.tree_credit_orders
 for each row execute function private.set_updated_at();
 
--- Existing pre-commercial trees count towards lifetime use, but are never
--- charged retroactively. Rows after the first five are recorded as legacy.
 insert into public.tree_accounts (user_id, free_trees_used, total_trees_created)
-select
-  owner_id,
-  least(count(*), 5)::smallint,
-  count(*)::integer
+select owner_id, least(count(*), 5)::smallint, count(*)::integer
 from public.family_trees
 group by owner_id
 on conflict (user_id) do update
@@ -159,9 +151,7 @@ declare
   allocation_source text;
 begin
   if caller_id is null or new.owner_id <> caller_id then
-    raise exception using
-      errcode = '42501',
-      message = 'TREE_OWNER_REQUIRED';
+    raise exception using errcode = '42501', message = 'TREE_OWNER_REQUIRED';
   end if;
 
   insert into public.tree_accounts (user_id)

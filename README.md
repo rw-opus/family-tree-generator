@@ -1,16 +1,25 @@
-# Property Succession Calculator
+# Family Tree Generator — Property Succession Calculator
 
-A Maltese property ownership and succession calculator. It combines a family tree with intestate and testamentary inheritance modelling, causa mortis declarations, fractional ownership transfers, and indicative property-tax calculations.
+A commercial Maltese property ownership and succession workspace. It combines a family tree with intestate and testamentary inheritance modelling, causa mortis declarations, fractional ownership transfers, and indicative property-tax calculations.
+
+## Commercial model
+
+- Every registered account receives five lifetime tree generations free of charge.
+- Every later new tree or GEDCOM import consumes one paid tree credit costing €30.
+- Editing, renaming and reopening an existing tree does not consume another credit.
+- Deleting a tree does not restore its free or paid generation credit.
+- The database trigger is the authority for the allowance; the browser cannot bypass it.
 
 ## Start locally
 
-1. Copy `.env.example` to `.env`.
-2. For cloud storage, create a separate Supabase project and run `supabase/schema.sql` in its SQL Editor.
-3. Add its project URL and publishable key to `.env`.
-4. Run `npm install` then `npm run dev`.
+1. Run `npm install` then `npm run dev` for a local-only development workspace.
+2. To exercise authentication and billing, copy `.env.example` to `.env` and add a dedicated Supabase project URL and publishable key.
+3. Apply the migrations, configure Stripe and deploy the two Edge Functions as described in [`docs/commercial-setup.md`](docs/commercial-setup.md).
 
-Trees are automatically restored from the browser on the same device, including after a refresh or accidental close. Once Supabase is configured, each signed-in user can also save and reopen the complete case across devices. Row Level Security enforces that separation.
+Local development without Supabase retains trees in the browser. A configured production build requires sign-in and stores each account's trees in Supabase. Row Level Security isolates accounts, while a private database trigger atomically enforces the free and paid tree allowances.
 
 ## Deployment readiness
 
-The project is Vite-ready for Railway or another Node host. Railway builds with `npm run build` and serves the generated SPA with `npm start`. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the deployment environment before building to enable cloud persistence.
+The project is Vite-ready for Railway or another Node host. Railway builds with `npm run build` and serves the generated SPA with `npm start`. Production deliberately stops at a configuration screen unless `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are present at build time.
+
+Stripe secrets and the Supabase secret/service key belong only in Supabase Edge Function secrets. They must never use the `VITE_` prefix or be added to Railway's browser build variables.
