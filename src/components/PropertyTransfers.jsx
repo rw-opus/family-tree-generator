@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, Building2, Plus, Trash2, UserRound } from "lucide-react";
+import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
+import { DateInput } from "./DateInput.jsx";
 
 const blankParty = () => ({ name: "", type: "individual", registrationNumber: "" });
 const blankTransfer = () => ({
@@ -183,10 +185,9 @@ export function PropertyTransfers({
           <div className="form-grid compact">
             <label>
               Transfer date
-              <input
-                type="date"
+              <DateInput
                 value={transferDraft.date}
-                onChange={(e) => setTransferDraft({ ...transferDraft, date: e.target.value })}
+                onChange={(value) => setTransferDraft({ ...transferDraft, date: value })}
               />
             </label>
             <label>
@@ -255,7 +256,7 @@ export function PropertyTransfers({
           <h3>Transfer history</h3>
           {ledger.entries.map((entry) => (
             <div className={`history-row ${entry.error ? "invalid" : ""}`} key={entry.id}>
-              <span>{entry.date || "Undated"}</span>
+              <span>{isoDateToDisplay(entry.date) || "Undated"}</span>
               <strong>
                 {partyName(entry.sellerId)} <ArrowRight size={13} /> {partyName(entry.buyerId)}
               </strong>

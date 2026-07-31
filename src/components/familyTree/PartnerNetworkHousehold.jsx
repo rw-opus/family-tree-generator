@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { anchoredBranchOffset } from "./MultiplePartnerHousehold.jsx";
+import { anchoredBranchOffset, anchoredIncomingPath } from "./MultiplePartnerHousehold.jsx";
 import "./PartnerNetworkHousehold.css";
 
 function relativeRect(node, layoutRect, scaleX, scaleY) {
@@ -41,6 +41,7 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
   const [geometry, setGeometry] = useState({
     width: 0,
     height: 0,
+    incomingPath: "",
     unions: {},
   });
   const pairGroupCount = groups.filter((group) => group.parentIds.length === 2).length;
@@ -67,15 +68,14 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
       const unionMarkers = [...layout.querySelectorAll("[data-partner-network-union-key]")];
       const anchorNode = personNodes.find((node) => node.dataset.personId === anchor.id);
       const branchItem = layout.closest(".family-child-branch-item");
+      let incomingPath = "";
       if (anchorNode && branchItem) {
+        const anchorRect = anchorNode.getBoundingClientRect();
         branchItem.style.setProperty(
           "--branch-anchor-offset",
-          `${anchoredBranchOffset(
-            anchorNode.getBoundingClientRect(),
-            branchItem.getBoundingClientRect(),
-            scaleX,
-          )}px`,
+          `${anchoredBranchOffset(anchorRect, branchItem.getBoundingClientRect(), scaleX)}px`,
         );
+        incomingPath = anchoredIncomingPath(anchorRect, layoutRect, scaleX, scaleY);
       }
 
       const measuredPairs = groups
@@ -141,6 +141,7 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
       setGeometry({
         width: layout.offsetWidth,
         height: layout.offsetHeight,
+        incomingPath,
         unions: nextUnions,
       });
     };
@@ -160,6 +161,7 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
   return (
     <div
       className="family-partner-network"
+      data-branch-anchor-id={anchor.id}
       ref={layoutRef}
       style={{ "--partner-network-rail-space": `${Math.max(0, pairGroupCount - 1) * 14}px` }}
     >
@@ -169,6 +171,9 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
         preserveAspectRatio="none"
         viewBox={`0 0 ${geometry.width || 1} ${geometry.height || 1}`}
       >
+        {geometry.incomingPath && (
+          <path className="family-partner-network-incoming-link" d={geometry.incomingPath} />
+        )}
         {groups.map((group) => {
           const paths = geometry.unions[group.key] || {};
 

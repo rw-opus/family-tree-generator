@@ -85,7 +85,7 @@ describe("Properties section views", () => {
     hiddenText.forEach((text) => expect(container.textContent).not.toContain(text));
   });
 
-  it("keeps company vendors on a compact manual-tax form", () => {
+  it("keeps a manually assessed company vendor on a compact form", () => {
     act(() =>
       root.render(
         <Properties
@@ -106,7 +106,7 @@ describe("Properties section views", () => {
                 {
                   id: "company-lot",
                   ownerId: "company",
-                  taxTreatment: "inheritance",
+                  taxTreatment: "manual",
                   transferValue: 100,
                   manualTaxAmount: 5,
                   useDeclaredValues: false,
@@ -125,7 +125,7 @@ describe("Properties section views", () => {
 
     const treatment = container.querySelector('select[aria-label="Tax treatment"]');
     expect(treatment.value).toBe("manual");
-    expect(treatment.disabled).toBe(true);
+    expect(treatment.disabled).toBe(false);
     expect(container.textContent).toContain("Manually assessed tax");
     expect(container.textContent).not.toContain("Inheritance date");
     expect(container.textContent).not.toContain("Accumulated causa mortis value");
@@ -146,9 +146,7 @@ describe("Properties section views", () => {
     );
 
     expect(container.textContent).toContain("No starting ownership has been set.");
-    expect(container.textContent).toContain(
-      "Enter who owned this property before any transfers.",
-    );
+    expect(container.textContent).toContain("Enter who owned this property before any transfers.");
     expect(container.textContent).not.toContain("Calculated title after inheritance");
     expect(container.textContent).not.toContain("Ownership transfers");
   });

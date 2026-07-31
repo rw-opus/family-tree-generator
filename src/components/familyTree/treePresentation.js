@@ -22,8 +22,7 @@ export function isDeceasedPerson(person, variant = "") {
 }
 
 export function personCardName(person, people, peopleById, displayNamesById) {
-  const displayName =
-    displayNamesById?.get(person?.id) || personDisplayName(person, people);
+  const displayName = displayNamesById?.get(person?.id) || personDisplayName(person, people);
   if (person.isPlaceholder) return person.fullName;
   if (!String(person.fullName || "").trim()) return displayName;
 

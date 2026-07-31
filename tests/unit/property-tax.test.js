@@ -128,18 +128,21 @@ describe("Maltese inherited property estimates", () => {
   it("compares post-2003 sale methods", () => {
     const result = saleTaxLot({
       inheritanceDate: "2010-01-01",
+      transferDate: "2026-07-31",
       shareNumerator: 1,
       shareDenominator: 1,
       acquisitionValue: 100000,
+      acquisitionValueBasis: "market-at-inheritance",
       transferValue: 150000,
     });
     expect(result.methods.map((item) => item.tax)).toEqual([6000, 12000]);
-    expect(result.recommended).toBe("increase");
+    expect(result.recommended).toBe("increase-12");
   });
 
   it("charges 7% of the share sale price for pre-25 November 1992 inheritance", () => {
     const result = saleTaxLot({
       inheritanceDate: "1992-11-24",
+      transferDate: "2026-07-31",
       shareNumerator: 1,
       shareDenominator: 4,
       acquisitionValue: 100,
@@ -147,7 +150,7 @@ describe("Maltese inherited property estimates", () => {
     });
     expect(result.methods).toHaveLength(1);
     expect(result.methods[0]).toMatchObject({
-      key: "pre1992",
+      key: "inheritance-7",
       basis: 120,
       tax: 8.4,
     });
@@ -157,19 +160,23 @@ describe("Maltese inherited property estimates", () => {
     const lots = [
       {
         inheritanceDate: "2010-01-01",
+        transferDate: "2026-07-31",
         shareNumerator: 1,
         shareDenominator: 4,
         acquisitionValue: 100,
+        acquisitionValueBasis: "market-at-inheritance",
         transferValue: 120,
-        selectedTaxMethod: "increase",
+        selectedTaxMethod: "increase-12",
       },
       {
         inheritanceDate: "2010-01-01",
+        transferDate: "2026-07-31",
         shareNumerator: 1,
         shareDenominator: 4,
         acquisitionValue: 110,
+        acquisitionValueBasis: "market-at-inheritance",
         transferValue: 120,
-        selectedTaxMethod: "increase",
+        selectedTaxMethod: "increase-12",
       },
     ];
     expect(saleTaxLot(lots[0]).methods[0].tax).toBeCloseTo(2.4);
@@ -180,38 +187,44 @@ describe("Maltese inherited property estimates", () => {
   it("offers 10% before 2004 and 8% from 2004 onward", () => {
     const pre2004 = saleTaxLot({
       inheritanceDate: "2003-12-31",
+      transferDate: "2026-07-31",
       shareNumerator: 1,
       shareDenominator: 4,
       acquisitionValue: 100,
+      acquisitionValueBasis: "market-at-inheritance",
       transferValue: 120,
     });
     const post2004 = saleTaxLot({
       inheritanceDate: "2004-01-01",
+      transferDate: "2026-07-31",
       shareNumerator: 1,
       shareDenominator: 4,
       acquisitionValue: 100,
+      acquisitionValueBasis: "market-at-inheritance",
       transferValue: 120,
-      selectedTaxMethod: "whole",
+      selectedTaxMethod: "elected-whole-8",
     });
-    expect(pre2004.methods.find((method) => method.key === "whole")).toMatchObject({
+    expect(pre2004.methods.find((method) => method.key === "elected-whole-10")).toMatchObject({
       rate: 0.1,
       tax: 12,
     });
-    expect(post2004.methods.find((method) => method.key === "whole")).toMatchObject({
+    expect(post2004.methods.find((method) => method.key === "elected-whole-8")).toMatchObject({
       rate: 0.08,
       tax: 9.6,
     });
-    expect(post2004.selected).toBe("whole");
+    expect(post2004.selected).toBe("elected-whole-8");
   });
 
   it("does not calculate until the inherited fraction is entered", () => {
     const result = saleTaxLot({
       inheritanceDate: "2010-01-01",
+      transferDate: "2026-07-31",
       acquisitionValue: 100,
+      acquisitionValueBasis: "market-at-inheritance",
       transferValue: 120,
     });
     expect(result.methods).toEqual([]);
-    expect(result.warning).toContain("inherited fraction");
+    expect(result.warning).toContain("fraction covered");
   });
 
   it("includes a manually assessed vendor where inherited-property methods do not apply", () => {
@@ -235,20 +248,24 @@ describe("Maltese inherited property estimates", () => {
     const livingLot = {
       ownerId: "living",
       inheritanceDate: "2010-01-01",
+      transferDate: "2026-07-31",
       shareNumerator: 1,
       shareDenominator: 2,
       acquisitionValue: 100,
+      acquisitionValueBasis: "market-at-inheritance",
       transferValue: 120,
-      selectedTaxMethod: "increase",
+      selectedTaxMethod: "increase-12",
     };
     const deceasedLot = {
       ownerId: "deceased",
       inheritanceDate: "2010-01-01",
+      transferDate: "2026-07-31",
       shareNumerator: 1,
       shareDenominator: 2,
       acquisitionValue: 50,
+      acquisitionValueBasis: "market-at-inheritance",
       transferValue: 100,
-      selectedTaxMethod: "increase",
+      selectedTaxMethod: "increase-12",
     };
     const summary = vendorTaxSummary(
       [

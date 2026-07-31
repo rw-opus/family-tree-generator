@@ -3,9 +3,27 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
-import { anchoredBranchOffset } from "../../src/components/familyTree/MultiplePartnerHousehold.jsx";
+import {
+  anchoredBranchOffset,
+  anchoredIncomingPath,
+} from "../../src/components/familyTree/MultiplePartnerHousehold.jsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+function measuredRect({ left = 0, top = 0, width = 0, height = 0 } = {}) {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    toJSON: () => ({}),
+  };
+}
+
 describe("FamilyTreeCanvas", () => {
   let container;
   let root;
@@ -353,11 +371,11 @@ describe("FamilyTreeCanvas", () => {
     expect(person.textContent).toContain("1/4");
     expect(person.textContent).toContain("25%");
     expect(person.textContent).toContain("50,000");
-    expect(person.textContent).toContain("Died 02/01/2020");
+    expect(person.textContent).toContain("Died 02-01-2020");
     expect(person.textContent).toContain("Testate");
-    expect(person.textContent).toContain("Will 04/03/2019 · Dr Maria Vella");
-    expect(person.textContent).toContain("CM 06/05/2020 · Dr Paul Galea");
-    expect(person.textContent).toContain("08/07/2021 · Dr Anne Borg");
+    expect(person.textContent).toContain("Will 04-03-2019 · Dr Maria Vella");
+    expect(person.textContent).toContain("CM 06-05-2020 · Dr Paul Galea");
+    expect(person.textContent).toContain("08-07-2021 · Dr Anne Borg");
     expect(person.textContent).not.toContain("ownership");
   });
 
@@ -395,18 +413,21 @@ describe("FamilyTreeCanvas", () => {
               fullName: "Anna Borg",
               fatherId: "father",
               motherId: "mother",
+              siblingIds: ["child-2", "child-3"],
             },
             {
               id: "child-2",
               fullName: "Paul Borg",
               fatherId: "father",
               motherId: "mother",
+              siblingIds: ["child-1", "child-3"],
             },
             {
               id: "child-3",
               fullName: "Mark Borg",
               fatherId: "father",
               motherId: "mother",
+              siblingIds: ["child-1", "child-2"],
             },
           ]}
         />,
@@ -419,6 +440,113 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector(".family-children-branch.single")).toBeNull();
     expect(container.querySelectorAll(".family-child-branch-item")).toHaveLength(3);
     expect(container.querySelectorAll(".family-child-stem")).toHaveLength(3);
+    expect(container.querySelector(".family-parentless-sibling-cluster")).toBeNull();
+  });
+
+  it("connects two explicitly linked parentless siblings in one same-generation cluster", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "sibling-a",
+              fullName: "Anna Borg",
+              siblingIds: ["sibling-b"],
+            },
+            {
+              id: "sibling-b",
+              fullName: "Paul Borg",
+              siblingIds: ["sibling-a"],
+            },
+          ]}
+        />,
+      ),
+    );
+
+    const cluster = container.querySelector(
+      '.family-parentless-sibling-cluster[data-sibling-cluster-key="sibling-a::sibling-b"]',
+    );
+    expect(cluster).not.toBeNull();
+    expect(
+      container.querySelectorAll(".relational-forest > .family-parentless-sibling-cluster"),
+    ).toHaveLength(1);
+    expect(container.querySelectorAll(".relational-forest > .family-household")).toHaveLength(0);
+    expect(
+      cluster.querySelectorAll(
+        ":scope > .family-parentless-sibling-rail > .family-parentless-sibling-item",
+      ),
+    ).toHaveLength(2);
+    expect(
+      cluster.querySelectorAll(
+        ":scope > .family-parentless-sibling-rail > .family-parentless-sibling-item > .family-child-stem",
+      ),
+    ).toHaveLength(2);
+    expect(container.querySelectorAll('[data-person-id="sibling-a"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-person-id="sibling-b"]')).toHaveLength(1);
+  });
+
+  it("keeps a partnered sibling household and descendants inside one parentless sibling cluster", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "sibling-a",
+              fullName: "Anna Borg",
+              siblingIds: ["sibling-b", "sibling-c"],
+            },
+            {
+              id: "sibling-b",
+              fullName: "Paul Borg",
+              siblingIds: ["sibling-a", "sibling-c"],
+              spouseIds: ["partner"],
+            },
+            {
+              id: "sibling-c",
+              fullName: "Mark Borg",
+              siblingIds: ["sibling-a", "sibling-b"],
+            },
+            {
+              id: "partner",
+              fullName: "Elena Vella",
+              spouseIds: ["sibling-b"],
+            },
+            {
+              id: "child",
+              fullName: "Daniel Borg",
+              fatherId: "sibling-b",
+              motherId: "partner",
+            },
+          ]}
+        />,
+      ),
+    );
+
+    const cluster = container.querySelector(".family-parentless-sibling-cluster");
+    expect(cluster).not.toBeNull();
+    expect(
+      container.querySelectorAll(".relational-forest > .family-parentless-sibling-cluster"),
+    ).toHaveLength(1);
+    expect(container.querySelectorAll(".relational-forest > .family-household")).toHaveLength(0);
+    expect(
+      cluster.querySelectorAll(
+        ":scope > .family-parentless-sibling-rail > .family-parentless-sibling-item",
+      ),
+    ).toHaveLength(3);
+    expect(
+      cluster.querySelectorAll(
+        ":scope > .family-parentless-sibling-rail > .family-parentless-sibling-item > .family-child-stem",
+      ),
+    ).toHaveLength(3);
+    ["sibling-a", "sibling-b", "sibling-c", "partner", "child"].forEach((personId) => {
+      expect(container.querySelectorAll(`[data-person-id="${personId}"]`), personId).toHaveLength(
+        1,
+      );
+    });
+    const partneredBranch = cluster.querySelector('[data-sibling-person-id="sibling-b"]');
+    expect(partneredBranch.querySelector('[data-person-id="partner"]')).not.toBeNull();
+    expect(partneredBranch.querySelector('[data-person-id="child"]')).not.toBeNull();
+    expect(partneredBranch.querySelector(".family-partner-link")).not.toBeNull();
   });
 
   it("keeps one anchored person connected to separate unions for multiple partners", () => {
@@ -500,6 +628,48 @@ describe("FamilyTreeCanvas", () => {
     );
     expect(container.querySelector('[data-person-id="child-2"] .family-node-name').title).toBe(
       "Claire Borg",
+    );
+  });
+
+  it("joins an incoming child branch to the anchored card through multi-partner rail space", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            { id: "ancestor", fullName: "Anthony Borg" },
+            {
+              id: "person",
+              fullName: "Joseph Borg",
+              fatherId: "ancestor",
+              spouseIds: ["partner-1", "partner-2", "partner-3"],
+            },
+            { id: "partner-1", fullName: "Maria Borg", spouseIds: ["person"] },
+            { id: "partner-2", fullName: "Anne Vella", spouseIds: ["person"] },
+            { id: "partner-3", fullName: "Elena Zammit", spouseIds: ["person"] },
+          ]}
+        />,
+      ),
+    );
+
+    const layout = container.querySelector(".family-remarriage-layout");
+    const branchItem = layout.closest(".family-child-branch-item");
+    const anchorCard = layout.querySelector('[data-person-id="person"]');
+    Object.defineProperties(layout, {
+      offsetWidth: { configurable: true, value: 600 },
+      offsetHeight: { configurable: true, value: 200 },
+    });
+    layout.getBoundingClientRect = () =>
+      measuredRect({ left: 100, top: 200, width: 300, height: 100 });
+    branchItem.getBoundingClientRect = () =>
+      measuredRect({ left: 100, top: 176, width: 300, height: 200 });
+    anchorCard.getBoundingClientRect = () =>
+      measuredRect({ left: 350, top: 214, width: 50, height: 20 });
+
+    act(() => window.dispatchEvent(new Event("resize")));
+
+    expect(branchItem.style.getPropertyValue("--branch-anchor-offset")).toBe("250px");
+    expect(container.querySelector(".family-remarriage-incoming-link").getAttribute("d")).toBe(
+      "M 550 0 V 28",
     );
   });
 
@@ -651,10 +821,152 @@ describe("FamilyTreeCanvas", () => {
     ).not.toBe(container.querySelector('[data-person-id="cousin-b"]').closest(".family-household"));
   });
 
+  it("keeps unrelated existing partners in their own parent branches without duplicate cards", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            { id: "a-father", fullName: "Anthony Borg" },
+            { id: "a-mother", fullName: "Maria Borg" },
+            { id: "b-father", fullName: "Paul Vella" },
+            { id: "b-mother", fullName: "Claire Vella" },
+            {
+              id: "partner-a",
+              fullName: "Joseph Borg",
+              fatherId: "a-father",
+              motherId: "a-mother",
+              spouseIds: ["partner-b"],
+            },
+            {
+              id: "partner-b",
+              fullName: "Elena Vella",
+              fatherId: "b-father",
+              motherId: "b-mother",
+              spouseIds: ["partner-a"],
+            },
+            {
+              id: "shared-child",
+              fullName: "Daniel Borg",
+              fatherId: "partner-a",
+              motherId: "partner-b",
+            },
+          ]}
+        />,
+      ),
+    );
+
+    [
+      "a-father",
+      "a-mother",
+      "b-father",
+      "b-mother",
+      "partner-a",
+      "partner-b",
+      "shared-child",
+    ].forEach((personId) => {
+      expect(container.querySelectorAll(`[data-person-id="${personId}"]`), personId).toHaveLength(
+        1,
+      );
+    });
+    expect(
+      container.querySelector('.family-cross-union[data-cross-union-key="partner-a::partner-b"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-person-id="partner-a"]').closest(".family-household"),
+    ).not.toBe(
+      container.querySelector('[data-person-id="partner-b"]').closest(".family-household"),
+    );
+  });
+
+  it("renders a parented multi-partner anchor and every existing partner exactly once", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            { id: "anchor-father", fullName: "Anthony Borg" },
+            { id: "anchor-mother", fullName: "Maria Borg" },
+            { id: "p1-father", fullName: "Paul Vella" },
+            { id: "p1-mother", fullName: "Claire Vella" },
+            { id: "p2-father", fullName: "Mark Zammit" },
+            { id: "p2-mother", fullName: "Anne Zammit" },
+            {
+              id: "anchor",
+              fullName: "Joseph Borg",
+              fatherId: "anchor-father",
+              motherId: "anchor-mother",
+              spouseIds: ["partner-1", "partner-2"],
+            },
+            {
+              id: "partner-1",
+              fullName: "Elena Vella",
+              fatherId: "p1-father",
+              motherId: "p1-mother",
+              spouseIds: ["anchor"],
+            },
+            {
+              id: "partner-2",
+              fullName: "Rachel Zammit",
+              fatherId: "p2-father",
+              motherId: "p2-mother",
+              spouseIds: ["anchor"],
+            },
+            {
+              id: "child-1",
+              fullName: "Daniel Borg",
+              fatherId: "anchor",
+              motherId: "partner-1",
+            },
+            {
+              id: "child-2",
+              fullName: "Sarah Borg",
+              fatherId: "anchor",
+              motherId: "partner-2",
+            },
+          ]}
+        />,
+      ),
+    );
+
+    [
+      "anchor-father",
+      "anchor-mother",
+      "p1-father",
+      "p1-mother",
+      "p2-father",
+      "p2-mother",
+      "anchor",
+      "partner-1",
+      "partner-2",
+      "child-1",
+      "child-2",
+    ].forEach((personId) => {
+      expect(container.querySelectorAll(`[data-person-id="${personId}"]`), personId).toHaveLength(
+        1,
+      );
+    });
+    expect(
+      container.querySelector('.family-cross-union[data-cross-union-key="anchor::partner-1"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('.family-cross-union[data-cross-union-key="anchor::partner-2"]'),
+    ).not.toBeNull();
+    expect(container.querySelectorAll(".family-cross-partner-link")).toHaveLength(2);
+    expect(container.querySelectorAll(".family-cross-child-link")).toHaveLength(2);
+  });
+
   it("targets an incoming branch at the anchored card rather than the household centre", () => {
     expect(anchoredBranchOffset({ left: 350, width: 100 }, { left: 100, width: 500 }, 0.5)).toBe(
       100,
     );
+  });
+
+  it("routes an incoming connector to the anchored card in scaled X and Y coordinates", () => {
+    expect(
+      anchoredIncomingPath({ left: 350, top: 240, width: 100 }, { left: 100, top: 200 }, 0.5, 0.5),
+    ).toBe("M 600 0 V 80");
+    expect(
+      anchoredIncomingPath({ left: 350, top: 200, width: 100 }, { left: 100, top: 200 }, 0.5, 0.5),
+    ).toBe("");
   });
 
   it("renders every person and child once in a non-star partner network", () => {
@@ -718,5 +1030,26 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll(".family-partner-network-person")).toHaveLength(4);
     expect(container.querySelectorAll(".family-partner-network-relationship")).toHaveLength(3);
     expect(container.querySelectorAll(".family-partner-network-child-link")).toHaveLength(3);
+
+    const network = container.querySelector(".family-partner-network");
+    const branchItem = network.closest(".family-child-branch-item");
+    const anchorCard = network.querySelector('[data-person-id="person-a"]');
+    Object.defineProperties(network, {
+      offsetWidth: { configurable: true, value: 800 },
+      offsetHeight: { configurable: true, value: 300 },
+    });
+    network.getBoundingClientRect = () =>
+      measuredRect({ left: 20, top: 100, width: 400, height: 150 });
+    branchItem.getBoundingClientRect = () =>
+      measuredRect({ left: 20, top: 76, width: 400, height: 300 });
+    anchorCard.getBoundingClientRect = () =>
+      measuredRect({ left: 120, top: 128, width: 60, height: 20 });
+
+    act(() => window.dispatchEvent(new Event("resize")));
+
+    expect(branchItem.style.getPropertyValue("--branch-anchor-offset")).toBe("-140px");
+    expect(container.querySelector(".family-partner-network-incoming-link").getAttribute("d")).toBe(
+      "M 260 0 V 56",
+    );
   });
 });

@@ -3,6 +3,7 @@ import { FileUp, LocateFixed, Plus, Search, Trash2 } from "lucide-react";
 import { DESIGNATIONS, createPerson, personDesignations } from "../domain/people.js";
 import { parseGedcom } from "../domain/gedcom.js";
 import { approximateFraction } from "../domain/ownership.js";
+import { DateInput } from "./DateInput.jsx";
 
 const ownershipLabel = (share = 0) => {
   const fraction = approximateFraction(share);
@@ -209,10 +210,9 @@ export function PeopleEditor({
               {(personDesignations(person).includes("Deceased") || person.isDeceased) && (
                 <label>
                   Date of death
-                  <input
-                    type="date"
+                  <DateInput
                     value={person.dateOfDeath || ""}
-                    onChange={(event) => update(person.id, { dateOfDeath: event.target.value })}
+                    onChange={(value) => update(person.id, { dateOfDeath: value })}
                   />
                 </label>
               )}

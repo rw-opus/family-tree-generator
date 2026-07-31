@@ -70,9 +70,7 @@ export function FamilyTreeCanvas({
   const treeRef = useRef(null);
   const cleanPeople = useMemo(
     () =>
-      people.filter(
-        (person) => person.id || person.fullName || personDesignations(person).length,
-      ),
+      people.filter((person) => person.id || person.fullName || personDesignations(person).length),
     [people],
   );
   const peopleById = useMemo(
@@ -80,10 +78,7 @@ export function FamilyTreeCanvas({
     [cleanPeople],
   );
   const displayNamesById = useMemo(
-    () =>
-      new Map(
-        cleanPeople.map((person) => [person.id, personDisplayName(person, cleanPeople)]),
-      ),
+    () => new Map(cleanPeople.map((person) => [person.id, personDisplayName(person, cleanPeople)])),
     [cleanPeople],
   );
   const deceased = cleanPeople.find(
@@ -91,8 +86,7 @@ export function FamilyTreeCanvas({
   );
   const displayName = (person) =>
     displayNamesById.get(person?.id) || personDisplayName(person, cleanPeople);
-  const cardName = (person) =>
-    personCardName(person, cleanPeople, peopleById, displayNamesById);
+  const cardName = (person) => personCardName(person, cleanPeople, peopleById, displayNamesById);
   const title =
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");

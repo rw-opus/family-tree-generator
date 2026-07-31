@@ -7,11 +7,19 @@ export function anchoredBranchOffset(anchorRect, branchRect, scaleX = 1) {
   return (anchorCenter - branchCenter) / (scaleX || 1);
 }
 
+export function anchoredIncomingPath(anchorRect, layoutRect, scaleX = 1, scaleY = 1) {
+  const anchorCenter = (anchorRect.left - layoutRect.left + anchorRect.width / 2) / (scaleX || 1);
+  const anchorTop = (anchorRect.top - layoutRect.top) / (scaleY || 1);
+
+  return anchorTop > 0 ? `M ${anchorCenter} 0 V ${anchorTop}` : "";
+}
+
 export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups, renderCard }) {
   const layoutRef = useRef(null);
   const [connectorGeometry, setConnectorGeometry] = useState({
     width: 0,
     height: 0,
+    incomingPath: "",
     unions: {},
   });
   const orderedGroups = useMemo(
@@ -57,15 +65,14 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
       const branchAnchorNode = [...layout.querySelectorAll("[data-person-id]")].find(
         (element) => element.dataset.personId === branchAnchor.id,
       );
+      let incomingPath = "";
       if (branchItem && branchAnchorNode) {
+        const branchAnchorRect = branchAnchorNode.getBoundingClientRect();
         branchItem.style.setProperty(
           "--branch-anchor-offset",
-          `${anchoredBranchOffset(
-            branchAnchorNode.getBoundingClientRect(),
-            branchItem.getBoundingClientRect(),
-            scaleX,
-          )}px`,
+          `${anchoredBranchOffset(branchAnchorRect, branchItem.getBoundingClientRect(), scaleX)}px`,
         );
+        incomingPath = anchoredIncomingPath(branchAnchorRect, layoutRect, scaleX, scaleY);
       }
 
       positionedGroups.forEach((group) => {
@@ -122,6 +129,7 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
       setConnectorGeometry({
         width: layout.offsetWidth,
         height: layout.offsetHeight,
+        incomingPath,
         unions: nextUnions,
       });
     };
@@ -151,6 +159,9 @@ export function MultiplePartnerHousehold({ anchor, branchAnchor = anchor, groups
         preserveAspectRatio="none"
         viewBox={`0 0 ${connectorGeometry.width || 1} ${connectorGeometry.height || 1}`}
       >
+        {connectorGeometry.incomingPath && (
+          <path className="family-remarriage-incoming-link" d={connectorGeometry.incomingPath} />
+        )}
         {positionedGroups.map((group) => {
           const geometry = connectorGeometry.unions[group.key] || {};
 

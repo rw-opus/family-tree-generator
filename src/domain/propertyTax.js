@@ -1,3 +1,5 @@
+import { assessArticle5ATransfer, article5ATransferValue } from "./article5A.js";
+
 const number = (value) => Math.max(0, Number(value) || 0);
 
 export const percentageTotal = (heirs = []) =>
@@ -174,11 +176,10 @@ export function inheritanceDuty(property, heir, options = {}) {
 }
 
 export function saleTaxLot(lot) {
-  // transferValue is already the sale price attributable to this lot's inherited fraction.
-  // share identifies and validates that fraction; multiplying by it again would understate tax.
-  const transferValue = number(lot.transferValue);
+  // Values in a lot already relate to that lot's fraction. Multiplying by the
+  // fraction again would understate both the taxable basis and the tax.
+  const { transferValue } = article5ATransferValue(lot);
   const declaredValue = number(lot.acquisitionValue);
-  const inherited = String(lot.inheritanceDate || "");
   const numerator = Math.max(0, number(lot.shareNumerator));
   const denominator = Math.max(0, number(lot.shareDenominator));
   const share = denominator > 0 ? numerator / denominator : 0;
@@ -199,82 +200,11 @@ export function saleTaxLot(lot) {
       transferValue,
       declaredValue,
       share,
+      status: "manual",
+      warnings: [],
     };
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(inherited)) {
-    return {
-      methods: [],
-      recommended: "",
-      selected: "",
-      transferValue,
-      declaredValue,
-      share,
-      warning: "Enter the inheritance date to determine the applicable tax methods.",
-    };
-  }
-  if (!(numerator > 0) || !(denominator > 0)) {
-    return {
-      methods: [],
-      recommended: "",
-      selected: "",
-      transferValue,
-      declaredValue,
-      share,
-      warning: "Enter the inherited fraction covered by this tax lot.",
-    };
-  }
-  if (inherited < "1992-11-25") {
-    const methods = [
-      {
-        key: "pre1992",
-        label: "7% of this share's sale price",
-        rate: 0.07,
-        basis: transferValue,
-        tax: transferValue * 0.07,
-      },
-    ];
-    return {
-      methods,
-      recommended: "pre1992",
-      selected: "pre1992",
-      transferValue,
-      declaredValue,
-      increase: Math.max(0, transferValue - declaredValue),
-      share,
-    };
-  }
-
-  const increase = Math.max(0, transferValue - declaredValue);
-  const flatRate = inherited < "2004-01-01" ? 0.1 : 0.08;
-  const methods = [
-    {
-      key: "increase",
-      label: "12% of the increase for this fraction",
-      rate: 0.12,
-      basis: increase,
-      tax: increase * 0.12,
-    },
-    {
-      key: "whole",
-      label: `${flatRate * 100}% of this share's sale price`,
-      rate: flatRate,
-      basis: transferValue,
-      tax: transferValue * flatRate,
-    },
-  ];
-  const recommended = methods.reduce((lowest, item) => (item.tax < lowest.tax ? item : lowest)).key;
-  const selected = methods.some((method) => method.key === lot.selectedTaxMethod)
-    ? lot.selectedTaxMethod
-    : recommended;
-  return {
-    methods,
-    recommended,
-    selected,
-    transferValue,
-    declaredValue,
-    increase,
-    share,
-  };
+  return assessArticle5ATransfer(lot);
 }
 
 export function selectedSaleTax(result = {}) {
@@ -297,6 +227,11 @@ export function vendorTaxSummary(vendors = [], saleRows = [], excludedVendorIds 
         type: vendor.type,
         share: Number(vendor.share) || 0,
         lotCount: rows.length,
+        pendingLotCount: rows.filter(
+          (row) =>
+            !(row.result?.methods || []).some((method) => method.key === row.result?.selected),
+        ).length,
+        manualReviewLotCount: rows.filter((row) => row.result?.requiresManualReview).length,
         saleValue: rows.reduce((total, row) => total + (Number(row.result?.transferValue) || 0), 0),
         tax: rows.reduce((total, row) => total + selectedSaleTax(row.result), 0),
         rows,

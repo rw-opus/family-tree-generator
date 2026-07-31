@@ -43,13 +43,9 @@ export function calculateA3Tiles({
   const scaledWidth = width * printScale;
   const scaledHeight = height * printScale;
   const columns =
-    scaledWidth <= pageWidth
-      ? 1
-      : Math.ceil((scaledWidth - sharedEdge) / horizontalAdvance);
+    scaledWidth <= pageWidth ? 1 : Math.ceil((scaledWidth - sharedEdge) / horizontalAdvance);
   const rows =
-    scaledHeight <= pageHeight
-      ? 1
-      : Math.ceil((scaledHeight - sharedEdge) / verticalAdvance);
+    scaledHeight <= pageHeight ? 1 : Math.ceil((scaledHeight - sharedEdge) / verticalAdvance);
   const tiles = [];
 
   for (let row = 0; row < rows; row += 1) {
@@ -388,15 +384,7 @@ const measurePrintableTree = (sourceCanvas, previewDocument) => {
   return result;
 };
 
-const createPage = ({
-  document,
-  sourceCanvas,
-  title,
-  tile,
-  layout,
-  pageNumber,
-  pageCount,
-}) => {
+const createPage = ({ document, sourceCanvas, title, tile, layout, pageNumber, pageCount }) => {
   const shell = makeElement(document, "section", "a3-page-shell");
   const page = makeElement(document, "article", "a3-page");
   const header = makeElement(document, "header", "a3-page-header");
@@ -422,9 +410,7 @@ const createPage = ({
   );
   const sheetNumber = makeElement(document, "span", "", `${pageNumber} / ${pageCount}`);
   const centreX =
-    layout.scaledWidth < layout.viewportWidth
-      ? (layout.viewportWidth - layout.scaledWidth) / 2
-      : 0;
+    layout.scaledWidth < layout.viewportWidth ? (layout.viewportWidth - layout.scaledWidth) / 2 : 0;
   const centreY =
     layout.scaledHeight < layout.viewportHeight
       ? (layout.viewportHeight - layout.scaledHeight) / 2
@@ -459,7 +445,9 @@ export async function openA3PrintPreview(node, title = "Family tree") {
 
   const previewWindow = window.open("", "_blank");
   if (!previewWindow) {
-    window.alert("The browser blocked the print preview. Allow pop-ups for this site and try again.");
+    window.alert(
+      "The browser blocked the print preview. Allow pop-ups for this site and try again.",
+    );
     return false;
   }
 
@@ -487,12 +475,7 @@ export async function openA3PrintPreview(node, title = "Family tree") {
   const scaleLabel = makeElement(previewWindow.document, "label", "");
   const scaleText = makeElement(previewWindow.document, "span", "", "Tree scale");
   const scaleSelect = makeElement(previewWindow.document, "select", "");
-  const printButton = makeElement(
-    previewWindow.document,
-    "button",
-    "",
-    "Print all A3 pages",
-  );
+  const printButton = makeElement(previewWindow.document, "button", "", "Print all A3 pages");
   const closeButton = makeElement(previewWindow.document, "button", "", "Close");
   const pages = makeElement(previewWindow.document, "main", "a3-preview-pages");
 

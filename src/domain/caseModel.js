@@ -191,42 +191,178 @@ export function findFamilyGroupsForPerson(caseValue, personId) {
   return caseData.familyGroups.filter((group) => group.personIds.includes(personId));
 }
 
-function referencedPartyIds(caseData) {
-  const ids = new Set();
-  const add = (value) => {
-    if (value) ids.add(value);
+function records(value) {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function collectCasePersonReferences(caseData, options = {}) {
+  const references = [];
+  const includeRelationships = options.includeRelationships !== false;
+  const add = (value, label, kind = "case") => {
+    const personId = text(value);
+    if (personId) references.push({ personId, label, kind });
   };
-  const addDeclarations = (declarations = []) =>
-    declarations.forEach((declaration) => {
-      (declaration.participants || []).forEach((participant) => add(participant.heirId));
-      (declaration.heirIds || []).forEach(add);
+  const addDeclarations = (declarations = [], resolvePersonId = (value) => value) =>
+    records(declarations).forEach((declaration) => {
+      records(declaration.participants).forEach((participant) => {
+        add(resolvePersonId(participant.heirId), "a declaration of succession");
+        add(resolvePersonId(participant.personId), "a declaration of succession");
+      });
+      uniqueIds(declaration.heirIds).forEach((personId) =>
+        add(resolvePersonId(personId), "a declaration of succession"),
+      );
+      uniqueIds(declaration.declarantPersonIds).forEach((personId) =>
+        add(resolvePersonId(personId), "a declaration of succession"),
+      );
     });
-  const addPropertyReferences = (property = {}) => {
-    (property.owners || []).forEach((owner) => add(owner.personId));
-    (property.transfers || []).forEach((transfer) => {
-      add(transfer.sellerId);
-      add(transfer.buyerId);
+  const addPropertyReferences = (property = {}, resolvePersonId = (value) => value) => {
+    records(property.owners).forEach((owner) =>
+      add(owner.personId, "an initial property ownership record"),
+    );
+    records(property.transfers).forEach((transfer) => {
+      add(resolvePersonId(transfer.sellerId), "an ownership transfer");
+      add(resolvePersonId(transfer.buyerId), "an ownership transfer");
     });
-    (property.saleLots || []).forEach((lot) => add(lot.ownerId));
-    addDeclarations(property.declarations);
+    records(property.saleLots).forEach((lot) =>
+      add(resolvePersonId(lot.ownerId), "a vendor tax lot"),
+    );
+    addDeclarations(property.declarations, resolvePersonId);
   };
 
-  (caseData.properties || []).forEach(addPropertyReferences);
-  (caseData.succession?.heirs || []).forEach((heir) => add(heir.personId));
-  (caseData.transfers || []).forEach((transfer) => {
-    add(transfer.sellerId);
-    add(transfer.buyerId);
-  });
-  (caseData.saleLots || []).forEach((lot) => add(lot.ownerId));
-  addDeclarations(caseData.declarations);
-  (caseData.people || []).forEach((person) => {
-    (person.willHeirs || []).forEach((heir) => add(heir.personId));
-    (person.intestateHeirs || []).forEach((heir) => add(heir.personId));
-    (person.causaMortisDeclarations || []).forEach((declaration) =>
-      (declaration.declarantPersonIds || []).forEach(add),
+  const legacyHeirs = [...records(caseData.succession?.heirs), ...records(caseData.heirs)];
+  const legacyHeirPersonIds = new Map(
+    legacyHeirs
+      .map((heir) => [text(heir.id), text(heir.personId)])
+      .filter(([heirId, personId]) => heirId && personId),
+  );
+  const resolveLegacyPersonId = (value) => {
+    const requestedId = text(value);
+    return legacyHeirPersonIds.get(requestedId) || requestedId;
+  };
+
+  addPropertyReferences(caseData, resolveLegacyPersonId);
+  records(caseData.properties).forEach((property) => addPropertyReferences(property));
+  if (isRecord(caseData.property)) {
+    addPropertyReferences(caseData.property, resolveLegacyPersonId);
+  }
+
+  legacyHeirs.forEach((heir) => add(heir.personId, "a succession heir record"));
+  records(caseData.outsideParties).forEach((party) =>
+    add(party.id, "an outside-party identity record"),
+  );
+
+  records(caseData.people).forEach((person) => {
+    if (includeRelationships) {
+      if (text(person.fatherId)) add(person.fatherId, "a child relationship", "relationship");
+      if (text(person.motherId)) add(person.motherId, "a child relationship", "relationship");
+      uniqueIds(person.spouseIds).forEach((personId) =>
+        add(personId, "a partner relationship", "relationship"),
+      );
+      uniqueIds(person.siblingIds).forEach((personId) =>
+        add(personId, "a sibling relationship", "relationship"),
+      );
+    }
+    records(person.willHeirs).forEach((heir) => add(heir.personId, "a will beneficiary record"));
+    records(person.intestateHeirs).forEach((heir) =>
+      add(heir.personId, "a confirmed intestate-heir record"),
+    );
+    records(person.causaMortisDeclarations).forEach((declaration) =>
+      uniqueIds(declaration.declarantPersonIds).forEach((personId) =>
+        add(personId, "a causa mortis declarant record"),
+      ),
     );
   });
-  return ids;
+
+  return references;
+}
+
+/**
+ * Returns every case-wide reason a canonical Person record must be retained.
+ * Family-group membership is intentionally excluded because callers handle the
+ * requested membership separately.
+ */
+export function casePersonDependencyLabels(caseValue, personId) {
+  const requestedPersonId = text(personId);
+  if (!requestedPersonId) return [];
+  const caseData = normalizeCase(caseValue);
+  return [
+    ...new Set(
+      collectCasePersonReferences(caseData)
+        .filter((reference) => reference.personId === requestedPersonId)
+        .map((reference) => reference.label),
+    ),
+  ];
+}
+
+function referencedPartyIds(caseData) {
+  return new Set(
+    collectCasePersonReferences(caseData, { includeRelationships: false }).map(
+      (reference) => reference.personId,
+    ),
+  );
+}
+
+function scrubPersonFromRelationships(people, personId) {
+  return people
+    .filter((person) => person.id !== personId)
+    .map((person) => ({
+      ...person,
+      fatherId: person.fatherId === personId ? "" : person.fatherId,
+      motherId: person.motherId === personId ? "" : person.motherId,
+      spouseIds: uniqueIds(person.spouseIds).filter((id) => id !== personId),
+      siblingIds: uniqueIds(person.siblingIds).filter((id) => id !== personId),
+    }));
+}
+
+/**
+ * Removes a Person from one family-tree tab. The canonical Person survives
+ * while another family group or any case-wide relationship/legal/property
+ * record still references it.
+ */
+export function removePersonFromFamilyGroup(caseValue, groupId, personId) {
+  const caseData = normalizeCase(caseValue);
+  const requestedGroupId = text(groupId);
+  const requestedPersonId = text(personId);
+  const targetGroup = caseData.familyGroups.find((group) => group.id === requestedGroupId);
+
+  if (
+    !targetGroup ||
+    !requestedPersonId ||
+    !targetGroup.personIds.includes(requestedPersonId) ||
+    targetGroup.personIds.length <= 1
+  ) {
+    return caseData;
+  }
+
+  const nextPersonIds = targetGroup.personIds.filter(
+    (candidateId) => candidateId !== requestedPersonId,
+  );
+  const familyGroups = caseData.familyGroups.map((group) =>
+    group.id === requestedGroupId
+      ? {
+          ...group,
+          rootPersonId:
+            group.rootPersonId === requestedPersonId ? nextPersonIds[0] || "" : group.rootPersonId,
+          personIds: nextPersonIds,
+        }
+      : group,
+  );
+  const neededByAnotherGroup = familyGroups.some((group) =>
+    group.personIds.includes(requestedPersonId),
+  );
+  const neededByCaseReference = casePersonDependencyLabels(caseData, requestedPersonId).some(
+    (label) => label !== "a sibling relationship",
+  );
+
+  if (neededByAnotherGroup || neededByCaseReference) {
+    return normalizeCase({ ...caseData, familyGroups });
+  }
+
+  return normalizeCase({
+    ...caseData,
+    familyGroups,
+    people: scrubPersonFromRelationships(caseData.people, requestedPersonId),
+  });
 }
 
 function relationshipIds(person = {}) {

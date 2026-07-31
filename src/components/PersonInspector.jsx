@@ -47,6 +47,8 @@ import {
   shareFromPercentage,
   shareFromPercentageInput,
 } from "../domain/shares.js";
+import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 
 const relationshipActions = [
@@ -55,6 +57,21 @@ const relationshipActions = [
   { key: "spouse", label: "Partner", icon: Heart },
   { key: "child", label: "Child", icon: Baby },
   { key: "sibling", label: "Brother / sister", icon: UsersRound },
+];
+
+const parentLinkFields = [
+  {
+    key: "father",
+    field: "fatherId",
+    explicitUnassignedField: "fatherExplicitlyUnassigned",
+    label: "Father",
+  },
+  {
+    key: "mother",
+    field: "motherId",
+    explicitUnassignedField: "motherExplicitlyUnassigned",
+    label: "Mother",
+  },
 ];
 
 const shareDisplayMode = (value) =>
@@ -102,8 +119,10 @@ export function PersonInspector({
   onShareDisplayChange,
   caseDependencyLabels = [],
   familyPersonIds = null,
+  personFamilyGroupCount = 1,
   onChange,
   onSelectPerson,
+  onDeletePerson,
   onBackToTree,
 }) {
   const [importMode, setImportMode] = useState("replace");
@@ -112,6 +131,8 @@ export function PersonInspector({
   const [existingSpouseId, setExistingSpouseId] = useState("");
   const [childPartnerChooserOpen, setChildPartnerChooserOpen] = useState(false);
   const [childPartnerId, setChildPartnerId] = useState("");
+  const [parentChooserField, setParentChooserField] = useState("");
+  const [existingParentId, setExistingParentId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [causaMortisErrors, setCausaMortisErrors] = useState({});
   const [causaMortisDraftOpen, setCausaMortisDraftOpen] = useState(true);
@@ -122,6 +143,8 @@ export function PersonInspector({
   const currentFamilyPersonIds = Array.isArray(familyPersonIds)
     ? familyPersonIds
     : people.map((person) => person.id);
+  const currentFamilyPersonIdSet = new Set(currentFamilyPersonIds);
+  const sharedAcrossFamilies = personFamilyGroupCount > 1;
   const previousSelectedPersonIdRef = useRef("");
   const displayName = useCallback((person) => personDisplayName(person, people), [people]);
   const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
@@ -147,6 +170,8 @@ export function PersonInspector({
     setExistingSpouseId("");
     setChildPartnerChooserOpen(false);
     setChildPartnerId("");
+    setParentChooserField("");
+    setExistingParentId("");
     setCausaMortisErrors({});
     setCausaMortisDraftOpen(
       Boolean(
@@ -476,13 +501,26 @@ export function PersonInspector({
   };
 
   const removeSelected = () => {
-    if (!selectedPerson || currentFamilyPersonIds.length <= 1 || deleteBlockers.length) {
+    if (
+      !selectedPerson ||
+      currentFamilyPersonIds.length <= 1 ||
+      deleteBlockers.length ||
+      (sharedAcrossFamilies && !onDeletePerson)
+    ) {
       return;
     }
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
+      sharedAcrossFamilies
+        ? `Remove ${displayName(selectedPerson)} from this family tree? The person will remain in the other linked family tree${
+            personFamilyGroupCount === 2 ? "" : "s"
+          }.`
+        : `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
     );
     if (!confirmed) return;
+    if (onDeletePerson) {
+      onDeletePerson(selectedPerson.id);
+      return;
+    }
     onChange(
       people
         .filter((person) => person.id !== selectedPerson.id)
@@ -516,6 +554,27 @@ export function PersonInspector({
           return {
             ...person,
             spouseIds: (person.spouseIds || []).filter((id) => id !== selectedPerson.id),
+          };
+        }
+        return person;
+      }),
+    );
+  };
+
+  const removeSiblingLink = (siblingId) => {
+    if (!selectedPerson || !siblingId) return;
+    onChange(
+      people.map((person) => {
+        if (person.id === selectedPerson.id) {
+          return {
+            ...person,
+            siblingIds: (person.siblingIds || []).filter((id) => id !== siblingId),
+          };
+        }
+        if (person.id === siblingId) {
+          return {
+            ...person,
+            siblingIds: (person.siblingIds || []).filter((id) => id !== selectedPerson.id),
           };
         }
         return person;
@@ -643,6 +702,24 @@ export function PersonInspector({
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
   const linkedSpouseIds = new Set(linkedPartners.map((person) => person.id));
+  const linkedSiblingIds = new Set(selectedPerson.siblingIds || []);
+  people.forEach((person) => {
+    if ((person.siblingIds || []).includes(selectedPerson.id)) linkedSiblingIds.add(person.id);
+  });
+  linkedSiblingIds.delete(selectedPerson.id);
+  const linkedSiblings = [...linkedSiblingIds]
+    .map((personId) => peopleById.get(personId))
+    .filter(Boolean);
+  const mostRecentlyLinkedPartnerId =
+    [...(selectedPerson.spouseIds || [])]
+      .reverse()
+      .find((partnerId) => linkedSpouseIds.has(partnerId)) || "";
+  const reciprocalPartners = linkedPartners.filter((partner) =>
+    (partner.spouseIds || []).includes(selectedPerson.id),
+  );
+  const preferredChildPartnerId =
+    mostRecentlyLinkedPartnerId ||
+    (reciprocalPartners.length === 1 ? reciprocalPartners[0].id : "");
   const sharedChildrenByPartnerId = new Map(
     linkedPartners.map((partner) => [
       partner.id,
@@ -652,9 +729,18 @@ export function PersonInspector({
       }),
     ]),
   );
+  const closeChildPartnerChooser = () => {
+    setChildPartnerChooserOpen(false);
+    setChildPartnerId("");
+  };
   const addChild = () => {
     if (linkedPartners.length > 0) {
-      setChildPartnerChooserOpen((open) => !open);
+      if (childPartnerChooserOpen) {
+        closeChildPartnerChooser();
+      } else {
+        setChildPartnerId(preferredChildPartnerId);
+        setChildPartnerChooserOpen(true);
+      }
       return;
     }
     addRelative("child", linkedPartners[0]?.id);
@@ -666,27 +752,113 @@ export function PersonInspector({
       !descendantIds.has(person.id) &&
       !ancestorIds.has(person.id),
   );
+  const parentLinks = parentLinkFields
+    .filter(({ field }) => Boolean(selectedPerson[field]))
+    .map((link) => ({
+      ...link,
+      personId: selectedPerson[link.field],
+      person: peopleById.get(selectedPerson[link.field]),
+    }));
+  const activeParentLink = parentLinkFields.find(({ field }) => field === parentChooserField);
+  const otherParentField =
+    activeParentLink?.field === "fatherId"
+      ? "motherId"
+      : activeParentLink?.field === "motherId"
+        ? "fatherId"
+        : "";
+  const existingParentCandidates = activeParentLink
+    ? people.filter(
+        (person) =>
+          Boolean(person.id) &&
+          person.id !== selectedPerson.id &&
+          person.id !== selectedPerson[activeParentLink.field] &&
+          person.id !== selectedPerson[otherParentField] &&
+          !descendantIds.has(person.id),
+      )
+    : [];
+  const openParentChooser = (field) => {
+    setParentChooserField(field);
+    setExistingParentId("");
+  };
+  const closeParentChooser = () => {
+    setParentChooserField("");
+    setExistingParentId("");
+  };
+  const changeParentLink = () => {
+    if (!activeParentLink || !existingParentId) return;
+    const candidate = peopleById.get(existingParentId);
+    if (
+      !candidate ||
+      candidate.id === selectedPerson.id ||
+      candidate.id === selectedPerson[activeParentLink.field] ||
+      candidate.id === selectedPerson[otherParentField] ||
+      descendantIds.has(candidate.id)
+    ) {
+      return;
+    }
+    updateSelected({
+      [activeParentLink.field]: candidate.id,
+      [activeParentLink.explicitUnassignedField]: false,
+    });
+    closeParentChooser();
+  };
+  const removeParentLink = (link) => {
+    updateSelected({
+      [link.field]: "",
+      [link.explicitUnassignedField]: true,
+    });
+    if (parentChooserField === link.field) closeParentChooser();
+  };
+  const blockingPartners = sharedAcrossFamilies
+    ? linkedPartners.filter((partner) => currentFamilyPersonIdSet.has(partner.id))
+    : linkedPartners;
+  const blockingDescendants = sharedAcrossFamilies
+    ? descendants.filter((descendant) => currentFamilyPersonIdSet.has(descendant.id))
+    : descendants;
+  const blockingSiblings = sharedAcrossFamilies
+    ? linkedSiblings.filter((sibling) => currentFamilyPersonIdSet.has(sibling.id))
+    : [];
   const deleteBlockers = [
-    ...(linkedPartners.length
+    ...(blockingPartners.length
       ? [
-          `${linkedPartners.length} ${
-            linkedPartners.length === 1 ? "partner link" : "partner links"
+          `${blockingPartners.length} ${
+            blockingPartners.length === 1 ? "partner link" : "partner links"
           }`,
         ]
       : []),
-    ...(descendants.length
-      ? [`${descendants.length} ${descendants.length === 1 ? "descendant" : "descendants"}`]
+    ...(blockingDescendants.length
+      ? [
+          `${blockingDescendants.length} ${
+            blockingDescendants.length === 1 ? "descendant" : "descendants"
+          }`,
+        ]
       : []),
-    ...(hasOwnership && ownership > 1e-10 ? ["the person's property ownership"] : []),
-    ...caseDependencyLabels,
+    ...(blockingSiblings.length
+      ? [
+          `${blockingSiblings.length} ${
+            blockingSiblings.length === 1 ? "sibling link" : "sibling links"
+          }`,
+        ]
+      : []),
+    ...(!sharedAcrossFamilies && hasOwnership && ownership > 1e-10
+      ? ["the person's property ownership"]
+      : []),
+    ...(!sharedAcrossFamilies ? caseDependencyLabels : []),
   ];
-  const deleteDisabled = currentFamilyPersonIds.length <= 1 || deleteBlockers.length > 0;
+  const deleteDisabled =
+    currentFamilyPersonIds.length <= 1 ||
+    deleteBlockers.length > 0 ||
+    (sharedAcrossFamilies && !onDeletePerson);
   const deleteMessage =
     currentFamilyPersonIds.length <= 1
       ? "A tree must contain at least one person."
-      : deleteBlockers.length
-        ? `Remove ${deleteBlockers.join(" and ")} first.`
-        : "No partner or descendant dependencies. Confirmation is required.";
+      : sharedAcrossFamilies && !onDeletePerson
+        ? "Family-scoped removal is unavailable in this view."
+        : deleteBlockers.length
+          ? `Remove ${deleteBlockers.join(" and ")} first.`
+          : personFamilyGroupCount > 1
+            ? "This removes the person from this family only; the shared record remains elsewhere."
+            : "No partner or descendant dependencies. Confirmation is required.";
 
   return (
     <div className="person-inspector">
@@ -767,6 +939,89 @@ export function PersonInspector({
             Identify this person first: {identityIssues.join(", ")}.
           </p>
         )}
+        {parentLinks.length > 0 && (
+          <div className="family-link-list">
+            <strong>Family links</strong>
+            {parentLinks.map((link) => {
+              const linkedPersonName = link.person
+                ? displayName(link.person)
+                : "Missing person record";
+              const chooserOpen = parentChooserField === link.field;
+              return (
+                <div className="family-link-row" data-parent-link={link.key} key={link.field}>
+                  <span className="family-link-label">{link.label}</span>
+                  {link.person ? (
+                    <button
+                      type="button"
+                      className="family-link-person"
+                      onClick={() => onSelectPerson(link.personId)}
+                    >
+                      {linkedPersonName}
+                    </button>
+                  ) : (
+                    <span className="family-link-person missing">{linkedPersonName}</span>
+                  )}
+                  <span className="family-link-actions">
+                    <button
+                      type="button"
+                      className="text-button"
+                      aria-expanded={chooserOpen}
+                      onClick={() =>
+                        chooserOpen ? closeParentChooser() : openParentChooser(link.field)
+                      }
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      className="text-button danger"
+                      aria-label={`Remove ${link.key} link to ${linkedPersonName}`}
+                      onClick={() => removeParentLink(link)}
+                    >
+                      Remove
+                    </button>
+                  </span>
+                  {chooserOpen && (
+                    <div className="parent-link-chooser">
+                      <select
+                        aria-label={`Change ${link.key}`}
+                        value={existingParentId}
+                        disabled={!existingParentCandidates.length}
+                        onChange={(event) => setExistingParentId(event.target.value)}
+                      >
+                        <option value="">
+                          {existingParentCandidates.length
+                            ? `Choose an existing ${link.key}`
+                            : "No valid people available"}
+                        </option>
+                        {existingParentCandidates.map((person) => (
+                          <option key={person.id} value={person.id}>
+                            {displayName(person)}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={!existingParentId}
+                        onClick={changeParentLink}
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={closeParentChooser}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {spouseChooserOpen && identityComplete && (
           <div className="spouse-chooser">
             <button
@@ -832,8 +1087,7 @@ export function PersonInspector({
                 className="primary-button"
                 onClick={() => {
                   addRelative("child", childPartnerId);
-                  setChildPartnerChooserOpen(false);
-                  setChildPartnerId("");
+                  closeChildPartnerChooser();
                 }}
               >
                 <Baby size={15} />
@@ -991,10 +1245,9 @@ export function PersonInspector({
             <div className="person-succession">
               <label className="succession-detail-row">
                 <span>Date of death</span>
-                <input
-                  type="date"
+                <DateInput
                   value={selectedPerson.dateOfDeath || ""}
-                  onChange={(event) => updateSelected({ dateOfDeath: event.target.value })}
+                  onChange={(value) => updateSelected({ dateOfDeath: value })}
                 />
               </label>
               <label className="succession-detail-row">
@@ -1023,10 +1276,9 @@ export function PersonInspector({
                 <div className="will-details">
                   <label>
                     <span>Will date</span>
-                    <input
-                      type="date"
+                    <DateInput
                       value={selectedPerson.willDate || ""}
-                      onChange={(event) => updateSelected({ willDate: event.target.value })}
+                      onChange={(value) => updateSelected({ willDate: value })}
                     />
                   </label>
                   <label>
@@ -1195,7 +1447,9 @@ export function PersonInspector({
                         const differenceLabel =
                           row.status === "date-unknown"
                             ? row.deathDateText
-                              ? `Resolve date (${row.deathDateText})`
+                              ? `Resolve date (${
+                                  isoDateToDisplay(row.deathDateText) || row.deathDateText
+                                })`
                               : "Enter exact death date"
                             : row.status === "under"
                               ? `Missing ${fractionLabel(difference)}`
@@ -1317,14 +1571,13 @@ export function PersonInspector({
                       </label>
                       <label>
                         <span>Date of Declaration Causa Mortis</span>
-                        <input
+                        <DateInput
                           aria-label={`Date of Declaration Causa Mortis ${index + 1}`}
-                          type="date"
                           required
                           value={declaration.date || ""}
-                          onChange={(event) =>
+                          onChange={(value) =>
                             updateCausaMortisDeclaration(declaration.id, {
-                              date: event.target.value,
+                              date: value,
                             })
                           }
                         />
@@ -1463,6 +1716,27 @@ export function PersonInspector({
               </div>
             </div>
           )}
+          {linkedSiblings.length > 0 && (
+            <div className="person-partner-links person-sibling-links">
+              <span>Sibling links</span>
+              <div>
+                {linkedSiblings.map((sibling) => (
+                  <span key={sibling.id}>
+                    <span className="person-partner-link-identity">
+                      <strong>{displayName(sibling)}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeSiblingLink(sibling.id)}
+                      aria-label={`Remove sibling link to ${displayName(sibling)}`}
+                    >
+                      Remove link
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="person-delete-control">
             <button
               type="button"
@@ -1471,7 +1745,7 @@ export function PersonInspector({
               onClick={removeSelected}
             >
               <Trash2 size={15} />
-              Delete person
+              {personFamilyGroupCount > 1 ? "Remove from this family" : "Delete person"}
             </button>
             <small>{deleteMessage}</small>
           </div>

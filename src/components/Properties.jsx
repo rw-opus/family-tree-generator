@@ -1,4 +1,6 @@
 import { Calculator, Home, Plus, Trash2 } from "lucide-react";
+import { ARTICLE_5A_LEGAL_NOTES } from "../domain/article5A.js";
+import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
 import {
@@ -6,6 +8,7 @@ import {
   shareFromFractionInput,
   shareFromPercentageInput,
 } from "../domain/shares.js";
+import { Article5ATaxLotFields } from "./Article5ATaxLotFields.jsx";
 import { PropertyDeclarations } from "./PropertyDeclarations.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
 
@@ -36,11 +39,16 @@ const makeOwner = () => ({
 const makeLot = () => ({
   id: crypto.randomUUID(),
   ownerId: "",
+  acquisitionType: "inheritance",
   inheritanceDate: "",
+  acquisitionDate: "",
+  transferDate: new Date().toISOString().slice(0, 10),
   shareNumerator: 0,
   shareDenominator: 1,
   acquisitionValue: "",
   transferValue: "",
+  consideration: "",
+  marketValue: "",
   useDeclaredValues: true,
   selectedTaxMethod: "",
   taxTreatment: "inheritance",
@@ -376,9 +384,23 @@ export function Properties({
                   </div>
                 </div>
                 <p className="helper-text">
-                  Use one lot for each inherited fraction. The sale price and causa mortis value in
-                  that lot must cover the same fraction.
+                  Use one lot for every separately acquired fraction. Article 5A applies each
+                  acquisition separately, and all values in a lot must cover the same fraction.
                 </p>
+                <details className="article5a-reference">
+                  <summary>Article 5A calculation rules used here</summary>
+                  <ul>
+                    {ARTICLE_5A_LEGAL_NOTES.map((note) => (
+                      <li key={note.rule}>
+                        <strong>{note.rule}:</strong> {note.text}
+                      </li>
+                    ))}
+                  </ul>
+                  <p>
+                    Fact-dependent exemptions and special rates are only applied after explicit
+                    confirmation. An out-of-scope result requires a separate tax assessment.
+                  </p>
+                </details>
                 <div className="people-list">
                   {saleRows.map(
                     ({
@@ -418,11 +440,12 @@ export function Properties({
                                   ownerId: event.target.value,
                                   selectedTaxMethod: "",
                                   useDeclaredValues: true,
-                                  taxTreatment:
+                                  taxTreatment: "inheritance",
+                                  acquisitionType:
                                     ledger.parties.find((party) => party.id === event.target.value)
                                       ?.type === "company"
-                                      ? "manual"
-                                      : "inheritance",
+                                      ? "purchase"
+                                      : lot.acquisitionType || "inheritance",
                                 })
                               }
                             >
@@ -448,10 +471,6 @@ export function Properties({
                             <select
                               aria-label="Tax treatment"
                               value={lot.taxTreatment || "inheritance"}
-                              disabled={
-                                ledger.parties.find((party) => party.id === lot.ownerId)?.type ===
-                                "company"
-                              }
                               onChange={(event) =>
                                 updateLot(property, lot.id, {
                                   taxTreatment: event.target.value,
@@ -459,25 +478,10 @@ export function Properties({
                                 })
                               }
                             >
-                              <option value="inheritance">Inherited-property calculation</option>
+                              <option value="inheritance">Article 5A calculation</option>
                               <option value="manual">Manual assessment</option>
                             </select>
                           </label>
-                          {lot.taxTreatment !== "manual" && (
-                            <label>
-                              Inheritance date
-                              <input
-                                type="date"
-                                value={lot.inheritanceDate}
-                                onChange={(event) =>
-                                  updateLot(property, lot.id, {
-                                    inheritanceDate: event.target.value,
-                                    selectedTaxMethod: "",
-                                  })
-                                }
-                              />
-                            </label>
-                          )}
                           {lot.taxTreatment === "manual" && (
                             <label>
                               Manually assessed tax (€)
@@ -495,84 +499,27 @@ export function Properties({
                             </label>
                           )}
                           {lot.taxTreatment !== "manual" && (
-                            <>
-                              <label>
-                                Fraction covered by this lot
-                                <span className="tax-lot-fraction">
-                                  <input
-                                    aria-label="Tax lot share numerator"
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    disabled={usePublishedValues}
-                                    value={effectiveLot.shareNumerator ?? 0}
-                                    onChange={(event) =>
-                                      updateLot(property, lot.id, {
-                                        shareNumerator: event.target.value,
-                                        useDeclaredValues: false,
-                                      })
-                                    }
-                                  />
-                                  <b>/</b>
-                                  <input
-                                    aria-label="Tax lot share denominator"
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    disabled={usePublishedValues}
-                                    value={effectiveLot.shareDenominator ?? 1}
-                                    onChange={(event) =>
-                                      updateLot(property, lot.id, {
-                                        shareDenominator: event.target.value,
-                                        useDeclaredValues: false,
-                                      })
-                                    }
-                                  />
-                                </span>
-                              </label>
-                              <label>
-                                Accumulated causa mortis value (€)
-                                <input
-                                  type="number"
-                                  min="0"
-                                  disabled={usePublishedValues}
-                                  value={effectiveLot.acquisitionValue}
-                                  onChange={(event) =>
-                                    updateLot(property, lot.id, {
-                                      acquisitionValue: event.target.value,
-                                      useDeclaredValues: false,
-                                    })
-                                  }
-                                />
-                              </label>
-                            </>
-                          )}
-                          <label>
-                            Sale price of the same fraction (€)
-                            <input
-                              type="number"
-                              min="0"
-                              value={lot.transferValue}
-                              onChange={(event) =>
-                                updateLot(property, lot.id, {
-                                  transferValue: event.target.value,
-                                })
-                              }
+                            <Article5ATaxLotFields
+                              lot={lot}
+                              effectiveLot={effectiveLot}
+                              usePublishedValues={usePublishedValues}
+                              declaredCoverage={declaredCoverage}
+                              onChange={(patch) => updateLot(property, lot.id, patch)}
                             />
-                          </label>
-                          {lot.taxTreatment !== "manual" && (
-                            <label className="check-label full-width">
+                          )}
+                          {lot.taxTreatment === "manual" && (
+                            <label>
+                              Transfer value for this fraction (€)
                               <input
-                                type="checkbox"
-                                disabled={!declaredCoverage?.hasUsablePublishedValues}
-                                checked={usePublishedValues}
+                                type="number"
+                                min="0"
+                                value={lot.transferValue}
                                 onChange={(event) =>
                                   updateLot(property, lot.id, {
-                                    useDeclaredValues: event.target.checked,
+                                    transferValue: event.target.value,
                                   })
                                 }
                               />
-                              Use the accumulated values and fraction from published CM declarations
                             </label>
                           )}
                         </div>
@@ -591,6 +538,7 @@ export function Properties({
                             </p>
                           )}
                         {lot.taxTreatment !== "manual" &&
+                          (lot.acquisitionType || "inheritance") === "inheritance" &&
                           usePublishedValues &&
                           livingVendorIds.has(lot.ownerId) && (
                             <p className="tax-lot-source">
@@ -601,6 +549,7 @@ export function Properties({
                             </p>
                           )}
                         {lot.taxTreatment !== "manual" &&
+                          (lot.acquisitionType || "inheritance") === "inheritance" &&
                           !declaredCoverage?.publishedCount &&
                           livingVendorIds.has(lot.ownerId) && (
                             <p className="tax-lot-source attention">
@@ -609,6 +558,7 @@ export function Properties({
                             </p>
                           )}
                         {lot.taxTreatment !== "manual" &&
+                          (lot.acquisitionType || "inheritance") === "inheritance" &&
                           Boolean(declaredCoverage?.publishedCount) &&
                           !declaredCoverage?.hasUsablePublishedValues &&
                           livingVendorIds.has(lot.ownerId) && (
@@ -623,6 +573,13 @@ export function Properties({
                             {lotResult.warning}
                           </p>
                         )}
+                        {lotResult.warnings?.length > 0 && livingVendorIds.has(lot.ownerId) && (
+                          <div className="article5a-notes">
+                            {lotResult.warnings.map((warning) => (
+                              <p key={warning}>{warning}</p>
+                            ))}
+                          </div>
+                        )}
                         {livingVendorIds.has(lot.ownerId) && (
                           <div className="method-list">
                             {lotResult.methods.map((method) => (
@@ -631,7 +588,7 @@ export function Properties({
                                 className={[
                                   "method",
                                   method.key === lotResult.selected ? "selected" : "",
-                                  method.key === lotResult.recommended ? "best" : "",
+                                  method.key === lotResult.lowest ? "best" : "",
                                 ]
                                   .filter(Boolean)
                                   .join(" ")}
@@ -642,16 +599,24 @@ export function Properties({
                                   })
                                 }
                               >
-                                <span>{method.label}</span>
+                                <span>
+                                  {method.label}
+                                  {method.rule && <small>Article {method.rule}</small>}
+                                </span>
                                 <strong>{money.format(method.tax)}</strong>
                                 <small>
                                   Taxable basis {money.format(method.basis)}
                                   {method.key === lotResult.selected
                                     ? " · Selected"
-                                    : method.key === lotResult.recommended
-                                      ? " · Lowest estimate"
+                                    : method.key === lotResult.lowest
+                                      ? " · Lowest eligible estimate"
                                       : " · Choose this method"}
+                                  {method.key === lotResult.defaultMethod
+                                    ? " · Statutory default"
+                                    : ""}
+                                  {method.requiresElection ? " · Deed election required" : ""}
                                 </small>
+                                {method.note && <small>{method.note}</small>}
                               </button>
                             ))}
                           </div>
@@ -702,7 +667,8 @@ export function Properties({
                                         {row.lot.taxTreatment === "manual"
                                           ? "Manual assessment"
                                           : `${row.effectiveLot.shareNumerator}/${row.effectiveLot.shareDenominator} · ${
-                                              row.lot.inheritanceDate || "date missing"
+                                              isoDateToDisplay(row.result.acquisitionDate) ||
+                                              "date missing"
                                             }`}
                                       </span>
                                       <span>
@@ -731,6 +697,15 @@ export function Properties({
                               </span>
                               <strong>{money.format(vendor.tax)}</strong>
                             </div>
+                            {vendor.pendingLotCount > 0 && (
+                              <p className="excluded-vendor-notice">
+                                {vendor.pendingLotCount} tax{" "}
+                                {vendor.pendingLotCount === 1 ? "lot is" : "lots are"} incomplete or
+                                {vendor.pendingLotCount === 1 ? " requires" : " require"} a separate
+                                assessment and {vendor.pendingLotCount === 1 ? "is" : "are"} not
+                                included in this subtotal.
+                              </p>
+                            )}
                           </article>
                         );
                       })}

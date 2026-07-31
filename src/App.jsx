@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { House, Settings2, UserRound, X } from "lucide-react";
+import { Calculator, GitBranch, House, Landmark, Settings2, UserRound, X } from "lucide-react";
 import { familyViewKey } from "./components/CaseViewTabs.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
+import { Properties } from "./components/Properties.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
+  casePersonDependencyLabels,
   createFamilyGroup,
   findFamilyGroupsForPerson,
   normaliseCase,
   reconcilePeopleUpdate,
+  removePersonFromFamilyGroup,
 } from "./domain/caseModel.js";
 import { parseGedcom } from "./domain/gedcom.js";
 import { createPerson } from "./domain/people.js";
@@ -190,6 +193,7 @@ export function App() {
   const [password, setPassword] = useState("");
   const [showLogin, setShowLogin] = useState(false);
   const [showLibrary, setShowLibrary] = useState(true);
+  const [workspaceView, setWorkspaceView] = useState("tree");
   const [activeTreeIsListed, setActiveTreeIsListed] = useState(
     () => startupWorkspace.trees.length > 0,
   );
@@ -228,17 +232,14 @@ export function App() {
       buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties),
     [activeProperty, currentTree.outsideParties, currentTree.people],
   );
-  const ownershipByPerson = useMemo(
-    () => {
-      if (!propertyReport.startingOwnership.isComplete) return {};
-      return Object.fromEntries(
-        propertyReport.ledger.owners
-          .filter((owner) => owner.personId)
-          .map((owner) => [owner.personId, owner.share]),
-      );
-    },
-    [propertyReport.ledger.owners, propertyReport.startingOwnership.isComplete],
-  );
+  const ownershipByPerson = useMemo(() => {
+    if (!propertyReport.startingOwnership.isComplete) return {};
+    return Object.fromEntries(
+      propertyReport.ledger.owners
+        .filter((owner) => owner.personId)
+        .map((owner) => [owner.personId, owner.share]),
+    );
+  }, [propertyReport.ledger.owners, propertyReport.startingOwnership.isComplete]);
   const causaMortisCoverage = useMemo(
     () =>
       buildCausaMortisShareCoverage(
@@ -248,36 +249,15 @@ export function App() {
     [activeProperties, currentTree.people, propertyReport.startingOwnership.isComplete],
   );
   const selectedCaseDependencyLabels = useMemo(() => {
-    const labels = [];
-    if (currentTree.succession.heirs.some((heir) => heir.personId === selectedPersonId)) {
-      labels.push("the linked heir record");
-    }
-    if (
-      currentTree.people.some((person) =>
-        (person.intestateHeirs || []).some((heir) => heir.personId === selectedPersonId),
-      )
-    ) {
-      labels.push("the confirmed intestate-heir record");
-    }
-    if (
-      (activeProperty.transfers || []).some(
-        (transfer) =>
-          transfer.sellerId === selectedPersonId || transfer.buyerId === selectedPersonId,
-      )
-    ) {
-      labels.push("the linked ownership transfer");
-    }
-    if ((activeProperty.saleLots || []).some((lot) => lot.ownerId === selectedPersonId)) {
-      labels.push("the linked vendor tax lot");
-    }
-    return labels;
-  }, [
-    activeProperty.saleLots,
-    activeProperty.transfers,
-    currentTree.people,
-    currentTree.succession.heirs,
-    selectedPersonId,
-  ]);
+    const relationshipLabels = new Set([
+      "a child relationship",
+      "a partner relationship",
+      "a sibling relationship",
+    ]);
+    return casePersonDependencyLabels(tree, selectedPersonId).filter(
+      (label) => !relationshipLabels.has(label),
+    );
+  }, [selectedPersonId, tree]);
 
   useEffect(() => {
     if (!activeFamilyGroup) {
@@ -407,11 +387,12 @@ export function App() {
     }
   };
 
-  const openTree = (treeId) => {
+  const openTree = (treeId, view = "tree") => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return;
     setActiveTreeIsListed(true);
     activateCase(selectedTree);
+    setWorkspaceView(view);
     setShowLibrary(false);
   };
 
@@ -485,6 +466,15 @@ export function App() {
     setTree(reconcilePeopleUpdate(currentTree, activeFamilyGroupId, people, options));
   };
 
+  const removePerson = (personId) => {
+    const nextTree = removePersonFromFamilyGroup(currentTree, activeFamilyGroupId, personId);
+    const nextGroup =
+      nextTree.familyGroups.find((group) => group.id === activeFamilyGroupId) ||
+      nextTree.familyGroups[0];
+    setTree(nextTree);
+    setSelectedPersonId(nextGroup?.rootPersonId || nextGroup?.personIds[0] || "");
+  };
+
   const updateTreeTitle = (title) => {
     setTree({
       ...currentTree,
@@ -495,8 +485,17 @@ export function App() {
     });
   };
 
+  const updatePropertyWorkspace = (patch) => {
+    setTree({
+      ...currentTree,
+      properties: patch.properties || currentTree.properties,
+      outsideParties: patch.outsideParties || currentTree.outsideParties,
+    });
+  };
+
   const returnHome = async () => {
     setDashboardOpen(false);
+    setWorkspaceView("tree");
     setShowLibrary(true);
     if (!session) {
       setStatus("Automatically saved on this device.");
@@ -544,6 +543,7 @@ export function App() {
         onCreate={createNewTree}
         onImport={importNewTree}
         onOpen={openTree}
+        onOpenProperty={(treeId) => openTree(treeId, "property")}
         onRename={renameTree}
         onRemove={removeTree}
         onSignIn={() => {
@@ -552,6 +552,95 @@ export function App() {
         }}
         onSignOut={signOut}
       />
+    );
+  }
+
+  if (workspaceView !== "tree") {
+    return (
+      <main className="property-workspace-page">
+        <header className="property-workspace-header">
+          <button type="button" className="tree-home-button" onClick={returnHome}>
+            <House size={16} /> Back to Home
+          </button>
+          <div className="property-workspace-title">
+            <p className="eyebrow">Property ownership and final withholding tax</p>
+            <h1>{currentTree.title}</h1>
+          </div>
+          <button
+            type="button"
+            className="property-tree-button"
+            onClick={() => setWorkspaceView("tree")}
+          >
+            <GitBranch size={16} /> Open family tree
+          </button>
+        </header>
+        <section className="property-workspace-property">
+          <label>
+            Property address
+            <input
+              value={activeProperty.address || ""}
+              onChange={(event) =>
+                updatePropertyWorkspace({
+                  properties: [
+                    { ...activeProperty, address: event.target.value },
+                    ...currentTree.properties.slice(1),
+                  ],
+                })
+              }
+              placeholder="Full address"
+            />
+          </label>
+          <label>
+            Selling price (€)
+            <input
+              type="number"
+              min="0"
+              value={activeProperty.saleValue || ""}
+              onChange={(event) =>
+                updatePropertyWorkspace({
+                  properties: [
+                    { ...activeProperty, saleValue: event.target.value },
+                    ...currentTree.properties.slice(1),
+                  ],
+                })
+              }
+            />
+          </label>
+        </section>
+        <nav className="property-workspace-tabs" aria-label="Property workspace sections">
+          <button
+            type="button"
+            className={workspaceView === "property" ? "active" : ""}
+            onClick={() => setWorkspaceView("property")}
+          >
+            <Landmark size={16} /> Property &amp; declarations
+          </button>
+          <button
+            type="button"
+            className={workspaceView === "ownership" ? "active" : ""}
+            onClick={() => setWorkspaceView("ownership")}
+          >
+            <GitBranch size={16} /> Owners &amp; transfers
+          </button>
+          <button
+            type="button"
+            className={workspaceView === "tax" ? "active" : ""}
+            onClick={() => setWorkspaceView("tax")}
+          >
+            <Calculator size={16} /> Vendors &amp; Article 5A tax
+          </button>
+        </nav>
+        <section className="property-workspace-content">
+          <Properties
+            properties={activeProperties}
+            people={currentTree.people}
+            outsideParties={currentTree.outsideParties}
+            singleProperty
+            section={workspaceView}
+            onChange={updatePropertyWorkspace}
+          />
+        </section>
+      </main>
     );
   }
 
@@ -635,7 +724,11 @@ export function App() {
                   })
                 }
                 caseDependencyLabels={selectedCaseDependencyLabels}
+                personFamilyGroupCount={
+                  findFamilyGroupsForPerson(currentTree, selectedPersonId).length
+                }
                 onSelectPerson={selectPerson}
+                onDeletePerson={removePerson}
                 onBackToTree={() => setDashboardOpen(false)}
                 onChange={updatePeople}
               />
