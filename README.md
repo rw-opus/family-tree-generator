@@ -13,13 +13,13 @@ A commercial Maltese property ownership and succession workspace. It combines a 
 ## Start locally
 
 1. Run `npm install` then `npm run dev` for a local-only development workspace.
-2. To exercise authentication and billing, copy `.env.example` to `.env` and add a dedicated Supabase project URL and publishable key.
+2. To exercise authentication and billing, copy `.env.example` to `.env`, set `VITE_COMMERCIAL_MODE=true`, and add a dedicated Supabase project URL and publishable key.
 3. Apply the migrations, configure Stripe and deploy the two Edge Functions as described in [`docs/commercial-setup.md`](docs/commercial-setup.md).
 
-Local development without Supabase retains trees in the browser. A configured production build requires sign-in and stores each account's trees in Supabase. Row Level Security isolates accounts, while a private database trigger atomically enforces the free and paid tree allowances.
+Until commercial mode is deliberately enabled, the app retains trees in the browser so an existing deployment remains usable during rollout. A configured commercial build requires sign-in and stores each account's trees in Supabase. Row Level Security isolates accounts, while a private database trigger atomically enforces the free and paid tree allowances.
 
 ## Deployment readiness
 
-The project is Vite-ready for Railway or another Node host. Railway builds with `npm run build` and serves the generated SPA with `npm start`. Production deliberately stops at a configuration screen unless `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are present at build time.
+The project is Vite-ready for Railway or another Node host. Railway builds with `npm run build` and serves the generated SPA with `npm start`. Set `VITE_COMMERCIAL_MODE=true` only after the Supabase migration, Edge Functions and browser variables are ready. Commercial mode deliberately stops at a configuration screen if either Supabase browser variable is absent.
 
 Stripe secrets and the Supabase secret/service key belong only in Supabase Edge Function secrets. They must never use the `VITE_` prefix or be added to Railway's browser build variables.

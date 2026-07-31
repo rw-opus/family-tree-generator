@@ -8,8 +8,9 @@ const LoadingScreen = () => (
 );
 
 export function AppEntry() {
-  const localOnlyMode = import.meta.env.DEV && !supabaseConfigured;
-  const missingProductionConfig = !import.meta.env.DEV && !supabaseConfigured;
+  const commercialMode = import.meta.env.VITE_COMMERCIAL_MODE === "true";
+  const localOnlyMode = !commercialMode;
+  const missingProductionConfig = commercialMode && !supabaseConfigured;
   const [session, setSession] = useState(localOnlyMode ? null : undefined);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
 

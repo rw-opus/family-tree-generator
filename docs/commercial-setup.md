@@ -73,8 +73,11 @@ The generated `supabase/config.toml` keeps JWT verification enabled for checkout
 
 Set these before the Vite build:
 
+- `VITE_COMMERCIAL_MODE=true`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+Leave `VITE_COMMERCIAL_MODE` unset or `false` during rollout to keep the existing browser-saved application available. Turn it on only after the database migration and both Edge Functions are deployed.
 
 Do not add Stripe secrets or a Supabase secret/service-role key to Railway's client build variables.
 
