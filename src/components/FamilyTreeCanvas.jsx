@@ -10,7 +10,6 @@ import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { shouldUseDenseChildrenLayout } from "./familyTree/DenseChildrenBranch.jsx";
 import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
-import { GenerationRowFamilyTree } from "./familyTree/GenerationRowFamilyTree.jsx";
 import {
   alignFamilyGenerationRows,
   familyGenerationById,
@@ -109,7 +108,6 @@ export function FamilyTreeCanvas({
     () => widestFamilyGeneration(generationByPerson),
     [generationByPerson],
   );
-  const usesGenerationRows = usesRelationalLayout && usesStackedLegalCards;
 
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
@@ -127,7 +125,7 @@ export function FamilyTreeCanvas({
   usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);
 
   useLayoutEffect(() => {
-    if (!usesRelationalLayout || usesGenerationRows || !treeRef.current) return undefined;
+    if (!usesRelationalLayout || !treeRef.current) return undefined;
 
     const alignRows = () => alignFamilyGenerationRows(treeRef.current);
     let clearAlignment = alignRows();
@@ -147,7 +145,6 @@ export function FamilyTreeCanvas({
     ownershipByPerson,
     personCardFields,
     propertyValue,
-    usesGenerationRows,
     usesRelationalLayout,
   ]);
 
@@ -180,21 +177,12 @@ export function FamilyTreeCanvas({
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
       >
-        {usesGenerationRows ? (
-          <GenerationRowFamilyTree
-            people={relationalPeople}
-            generationByPerson={generationByPerson}
-            widestGeneration={widestGeneration}
-            renderCard={renderCard}
-          />
-        ) : (
-          <RelationalFamilyTree
-            people={relationalPeople}
-            displayName={displayName}
-            cardName={cardName}
-            renderCard={renderCard}
-          />
-        )}
+        <RelationalFamilyTree
+          people={relationalPeople}
+          displayName={displayName}
+          cardName={cardName}
+          renderCard={renderCard}
+        />
       </TreePanel>
     );
   }

@@ -3,12 +3,12 @@
   --dense-side-gutter: 28px;
   position: relative;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: flex-start;
   justify-content: center;
   box-sizing: border-box;
   width: max-content;
-  max-width: var(--dense-children-max-width, 1474px);
+  max-width: none;
   padding-inline: var(--dense-side-gutter);
 }
 
@@ -43,11 +43,11 @@
 
 .tree-stage .relational-forest.dense-tree .family-partner-network,
 .tree-stage .relational-forest.dense-tree .family-partner-network-unions {
-  max-width: var(--dense-children-max-width, 2948px);
+  max-width: none;
 }
 
 .tree-stage .relational-forest.dense-tree .family-partner-network-unions {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   row-gap: 1rem;
 }
 

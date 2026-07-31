@@ -1309,4 +1309,26 @@ describe("FamilyTreeCanvas", () => {
       "M 260 0 V 56",
     );
   });
+
+  it("keeps large trees grouped into visible family households", () => {
+    const people = [
+      { id: "father", fullName: "Father Borg", spouseIds: ["mother"] },
+      { id: "mother", fullName: "Mother Borg", spouseIds: ["father"] },
+      ...Array.from({ length: 78 }, (_, index) => ({
+        id: `child-${index + 1}`,
+        fullName: `Child ${index + 1} Borg`,
+        fatherId: "father",
+        motherId: "mother",
+      })),
+    ];
+
+    act(() => root.render(<FamilyTreeCanvas people={people} />));
+
+    expect(container.querySelector(".family-generation-layout")).toBeNull();
+    expect(container.querySelector(".relational-forest")).not.toBeNull();
+    expect(container.querySelector(".family-household")).not.toBeNull();
+    expect(container.querySelector(".family-parent-row")).not.toBeNull();
+    expect(container.querySelector(".family-partner-link.marriage")).not.toBeNull();
+    expect(container.querySelectorAll("[data-person-id]")).toHaveLength(people.length);
+  });
 });
