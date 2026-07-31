@@ -1,4 +1,9 @@
-import { givenNamesFromFullName, surnameFromFullName } from "./people.js";
+import {
+  fatherSurnameDefaultPatch,
+  givenNamesFromFullName,
+  surnameFromFullName,
+} from "./people.js";
+import { PARTNER_RELATIONSHIP_TYPES, partnerRelationshipKey } from "./partnerRelationships.js";
 
 const MONTHS = {
   JAN: "01",
@@ -32,6 +37,11 @@ function surnameFromGedcomName(value = "") {
   return value.match(/\/([^/]+)\//)?.[1]?.trim() || "";
 }
 
+function givenNamesFromGedcomName(value = "") {
+  const gedcomGivenNames = value.match(/^([^/]*)\//)?.[1]?.trim();
+  return gedcomGivenNames || givenNamesFromFullName(cleanName(value));
+}
+
 export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
   const individuals = new Map();
   const families = [];
@@ -53,6 +63,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
             type: "INDI",
             pointer,
             name: "",
+            givenNames: "",
             surnameAtBirth: "",
             sex: "",
             birthText: "",
@@ -61,7 +72,14 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
           };
           individuals.set(pointer, record);
         } else if (tag === "FAM") {
-          record = { type: "FAM", pointer, husband: "", wife: "", children: [] };
+          record = {
+            type: "FAM",
+            pointer,
+            husband: "",
+            wife: "",
+            children: [],
+            marriageText: "",
+          };
           families.push(record);
         } else record = null;
         return;
@@ -70,6 +88,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
       if (record.type === "INDI") {
         if (level === 1 && tag === "NAME") {
           record.name = cleanName(value);
+          record.givenNames = givenNamesFromGedcomName(value);
           record.surnameAtBirth = surnameFromGedcomName(value);
         } else if (level === 1 && tag === "SEX")
           record.sex = value === "M" ? "Male" : value === "F" ? "Female" : value || "Other";
@@ -79,10 +98,15 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
         } else if (level === 2 && tag === "DATE" && event === "BIRT")
           record.birthText = value.trim();
         else if (level === 2 && tag === "DATE" && event === "DEAT") record.deathText = value.trim();
-      } else if (record.type === "FAM" && level === 1) {
-        if (tag === "HUSB") record.husband = value.trim();
-        else if (tag === "WIFE") record.wife = value.trim();
-        else if (tag === "CHIL") record.children.push(value.trim());
+      } else if (record.type === "FAM") {
+        if (level === 1) {
+          event = tag === "MARR" ? "MARR" : "";
+          if (tag === "HUSB") record.husband = value.trim();
+          else if (tag === "WIFE") record.wife = value.trim();
+          else if (tag === "CHIL") record.children.push(value.trim());
+        } else if (level === 2 && tag === "DATE" && event === "MARR") {
+          record.marriageText = value.trim();
+        }
       }
     });
   const idMap = new Map([...individuals.keys()].map((pointer) => [pointer, idFactory()]));
@@ -90,7 +114,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     id: idMap.get(person.pointer),
     gedcomId: person.pointer,
     fullName: person.name,
-    givenNames: givenNamesFromFullName(person.name),
+    givenNames: person.givenNames || givenNamesFromFullName(person.name),
     surname: person.surnameAtBirth || surnameFromFullName(person.name),
     sex: person.sex,
     surnameAtBirth:
@@ -108,6 +132,8 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     notes: "",
   }));
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const spouseIdsByPerson = new Map(people.map((person) => [person.id, new Set()]));
+  const marriagesByKey = new Map();
   families.forEach((family) => {
     const fatherId = idMap.get(family.husband) || "";
     const motherId = idMap.get(family.wife) || "";
@@ -118,12 +144,45 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
         child.motherId = motherId;
       }
     });
-    if (fatherId && motherId) {
-      const father = peopleById.get(fatherId);
-      const mother = peopleById.get(motherId);
-      father.spouseIds = [...new Set([...father.spouseIds, motherId])];
-      mother.spouseIds = [...new Set([...mother.spouseIds, fatherId])];
+    const relationshipKey = partnerRelationshipKey(fatherId, motherId);
+    if (relationshipKey) {
+      spouseIdsByPerson.get(fatherId).add(motherId);
+      spouseIdsByPerson.get(motherId).add(fatherId);
+
+      const existing = marriagesByKey.get(relationshipKey);
+      const startDate = exactDate(family.marriageText);
+      marriagesByKey.set(relationshipKey, {
+        personIds: relationshipKey.split("::"),
+        startDate: existing?.startDate || startDate,
+      });
     }
   });
-  return { people, individualCount: people.length, familyCount: families.length };
+
+  spouseIdsByPerson.forEach((spouseIds, personId) => {
+    peopleById.get(personId).spouseIds = [...spouseIds];
+  });
+
+  marriagesByKey.forEach(({ personIds, startDate }) => {
+    const [ownerId, partnerId] = personIds;
+    const owner = peopleById.get(ownerId);
+    if (!owner) return;
+    owner.partnerRelationships = [
+      ...(owner.partnerRelationships || []),
+      {
+        personId: partnerId,
+        type: PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
+        ...(startDate ? { startDate } : {}),
+      },
+    ];
+  });
+
+  people.forEach((person) => {
+    if (!person.fatherId) return;
+    Object.assign(person, fatherSurnameDefaultPatch(person, peopleById.get(person.fatherId)));
+  });
+  return {
+    people,
+    individualCount: people.length,
+    familyCount: families.length,
+  };
 }

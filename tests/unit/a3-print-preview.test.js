@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { calculateA3Tiles } from "../../src/domain/a3PrintPreview.js";
+import {
+  A3_PRINT_LAYOUT,
+  a3PrintableWidthForColumns,
+  calculateA3Tiles,
+  resolveA3PrintArea,
+} from "../../src/domain/a3PrintPreview.js";
 
 describe("A3 print pagination", () => {
   it("keeps a small tree on one landscape A3 sheet", () => {
@@ -84,5 +89,74 @@ describe("A3 print pagination", () => {
 
     expect(fullSize.tiles).toHaveLength(2);
     expect(reduced.tiles).toHaveLength(1);
+  });
+
+  it("uses a two-centimetre overlap for adjoining A3 sheets", () => {
+    expect(A3_PRINT_LAYOUT.overlapMm).toBe(20);
+
+    const expectedOverlapPx = (20 * 96) / 25.4;
+    const layout = calculateA3Tiles({
+      contentWidth: 2000,
+      contentHeight: 600,
+      viewportWidth: 1000,
+      viewportHeight: 700,
+    });
+
+    expect(layout.overlap).toBeCloseTo(expectedOverlapPx);
+    expect(layout.tiles[1].offsetX).toBeCloseTo(1000 - expectedOverlapPx);
+    expect(a3PrintableWidthForColumns(2)).toBeCloseTo(2 * ((390 * 96) / 25.4) - expectedOverlapPx);
+  });
+
+  it("fits a tree to a user-selected one- or two-sheet print width", () => {
+    expect(
+      resolveA3PrintArea({
+        contentWidth: 1800,
+        preferredScale: 1,
+        requestedColumns: "1",
+        viewportWidth: 1000,
+        overlap: 100,
+      }),
+    ).toMatchObject({ scale: 0.7, requestedColumns: 1, limitedByMinimumScale: true });
+
+    expect(
+      resolveA3PrintArea({
+        contentWidth: 1800,
+        preferredScale: 1,
+        requestedColumns: "2",
+        viewportWidth: 1000,
+        overlap: 100,
+      }),
+    ).toMatchObject({ scale: 1, requestedColumns: 2, limitedByMinimumScale: false });
+  });
+
+  it("never shrinks below the minimum readable print scale", () => {
+    const printArea = resolveA3PrintArea({
+      contentWidth: 5000,
+      preferredScale: 1,
+      requestedColumns: "2",
+      viewportWidth: 1000,
+      overlap: 100,
+    });
+    const layout = calculateA3Tiles({
+      contentWidth: 5000,
+      contentHeight: 600,
+      scale: printArea.scale,
+      viewportWidth: 1000,
+      viewportHeight: 700,
+      overlap: 100,
+    });
+
+    expect(printArea).toMatchObject({ scale: 0.7, limitedByMinimumScale: true });
+    expect(layout.columns).toBeGreaterThan(2);
+  });
+
+  it("leaves the selected tree scale unchanged when print width is automatic", () => {
+    expect(
+      resolveA3PrintArea({
+        contentWidth: 5000,
+        preferredScale: 0.85,
+        requestedColumns: "auto",
+      }),
+    ).toMatchObject({ scale: 0.85, requestedColumns: 0, limitedByMinimumScale: false });
   });
 });

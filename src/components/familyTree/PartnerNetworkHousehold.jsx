@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { anchoredBranchOffset, anchoredIncomingPath } from "./MultiplePartnerHousehold.jsx";
-import { partnerRelationshipAnnotation, partnerRelationshipClass } from "./partnerRelationship.js";
+import { partnerRelationshipAnnotation } from "./partnerRelationship.js";
+import { SvgPartnerRelationshipPath } from "./SvgPartnerRelationshipPath.jsx";
 import "./PartnerNetworkHousehold.css";
 
 function relativeRect(node, layoutRect, scaleX, scaleY) {
@@ -188,11 +189,10 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
             >
               {group.parentIds.length === 2 && (
                 <>
-                  <path
-                    className={`family-partner-network-link ${partnerRelationshipClass(
-                      group.relationship,
-                    )}`}
+                  <SvgPartnerRelationshipPath
+                    className="family-partner-network-link"
                     d={paths.partnerPath || ""}
+                    relationship={group.relationship}
                   />
                   {partnerRelationshipAnnotation(group.relationship) && (
                     <text

@@ -1,4 +1,11 @@
 import { CrossBranchUnionLayer } from "./CrossBranchUnionLayer.jsx";
+import {
+  DENSE_CHILDREN_WORKING_WIDTH,
+  DenseChildrenBranch,
+  densePartnerColumnWidth,
+  denseTreeWorkingWidth,
+  shouldUseDenseChildrenLayout,
+} from "./DenseChildrenBranch.jsx";
 import { MultiplePartnerHousehold } from "./MultiplePartnerHousehold.jsx";
 import { ParentlessSiblingCluster } from "./ParentlessSiblingCluster.jsx";
 import { PartnerNetworkHousehold } from "./PartnerNetworkHousehold.jsx";
@@ -280,6 +287,8 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
     ]),
   );
   const siblingGroups = parentlessSiblingGroups(people, peopleById, displayNamesById);
+  const useDenseChildren = shouldUseDenseChildrenLayout(people.length);
+  const denseWorkingWidth = denseTreeWorkingWidth(people.length);
   const rendered = new Set();
   const householdBranchAnchorOffset = (person) => {
     const partnerIds = unionNeighboursById.get(person.id) || [];
@@ -290,42 +299,58 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
   };
 
   let renderHousehold;
-  const renderChildren = (children, trail = new Set()) => {
+  const renderChildren = (children, trail = new Set(), denseDepth = 0, denseWidthLimit = null) => {
     if (!children.length) return null;
 
     const childBranches = children
       .map((child) => {
-        const childHousehold = renderHousehold(child.id, trail);
+        const childHousehold = renderHousehold(child.id, trail, denseDepth + 1, denseWidthLimit);
         if (!childHousehold) return null;
 
-        return (
-          <div
-            className="family-child-branch-item"
-            key={child.id}
-            style={{
-              "--branch-anchor-offset": `${householdBranchAnchorOffset(child)}px`,
-            }}
-          >
-            <span className="family-child-stem" aria-hidden="true" />
-            {childHousehold}
-          </div>
-        );
+        return {
+          key: child.id,
+          personId: child.id,
+          content: childHousehold,
+          branchAnchorOffset: householdBranchAnchorOffset(child),
+        };
       })
       .filter(Boolean);
 
     if (!childBranches.length) return null;
 
+    if (useDenseChildren) {
+      return (
+        <DenseChildrenBranch
+          branches={childBranches}
+          depth={denseDepth}
+          workingWidth={denseWorkingWidth}
+          widthLimit={denseWidthLimit}
+        />
+      );
+    }
+
     return (
       <>
         <span className="family-union-stem" aria-hidden="true" />
         <div className={`family-children-branch ${childBranches.length === 1 ? "single" : ""}`}>
-          {childBranches}
+          {childBranches.map((branch) => (
+            <div
+              className="family-child-branch-item"
+              key={branch.key}
+              style={{
+                "--branch-anchor-offset": `${branch.branchAnchorOffset}px`,
+              }}
+            >
+              <span className="family-child-stem" aria-hidden="true" />
+              {branch.content}
+            </div>
+          ))}
         </div>
       </>
     );
   };
 
-  renderHousehold = (startId, trail = new Set()) => {
+  renderHousehold = (startId, trail = new Set(), denseDepth = 0, denseWidthLimit = null) => {
     if (!peopleById.has(startId) || rendered.has(startId) || trail.has(startId)) {
       return null;
     }
@@ -381,11 +406,24 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
       householdIds.length > 1 &&
       new Set(groupedParentIds).size < groupedParentIds.length;
     const branchAnchor = peopleById.get(startId) || anchor;
+    const descendantGroupCount = anchoredGroups.filter((group) => group.children.length).length;
+    const componentAvailableWidth = hasAnchoredMultiplePartners
+      ? denseWorkingWidth
+      : denseWidthLimit || denseWorkingWidth;
+    const componentWidthLimit =
+      useDenseChildren && (hasAnchoredMultiplePartners || hasNonStarPartnerNetwork)
+        ? densePartnerColumnWidth(componentAvailableWidth, Math.max(1, descendantGroupCount))
+        : denseWidthLimit;
     const componentGroups =
       hasAnchoredMultiplePartners || hasNonStarPartnerNetwork
         ? anchoredGroups.map((group) => ({
             ...group,
-            childrenContent: renderChildren(group.children, nextTrail),
+            childrenContent: renderChildren(
+              group.children,
+              nextTrail,
+              denseDepth,
+              componentWidthLimit,
+            ),
           }))
         : anchoredGroups;
 
@@ -401,6 +439,7 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
               anchor={anchor}
               branchAnchor={branchAnchor}
               groups={componentGroups}
+              denseLayout={useDenseChildren}
               renderCard={renderCard}
             />
           ) : hasNonStarPartnerNetwork ? (
@@ -432,6 +471,8 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
                       compactNodeWidth(cardName(parents[1]))) /
                     2
                   : 0;
+              const balanceBefore = Math.max(0, -unionJunctionOffset * 2);
+              const balanceAfter = Math.max(0, unionJunctionOffset * 2);
 
               return (
                 <div
@@ -439,6 +480,8 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
                   key={key}
                   style={{
                     "--family-union-junction-offset": `${unionJunctionOffset}px`,
+                    "--family-union-balance-before": `${balanceBefore}px`,
+                    "--family-union-balance-after": `${balanceAfter}px`,
                   }}
                 >
                   <div
@@ -446,6 +489,7 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
                       "family-parent-row",
                       parents.length === 1 && "single-parent",
                       children.length && "has-children",
+                      useDenseChildren && children.length && "dense-descendants",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -473,7 +517,7 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
                       </span>
                     ))}
                   </div>
-                  {renderChildren(children, nextTrail)}
+                  {renderChildren(children, nextTrail, denseDepth, denseWidthLimit)}
                 </div>
               );
             })
@@ -546,7 +590,19 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
 
   return (
     <CrossBranchUnionLayer unions={crossUnions}>
-      <div className="relational-forest">{forest}</div>
+      <div
+        className={[
+          "relational-forest",
+          useDenseChildren && "dense-tree",
+          useDenseChildren &&
+            denseWorkingWidth > DENSE_CHILDREN_WORKING_WIDTH &&
+            "dense-tree-two-page",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {forest}
+      </div>
       {crossUnionDescendants.length > 0 && (
         <div className="family-cross-union-descendants-row">{crossUnionDescendants}</div>
       )}

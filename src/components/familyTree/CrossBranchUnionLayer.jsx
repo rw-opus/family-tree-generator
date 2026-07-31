@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { partnerRelationshipAnnotation, partnerRelationshipClass } from "./partnerRelationship.js";
+import { partnerRelationshipAnnotation } from "./partnerRelationship.js";
+import { SvgPartnerRelationshipPath } from "./SvgPartnerRelationshipPath.jsx";
 import "./CrossBranchUnionLayer.css";
 
 function relativeRect(node, layoutRect, scaleX, scaleY) {
@@ -156,11 +157,10 @@ export function CrossBranchUnionLayer({ unions, children }) {
               data-second-person-id={union.parentIds[1]}
               key={union.key}
             >
-              <path
-                className={`family-cross-partner-link ${partnerRelationshipClass(
-                  union.relationship,
-                )}`}
+              <SvgPartnerRelationshipPath
+                className="family-cross-partner-link"
                 d={paths.partnerPath || ""}
+                relationship={union.relationship}
               />
               {partnerRelationshipAnnotation(union.relationship) && (
                 <text

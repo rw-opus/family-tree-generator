@@ -230,7 +230,170 @@ describe("PersonInspector", () => {
       fatherId: "parent-a",
       motherId: "parent-b",
       designations: ["Child"],
+      surname: "Borg",
+      surnameAtBirth: "Borg",
     });
+  });
+
+  it("uses the recorded father's surname when a mother creates a child", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "mother",
+        givenNames: "Maria",
+        surname: "Vella",
+        fullName: "Maria Vella",
+        surnameAtBirth: "Borg",
+        sex: "Female",
+        spouseIds: ["father"],
+      },
+      {
+        id: "father",
+        givenNames: "Joseph",
+        surname: "Testaferrata de Noto",
+        fullName: "Joseph Testaferrata de Noto",
+        sex: "Male",
+        spouseIds: ["mother"],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="mother"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Child"))
+        .click(),
+    );
+    act(() =>
+      [...container.querySelectorAll(".child-partner-chooser button")]
+        .find((button) => button.textContent.includes("Add child"))
+        .click(),
+    );
+
+    expect(onChange.mock.calls[0][0].at(-1)).toMatchObject({
+      fatherId: "father",
+      motherId: "mother",
+      surname: "Testaferrata de Noto",
+      surnameAtBirth: "Testaferrata de Noto",
+      fullName: "",
+    });
+  });
+
+  it("uses the common recorded father's surname for a newly created sibling", () => {
+    const onChange = vi.fn();
+    const people = [
+      {
+        id: "father",
+        givenNames: "Joseph",
+        surname: "Borg",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        spouseIds: [],
+      },
+      {
+        id: "person",
+        givenNames: "Maria",
+        surname: "Borg",
+        fullName: "Maria Borg",
+        surnameAtBirth: "Borg",
+        sex: "Female",
+        fatherId: "father",
+        spouseIds: [],
+        siblingIds: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Brother / sister"))
+        .click(),
+    );
+
+    expect(onChange.mock.calls[0][0].at(-1)).toMatchObject({
+      fatherId: "father",
+      surname: "Borg",
+      surnameAtBirth: "Borg",
+      fullName: "",
+    });
+  });
+
+  it("keeps inherited current and birth surnames independently editable", () => {
+    let latestPerson;
+
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "child",
+          givenNames: "Anna",
+          surname: "Borg",
+          fullName: "Anna Borg",
+          surnameAtBirth: "Borg",
+          sex: "Female",
+          fatherId: "father",
+          spouseIds: [],
+        },
+        { id: "father", fullName: "Joseph Borg", spouseIds: [] },
+      ]);
+      latestPerson = people[0];
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="child"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    beginEditing();
+
+    const fieldInput = (label) =>
+      [...container.querySelectorAll(".person-edit-fields label")]
+        .find((element) => element.querySelector(":scope > span")?.textContent === label)
+        .querySelector("input");
+    act(() => {
+      const surnameInput = fieldInput("Surname");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(latestPerson).toMatchObject({
+      surname: "Vella",
+      fullName: "Anna Vella",
+      surnameAtBirth: "Borg",
+    });
+
+    act(() => {
+      const birthSurnameInput = fieldInput("Surname at birth");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        birthSurnameInput,
+        "Camilleri",
+      );
+      birthSurnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(latestPerson.surnameAtBirth).toBe("Camilleri");
   });
 
   it("asks which partnership applies when a person has several partners", () => {
