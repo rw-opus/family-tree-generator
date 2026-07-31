@@ -373,9 +373,9 @@ describe("FamilyTreeCanvas", () => {
     expect(person.textContent).toContain("50,000");
     expect(person.textContent).toContain("Died 02-01-2020");
     expect(person.textContent).toContain("Testate");
-    expect(person.textContent).toContain("Will 04-03-2019 · Dr Maria Vella");
-    expect(person.textContent).toContain("CM 06-05-2020 · Dr Paul Galea");
-    expect(person.textContent).toContain("08-07-2021 · Dr Anne Borg");
+    expect(person.textContent).toContain("Will 04-03-2019 · Not. Dr Maria Vella");
+    expect(person.textContent).toContain("CM 06-05-2020 · Not. Dr Paul Galea");
+    expect(person.textContent).toContain("08-07-2021 · Not. Dr Anne Borg");
     expect(person.textContent).not.toContain("ownership");
   });
 

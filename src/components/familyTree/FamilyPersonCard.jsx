@@ -1,5 +1,6 @@
 import { approximateFraction } from "../../domain/ownership.js";
 import { linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
+import { displayNotaryName } from "../../domain/notary.js";
 import { formattedDate, personDisplayName } from "../../domain/people.js";
 import {
   DEFAULT_PERSON_CARD_FIELDS,
@@ -33,7 +34,7 @@ function availableCausaMortisDetails(person) {
   return (person.causaMortisDeclarations || [])
     .filter((declaration) => declaration.status === "complete")
     .map((declaration) =>
-      [formattedDate(declaration.date), String(declaration.notaryName || "").trim()]
+      [formattedDate(declaration.date), displayNotaryName(declaration.notaryName)]
         .filter(Boolean)
         .join(" · "),
     )
@@ -131,7 +132,7 @@ export function FamilyPersonCard({
         (person.willDate || person.willNotaryName) && (
           <div className="family-node-detail">
             Will{" "}
-            {[formattedDate(person.willDate), String(person.willNotaryName || "").trim()]
+            {[formattedDate(person.willDate), displayNotaryName(person.willNotaryName)]
               .filter(Boolean)
               .join(" · ")}
           </div>

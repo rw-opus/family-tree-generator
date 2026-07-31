@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { FilePlus2, Files, Plus, Trash2 } from "lucide-react";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { declarationCoverage, validateDeclaration } from "../domain/declarations.js";
+import { displayNotaryName } from "../domain/notary.js";
 import { inheritedValue } from "../domain/propertyTax.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { DateInput } from "./DateInput.jsx";
@@ -322,7 +323,7 @@ export function SuccessionDeclarations({ heirs, property, declarations, onChange
                   {declaration.status === "published"
                     ? `Published ${isoDateToDisplay(declaration.date)}`
                     : "Draft / planned"}
-                  {declaration.notaryName ? ` · ${declaration.notaryName}` : ""}
+                  {declaration.notaryName ? ` · ${displayNotaryName(declaration.notaryName)}` : ""}
                   {declaration.reference ? ` · ${declaration.reference}` : ""}
                 </p>
                 <small>{declaration.scope || "Scope not specified"}</small>
