@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Printer } from "lucide-react";
 import {
   hasAnyDesignation,
@@ -10,6 +10,12 @@ import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { shouldUseDenseChildrenLayout } from "./familyTree/DenseChildrenBranch.jsx";
 import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
+import { GenerationRowFamilyTree } from "./familyTree/GenerationRowFamilyTree.jsx";
+import {
+  alignFamilyGenerationRows,
+  familyGenerationById,
+  widestFamilyGeneration,
+} from "./familyTree/generationRows.js";
 import { RelationalFamilyTree } from "./familyTree/RelationalFamilyTree.jsx";
 import { personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
@@ -95,6 +101,15 @@ export function FamilyTreeCanvas({
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
   const usesStackedLegalCards = shouldUseDenseChildrenLayout(relationalPeople.length);
+  const generationByPerson = useMemo(
+    () => familyGenerationById(relationalPeople),
+    [relationalPeople],
+  );
+  const widestGeneration = useMemo(
+    () => widestFamilyGeneration(generationByPerson),
+    [generationByPerson],
+  );
+  const usesGenerationRows = usesRelationalLayout && usesStackedLegalCards;
 
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
@@ -111,6 +126,31 @@ export function FamilyTreeCanvas({
 
   usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);
 
+  useLayoutEffect(() => {
+    if (!usesRelationalLayout || usesGenerationRows || !treeRef.current) return undefined;
+
+    const alignRows = () => alignFamilyGenerationRows(treeRef.current);
+    let clearAlignment = alignRows();
+    const realign = () => {
+      clearAlignment();
+      clearAlignment = alignRows();
+    };
+    window.addEventListener("resize", realign);
+
+    return () => {
+      window.removeEventListener("resize", realign);
+      clearAlignment();
+    };
+  }, [
+    causaMortisCoverageByPerson,
+    generationByPerson,
+    ownershipByPerson,
+    personCardFields,
+    propertyValue,
+    usesGenerationRows,
+    usesRelationalLayout,
+  ]);
+
   const renderCard = (person, variant = "") => (
     <FamilyPersonCard
       key={person.id}
@@ -125,6 +165,8 @@ export function FamilyTreeCanvas({
       selectedPersonId={selectedPersonId}
       onSelectPerson={onSelectPerson}
       stackedLegalDetails={usesStackedLegalCards}
+      generation={generationByPerson.get(person.id) || 0}
+      isWidestGeneration={generationByPerson.get(person.id) === widestGeneration}
     />
   );
 
@@ -138,12 +180,21 @@ export function FamilyTreeCanvas({
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
       >
-        <RelationalFamilyTree
-          people={relationalPeople}
-          displayName={displayName}
-          cardName={cardName}
-          renderCard={renderCard}
-        />
+        {usesGenerationRows ? (
+          <GenerationRowFamilyTree
+            people={relationalPeople}
+            generationByPerson={generationByPerson}
+            widestGeneration={widestGeneration}
+            renderCard={renderCard}
+          />
+        ) : (
+          <RelationalFamilyTree
+            people={relationalPeople}
+            displayName={displayName}
+            cardName={cardName}
+            renderCard={renderCard}
+          />
+        )}
       </TreePanel>
     );
   }
