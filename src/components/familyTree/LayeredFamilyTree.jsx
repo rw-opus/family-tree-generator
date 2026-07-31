@@ -1,0 +1,130 @@
+import { useMemo } from "react";
+import { buildFamilyTreeLayout } from "./treeLayout.js";
+import "./LayeredFamilyTree.css";
+
+/** Orthogonal connector: down, across, then down again. */
+function elbowPath(from, to) {
+  if (from.x === to.x) return `M ${from.x} ${from.y} V ${to.y}`;
+  const midY = from.y + (to.y - from.y) / 2;
+  return `M ${from.x} ${from.y} V ${midY} H ${to.x} V ${to.y}`;
+}
+
+function edgeClassName(edge) {
+  return [
+    "tree-edge",
+    `tree-edge-${edge.kind}`,
+    edge.marital ? "marital" : "non-marital",
+    edge.type === "partnership" ? "partnership" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function UnionMarker({ union }) {
+  if (union.parentIds.length !== 2) return null;
+
+  return (
+    <g className={`tree-union-marker ${union.marital ? "marital" : "non-marital"}`}>
+      <circle cx={union.x} cy={union.y} r={union.marital ? 5 : 4} />
+      {union.marital && <circle className="union-marker-inner" cx={union.x} cy={union.y} r={2} />}
+    </g>
+  );
+}
+
+/**
+ * Draws the whole family graph on absolute generation rows. Geometry comes from
+ * treeLayout; this component only paints it and keeps the cards interactive.
+ */
+export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }) {
+  const layout = useMemo(() => buildFamilyTreeLayout(people), [people]);
+
+  if (!layout.nodes.length) return emptyState;
+
+  const partnerBarY = (union) => union.parentBottom - layout.nodes[0].height / 2;
+
+  return (
+    <div
+      className="layered-family-tree"
+      style={{ width: `${layout.width}px`, height: `${layout.height}px` }}
+      data-generation-count={layout.generationCount}
+    >
+      <svg
+        className="tree-edge-layer"
+        width={layout.width}
+        height={layout.height}
+        viewBox={`0 0 ${layout.width} ${layout.height}`}
+        aria-hidden="true"
+      >
+        {layout.edges
+          .filter((edge) => edge.kind === "partner")
+          .map((edge) => (
+            <line
+              className={edgeClassName(edge)}
+              key={edge.id}
+              x1={edge.from.x}
+              y1={edge.from.y}
+              x2={edge.to.x}
+              y2={edge.to.y}
+            />
+          ))}
+
+        {layout.edges
+          .filter((edge) => edge.kind === "stem")
+          .map((edge) => (
+            <path className={edgeClassName(edge)} key={edge.id} d={elbowPath(edge.from, edge.to)} />
+          ))}
+
+        {layout.edges
+          .filter((edge) => edge.kind === "sibling-bar")
+          .map((edge) => (
+            <line
+              className={edgeClassName(edge)}
+              key={edge.id}
+              x1={edge.from.x}
+              y1={edge.from.y}
+              x2={edge.to.x}
+              y2={edge.to.y}
+            />
+          ))}
+
+        {layout.edges
+          .filter((edge) => edge.kind === "descent")
+          .map((edge) => (
+            <line
+              className={edgeClassName(edge)}
+              key={edge.id}
+              x1={edge.from.x}
+              y1={edge.from.y}
+              x2={edge.to.x}
+              y2={edge.to.y}
+            />
+          ))}
+
+        {layout.unions.map((union) => (
+          <UnionMarker key={union.id} union={union} partnerBarY={partnerBarY(union)} />
+        ))}
+      </svg>
+
+      {layout.nodes.map((node) => (
+        <div
+          className={`tree-node ${node.bornOutsideMarriage ? "born-outside-marriage" : ""}`}
+          key={node.id}
+          data-family-generation={node.generation}
+          style={{
+            left: `${node.x}px`,
+            top: `${node.y}px`,
+            width: `${node.width}px`,
+            minHeight: `${node.height}px`,
+          }}
+        >
+          {node.bornOutsideMarriage && (
+            <span className="outside-marriage-badge" title="Born outside marriage">
+              nm
+            </span>
+          )}
+          {renderCard(node.person)}
+        </div>
+      ))}
+    </div>
+  );
+}
