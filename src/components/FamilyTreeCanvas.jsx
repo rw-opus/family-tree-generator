@@ -15,8 +15,8 @@ import {
   familyGenerationById,
   widestFamilyGeneration,
 } from "./familyTree/generationRows.js";
+import { LayeredFamilyTree } from "./familyTree/LayeredFamilyTree.jsx";
 import { RelationalFamilyTree } from "./familyTree/RelationalFamilyTree.jsx";
-import { OpenSourceFamilyChart } from "./familyTree/OpenSourceFamilyChart.jsx";
 import { personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
 
@@ -101,7 +101,7 @@ export function FamilyTreeCanvas({
   const printHandler = onPrint || ((node) => openA3PrintPreview(node, title));
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
-  const usesOpenSourceLayout = usesRelationalLayout && !forceLegacyRenderer;
+  const usesLayeredLayout = usesRelationalLayout && !forceLegacyRenderer;
   const usesStackedLegalCards = shouldUseDenseChildrenLayout(relationalPeople.length);
   const generationByPerson = useMemo(
     () => familyGenerationById(relationalPeople),
@@ -128,7 +128,9 @@ export function FamilyTreeCanvas({
   usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);
 
   useLayoutEffect(() => {
-    if (!usesRelationalLayout || usesOpenSourceLayout || !treeRef.current) return undefined;
+    // The layered layout positions every card itself, so the legacy row-alignment
+    // pass only runs for the old nested renderer.
+    if (!usesRelationalLayout || usesLayeredLayout || !treeRef.current) return undefined;
 
     const alignRows = () => alignFamilyGenerationRows(treeRef.current);
     let clearAlignment = alignRows();
@@ -150,7 +152,7 @@ export function FamilyTreeCanvas({
     ownershipByPerson,
     personCardFields,
     propertyValue,
-    usesOpenSourceLayout,
+    usesLayeredLayout,
     usesRelationalLayout,
   ]);
 
@@ -183,21 +185,8 @@ export function FamilyTreeCanvas({
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
       >
-        {usesOpenSourceLayout ? (
-          <OpenSourceFamilyChart
-            people={relationalPeople}
-            renderCard={renderCard}
-            onSelectPerson={onSelectPerson}
-            focusPersonId={selectedPersonId}
-            fallback={
-              <RelationalFamilyTree
-                people={relationalPeople}
-                displayName={displayName}
-                cardName={cardName}
-                renderCard={renderCard}
-              />
-            }
-          />
+        {usesLayeredLayout ? (
+          <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} />
         ) : (
           <RelationalFamilyTree
             people={relationalPeople}

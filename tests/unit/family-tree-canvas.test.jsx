@@ -1341,7 +1341,7 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll("[data-person-id]")).toHaveLength(people.length);
   });
 
-  it("uses the proven genealogy renderer for very dense imported trees", () => {
+  it("lays a very dense imported tree out on one row per generation", () => {
     const people = Array.from({ length: 120 }, (_, index) => ({
       id: `person-${index}`,
       fullName: `Person ${index}`,
@@ -1350,6 +1350,10 @@ describe("FamilyTreeCanvas", () => {
 
     act(() => root.render(<ProductionFamilyTreeCanvas people={people} />));
 
-    expect(container.querySelector('[data-genealogy-renderer="family-chart"]')).not.toBeNull();
+    const layout = container.querySelector(".layered-family-tree");
+    expect(layout).not.toBeNull();
+    // An unbroken parent chain is one person per generation, and nobody is dropped.
+    expect(layout.dataset.generationCount).toBe("120");
+    expect(container.querySelectorAll("[data-person-id]")).toHaveLength(people.length);
   });
 });

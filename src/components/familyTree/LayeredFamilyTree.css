@@ -1,0 +1,96 @@
+.layered-family-tree {
+  position: relative;
+  margin: 0 auto;
+}
+
+.tree-edge-layer {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tree-edge {
+  fill: none;
+  stroke: var(--tree-connector, #64748b);
+  stroke-width: 1.5;
+  stroke-linecap: square;
+}
+
+/* A union recorded only through a shared child, or a single parent, is drawn
+   dashed so descent outside marriage is visible at a glance. */
+.tree-edge.non-marital {
+  stroke-dasharray: 5 4;
+}
+
+.tree-edge-partner {
+  stroke-width: 2.5;
+}
+
+.tree-edge-partner.marital {
+  stroke: var(--tree-marriage, #1d4ed8);
+}
+
+.tree-edge-partner.non-marital {
+  stroke: var(--tree-partnership, #b45309);
+}
+
+.tree-edge-sibling-bar {
+  stroke-width: 1.75;
+}
+
+.tree-union-marker circle {
+  fill: var(--tree-marriage, #1d4ed8);
+  stroke: var(--tree-canvas, #ffffff);
+  stroke-width: 1.5;
+}
+
+.tree-union-marker.non-marital circle {
+  fill: var(--tree-canvas, #ffffff);
+  stroke: var(--tree-partnership, #b45309);
+}
+
+.tree-union-marker .union-marker-inner {
+  fill: var(--tree-canvas, #ffffff);
+  stroke: none;
+}
+
+.tree-node {
+  position: absolute;
+  display: flex;
+  box-sizing: border-box;
+}
+
+.tree-node > * {
+  width: 100%;
+}
+
+.outside-marriage-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--tree-partnership, #b45309);
+  border-radius: 999px;
+  background: var(--tree-canvas, #ffffff);
+  color: var(--tree-partnership, #b45309);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+@media print {
+  .layered-family-tree {
+    break-inside: avoid;
+  }
+
+  .tree-edge {
+    stroke: #334155;
+  }
+}
