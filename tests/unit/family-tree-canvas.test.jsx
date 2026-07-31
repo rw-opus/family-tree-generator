@@ -107,7 +107,9 @@ describe("FamilyTreeCanvas", () => {
   it("marks a child born outside marriage and leaves marital children unmarked", () => {
     renderCanvas({
       people: [
-        person("man", "Ganni Sciberras"),
+        person("man", "Ganni Sciberras", {
+          partnerRelationships: [{ personId: "woman", type: "partnership" }],
+        }),
         person("woman", "Marija Borg"),
         person("natural", "Carmel Sciberras", { fatherId: "man", motherId: "woman" }),
       ],
@@ -126,7 +128,22 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector(".tree-edge-partner.marital")).not.toBeNull();
   });
 
-  it("draws a non-marital union for a couple known only from a shared child", () => {
+  it("draws a non-marital union only when the record says they were not married", () => {
+    renderCanvas({
+      people: [
+        person("man", "Ganni Sciberras", {
+          partnerRelationships: [{ personId: "woman", type: "partnership" }],
+        }),
+        person("woman", "Marija Borg"),
+        person("child", "Carmel Sciberras", { fatherId: "man", motherId: "woman" }),
+      ],
+    });
+
+    expect(container.querySelector(".tree-edge-partner.marital")).toBeNull();
+    expect(container.querySelector(".tree-edge.flagged")).not.toBeNull();
+  });
+
+  it("assumes a couple are married when the record does not say otherwise", () => {
     renderCanvas({
       people: [
         person("man", "Ganni Sciberras"),
@@ -135,8 +152,8 @@ describe("FamilyTreeCanvas", () => {
       ],
     });
 
-    expect(container.querySelector(".tree-edge-partner.marital")).toBeNull();
-    expect(container.querySelector(".tree-edge.flagged")).not.toBeNull();
+    expect(container.querySelector(".tree-edge-partner.marital")).not.toBeNull();
+    expect(container.querySelector(".born-outside-marriage")).toBeNull();
   });
 
   it("does not mark anyone when a parent is simply not recorded", () => {

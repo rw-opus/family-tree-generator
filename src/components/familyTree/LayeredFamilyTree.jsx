@@ -25,29 +25,41 @@ function edgeClassName(edge) {
     .join(" ");
 }
 
-function UnionMarker({ union }) {
-  if (union.parentIds.length !== 2) return null;
+const MARRIAGE_LINE_OFFSET = 2;
 
-  const y = union.markerY ?? union.y;
+/**
+ * A marriage is two parallel horizontal lines between the spouses; anyone not
+ * married is joined by a single dotted line. Both read the same in black and
+ * white, which colour alone did not.
+ */
+function PartnerLink({ edge }) {
+  const left = Math.min(edge.from.x, edge.to.x);
+  const right = Math.max(edge.from.x, edge.to.x);
 
-  // Where somebody married more than once the marker is numbered, and the same
-  // number is repeated on the bar their children hang from, so each child can
-  // be read back to the right marriage.
-  if (union.numbered) {
+  if (!edge.marital) {
     return (
-      <g className={`tree-union-marker numbered ${union.marital ? "marital" : "partnership"}`}>
-        <circle cx={union.x} cy={y} r={8} />
-        <text x={union.x} y={y} dy="0.34em" textAnchor="middle">
-          {union.marriageIndex + 1}
-        </text>
-      </g>
+      <line
+        className="tree-edge tree-edge-partner partnership"
+        x1={left}
+        y1={edge.from.y}
+        x2={right}
+        y2={edge.from.y}
+      />
     );
   }
 
   return (
-    <g className={`tree-union-marker ${union.marital ? "marital" : "partnership"}`}>
-      <circle cx={union.x} cy={y} r={union.marital ? 5 : 4} />
-      {union.marital && <circle className="union-marker-inner" cx={union.x} cy={y} r={2} />}
+    <g className="tree-edge-partner-pair">
+      {[-MARRIAGE_LINE_OFFSET, MARRIAGE_LINE_OFFSET].map((offset) => (
+        <line
+          className="tree-edge tree-edge-partner marital"
+          key={offset}
+          x1={left}
+          y1={edge.from.y + offset}
+          x2={right}
+          y2={edge.from.y + offset}
+        />
+      ))}
     </g>
   );
 }
@@ -60,8 +72,6 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
   const layout = useMemo(() => buildFamilyTreeLayout(people), [people]);
 
   if (!layout.nodes.length) return emptyState;
-
-  const partnerBarY = (union) => union.parentBottom - layout.nodes[0].height / 2;
 
   return (
     <div
@@ -79,14 +89,7 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
         {layout.edges
           .filter((edge) => edge.kind === "partner")
           .map((edge) => (
-            <line
-              className={edgeClassName(edge)}
-              key={edge.id}
-              x1={edge.from.x}
-              y1={edge.from.y}
-              x2={edge.to.x}
-              y2={edge.to.y}
-            />
+            <PartnerLink edge={edge} key={edge.id} />
           ))}
 
         {layout.edges
@@ -120,10 +123,6 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
               y2={edge.to.y}
             />
           ))}
-
-        {layout.unions.map((union) => (
-          <UnionMarker key={union.id} union={union} partnerBarY={partnerBarY(union)} />
-        ))}
       </svg>
 
       {layout.nodes.map((node) => (

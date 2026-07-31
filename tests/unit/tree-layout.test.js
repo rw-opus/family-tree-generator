@@ -73,9 +73,22 @@ describe("buildUnions", () => {
     expect(union.childIds).toEqual(expect.arrayContaining(["child-a", "child-b"]));
   });
 
-  it("treats a couple known only from a shared child as a partnership", () => {
+  it("assumes a couple known only from a shared child are married", () => {
     const people = [
       person("man"),
+      person("woman"),
+      person("child", { fatherId: "man", motherId: "woman" }),
+    ];
+    const union = buildUnions(people).find((candidate) => candidate.childIds.includes("child"));
+    // Nothing on the record says they were not married, so nothing on the chart
+    // should suggest it.
+    expect(union.type).toBe("marriage");
+    expect(union.marital).toBe(true);
+  });
+
+  it("takes a partnership only from the relationships record", () => {
+    const people = [
+      person("man", { partnerRelationships: [{ personId: "woman", type: "partnership" }] }),
       person("woman"),
       person("child", { fatherId: "man", motherId: "woman" }),
     ];
@@ -187,7 +200,7 @@ describe("buildFamilyTreeLayout", () => {
 
   it("flags children born outside a marriage and marks their descent edge", () => {
     const people = [
-      person("man"),
+      person("man", { partnerRelationships: [{ personId: "woman", type: "partnership" }] }),
       person("woman"),
       person("natural-child", { fatherId: "man", motherId: "woman" }),
       person("married-man", { spouseIds: ["wife"] }),

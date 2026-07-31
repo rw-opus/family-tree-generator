@@ -24,50 +24,27 @@
   stroke-dasharray: 5 4;
 }
 
-.tree-edge-partner {
-  stroke-width: 2.5;
-}
-
+/* Marriage: two parallel lines. Anyone not married: one dotted line. */
 .tree-edge-partner.marital {
   stroke: var(--tree-marriage, #1d4ed8);
+  stroke-width: 1.5;
+  stroke-dasharray: none;
 }
 
 .tree-edge-partner.partnership {
   stroke: var(--tree-partnership, #b45309);
+  stroke-width: 1.75;
+  stroke-dasharray: 2 3;
 }
 
 .tree-edge-sibling-bar {
   stroke-width: 1.75;
 }
 
-.tree-union-marker circle {
-  fill: var(--tree-marriage, #1d4ed8);
-  stroke: var(--tree-canvas, #ffffff);
-  stroke-width: 1.5;
-}
-
-.tree-union-marker.partnership circle {
-  fill: var(--tree-canvas, #ffffff);
-  stroke: var(--tree-partnership, #b45309);
-}
-
-.tree-union-marker .union-marker-inner {
-  fill: var(--tree-canvas, #ffffff);
-  stroke: none;
-}
-
-.tree-union-marker.numbered text {
-  fill: var(--tree-canvas, #ffffff);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.tree-union-marker.numbered.partnership text {
-  fill: var(--tree-partnership, #b45309);
-}
-
 /* Successive marriages of the same person, so the children of each mother read
-   as one set. */
+   as one set. Colour is a convenience only — the marriage double line, the
+   dotted partnership line and the separate bar depths all survive a black and
+   white print. */
 .tree-edge.marriage-0 {
   stroke: var(--tree-marriage-0, #1d4ed8);
 }
@@ -88,6 +65,21 @@
   position: absolute;
   display: flex;
   box-sizing: border-box;
+}
+
+/* The given name is what identifies a person on the chart, so it carries the
+   weight. The surname is only shown where it differs from the father's, and is
+   set smaller when it is. */
+.tree-stage .layered-family-tree .family-node-name {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.tree-stage .layered-family-tree .family-node-surname {
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.15;
+  opacity: 0.85;
 }
 
 .tree-node > * {

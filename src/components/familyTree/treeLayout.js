@@ -179,14 +179,12 @@ export function buildUnions(people) {
   return [...unionsByKey.values()].map((union) => {
     const [first, second] = union.parentIds.map((id) => peopleById.get(id));
     const declared = second ? partnerType(first, second) : "";
-    const spousesOfFirst = new Set(first?.spouseIds || []);
-    const spousesOfSecond = new Set(second?.spouseIds || []);
-    const linked =
-      Boolean(second) && (spousesOfFirst.has(second.id) || spousesOfSecond.has(first.id));
 
-    // A couple recorded only through a shared child is not evidence of a
-    // marriage, so it stays a partnership until the marriage is entered.
-    const type = !second ? "single" : declared || (linked ? "marriage" : "partnership");
+    // A couple is taken to be married unless the relationships record says
+    // otherwise. Most unions in a succession file are marriages, and treating
+    // an unrecorded one as a partnership puts an unfounded statement about the
+    // parents on the chart.
+    const type = !second ? "single" : declared || "marriage";
 
     // Only a recorded couple who are not married says anything about how the
     // children were born. One unrecorded parent is a gap in the record, not a
@@ -336,6 +334,58 @@ function reorderRows(rows, unions, people) {
   return rows;
 }
 
+/**
+ * Orders each row so the children of one union sit together, in the order their
+ * parents appear in the row above.
+ *
+ * Without this the sweeps can leave siblings scattered, which forces a union's
+ * sibling bar to stretch across unrelated families and makes one union's
+ * descent lines cross another's. Contiguous siblings keep every bar short and
+ * confined to its own family.
+ */
+function groupSiblings(rows, unions) {
+  const unionByChild = new Map();
+  unions.forEach((union) => union.childIds.forEach((childId) => unionByChild.set(childId, union)));
+
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+    const parentOrder = new Map(rows[rowIndex - 1].map((id, index) => [id, index]));
+    const blocks = buildRowBlocks(rows[rowIndex], unions);
+
+    const sortKey = (block) => {
+      const positions = block.memberIds
+        .map((childId) => unionByChild.get(childId))
+        .filter(Boolean)
+        .flatMap((union) =>
+          union.parentIds.map((parentId) => parentOrder.get(parentId)).filter(Number.isFinite),
+        );
+      return positions.length ? Math.min(...positions) : null;
+    };
+
+    const decorated = blocks.map((block, index) => ({ block, index, key: sortKey(block) }));
+    // A block with no parent in the row above — somebody who married in — keeps
+    // its current position rather than being swept to one end.
+    const fallback = new Map();
+    decorated.forEach((entry, position) => {
+      if (entry.key !== null) return;
+      const previous = decorated
+        .slice(0, position)
+        .reverse()
+        .find((candidate) => candidate.key !== null);
+      fallback.set(entry, previous ? previous.key : -1);
+    });
+
+    decorated.sort((first, second) => {
+      const firstKey = first.key ?? fallback.get(first);
+      const secondKey = second.key ?? fallback.get(second);
+      return firstKey - secondKey || first.index - second.index;
+    });
+
+    rows[rowIndex] = decorated.flatMap(({ block }) => block.memberIds);
+  }
+
+  return rows;
+}
+
 function packRow(blocks, desiredById) {
   let cursor = null;
 
@@ -473,7 +523,10 @@ export function buildFamilyTreeLayout(people = []) {
   const maxGeneration = Math.max(...cleanPeople.map((person) => generations.get(person.id)));
   const unions = buildUnions(cleanPeople);
 
-  const rows = reorderRows(seedOrder(cleanPeople, generations, maxGeneration), unions, cleanPeople);
+  const rows = groupSiblings(
+    reorderRows(seedOrder(cleanPeople, generations, maxGeneration), unions, cleanPeople),
+    unions,
+  );
   const { centreOf, unionCentre } = centreRows(rows, unions);
 
   const rowTop = (generation) => CANVAS_PADDING + generation * ROW_PITCH;
@@ -601,6 +654,12 @@ export function buildFamilyTreeLayout(people = []) {
       .filter((entry) => entry.centre !== null);
     if (!childCentres.length) return;
 
+    const childSpanLeft = Math.min(...childCentres.map((entry) => entry.centre));
+    const childSpanRight = Math.max(...childCentres.map((entry) => entry.centre));
+    // The stem has to land on the bar, so where the union sits outside its
+    // children's span it meets the bar at the nearest end of it.
+    const barAnchorX = Math.min(Math.max(union.x, childSpanLeft), childSpanRight);
+
     // An adjacent couple drops once from the middle of their own bar. Anything
     // else drops from each parent, so a remarriage is traceable to both people.
     const stemOrigins = adjacent
@@ -617,18 +676,21 @@ export function buildFamilyTreeLayout(people = []) {
         flagged: union.flagged,
         marriageIndex: union.marriageIndex,
         from: { x: origin.x, y: origin.y },
-        to: { x: union.x, y: barY },
+        to: { x: barAnchorX, y: barY },
       });
     });
 
+    // The bar spans this union's own children only. Reaching out to union.x as
+    // well used to stretch it across unrelated families whenever the union sat
+    // outside its children's span.
     edges.push({
       id: `${union.id}:bar`,
       kind: "sibling-bar",
       component,
       flagged: union.flagged,
       marriageIndex: union.marriageIndex,
-      from: { x: Math.min(union.x, ...childCentres.map((entry) => entry.centre)), y: barY },
-      to: { x: Math.max(union.x, ...childCentres.map((entry) => entry.centre)), y: barY },
+      from: { x: childSpanLeft, y: barY },
+      to: { x: childSpanRight, y: barY },
     });
 
     childCentres.forEach(({ childId, centre }) => {
