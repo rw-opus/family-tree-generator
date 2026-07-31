@@ -7,6 +7,7 @@ import {
   anchoredBranchOffset,
   anchoredIncomingPath,
 } from "../../src/components/familyTree/MultiplePartnerHousehold.jsx";
+import { compactNodeWidth } from "../../src/components/familyTree/treePresentation.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -111,6 +112,46 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll(".family-union-stem")).toHaveLength(1);
     expect(container.querySelectorAll(".family-child-branch-item")).toHaveLength(1);
     expect(container.textContent).not.toContain("Partner");
+  });
+
+  it("centres the descendants stem on the relationship line when parent cards differ in width", () => {
+    const firstName = "Alexandria Testaferrata de Noto";
+    const secondName = "Zed";
+
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "first",
+              fullName: firstName,
+              spouseIds: ["second"],
+              partnerRelationships: [{ personId: "second", type: "marriage" }],
+            },
+            {
+              id: "second",
+              fullName: secondName,
+              spouseIds: ["first"],
+            },
+            {
+              id: "child",
+              fullName: "Child",
+              fatherId: "first",
+              motherId: "second",
+            },
+          ]}
+        />,
+      ),
+    );
+
+    const expectedOffset = (compactNodeWidth(firstName) - compactNodeWidth(secondName)) / 2;
+    const union = container.querySelector(".family-union-block");
+
+    expect(union.style.getPropertyValue("--family-union-junction-offset")).toBe(
+      `${expectedOffset}px`,
+    );
+    expect(union.querySelector(".family-partner-link")).not.toBeNull();
+    expect(union.querySelector(".family-union-stem")).not.toBeNull();
   });
 
   it("distinguishes marriage and partnership lines and annotates their start year", () => {
