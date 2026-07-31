@@ -133,9 +133,11 @@ export function FamilyTreeCanvas({
       clearAlignment();
       clearAlignment = alignRows();
     };
+    const settlingTimers = [80, 220, 500].map((delay) => window.setTimeout(realign, delay));
     window.addEventListener("resize", realign);
 
     return () => {
+      settlingTimers.forEach((timer) => window.clearTimeout(timer));
       window.removeEventListener("resize", realign);
       clearAlignment();
     };

@@ -393,7 +393,7 @@ describe("FamilyTreeCanvas", () => {
 
     const person = container.querySelector('[data-person-id="root"]');
     expect(person.classList.contains("stacked-legal-details")).toBe(true);
-    expect(person.style.getPropertyValue("--family-node-width")).toBe("132px");
+    expect(person.style.getPropertyValue("--family-node-width")).toBe("112px");
     expect(person.querySelector(".family-node-name").textContent).toBe("Pandolfo");
     expect(person.querySelector(".family-node-surname").textContent).toBe("Testaferrata De Noto");
     expect(person.textContent).toContain("Died 03-04-1950");
@@ -846,6 +846,11 @@ describe("FamilyTreeCanvas", () => {
         (union) => union.querySelector('[data-person-id^="partner-"]').dataset.personId,
       ),
     ).toEqual(["partner-1", "partner-2", "partner-3"]);
+    expect(
+      [...container.querySelectorAll(".family-remarriage-union")].every((union) =>
+        union.classList.contains("left"),
+      ),
+    ).toBe(true);
     expect(container.querySelectorAll('[data-person-id="child-1"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-person-id="child-2"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-person-id="child-3"]')).toHaveLength(1);
@@ -972,7 +977,7 @@ describe("FamilyTreeCanvas", () => {
         .querySelector('[data-person-id="roland"]')
         .closest(".family-child-branch-item")
         .style.getPropertyValue("--branch-anchor-offset"),
-    ).toBe("-127px");
+    ).toBe("-115px");
   });
 
   it("keeps partnered cousins in their own branches and renders their child once", () => {

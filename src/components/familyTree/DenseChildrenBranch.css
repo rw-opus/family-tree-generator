@@ -67,9 +67,9 @@
 }
 
 .tree-stage .family-node.stacked-legal-details {
-  min-width: 132px;
-  max-width: 132px;
-  padding: 0.5rem 0.55rem;
+  min-width: 112px;
+  max-width: 112px;
+  padding: 0.45rem 0.4rem;
 }
 
 .tree-stage .family-node-stacked-identity {

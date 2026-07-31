@@ -3422,7 +3422,7 @@ button.family-link-person:hover {
   align-items: flex-start;
   justify-content: center;
   width: max-content;
-  gap: 64px;
+  gap: 32px;
   padding-top: var(--remarriage-rail-space, 0);
 }
 
@@ -3435,6 +3435,14 @@ button.family-link-person:hover {
 .tree-stage .family-multi-anchor-node {
   display: flex;
   align-items: flex-start;
+}
+
+.tree-stage .family-remarriage-union.left {
+  align-items: flex-end;
+}
+
+.tree-stage .family-remarriage-union.left > .family-parent-row {
+  align-self: flex-end;
 }
 
 .tree-stage .family-remarriage-connectors {
@@ -3493,7 +3501,7 @@ button.family-link-person:hover {
 
 .tree-stage .family-partner-link {
   display: block;
-  width: 64px;
+  width: 40px;
   height: 3px;
   background: var(--family-connector-color, #71645c);
 }

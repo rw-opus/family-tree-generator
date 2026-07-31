@@ -115,7 +115,7 @@ export function FamilyPersonCard({
       onClick={() => onSelectPerson?.(person.id)}
       className={classNames}
       style={{
-        "--family-node-width": `${stackedLegalDetails ? 132 : compactNodeWidth(name)}px`,
+        "--family-node-width": `${stackedLegalDetails ? 112 : compactNodeWidth(name)}px`,
       }}
     >
       {stackedLegalDetails && !person.isPlaceholder ? (
