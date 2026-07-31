@@ -6,23 +6,12 @@ import {
   personDesignations,
   personDisplayName,
 } from "../domain/people.js";
+import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
 import { RelationalFamilyTree } from "./familyTree/RelationalFamilyTree.jsx";
 import { personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
-
-function printTree(node) {
-  const popup = window.open("", "_blank", "noopener,noreferrer");
-  if (!popup) return window.print();
-
-  popup.document.write(
-    `<!doctype html><html><head><title>Family Tree</title><style>${document.querySelector("style")?.textContent || ""}</style></head><body><main class="print-tree">${node.innerHTML}</main></body></html>`,
-  );
-  popup.document.close();
-  popup.focus();
-  popup.print();
-}
 
 function hasRelationalData(person) {
   return Boolean(
@@ -70,7 +59,7 @@ export function FamilyTreeCanvas({
   people = [],
   ownershipByPerson = {},
   causaMortisCoverageByPerson = {},
-  onPrint = printTree,
+  onPrint,
   selectedPersonId,
   onSelectPerson,
   personCardFields,
@@ -107,6 +96,7 @@ export function FamilyTreeCanvas({
   const title =
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");
+  const printHandler = onPrint || ((node) => openA3PrintPreview(node, title));
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
 
@@ -147,7 +137,7 @@ export function FamilyTreeCanvas({
         title={title}
         eyebrow="Relational family record"
         treeRef={treeRef}
-        onPrint={onPrint}
+        onPrint={printHandler}
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
       >
@@ -174,7 +164,7 @@ export function FamilyTreeCanvas({
       title={title}
       eyebrow="Visual family record"
       treeRef={treeRef}
-      onPrint={onPrint}
+      onPrint={printHandler}
       helperText="The diagram is a working visual aid. Dashed entries are connectors added only when a relative is needed to make another branch intelligible."
     >
       <DesignationFamilyTree
