@@ -17,9 +17,10 @@
   stroke-linecap: square;
 }
 
-/* A union recorded only through a shared child, or a single parent, is drawn
-   dashed so descent outside marriage is visible at a glance. */
-.tree-edge.non-marital {
+/* Only a recorded couple who are not married is dashed. A person with one
+   unrecorded parent is drawn like anybody else — a gap in the record says
+   nothing about how they were born. */
+.tree-edge.flagged {
   stroke-dasharray: 5 4;
 }
 
@@ -31,7 +32,7 @@
   stroke: var(--tree-marriage, #1d4ed8);
 }
 
-.tree-edge-partner.non-marital {
+.tree-edge-partner.partnership {
   stroke: var(--tree-partnership, #b45309);
 }
 
@@ -45,7 +46,7 @@
   stroke-width: 1.5;
 }
 
-.tree-union-marker.non-marital circle {
+.tree-union-marker.partnership circle {
   fill: var(--tree-canvas, #ffffff);
   stroke: var(--tree-partnership, #b45309);
 }

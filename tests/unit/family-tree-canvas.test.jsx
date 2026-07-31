@@ -136,7 +136,20 @@ describe("FamilyTreeCanvas", () => {
     });
 
     expect(container.querySelector(".tree-edge-partner.marital")).toBeNull();
-    expect(container.querySelector(".tree-edge.non-marital")).not.toBeNull();
+    expect(container.querySelector(".tree-edge.flagged")).not.toBeNull();
+  });
+
+  it("does not mark anyone when a parent is simply not recorded", () => {
+    renderCanvas({
+      people: [
+        person("mother", "Marija Borg"),
+        person("child", "Carmel Borg", { motherId: "mother" }),
+      ],
+    });
+
+    expect(container.querySelector(".born-outside-marriage")).toBeNull();
+    expect(container.querySelector(".outside-marriage-badge")).toBeNull();
+    expect(container.querySelector(".tree-edge.flagged")).toBeNull();
   });
 
   it("lays a very dense imported tree out on one row per generation", () => {

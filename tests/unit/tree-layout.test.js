@@ -202,7 +202,19 @@ describe("buildFamilyTreeLayout", () => {
     const naturalEdge = layout.edges.find(
       (edge) => edge.kind === "descent" && edge.childId === "natural-child",
     );
-    expect(naturalEdge.marital).toBe(false);
+    expect(naturalEdge.flagged).toBe(true);
+  });
+
+  it("never flags a person just because one parent is not recorded", () => {
+    const people = [
+      person("mother"),
+      person("child", { motherId: "mother" }),
+      person("grandchild", { motherId: "child" }),
+    ];
+    const layout = buildFamilyTreeLayout(people);
+
+    layout.nodes.forEach((node) => expect(node.bornOutsideMarriage).toBe(false));
+    layout.edges.forEach((edge) => expect(Boolean(edge.flagged)).toBe(false));
   });
 
   it("keeps every person on the canvas", () => {

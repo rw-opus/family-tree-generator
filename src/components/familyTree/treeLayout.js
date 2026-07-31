@@ -17,16 +17,17 @@
  * the component layer.
  */
 
-export const CARD_WIDTH = 156;
-export const CARD_HEIGHT = 138;
-export const CARD_GAP = 26;
-export const PARTNER_GAP = 18;
-export const ROW_GAP = 96;
-export const CANVAS_PADDING = 40;
+export const CARD_WIDTH = 112;
+export const CARD_HEIGHT = 108;
+export const CARD_GAP = 14;
+export const PARTNER_GAP = 10;
+export const ROW_GAP = 48;
+export const CANVAS_PADDING = 24;
 
 const ROW_PITCH = CARD_HEIGHT + ROW_GAP;
 const ORDERING_PASSES = 6;
 const CENTRING_PASSES = 8;
+const RELAX_ROUNDS = 3;
 
 const text = (value) => String(value ?? "").trim();
 
@@ -180,7 +181,10 @@ export function buildUnions(people) {
     // marriage, so it stays a partnership until the marriage is entered.
     const type = !second ? "single" : declared || (linked ? "marriage" : "partnership");
 
-    return { ...union, type, marital: type === "marriage" };
+    // Only a recorded couple who are not married says anything about how the
+    // children were born. One unrecorded parent is a gap in the record, not a
+    // statement about the parents, and must never be drawn as one.
+    return { ...union, type, marital: type === "marriage", flagged: type === "partnership" };
   });
 }
 
@@ -328,14 +332,37 @@ function reorderRows(rows, unions, people) {
 function packRow(blocks, desiredById) {
   let cursor = null;
 
-  blocks.forEach((block) => {
-    const width = blockWidth(block);
+  const widths = blocks.map(blockWidth);
+  const lefts = [];
+
+  blocks.forEach((block, index) => {
     const desired = desiredById.get(block);
     const minimumLeft = cursor === null ? 0 : cursor + CARD_GAP;
-    const left = desired === undefined ? minimumLeft : Math.max(desired - width / 2, minimumLeft);
-    block.left = left;
-    block.centre = left + width / 2;
-    cursor = left + width;
+    lefts[index] =
+      desired === undefined ? minimumLeft : Math.max(desired - widths[index] / 2, minimumLeft);
+    cursor = lefts[index] + widths[index];
+  });
+
+  // The pass above can only ever push a block right to clear its neighbour, so
+  // on its own the rows widen a little more on every centring pass and the
+  // slack compounds. Relaxing lets each block slide back into the space its
+  // neighbours left behind, which is what keeps the chart narrow.
+  for (let round = 0; round < RELAX_ROUNDS; round += 1) {
+    for (let index = 0; index < blocks.length; index += 1) {
+      const desired = desiredById.get(blocks[index]);
+      const lowerBound = index === 0 ? 0 : lefts[index - 1] + widths[index - 1] + CARD_GAP;
+      const upperBound =
+        index === blocks.length - 1
+          ? Infinity
+          : Math.max(lowerBound, lefts[index + 1] - CARD_GAP - widths[index]);
+      const target = desired === undefined ? lowerBound : desired - widths[index] / 2;
+      lefts[index] = Math.min(Math.max(target, lowerBound), upperBound);
+    }
+  }
+
+  blocks.forEach((block, index) => {
+    block.left = lefts[index];
+    block.centre = lefts[index] + widths[index] / 2;
   });
 }
 
@@ -426,7 +453,7 @@ export function buildFamilyTreeLayout(people = []) {
 
   const outsideMarriage = new Set();
   unions.forEach((union) => {
-    if (union.type === "marriage") return;
+    if (!union.flagged) return;
     union.childIds.forEach((childId) => outsideMarriage.add(childId));
   });
 
@@ -495,7 +522,7 @@ export function buildFamilyTreeLayout(people = []) {
       edges.push({
         id: `${union.id}:stem:${parentId}`,
         kind: "stem",
-        marital: union.marital,
+        flagged: union.flagged,
         from: { x: centre, y: union.parentBottom },
         to: { x: union.x, y: barY },
       });
@@ -504,7 +531,7 @@ export function buildFamilyTreeLayout(people = []) {
     edges.push({
       id: `${union.id}:bar`,
       kind: "sibling-bar",
-      marital: union.marital,
+      flagged: union.flagged,
       from: { x: Math.min(union.x, ...childCentres.map((entry) => entry.centre)), y: barY },
       to: { x: Math.max(union.x, ...childCentres.map((entry) => entry.centre)), y: barY },
     });
@@ -513,7 +540,7 @@ export function buildFamilyTreeLayout(people = []) {
       edges.push({
         id: `${union.id}:child:${childId}`,
         kind: "descent",
-        marital: union.marital,
+        flagged: union.flagged,
         childId,
         from: { x: centre, y: barY },
         to: { x: centre, y: rowTop(generations.get(childId)) },

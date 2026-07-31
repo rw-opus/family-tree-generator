@@ -13,8 +13,10 @@ function edgeClassName(edge) {
   return [
     "tree-edge",
     `tree-edge-${edge.kind}`,
-    edge.marital ? "marital" : "non-marital",
-    edge.type === "partnership" ? "partnership" : "",
+    // Only a recorded unmarried couple is marked. A person with one unrecorded
+    // parent is drawn exactly like anybody else.
+    edge.flagged ? "flagged" : "",
+    edge.kind === "partner" ? (edge.marital ? "marital" : "partnership") : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -24,7 +26,7 @@ function UnionMarker({ union }) {
   if (union.parentIds.length !== 2) return null;
 
   return (
-    <g className={`tree-union-marker ${union.marital ? "marital" : "non-marital"}`}>
+    <g className={`tree-union-marker ${union.marital ? "marital" : "partnership"}`}>
       <circle cx={union.x} cy={union.y} r={union.marital ? 5 : 4} />
       {union.marital && <circle className="union-marker-inner" cx={union.x} cy={union.y} r={2} />}
     </g>
