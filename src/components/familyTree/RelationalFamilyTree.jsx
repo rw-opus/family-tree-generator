@@ -426,9 +426,21 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
               const relationshipAnnotation = partnerRelationshipAnnotation(group.relationship);
               const relationshipLabel =
                 group.relationship?.type === "partnership" ? "Unmarried partnership" : "Marriage";
+              const unionJunctionOffset =
+                parents.length === 2
+                  ? (compactNodeWidth(cardName(parents[0])) -
+                      compactNodeWidth(cardName(parents[1]))) /
+                    2
+                  : 0;
 
               return (
-                <div className="family-union-block" key={key}>
+                <div
+                  className="family-union-block"
+                  key={key}
+                  style={{
+                    "--family-union-junction-offset": `${unionJunctionOffset}px`,
+                  }}
+                >
                   <div
                     className={[
                       "family-parent-row",
