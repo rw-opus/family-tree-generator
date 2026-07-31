@@ -7,6 +7,16 @@ import {
 
 export const PARTNER_LINK_WIDTH = 40;
 
+/**
+ * Above this many people the person cards stack their legal details rather than
+ * setting them side by side, which keeps a large tree legible in print.
+ */
+export const DENSE_TREE_PERSON_THRESHOLD = 80;
+
+export function shouldUseDenseChildrenLayout(personCount) {
+  return personCount >= DENSE_TREE_PERSON_THRESHOLD;
+}
+
 export function capitalisedName(value = "") {
   return String(value).replace(/(^|[\s'-])\p{L}/gu, (match) => match.toLocaleUpperCase("en-MT"));
 }

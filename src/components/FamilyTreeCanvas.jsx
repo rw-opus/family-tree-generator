@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Printer } from "lucide-react";
 import {
   hasAnyDesignation,
@@ -8,16 +8,10 @@ import {
 } from "../domain/people.js";
 import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
-import { shouldUseDenseChildrenLayout } from "./familyTree/DenseChildrenBranch.jsx";
 import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
-import {
-  alignFamilyGenerationRows,
-  familyGenerationById,
-  widestFamilyGeneration,
-} from "./familyTree/generationRows.js";
+import { familyGenerationById, widestFamilyGeneration } from "./familyTree/generationRows.js";
 import { LayeredFamilyTree } from "./familyTree/LayeredFamilyTree.jsx";
-import { RelationalFamilyTree } from "./familyTree/RelationalFamilyTree.jsx";
-import { personCardName } from "./familyTree/treePresentation.js";
+import { personCardName, shouldUseDenseChildrenLayout } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
 
 function hasRelationalData(person) {
@@ -73,7 +67,6 @@ export function FamilyTreeCanvas({
   propertyValue = 0,
   zoom = 100,
   onZoomChange,
-  forceLegacyRenderer = false,
 }) {
   const treeRef = useRef(null);
   const cleanPeople = useMemo(
@@ -101,7 +94,6 @@ export function FamilyTreeCanvas({
   const printHandler = onPrint || ((node) => openA3PrintPreview(node, title));
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
-  const usesLayeredLayout = usesRelationalLayout && !forceLegacyRenderer;
   const usesStackedLegalCards = shouldUseDenseChildrenLayout(relationalPeople.length);
   const generationByPerson = useMemo(
     () => familyGenerationById(relationalPeople),
@@ -126,35 +118,6 @@ export function FamilyTreeCanvas({
   }, [people, selectedPersonId]);
 
   usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);
-
-  useLayoutEffect(() => {
-    // The layered layout positions every card itself, so the legacy row-alignment
-    // pass only runs for the old nested renderer.
-    if (!usesRelationalLayout || usesLayeredLayout || !treeRef.current) return undefined;
-
-    const alignRows = () => alignFamilyGenerationRows(treeRef.current);
-    let clearAlignment = alignRows();
-    const realign = () => {
-      clearAlignment();
-      clearAlignment = alignRows();
-    };
-    const settlingTimers = [80, 220, 500].map((delay) => window.setTimeout(realign, delay));
-    window.addEventListener("resize", realign);
-
-    return () => {
-      settlingTimers.forEach((timer) => window.clearTimeout(timer));
-      window.removeEventListener("resize", realign);
-      clearAlignment();
-    };
-  }, [
-    causaMortisCoverageByPerson,
-    generationByPerson,
-    ownershipByPerson,
-    personCardFields,
-    propertyValue,
-    usesLayeredLayout,
-    usesRelationalLayout,
-  ]);
 
   const renderCard = (person, variant = "") => (
     <FamilyPersonCard
@@ -185,16 +148,7 @@ export function FamilyTreeCanvas({
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
       >
-        {usesLayeredLayout ? (
-          <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} />
-        ) : (
-          <RelationalFamilyTree
-            people={relationalPeople}
-            displayName={displayName}
-            cardName={cardName}
-            renderCard={renderCard}
-          />
-        )}
+        <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} />
       </TreePanel>
     );
   }
