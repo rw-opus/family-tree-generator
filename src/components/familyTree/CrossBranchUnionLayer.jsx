@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { partnerRelationshipAnnotation, partnerRelationshipClass } from "./partnerRelationship.js";
 import "./CrossBranchUnionLayer.css";
 
 function relativeRect(node, layoutRect, scaleX, scaleY) {
@@ -56,6 +57,8 @@ function connectorPaths(first, second, descendant, lane) {
     childPath,
     junctionX,
     junctionY: railY,
+    annotationX: junctionX,
+    annotationY: railY - 6,
   };
 }
 
@@ -153,7 +156,21 @@ export function CrossBranchUnionLayer({ unions, children }) {
               data-second-person-id={union.parentIds[1]}
               key={union.key}
             >
-              <path className="family-cross-partner-link" d={paths.partnerPath || ""} />
+              <path
+                className={`family-cross-partner-link ${partnerRelationshipClass(
+                  union.relationship,
+                )}`}
+                d={paths.partnerPath || ""}
+              />
+              {partnerRelationshipAnnotation(union.relationship) && (
+                <text
+                  className="family-union-annotation svg-annotation"
+                  x={paths.annotationX || 0}
+                  y={paths.annotationY || 0}
+                >
+                  {partnerRelationshipAnnotation(union.relationship)}
+                </text>
+              )}
               {union.children.length > 0 && (
                 <path className="family-cross-child-link" d={paths.childPath || ""} />
               )}

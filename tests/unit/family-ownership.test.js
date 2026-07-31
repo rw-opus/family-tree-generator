@@ -68,6 +68,101 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson["son-2"]).toBeCloseTo(0.5);
   });
 
+  it("does not give an explicitly unmarried partner a spouse share", () => {
+    const people = [
+      person("edgar", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        spouseIds: ["partner"],
+        partnerRelationships: [{ personId: "partner", type: "partnership" }],
+      }),
+      person("partner", { spouseIds: ["edgar"], isDeceased: true, dateOfDeath: "" }),
+      person("child", { fatherId: "edgar", motherId: "partner" }),
+    ];
+
+    const result = buildPropertyOwnership(people, {
+      id: "property",
+      owners: [{ personId: "edgar", sharePercent: 100 }],
+    });
+
+    expect(result.ownershipByPerson.partner || 0).toBe(0);
+    expect(result.ownershipByPerson.child).toBeCloseTo(1);
+    expect(result.transmissions[0].destination).toBe("descendants");
+  });
+
+  it("uses marriage dates to identify the legal spouse at the date of death", () => {
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        spouseIds: ["former", "current", "future"],
+        partnerRelationships: [
+          {
+            personId: "former",
+            type: "marriage",
+            startDate: "2000-01-01",
+            endDate: "2010-01-01",
+            endReason: "divorce",
+          },
+          { personId: "current", type: "marriage", startDate: "2015-01-01" },
+          { personId: "future", type: "marriage", startDate: "2025-01-01" },
+        ],
+      }),
+      person("former", { spouseIds: ["deceased"] }),
+      person("current", { spouseIds: ["deceased"] }),
+      person("future", { spouseIds: ["deceased"] }),
+      person("child", { fatherId: "deceased", motherId: "current" }),
+    ];
+
+    const result = buildPropertyOwnership(people, {
+      id: "property",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+    });
+
+    expect(result.ownershipByPerson.former || 0).toBe(0);
+    expect(result.ownershipByPerson.future || 0).toBe(0);
+    expect(result.ownershipByPerson.current).toBeCloseTo(0.5);
+    expect(result.ownershipByPerson.child).toBeCloseTo(0.5);
+    expect(result.transmissions[0].destination).toBe("spouse-and-descendants");
+    expect(result.transmissions[0].warnings.join(" ")).toContain("starts after the date of death");
+  });
+
+  it("stops intestacy when former or overlapping marriages are ambiguous", () => {
+    const missingEndDate = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        spouseIds: ["former", "current"],
+        partnerRelationships: [
+          { personId: "former", type: "marriage", endReason: "divorce" },
+          { personId: "current", type: "marriage", startDate: "2015-01-01" },
+        ],
+      }),
+      person("former", { spouseIds: ["deceased"] }),
+      person("current", { spouseIds: ["deceased"] }),
+      person("child", { fatherId: "deceased", motherId: "current" }),
+    ];
+    const missingEndResult = intestateAllocations(missingEndDate, "deceased");
+
+    expect(missingEndResult.destination).toBe("spouse-status-unresolved");
+    expect(missingEndResult.warnings.join(" ")).toContain("marriage to former ended");
+
+    const overlapping = missingEndDate.map((candidate) =>
+      candidate.id === "deceased"
+        ? {
+            ...candidate,
+            partnerRelationships: [
+              { personId: "former", type: "marriage", startDate: "2000-01-01" },
+              { personId: "current", type: "marriage", startDate: "2015-01-01" },
+            ],
+          }
+        : candidate,
+    );
+    const overlappingResult = intestateAllocations(overlapping, "deceased");
+    expect(overlappingResult.destination).toBe("spouse-status-unresolved");
+    expect(overlappingResult.warnings.join(" ")).toContain("More than one marriage appears active");
+  });
+
   it("uses confirmed intestate heirs and user-directed shares when they total 100%", () => {
     const people = [
       person("deceased", {
@@ -97,6 +192,44 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson.spouse).toBeCloseTo(0.6);
     expect(result.ownershipByPerson.child).toBeCloseTo(0.4);
     expect(result.transmissions[0].destination).toBe("confirmed-intestacy");
+  });
+
+  it("can confirm an unconnected person or company as a terminal heir", () => {
+    const outsideParties = [{ id: "company", name: "Legacy Holdings Ltd", type: "company" }];
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+      }),
+      person("statutory-child", { fatherId: "deceased" }),
+    ];
+    const calculated = intestateAllocations(people, "deceased");
+    people[0] = {
+      ...people[0],
+      intestateHeirs: [{ id: "company-share", personId: "company", sharePercent: 100 }],
+      intestateHeirsConfirmed: true,
+      intestateConfirmationBasis: intestacyAllocationSignature(people[0], calculated),
+    };
+
+    const readiness = intestacyConfirmationReadiness(
+      people,
+      "deceased",
+      calculated,
+      outsideParties,
+    );
+    const result = buildPropertyOwnership(
+      people,
+      {
+        id: "property",
+        owners: [{ personId: "deceased", sharePercent: 100 }],
+      },
+      outsideParties,
+    );
+
+    expect(readiness.valid).toBe(true);
+    expect(result.ownershipByPerson.company).toBeCloseTo(1);
+    expect(result.ownershipByParty.company).toBeCloseTo(1);
+    expect(result.unresolved).toEqual([]);
   });
 
   it("uses one readiness check for dangling, duplicate, and self-heir rows", () => {

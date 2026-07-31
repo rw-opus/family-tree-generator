@@ -48,13 +48,21 @@ import {
   shareFromPercentageInput,
 } from "../domain/shares.js";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
+import {
+  findPartnerRelationship,
+  PARTNER_RELATIONSHIP_TYPES,
+  removePartnerRelationship,
+  upsertPartnerRelationship,
+} from "../domain/partnerRelationships.js";
 import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
+import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 
 const relationshipActions = [
   { key: "father", label: "Father", icon: UserRound },
   { key: "mother", label: "Mother", icon: UserRound },
-  { key: "spouse", label: "Partner", icon: Heart },
+  { key: "marriage", label: "Wife / husband", icon: Heart },
+  { key: "partnership", label: "Partner", icon: Heart },
   { key: "child", label: "Child", icon: Baby },
   { key: "sibling", label: "Brother / sister", icon: UsersRound },
 ];
@@ -120,7 +128,9 @@ export function PersonInspector({
   caseDependencyLabels = [],
   familyPersonIds = null,
   personFamilyGroupCount = 1,
+  outsideParties = [],
   onChange,
+  onOutsidePartiesChange,
   onSelectPerson,
   onDeletePerson,
   onBackToTree,
@@ -128,6 +138,10 @@ export function PersonInspector({
   const [importMode, setImportMode] = useState("replace");
   const [importStatus, setImportStatus] = useState("");
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
+  const [partnerRelationshipType, setPartnerRelationshipType] = useState(
+    PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
+  );
+  const [partnerRelationshipDate, setPartnerRelationshipDate] = useState("");
   const [existingSpouseId, setExistingSpouseId] = useState("");
   const [childPartnerChooserOpen, setChildPartnerChooserOpen] = useState(false);
   const [childPartnerId, setChildPartnerId] = useState("");
@@ -136,6 +150,7 @@ export function PersonInspector({
   const [isEditing, setIsEditing] = useState(false);
   const [causaMortisErrors, setCausaMortisErrors] = useState({});
   const [causaMortisDraftOpen, setCausaMortisDraftOpen] = useState(true);
+  const [willOutsidePartyOpen, setWillOutsidePartyOpen] = useState(false);
   const [ownershipDisplay, setOwnershipDisplay] = useState(shareDisplayMode(shareDisplay));
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
@@ -148,6 +163,24 @@ export function PersonInspector({
   const previousSelectedPersonIdRef = useRef("");
   const displayName = useCallback((person) => personDisplayName(person, people), [people]);
   const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
+  const outsidePartiesById = useMemo(
+    () => new Map(outsideParties.map((party) => [party.id, party])),
+    [outsideParties],
+  );
+  const partyDisplayName = useCallback(
+    (partyOrPerson) =>
+      partyOrPerson?.fullName ||
+      partyOrPerson?.name ||
+      (partyOrPerson?.type === "company" ? "Unnamed company" : "Unnamed person"),
+    [],
+  );
+  const displayParty = useCallback(
+    (partyOrPerson) =>
+      partyOrPerson && peopleById.has(partyOrPerson.id)
+        ? displayName(partyOrPerson)
+        : partyDisplayName(partyOrPerson),
+    [displayName, partyDisplayName, peopleById],
+  );
   const parentSuggestions = useMemo(() => solePartnerParentSuggestions(people), [people]);
   const relevantParentSuggestions = useMemo(
     () =>
@@ -167,12 +200,15 @@ export function PersonInspector({
     if (previousSelectedPersonIdRef.current === nextPersonId) return;
     previousSelectedPersonIdRef.current = nextPersonId;
     setSpouseChooserOpen(false);
+    setPartnerRelationshipType(PARTNER_RELATIONSHIP_TYPES.MARRIAGE);
+    setPartnerRelationshipDate("");
     setExistingSpouseId("");
     setChildPartnerChooserOpen(false);
     setChildPartnerId("");
     setParentChooserField("");
     setExistingParentId("");
     setCausaMortisErrors({});
+    setWillOutsidePartyOpen(false);
     setCausaMortisDraftOpen(
       Boolean(
         selectedPerson?.causaMortisDeclarations?.some(
@@ -238,10 +274,6 @@ export function PersonInspector({
       patch.surnameAtBirth = personSurname(selectedPerson);
     }
     updateSelected(patch);
-  };
-
-  const selectSex = (sex, checked) => {
-    updateSex(checked ? sex : "");
   };
 
   const changeOwnershipDisplay = (mode) => {
@@ -432,14 +464,20 @@ export function PersonInspector({
         motherExplicitlyUnassigned: false,
       };
     }
-    if (kind === "spouse") {
+    if (kind === "marriage" || kind === "partnership") {
+      const relationshipType =
+        kind === "partnership"
+          ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
+          : PARTNER_RELATIONSHIP_TYPES.MARRIAGE;
       Object.assign(relative, {
-        designations: [hasDesignation(selectedPerson, "Deceased") ? "Surviving Spouse" : "Partner"],
-        spouseIds: [selectedPerson.id],
+        designations: [
+          relationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+            ? hasDesignation(selectedPerson, "Deceased")
+              ? "Surviving Spouse"
+              : "Spouse"
+            : "Partner",
+        ],
       });
-      selectedPatch = {
-        spouseIds: [...new Set([...(selectedPerson.spouseIds || []), relative.id])],
-      };
     }
     if (kind === "child") {
       Object.assign(relative, { designations: ["Child"] });
@@ -470,7 +508,40 @@ export function PersonInspector({
     const updatedPeople = people.map((person) =>
       person.id === selectedPerson.id ? { ...person, ...selectedPatch } : person,
     );
-    onChange([...updatedPeople, relative]);
+    const nextPeople = [...updatedPeople, relative];
+    if (kind === "marriage" || kind === "partnership") {
+      onChange(
+        upsertPartnerRelationship(nextPeople, selectedPerson.id, relative.id, {
+          type:
+            kind === "partnership"
+              ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
+              : PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
+          startDate: partnerRelationshipDate,
+        }),
+      );
+      return;
+    }
+    onChange(nextPeople);
+  };
+
+  const createOutsideParty = (party) => {
+    onOutsidePartiesChange?.([...outsideParties, party]);
+  };
+
+  const addOutsideWillHeir = (party) => {
+    createOutsideParty(party);
+    const hasHeirs = (selectedPerson.willHeirs || []).length > 0;
+    updateSelected({
+      willHeirs: [
+        ...(selectedPerson.willHeirs || []),
+        {
+          id: crypto.randomUUID(),
+          personId: party.id,
+          ...shareFromPercentage(hasHeirs ? 0 : 100),
+        },
+      ],
+    });
+    setWillOutsidePartyOpen(false);
   };
 
   const linkExistingSpouse = () => {
@@ -480,23 +551,13 @@ export function PersonInspector({
     const existingPerson = people.find((person) => person.id === existingSpouseId);
     if (!existingPerson) return;
     onChange(
-      people.map((person) => {
-        if (person.id === selectedPerson.id) {
-          return {
-            ...person,
-            spouseIds: [...new Set([...(person.spouseIds || []), existingPerson.id])],
-          };
-        }
-        if (person.id === existingPerson.id) {
-          return {
-            ...person,
-            spouseIds: [...new Set([...(person.spouseIds || []), selectedPerson.id])],
-          };
-        }
-        return person;
+      upsertPartnerRelationship(people, selectedPerson.id, existingPerson.id, {
+        type: partnerRelationshipType,
+        startDate: partnerRelationshipDate,
       }),
     );
     setExistingSpouseId("");
+    setPartnerRelationshipDate("");
     setSpouseChooserOpen(false);
   };
 
@@ -542,23 +603,12 @@ export function PersonInspector({
       return parentIds.has(selectedPerson.id) && parentIds.has(partnerId);
     });
     if (hasSharedChildren) return;
-    onChange(
-      people.map((person) => {
-        if (person.id === selectedPerson.id) {
-          return {
-            ...person,
-            spouseIds: (person.spouseIds || []).filter((id) => id !== partnerId),
-          };
-        }
-        if (person.id === partnerId) {
-          return {
-            ...person,
-            spouseIds: (person.spouseIds || []).filter((id) => id !== selectedPerson.id),
-          };
-        }
-        return person;
-      }),
-    );
+    onChange(removePartnerRelationship(people, selectedPerson.id, partnerId));
+  };
+
+  const updatePartnerLink = (partnerId, patch) => {
+    if (!selectedPerson || !partnerId) return;
+    onChange(upsertPartnerRelationship(people, selectedPerson.id, partnerId, patch));
   };
 
   const removeSiblingLink = (siblingId) => {
@@ -641,7 +691,7 @@ export function PersonInspector({
   const confirmedIntestacy =
     inheritanceBasis === "intestacy" &&
     automaticIntestacy &&
-    confirmedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy);
+    confirmedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy, outsideParties);
   const successionHeirIds =
     inheritanceBasis === "will"
       ? willHeirs.map((heir) => heir.personId).filter(Boolean)
@@ -652,17 +702,20 @@ export function PersonInspector({
           )?.keys() || []),
         ];
   const successionHeirs = successionHeirIds
-    .map((personId) => peopleById.get(personId))
+    .map((personId) => peopleById.get(personId) || outsidePartiesById.get(personId))
     .filter(Boolean);
   const allSuccessionHeirsDeceased =
-    successionHeirs.length > 0 && successionHeirs.every((person) => isPersonDeceased(person));
+    successionHeirs.length > 0 &&
+    successionHeirs.every((person) => peopleById.has(person.id) && isPersonDeceased(person));
   const descendants = personDescendants(people, selectedPerson.id);
   const descendantIds = new Set(descendants.map((person) => person.id));
   const ancestorIds = new Set(
     personAncestors(people, selectedPerson.id).map((person) => person.id),
   );
   const declarationCandidateIds = new Set(successionHeirIds);
-  const declarationCandidates = people.filter((person) => declarationCandidateIds.has(person.id));
+  const declarationCandidates = [...people, ...outsideParties].filter((party) =>
+    declarationCandidateIds.has(party.id),
+  );
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
   const hasDraftCausaMortisDeclaration = causaMortisDeclarations.some(
     (declaration) => !isCompletedCausaMortisDeclaration(declaration),
@@ -701,6 +754,21 @@ export function PersonInspector({
   const estimatedPropertyValue = propertySaleValue * ownership;
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
+  const partnerRelationshipsById = new Map(
+    linkedPartners.map((partner) => [
+      partner.id,
+      findPartnerRelationship(people, selectedPerson.id, partner.id),
+    ]),
+  );
+  const relationshipActionCounts = {
+    ...relationshipCounts,
+    marriage: [...partnerRelationshipsById.values()].filter(
+      (relationship) => relationship?.type === PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
+    ).length,
+    partnership: [...partnerRelationshipsById.values()].filter(
+      (relationship) => relationship?.type === PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP,
+    ).length,
+  };
   const linkedSpouseIds = new Set(linkedPartners.map((person) => person.id));
   const linkedSiblingIds = new Set(selectedPerson.siblingIds || []);
   people.forEach((person) => {
@@ -732,6 +800,17 @@ export function PersonInspector({
   const closeChildPartnerChooser = () => {
     setChildPartnerChooserOpen(false);
     setChildPartnerId("");
+  };
+  const togglePartnerChooser = (type) => {
+    if (spouseChooserOpen && partnerRelationshipType === type) {
+      setSpouseChooserOpen(false);
+      setPartnerRelationshipDate("");
+      return;
+    }
+    setPartnerRelationshipType(type);
+    setPartnerRelationshipDate("");
+    setExistingSpouseId("");
+    setSpouseChooserOpen(true);
   };
   const addChild = () => {
     if (linkedPartners.length > 0) {
@@ -912,10 +991,22 @@ export function PersonInspector({
                     ? `${label} already added`
                     : `Add ${label.toLowerCase()}`
               }
-              aria-expanded={key === "spouse" ? spouseChooserOpen : undefined}
+              aria-expanded={
+                key === "marriage" || key === "partnership"
+                  ? spouseChooserOpen &&
+                    partnerRelationshipType ===
+                      (key === "marriage"
+                        ? PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                        : PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP)
+                  : undefined
+              }
               onClick={() =>
-                key === "spouse"
-                  ? setSpouseChooserOpen((open) => !open)
+                key === "marriage" || key === "partnership"
+                  ? togglePartnerChooser(
+                      key === "marriage"
+                        ? PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                        : PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP,
+                    )
                   : key === "child"
                     ? addChild()
                     : addRelative(key)
@@ -923,12 +1014,12 @@ export function PersonInspector({
             >
               <Icon size={16} />
               {label}
-              {relationshipCounts[key] > 0 && (
+              {relationshipActionCounts[key] > 0 && (
                 <span
                   className="relationship-count"
-                  aria-label={`${relationshipCounts[key]} linked`}
+                  aria-label={`${relationshipActionCounts[key]} linked`}
                 >
-                  {relationshipCounts[key]}
+                  {relationshipActionCounts[key]}
                 </span>
               )}
             </button>
@@ -1024,16 +1115,37 @@ export function PersonInspector({
         )}
         {spouseChooserOpen && identityComplete && (
           <div className="spouse-chooser">
+            <strong>
+              {partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                ? "Add a wife or husband"
+                : "Add an unmarried partner"}
+            </strong>
+            <label className="partner-date-field">
+              <span>
+                {partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                  ? "Marriage date (optional)"
+                  : "Partnership date (optional)"}
+              </span>
+              <DateInput value={partnerRelationshipDate} onChange={setPartnerRelationshipDate} />
+            </label>
             <button
               type="button"
               className="secondary-button"
               onClick={() => {
-                addRelative("spouse");
+                addRelative(
+                  partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                    ? "marriage"
+                    : "partnership",
+                );
+                setPartnerRelationshipDate("");
                 setSpouseChooserOpen(false);
               }}
             >
               <UserRound size={15} />
-              Create new partner
+              Create new{" "}
+              {partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                ? "wife / husband"
+                : "partner"}
             </button>
             <span>or link an existing person</span>
             <div>
@@ -1061,7 +1173,10 @@ export function PersonInspector({
                 onClick={linkExistingSpouse}
               >
                 <Heart size={15} />
-                Link partner
+                Link{" "}
+                {partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                  ? "wife / husband"
+                  : "partner"}
               </button>
             </div>
           </div>
@@ -1176,9 +1291,10 @@ export function PersonInspector({
               {["Female", "Male", "Other"].map((sex) => (
                 <label className="detail-checkbox" key={sex}>
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name={`sex-${selectedPerson.id}`}
                     checked={selectedPerson.sex === sex}
-                    onChange={(event) => selectSex(sex, event.target.checked)}
+                    onChange={() => updateSex(sex)}
                   />
                   {sex}
                 </label>
@@ -1266,10 +1382,12 @@ export function PersonInspector({
                 <IntestateHeirConfirmation
                   deceased={selectedPerson}
                   people={people}
+                  outsideParties={outsideParties}
                   calculated={automaticIntestacy}
                   shareDisplay={ownershipDisplay}
-                  displayName={displayName}
+                  displayName={displayParty}
                   onUpdatePerson={updatePerson}
+                  onCreateOutsideParty={onOutsidePartiesChange ? createOutsideParty : undefined}
                   onSelectPerson={onSelectPerson}
                 />
               ) : (
@@ -1292,7 +1410,7 @@ export function PersonInspector({
                   <IntestacyProposal
                     calculated={automaticIntestacy}
                     people={people}
-                    displayName={displayName}
+                    displayName={displayParty}
                     shareDisplay={ownershipDisplay}
                     title="Suggested heirs if intestate"
                     actionLabel="Use as beneficiaries"
@@ -1301,10 +1419,28 @@ export function PersonInspector({
                   <div className="will-beneficiaries">
                     <div className="will-beneficiaries-heading">
                       <strong>Beneficiaries</strong>
-                      <button type="button" className="text-button" onClick={addWillHeir}>
-                        Add beneficiary
-                      </button>
+                      <span>
+                        <button type="button" className="text-button" onClick={addWillHeir}>
+                          Add beneficiary
+                        </button>
+                        {onOutsidePartiesChange && (
+                          <button
+                            type="button"
+                            className="text-button"
+                            aria-expanded={willOutsidePartyOpen}
+                            onClick={() => setWillOutsidePartyOpen((open) => !open)}
+                          >
+                            Add unconnected heir
+                          </button>
+                        )}
+                      </span>
                     </div>
+                    {willOutsidePartyOpen && (
+                      <OutsidePartyCreator
+                        onCreate={addOutsideWillHeir}
+                        onCancel={() => setWillOutsidePartyOpen(false)}
+                      />
+                    )}
                     {willHeirs.map((heir) => {
                       const fraction = fractionForShare(heir);
                       const numerator = heir.shareNumerator ?? fraction.numerator;
@@ -1318,14 +1454,26 @@ export function PersonInspector({
                               updateWillHeir(heir.id, { personId: event.target.value })
                             }
                           >
-                            <option value="">Choose person</option>
-                            {people
-                              .filter((person) => person.id !== selectedPerson.id)
-                              .map((person) => (
-                                <option key={person.id} value={person.id}>
-                                  {displayName(person)}
-                                </option>
-                              ))}
+                            <option value="">Choose person or company</option>
+                            <optgroup label="People on the family tree">
+                              {people
+                                .filter((person) => person.id !== selectedPerson.id)
+                                .map((person) => (
+                                  <option key={person.id} value={person.id}>
+                                    {displayName(person)}
+                                  </option>
+                                ))}
+                            </optgroup>
+                            {outsideParties.length > 0 && (
+                              <optgroup label="Unconnected people and companies">
+                                {outsideParties.map((party) => (
+                                  <option key={party.id} value={party.id}>
+                                    {partyDisplayName(party)}
+                                    {party.type === "company" ? " (company)" : " (unconnected)"}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                           {ownershipDisplay !== "percentage" && (
                             <span className="will-heir-fraction">
@@ -1626,24 +1774,22 @@ export function PersonInspector({
                         </small>
                         {declarationCandidates.length ? (
                           <div>
-                            {declarationCandidates.map((person) => (
-                              <label key={person.id}>
+                            {declarationCandidates.map((party) => (
+                              <label key={party.id}>
                                 <input
                                   type="checkbox"
                                   checked={(declaration.declarantPersonIds || []).includes(
-                                    person.id,
+                                    party.id,
                                   )}
-                                  onChange={() =>
-                                    toggleCausaMortisDeclarant(declaration, person.id)
-                                  }
+                                  onChange={() => toggleCausaMortisDeclarant(declaration, party.id)}
                                 />
-                                {displayName(person)}
+                                {displayParty(party)}
                               </label>
                             ))}
                           </div>
                         ) : (
                           <small>
-                            Add or identify the heirs on the tree before selecting declarants.
+                            Add or identify the heirs in this case before selecting declarants.
                           </small>
                         )}
                       </div>
@@ -1682,12 +1828,19 @@ export function PersonInspector({
           )}
           {linkedPartners.length > 0 && (
             <div className="person-partner-links">
-              <span>Partner links</span>
+              <span>Marriage / partner links</span>
               <div>
                 {linkedPartners.map((partner) => {
                   const sharedChildren = sharedChildrenByPartnerId.get(partner.id) || [];
+                  const relationship = partnerRelationshipsById.get(partner.id);
+                  const relationshipState =
+                    relationship?.type === PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
+                      ? "partnership"
+                      : relationship?.endDate || relationship?.endReason
+                        ? "former-marriage"
+                        : "marriage";
                   return (
-                    <span key={partner.id}>
+                    <div className="person-partner-link-row" key={partner.id}>
                       <span className="person-partner-link-identity">
                         <strong>{displayName(partner)}</strong>
                         {sharedChildren.length > 0 && (
@@ -1695,6 +1848,61 @@ export function PersonInspector({
                             Reassign {sharedChildren.length} shared{" "}
                             {sharedChildren.length === 1 ? "child" : "children"} first.
                           </small>
+                        )}
+                      </span>
+                      <select
+                        aria-label={`Relationship type with ${displayName(partner)}`}
+                        value={relationshipState}
+                        onChange={(event) => {
+                          const nextState = event.target.value;
+                          if (nextState === "partnership") {
+                            updatePartnerLink(partner.id, {
+                              type: PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP,
+                              endDate: "",
+                              endReason: "",
+                            });
+                            return;
+                          }
+                          updatePartnerLink(partner.id, {
+                            type: PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
+                            endDate: nextState === "former-marriage" ? relationship?.endDate : "",
+                            endReason: nextState === "former-marriage" ? "divorce" : "",
+                          });
+                        }}
+                      >
+                        <option value="marriage">Married</option>
+                        <option value="former-marriage">Former marriage / divorced</option>
+                        <option value="partnership">Unmarried partners</option>
+                      </select>
+                      <span className="person-partner-dates">
+                        <label>
+                          <span>
+                            {relationshipState === "partnership"
+                              ? "Partnership date"
+                              : "Marriage date"}
+                          </span>
+                          <DateInput
+                            aria-label={`Relationship start date with ${displayName(partner)}`}
+                            value={relationship?.startDate || ""}
+                            onChange={(value) =>
+                              updatePartnerLink(partner.id, { startDate: value })
+                            }
+                          />
+                        </label>
+                        {relationshipState === "former-marriage" && (
+                          <label>
+                            <span>Marriage ended</span>
+                            <DateInput
+                              aria-label={`Marriage end date with ${displayName(partner)}`}
+                              value={relationship?.endDate || ""}
+                              onChange={(value) =>
+                                updatePartnerLink(partner.id, {
+                                  endDate: value,
+                                  endReason: "divorce",
+                                })
+                              }
+                            />
+                          </label>
                         )}
                       </span>
                       <button
@@ -1710,7 +1918,7 @@ export function PersonInspector({
                       >
                         Remove link
                       </button>
-                    </span>
+                    </div>
                   );
                 })}
               </div>

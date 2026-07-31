@@ -1,0 +1,53 @@
+.tree-stage .family-partner-link {
+  position: relative;
+  flex: 0 0 64px;
+}
+
+.tree-stage .family-partner-link.marriage {
+  height: 7px;
+  border-top: 2px solid #71645c;
+  border-bottom: 2px solid #71645c;
+  background: transparent;
+}
+
+.tree-stage .family-partner-link.partnership {
+  height: 0;
+  border-top: 3px dashed #71645c;
+  background: transparent;
+}
+
+.family-union-annotation {
+  color: #51453f;
+  font-family: inherit;
+  font-size: 0.55rem;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.family-partner-link .family-union-annotation {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateX(-50%);
+}
+
+.family-union-annotation.svg-annotation {
+  dominant-baseline: auto;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.96);
+  stroke-linejoin: round;
+  stroke-width: 5px;
+  text-anchor: middle;
+}
+
+.family-remarriage-link.partnership,
+.family-partner-network-link.partnership,
+.family-cross-partner-link.partnership {
+  stroke-dasharray: 7 6;
+  stroke-linecap: butt;
+}

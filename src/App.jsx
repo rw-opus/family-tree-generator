@@ -245,8 +245,14 @@ export function App() {
       buildCausaMortisShareCoverage(
         currentTree.people,
         propertyReport.startingOwnership.isComplete ? activeProperties : [],
+        currentTree.outsideParties,
       ),
-    [activeProperties, currentTree.people, propertyReport.startingOwnership.isComplete],
+    [
+      activeProperties,
+      currentTree.outsideParties,
+      currentTree.people,
+      propertyReport.startingOwnership.isComplete,
+    ],
   );
   const selectedCaseDependencyLabels = useMemo(() => {
     const relationshipLabels = new Set([
@@ -463,7 +469,9 @@ export function App() {
   };
 
   const updatePeople = (people, options) => {
-    setTree(reconcilePeopleUpdate(currentTree, activeFamilyGroupId, people, options));
+    setTree((current) =>
+      reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people, options),
+    );
   };
 
   const removePerson = (personId) => {
@@ -711,6 +719,7 @@ export function App() {
             {panelTab === "person" && (
               <PersonInspector
                 people={currentTree.people}
+                outsideParties={currentTree.outsideParties}
                 familyPersonIds={activeFamilyGroup?.personIds || []}
                 properties={activeProperties}
                 ownershipByPerson={ownershipByPerson}
@@ -731,6 +740,9 @@ export function App() {
                 onDeletePerson={removePerson}
                 onBackToTree={() => setDashboardOpen(false)}
                 onChange={updatePeople}
+                onOutsidePartiesChange={(outsideParties) =>
+                  setTree((current) => ({ ...normaliseTree(current), outsideParties }))
+                }
               />
             )}
             {panelTab === "settings" && (

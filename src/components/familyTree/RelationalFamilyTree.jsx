@@ -2,7 +2,13 @@ import { CrossBranchUnionLayer } from "./CrossBranchUnionLayer.jsx";
 import { MultiplePartnerHousehold } from "./MultiplePartnerHousehold.jsx";
 import { ParentlessSiblingCluster } from "./ParentlessSiblingCluster.jsx";
 import { PartnerNetworkHousehold } from "./PartnerNetworkHousehold.jsx";
+import {
+  partnerRelationship,
+  partnerRelationshipAnnotation,
+  partnerRelationshipClass,
+} from "./partnerRelationship.js";
 import { compactNodeWidth, PARTNER_LINK_WIDTH } from "./treePresentation.js";
+import "./PartnerRelationship.css";
 
 function buildChildrenByParent(people, peopleById) {
   const childrenByParent = new Map();
@@ -63,6 +69,14 @@ function partnershipComponent(startId, unionNeighboursById) {
 
 function pairKey(personIds) {
   return [...personIds].sort().join("::");
+}
+
+function unionRelationship(firstPerson, secondPerson) {
+  const hasSpouseLink =
+    (firstPerson?.spouseIds || []).includes(secondPerson?.id) ||
+    (secondPerson?.spouseIds || []).includes(firstPerson?.id);
+
+  return partnerRelationship(firstPerson, secondPerson, hasSpouseLink ? "marriage" : "partnership");
 }
 
 function validParentIds(person, peopleById) {
@@ -131,7 +145,14 @@ function buildUnionPairs(people, peopleById) {
     if (parentIds.length !== 2) return null;
 
     const key = pairKey(parentIds);
-    if (!pairs.has(key)) pairs.set(key, { key, parentIds, children: [] });
+    if (!pairs.has(key)) {
+      pairs.set(key, {
+        key,
+        parentIds,
+        children: [],
+        relationship: unionRelationship(peopleById.get(parentIds[0]), peopleById.get(parentIds[1])),
+      });
+    }
     return pairs.get(key);
   };
 
@@ -175,6 +196,10 @@ function groupChildrenByUnion(people, householdIds, peopleById, excludedUnionKey
     const group = childGroups.get(key) || {
       parentIds: [...new Set(parentIds)],
       children: [],
+      relationship:
+        parentIds.length === 2
+          ? unionRelationship(peopleById.get(parentIds[0]), peopleById.get(parentIds[1]))
+          : null,
     };
     group.children.push(child);
     childGroups.set(key, group);
@@ -183,7 +208,7 @@ function groupChildrenByUnion(people, householdIds, peopleById, excludedUnionKey
   return childGroups;
 }
 
-function includeChildlessUnions(childGroups, householdIds, unionNeighboursById) {
+function includeChildlessUnions(childGroups, householdIds, unionNeighboursById, peopleById) {
   const unionGroups = new Map(childGroups);
   const householdIdSet = new Set(householdIds);
 
@@ -194,7 +219,14 @@ function includeChildlessUnions(childGroups, householdIds, unionNeighboursById) 
       const parentIds = [personId, partnerId].sort();
       const key = pairKey(parentIds);
       if (!unionGroups.has(key)) {
-        unionGroups.set(key, { parentIds, children: [] });
+        unionGroups.set(key, {
+          parentIds,
+          children: [],
+          relationship: unionRelationship(
+            peopleById.get(parentIds[0]),
+            peopleById.get(parentIds[1]),
+          ),
+        });
       }
     });
   });
@@ -203,6 +235,7 @@ function includeChildlessUnions(childGroups, householdIds, unionNeighboursById) 
     unionGroups.set(householdIds[0], {
       parentIds: [householdIds[0]],
       children: [],
+      relationship: null,
     });
   }
 
@@ -302,7 +335,12 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
     householdIds.forEach((personId) => rendered.add(personId));
 
     const childGroups = groupChildrenByUnion(people, householdIds, peopleById, crossUnionKeys);
-    const unionGroups = includeChildlessUnions(childGroups, householdIds, unionNeighboursById);
+    const unionGroups = includeChildlessUnions(
+      childGroups,
+      householdIds,
+      unionNeighboursById,
+      peopleById,
+    );
     const nextTrail = new Set([...trail, ...householdIds]);
     const anchorId = householdIds.reduce((currentAnchorId, personId) => {
       const currentPartners = (unionNeighboursById.get(currentAnchorId) || []).filter((partnerId) =>
@@ -385,6 +423,9 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
               const children = [...group.children].sort((first, second) =>
                 cachedDisplayName(first).localeCompare(cachedDisplayName(second)),
               );
+              const relationshipAnnotation = partnerRelationshipAnnotation(group.relationship);
+              const relationshipLabel =
+                group.relationship?.type === "partnership" ? "Unmarried partnership" : "Marriage";
 
               return (
                 <div className="family-union-block" key={key}>
@@ -399,7 +440,23 @@ export function RelationalFamilyTree({ people, displayName, cardName, renderCard
                   >
                     {parents.map((person, index) => (
                       <span className="family-parent-node" key={`${key}-${person.id}`}>
-                        {index > 0 && <span className="family-partner-link" aria-hidden="true" />}
+                        {index > 0 && (
+                          <span
+                            aria-label={`${relationshipLabel}${
+                              relationshipAnnotation ? `, ${relationshipAnnotation}` : ""
+                            }`}
+                            className={`family-partner-link ${partnerRelationshipClass(
+                              group.relationship,
+                            )}`}
+                            role="img"
+                          >
+                            {relationshipAnnotation && (
+                              <span className="family-union-annotation">
+                                {relationshipAnnotation}
+                              </span>
+                            )}
+                          </span>
+                        )}
                         {renderCard(person)}
                       </span>
                     ))}

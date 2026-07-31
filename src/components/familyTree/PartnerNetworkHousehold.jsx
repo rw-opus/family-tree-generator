@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { anchoredBranchOffset, anchoredIncomingPath } from "./MultiplePartnerHousehold.jsx";
+import { partnerRelationshipAnnotation, partnerRelationshipClass } from "./partnerRelationship.js";
 import "./PartnerNetworkHousehold.css";
 
 function relativeRect(node, layoutRect, scaleX, scaleY) {
@@ -117,6 +118,8 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
               : "",
           junctionX,
           junctionY: railY,
+          annotationX: junctionX,
+          annotationY: railY - 6,
         };
       });
 
@@ -184,7 +187,23 @@ export function PartnerNetworkHousehold({ anchor, people, groups, renderCard }) 
               key={group.key}
             >
               {group.parentIds.length === 2 && (
-                <path className="family-partner-network-link" d={paths.partnerPath || ""} />
+                <>
+                  <path
+                    className={`family-partner-network-link ${partnerRelationshipClass(
+                      group.relationship,
+                    )}`}
+                    d={paths.partnerPath || ""}
+                  />
+                  {partnerRelationshipAnnotation(group.relationship) && (
+                    <text
+                      className="family-union-annotation svg-annotation"
+                      x={paths.annotationX || 0}
+                      y={paths.annotationY || 0}
+                    >
+                      {partnerRelationshipAnnotation(group.relationship)}
+                    </text>
+                  )}
+                </>
               )}
               {group.children.length > 0 && (
                 <path className="family-partner-network-child-link" d={paths.childPath || ""} />

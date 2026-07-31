@@ -113,6 +113,120 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).not.toContain("Partner");
   });
 
+  it("distinguishes marriage and partnership lines and annotates their start year", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "first",
+              fullName: "Joseph Borg",
+              spouseIds: ["second"],
+            },
+            {
+              id: "second",
+              fullName: "Maria Borg",
+              spouseIds: ["first"],
+              partnerRelationships: [
+                {
+                  personId: "first",
+                  type: "partnership",
+                  startDate: "2015-06-12",
+                },
+              ],
+            },
+          ]}
+        />,
+      ),
+    );
+
+    const partnershipLine = container.querySelector(".family-partner-link");
+    expect(partnershipLine.classList.contains("partnership")).toBe(true);
+    expect(partnershipLine.getAttribute("aria-label")).toBe("Unmarried partnership, 12-06-2015");
+    expect(partnershipLine.textContent).toBe("12-06-2015");
+
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "first",
+              fullName: "Joseph Borg",
+              spouseIds: ["second"],
+              partnerRelationships: [
+                {
+                  personId: "second",
+                  type: "marriage",
+                  startDate: "2018-03-04",
+                },
+              ],
+            },
+            {
+              id: "second",
+              fullName: "Maria Borg",
+              spouseIds: ["first"],
+            },
+          ]}
+        />,
+      ),
+    );
+
+    const marriageLine = container.querySelector(".family-partner-link");
+    expect(marriageLine.classList.contains("marriage")).toBe(true);
+    expect(marriageLine.getAttribute("aria-label")).toBe("Marriage, m. 2018");
+    expect(marriageLine.textContent).toBe("m. 2018");
+
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            {
+              id: "first",
+              fullName: "Joseph Borg",
+              spouseIds: ["second"],
+              partnerRelationships: [
+                {
+                  personId: "second",
+                  type: "marriage",
+                  startYear: "2015",
+                },
+              ],
+            },
+            {
+              id: "second",
+              fullName: "Maria Borg",
+              spouseIds: ["first"],
+            },
+          ]}
+        />,
+      ),
+    );
+    expect(container.querySelector(".family-partner-link").textContent).toBe("m. 2015");
+  });
+
+  it("treats two shared parents without a spouse link as an unmarried partnership", () => {
+    act(() =>
+      root.render(
+        <FamilyTreeCanvas
+          people={[
+            { id: "first", fullName: "Joseph Borg" },
+            { id: "second", fullName: "Maria Vella" },
+            {
+              id: "child",
+              fullName: "Anna Borg",
+              fatherId: "first",
+              motherId: "second",
+            },
+          ]}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".family-partner-link").classList.contains("partnership")).toBe(
+      true,
+    );
+  });
+
   it("uses a two-finger pinch to zoom the tree", () => {
     const onZoomChange = vi.fn();
     act(() =>
@@ -558,6 +672,11 @@ describe("FamilyTreeCanvas", () => {
               id: "person",
               fullName: "Joseph Borg",
               spouseIds: ["partner-1", "partner-2", "partner-3"],
+              partnerRelationships: [
+                { personId: "partner-1", type: "marriage", startDate: "2004-05-01" },
+                { personId: "partner-2", type: "partnership", startDate: "2015-02-03" },
+                { personId: "partner-3", type: "marriage", startDate: "2020-11-10" },
+              ],
             },
             {
               id: "partner-1",
@@ -610,6 +729,16 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll(".family-remarriage-child-link")).toHaveLength(3);
     expect(container.querySelectorAll(".family-remarriage-junction")).toHaveLength(3);
     expect(container.querySelectorAll(".family-remarriage-descendants")).toHaveLength(3);
+    expect(container.querySelectorAll(".family-remarriage-link.marriage")).toHaveLength(2);
+    expect(container.querySelectorAll(".family-remarriage-link.partnership")).toHaveLength(1);
+    expect(container.textContent).toContain("m. 2004");
+    expect(container.textContent).toContain("03-02-2015");
+    expect(container.textContent).toContain("m. 2020");
+    expect(
+      [...container.querySelectorAll(".family-remarriage-union")].map(
+        (union) => union.querySelector('[data-person-id^="partner-"]').dataset.personId,
+      ),
+    ).toEqual(["partner-1", "partner-2", "partner-3"]);
     expect(container.querySelectorAll('[data-person-id="child-1"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-person-id="child-2"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-person-id="child-3"]')).toHaveLength(1);
@@ -780,6 +909,9 @@ describe("FamilyTreeCanvas", () => {
               fatherId: "branch-one",
               motherId: "branch-one-partner",
               spouseIds: ["cousin-b"],
+              partnerRelationships: [
+                { personId: "cousin-b", type: "partnership", startDate: "2012-04-05" },
+              ],
             },
             {
               id: "cousin-b",
@@ -807,7 +939,8 @@ describe("FamilyTreeCanvas", () => {
       '.family-cross-union[data-cross-union-key="cousin-a::cousin-b"]',
     );
     expect(crossUnion).not.toBeNull();
-    expect(crossUnion.querySelector(".family-cross-partner-link")).not.toBeNull();
+    expect(crossUnion.querySelector(".family-cross-partner-link.partnership")).not.toBeNull();
+    expect(crossUnion.querySelector(".family-union-annotation").textContent).toBe("05-04-2012");
     expect(crossUnion.querySelector(".family-cross-child-link")).not.toBeNull();
     expect(crossUnion.querySelector(".family-cross-union-junction")).not.toBeNull();
 
@@ -985,6 +1118,10 @@ describe("FamilyTreeCanvas", () => {
               id: "person-b",
               fullName: "Ben Vella",
               spouseIds: ["person-a", "person-c"],
+              partnerRelationships: [
+                { personId: "person-a", type: "marriage", startDate: "2000-01-02" },
+                { personId: "person-c", type: "partnership", startDate: "2010-03-04" },
+              ],
             },
             {
               id: "person-c",
@@ -1030,6 +1167,10 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll(".family-partner-network-person")).toHaveLength(4);
     expect(container.querySelectorAll(".family-partner-network-relationship")).toHaveLength(3);
     expect(container.querySelectorAll(".family-partner-network-child-link")).toHaveLength(3);
+    expect(container.querySelectorAll(".family-partner-network-link.marriage")).toHaveLength(2);
+    expect(container.querySelectorAll(".family-partner-network-link.partnership")).toHaveLength(1);
+    expect(container.textContent).toContain("m. 2000");
+    expect(container.textContent).toContain("2010");
 
     const network = container.querySelector(".family-partner-network");
     const branchItem = network.closest(".family-child-branch-item");
