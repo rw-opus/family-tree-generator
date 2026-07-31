@@ -17,6 +17,9 @@ function edgeClassName(edge) {
     // parent is drawn exactly like anybody else.
     edge.flagged ? "flagged" : "",
     edge.kind === "partner" ? (edge.marital ? "marital" : "partnership") : "",
+    // Colours the descent of each marriage so the children of one mother read
+    // as a set even where the bars run close together.
+    Number.isFinite(edge.marriageIndex) ? `marriage-${Math.min(edge.marriageIndex, 3)}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -25,10 +28,26 @@ function edgeClassName(edge) {
 function UnionMarker({ union }) {
   if (union.parentIds.length !== 2) return null;
 
+  const y = union.markerY ?? union.y;
+
+  // Where somebody married more than once the marker is numbered, and the same
+  // number is repeated on the bar their children hang from, so each child can
+  // be read back to the right marriage.
+  if (union.numbered) {
+    return (
+      <g className={`tree-union-marker numbered ${union.marital ? "marital" : "partnership"}`}>
+        <circle cx={union.x} cy={y} r={8} />
+        <text x={union.x} y={y} dy="0.34em" textAnchor="middle">
+          {union.marriageIndex + 1}
+        </text>
+      </g>
+    );
+  }
+
   return (
     <g className={`tree-union-marker ${union.marital ? "marital" : "partnership"}`}>
-      <circle cx={union.x} cy={union.y} r={union.marital ? 5 : 4} />
-      {union.marital && <circle className="union-marker-inner" cx={union.x} cy={union.y} r={2} />}
+      <circle cx={union.x} cy={y} r={union.marital ? 5 : 4} />
+      {union.marital && <circle className="union-marker-inner" cx={union.x} cy={y} r={2} />}
     </g>
   );
 }

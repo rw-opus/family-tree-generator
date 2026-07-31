@@ -235,3 +235,110 @@ describe("buildFamilyTreeLayout", () => {
     );
   });
 });
+
+describe("a person married more than once", () => {
+  /** Nicola marries three times and has a child by each wife. */
+  const thriceMarried = () => [
+    person("nicola", { spouseIds: ["carmela", "margherita", "francesca"] }),
+    person("carmela", { spouseIds: ["nicola"] }),
+    person("margherita", { spouseIds: ["nicola"] }),
+    person("francesca", { spouseIds: ["nicola"] }),
+    person("child-1", { fatherId: "nicola", motherId: "carmela" }),
+    person("child-2", { fatherId: "nicola", motherId: "margherita" }),
+    person("child-3", { fatherId: "nicola", motherId: "francesca" }),
+  ];
+
+  const unionWith = (layout, motherId) =>
+    layout.unions.find((union) => union.parentIds.includes(motherId));
+
+  it("builds one union per marriage", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+    const withChildren = layout.unions.filter((union) => union.childIds.length);
+
+    expect(withChildren).toHaveLength(3);
+  });
+
+  it("numbers each marriage so its children can be read back", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+    const indices = ["carmela", "margherita", "francesca"]
+      .map((id) => unionWith(layout, id).marriageIndex)
+      .sort();
+
+    expect(indices).toEqual([0, 1, 2]);
+    layout.unions.forEach((union) => expect(union.numbered).toBe(true));
+  });
+
+  it("gives every marriage its own sibling bar depth", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+    const barDepths = layout.unions
+      .filter((union) => union.childIds.length)
+      .map((union) => union.y);
+
+    // Sharing one bar is what made the three sets of children indistinguishable.
+    expect(new Set(barDepths).size).toBe(3);
+  });
+
+  it("keeps every sibling bar clear of the children's row", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+
+    layout.unions
+      .filter((union) => union.childIds.length)
+      .forEach((union) => {
+        expect(union.y).toBeGreaterThan(union.parentBottom);
+        expect(union.y).toBeLessThan(union.childTop);
+      });
+  });
+
+  it("carries the marriage number onto each child's descent edge", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+    const edgeFor = (childId) =>
+      layout.edges.find((edge) => edge.kind === "descent" && edge.childId === childId);
+
+    expect(edgeFor("child-1").marriageIndex).toBe(unionWith(layout, "carmela").marriageIndex);
+    expect(edgeFor("child-2").marriageIndex).toBe(unionWith(layout, "margherita").marriageIndex);
+    expect(edgeFor("child-3").marriageIndex).toBe(unionWith(layout, "francesca").marriageIndex);
+  });
+
+  it("does not run a partner bar through an intervening spouse", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+    const cards = new Map(layout.nodes.map((node) => [node.id, node]));
+
+    layout.edges
+      .filter((edge) => edge.kind === "partner")
+      .forEach((edge) => {
+        const spanned = layout.nodes.filter(
+          (node) =>
+            node.generation === cards.get("nicola").generation &&
+            node.x + node.width / 2 > Math.min(edge.from.x, edge.to.x) + 1 &&
+            node.x + node.width / 2 < Math.max(edge.from.x, edge.to.x) - 1,
+        );
+        expect(spanned).toHaveLength(0);
+      });
+  });
+});
+
+describe("separate families on one chart", () => {
+  it("packs unrelated families together instead of leaving a void", () => {
+    const people = [
+      person("a1", { spouseIds: ["a2"] }),
+      person("a2", { spouseIds: ["a1"] }),
+      ...Array.from({ length: 8 }, (_, index) =>
+        person(`a-child-${index}`, { fatherId: "a1", motherId: "a2" }),
+      ),
+      person("b1", { spouseIds: ["b2"] }),
+      person("b2", { spouseIds: ["b1"] }),
+      person("b-child", { fatherId: "b1", motherId: "b2" }),
+    ];
+    const layout = buildFamilyTreeLayout(people);
+    const ids = new Set(["b1", "b2", "b-child"]);
+    const second = layout.nodes.filter((node) => ids.has(node.id));
+    const first = layout.nodes.filter((node) => !ids.has(node.id));
+
+    const firstRight = Math.max(...first.map((node) => node.x + node.width));
+    const secondLeft = Math.min(...second.map((node) => node.x));
+
+    // The families must not interleave, and must not sit oceans apart.
+    expect(secondLeft).toBeGreaterThanOrEqual(firstRight);
+    expect(secondLeft - firstRight).toBeLessThanOrEqual(CARD_WIDTH * 1.5);
+  });
+});

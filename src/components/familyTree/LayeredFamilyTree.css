@@ -56,6 +56,34 @@
   stroke: none;
 }
 
+.tree-union-marker.numbered text {
+  fill: var(--tree-canvas, #ffffff);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tree-union-marker.numbered.partnership text {
+  fill: var(--tree-partnership, #b45309);
+}
+
+/* Successive marriages of the same person, so the children of each mother read
+   as one set. */
+.tree-edge.marriage-0 {
+  stroke: var(--tree-marriage-0, #1d4ed8);
+}
+
+.tree-edge.marriage-1 {
+  stroke: var(--tree-marriage-1, #047857);
+}
+
+.tree-edge.marriage-2 {
+  stroke: var(--tree-marriage-2, #7c3aed);
+}
+
+.tree-edge.marriage-3 {
+  stroke: var(--tree-marriage-3, #be123c);
+}
+
 .tree-node {
   position: absolute;
   display: flex;

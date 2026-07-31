@@ -29,6 +29,13 @@ const ORDERING_PASSES = 6;
 const CENTRING_PASSES = 8;
 const RELAX_ROUNDS = 3;
 
+// Each successive marriage of the same person drops its sibling bar a little
+// lower, so the children of each are read off their own bar.
+const UNION_BAR_OFFSET = 14;
+const UNION_BAR_STEP = 9;
+const UNION_BAR_MIN_CLEARANCE = 6;
+const COMPONENT_GAP = CARD_WIDTH;
+
 const text = (value) => String(value ?? "").trim();
 
 const mean = (values) => values.reduce((total, value) => total + value, 0) / values.length;
@@ -472,39 +479,95 @@ export function buildFamilyTreeLayout(people = []) {
     };
   });
 
+  // Where somebody married more than once, each marriage needs its own sibling
+  // bar at its own depth. Sharing one bar makes the children of three different
+  // mothers indistinguishable, which is the whole point of the chart.
+  const marriageIndexByUnion = new Map();
+  const unionsTakenByParent = new Map();
+
+  [...unions]
+    .filter((union) => union.childIds.length || union.parentIds.length === 2)
+    .sort((first, second) => (unionCentre(first) ?? 0) - (unionCentre(second) ?? 0))
+    .forEach((union) => {
+      const index = Math.max(
+        0,
+        ...union.parentIds.map((parentId) => unionsTakenByParent.get(parentId) || 0),
+      );
+      marriageIndexByUnion.set(union.id, index);
+      union.parentIds.forEach((parentId) => unionsTakenByParent.set(parentId, index + 1));
+    });
+
+  const marriageCountByParent = new Map();
+  unions.forEach((union) =>
+    union.parentIds.forEach((parentId) =>
+      marriageCountByParent.set(parentId, (marriageCountByParent.get(parentId) || 0) + 1),
+    ),
+  );
+
   const placedUnions = unions
     .map((union) => {
       const centre = unionCentre(union);
       if (centre === null) return null;
       const generation = unionParentGeneration(union);
       const parentBottom = rowTop(generation) + CARD_HEIGHT;
+      const marriageIndex = marriageIndexByUnion.get(union.id) || 0;
+      const childTop = rowTop(generation + 1);
+      const barY = Math.min(
+        parentBottom + UNION_BAR_OFFSET + marriageIndex * UNION_BAR_STEP,
+        childTop - UNION_BAR_MIN_CLEARANCE,
+      );
       return {
         ...union,
         x: centre,
-        y: parentBottom + ROW_GAP / 2,
+        y: barY,
         generation,
         parentBottom,
-        childTop: rowTop(generation + 1),
+        childTop,
+        marriageIndex,
+        // Only worth numbering on the chart when a parent married more than once.
+        numbered: union.parentIds.some((parentId) => marriageCountByParent.get(parentId) > 1),
       };
     })
     .filter(Boolean);
 
+  // Separate families were each centred over their own descendants with nothing
+  // pulling them together, which left very large voids between them.
+  const componentOf = (() => {
+    const { find, union: join } = unionFind(cleanPeople.map((person) => person.id));
+    cleanPeople.forEach((person) => {
+      [person.fatherId, person.motherId, ...(person.spouseIds || []), ...(person.siblingIds || [])]
+        .filter((relatedId) => peopleById.has(relatedId))
+        .forEach((relatedId) => join(person.id, relatedId));
+    });
+    return find;
+  })();
+
   const edges = [];
 
   placedUnions.forEach((union) => {
-    // The bar joining the partners, carrying the marriage marker.
-    if (union.parentIds.length === 2) {
-      const centres = union.parentIds.map(centreOf).filter((value) => value !== null);
-      if (centres.length === 2) {
-        edges.push({
-          id: `${union.id}:partners`,
-          kind: "partner",
-          marital: union.marital,
-          type: union.type,
-          from: { x: Math.min(...centres), y: rowTop(union.generation) + CARD_HEIGHT / 2 },
-          to: { x: Math.max(...centres), y: rowTop(union.generation) + CARD_HEIGHT / 2 },
-        });
-      }
+    const component = componentOf(union.parentIds[0]);
+    const parentCentres = union.parentIds.map(centreOf).filter((value) => value !== null);
+    const barY = union.y;
+    // Two partners side by side get the classic bar across the gap between them.
+    // A later marriage sits further along the row, so its bar would strike
+    // through whoever stands in between — those join at the union marker below.
+    const adjacent =
+      parentCentres.length === 2 &&
+      Math.abs(Math.abs(parentCentres[0] - parentCentres[1]) - (CARD_WIDTH + PARTNER_GAP)) < 1;
+
+    union.markerY = adjacent ? rowTop(union.generation) + CARD_HEIGHT / 2 : barY;
+
+    if (adjacent) {
+      edges.push({
+        id: `${union.id}:partners`,
+        kind: "partner",
+        component,
+        marital: union.marital,
+        type: union.type,
+        marriageIndex: union.marriageIndex,
+        from: { x: Math.min(...parentCentres), y: union.markerY },
+        to: { x: Math.max(...parentCentres), y: union.markerY },
+      });
     }
 
     if (!union.childIds.length) return;
@@ -514,16 +577,22 @@ export function buildFamilyTreeLayout(people = []) {
       .filter((entry) => entry.centre !== null);
     if (!childCentres.length) return;
 
-    const barY = union.y;
+    // An adjacent couple drops once from the middle of their own bar. Anything
+    // else drops from each parent, so a remarriage is traceable to both people.
+    const stemOrigins = adjacent
+      ? [{ id: "pair", x: union.x, y: union.markerY }]
+      : union.parentIds
+          .map((parentId) => ({ id: parentId, x: centreOf(parentId), y: union.parentBottom }))
+          .filter((origin) => origin.x !== null);
 
-    union.parentIds.forEach((parentId) => {
-      const centre = centreOf(parentId);
-      if (centre === null) return;
+    stemOrigins.forEach((origin) => {
       edges.push({
-        id: `${union.id}:stem:${parentId}`,
+        id: `${union.id}:stem:${origin.id}`,
         kind: "stem",
+        component,
         flagged: union.flagged,
-        from: { x: centre, y: union.parentBottom },
+        marriageIndex: union.marriageIndex,
+        from: { x: origin.x, y: origin.y },
         to: { x: union.x, y: barY },
       });
     });
@@ -531,7 +600,9 @@ export function buildFamilyTreeLayout(people = []) {
     edges.push({
       id: `${union.id}:bar`,
       kind: "sibling-bar",
+      component,
       flagged: union.flagged,
+      marriageIndex: union.marriageIndex,
       from: { x: Math.min(union.x, ...childCentres.map((entry) => entry.centre)), y: barY },
       to: { x: Math.max(union.x, ...childCentres.map((entry) => entry.centre)), y: barY },
     });
@@ -540,7 +611,9 @@ export function buildFamilyTreeLayout(people = []) {
       edges.push({
         id: `${union.id}:child:${childId}`,
         kind: "descent",
+        component,
         flagged: union.flagged,
+        marriageIndex: union.marriageIndex,
         childId,
         from: { x: centre, y: barY },
         to: { x: centre, y: rowTop(generations.get(childId)) },
@@ -548,22 +621,42 @@ export function buildFamilyTreeLayout(people = []) {
     });
   });
 
-  const rightEdge = Math.max(...nodes.map((node) => node.x + node.width));
-  const leftEdge = Math.min(...nodes.map((node) => node.x));
-  const shift = CANVAS_PADDING - leftEdge;
+  const bounds = new Map();
+  nodes.forEach((node) => {
+    const key = componentOf(node.id);
+    const box = bounds.get(key) || { min: Infinity, max: -Infinity };
+    bounds.set(key, {
+      min: Math.min(box.min, node.x),
+      max: Math.max(box.max, node.x + node.width),
+    });
+  });
 
-  const shifted = (point) => ({ ...point, x: point.x + shift });
+  const shiftByComponent = new Map();
+  let cursor = CANVAS_PADDING;
+  [...bounds.entries()]
+    .sort((first, second) => first[1].min - second[1].min)
+    .forEach(([key, box]) => {
+      shiftByComponent.set(key, cursor - box.min);
+      cursor += box.max - box.min + COMPONENT_GAP;
+    });
+
+  const shiftFor = (key) => shiftByComponent.get(key) || 0;
+  const movePoint = (point, key) => ({ ...point, x: point.x + shiftFor(key) });
 
   return {
     generationCount: maxGeneration + 1,
-    width: rightEdge - leftEdge + CANVAS_PADDING * 2,
+    width: Math.max(0, cursor - COMPONENT_GAP) + CANVAS_PADDING,
     height: rowTop(maxGeneration) + CARD_HEIGHT + CANVAS_PADDING,
-    nodes: nodes.map((node) => ({ ...node, x: node.x + shift })),
-    unions: placedUnions.map((union) => ({ ...union, x: union.x + shift })),
+    nodes: nodes.map((node) => ({ ...node, x: node.x + shiftFor(componentOf(node.id)) })),
+    unions: placedUnions.map((union) => ({
+      ...union,
+      x: union.x + shiftFor(componentOf(union.parentIds[0])),
+      markerY: union.markerY,
+    })),
     edges: edges.map((edge) => ({
       ...edge,
-      from: shifted(edge.from),
-      to: shifted(edge.to),
+      from: movePoint(edge.from, edge.component),
+      to: movePoint(edge.to, edge.component),
     })),
     peopleById,
   };
