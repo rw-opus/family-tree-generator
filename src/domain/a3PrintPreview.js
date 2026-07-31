@@ -20,6 +20,7 @@ const defaultViewportHeight = A3_PRINT_VIEWPORT_HEIGHT_PX;
 const defaultOverlap = A3_PRINT_OVERLAP_PX;
 
 export const A3_MIN_READABLE_SCALE = 0.7;
+export const A3_MIN_COMPACT_SCALE = 0.25;
 
 export function a3PrintableWidthForColumns(
   columns,
@@ -154,6 +155,52 @@ export function resolveA3HeightScale({
   };
 }
 
+/**
+ * Resolves the automatic page fit before applying the user's size choice.
+ *
+ * Applying the size first allowed height fitting to overwrite it completely:
+ * a tall tree rendered at exactly the same 55% whether 100%, 85%, or 70% was
+ * selected. The size selector is deliberately the last step so each option has
+ * a visible and predictable effect.
+ */
+export function resolveA3PreviewScale({
+  contentWidth,
+  contentHeight,
+  sizeFactor = 1,
+  requestedColumns = "auto",
+  fitHeight = true,
+  viewportWidth = defaultViewportWidth,
+  viewportHeight = defaultViewportHeight,
+  overlap = defaultOverlap,
+}) {
+  const requestedSize = positiveNumber(sizeFactor, 1);
+  const heightFit = fitHeight
+    ? resolveA3HeightScale({
+        contentHeight,
+        preferredScale: 1,
+        viewportHeight,
+      })
+    : { scale: 1, fitsAtPreferredScale: true };
+  const minimumScale = fitHeight ? A3_MIN_COMPACT_SCALE : A3_MIN_READABLE_SCALE;
+  const printArea = resolveA3PrintArea({
+    contentWidth,
+    preferredScale: heightFit.scale,
+    requestedColumns,
+    viewportWidth,
+    overlap,
+    minimumScale,
+  });
+
+  return {
+    ...printArea,
+    scale: printArea.scale * requestedSize,
+    fittedScale: printArea.scale,
+    sizeFactor: requestedSize,
+    minimumScale,
+    fitsAtPreferredHeight: heightFit.fitsAtPreferredScale,
+  };
+}
+
 const previewCss = `
   :root {
     color: #10231c;
@@ -163,14 +210,26 @@ const previewCss = `
 
   * { box-sizing: border-box; }
 
+  html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
+    display: flex;
+    width: 100%;
+    height: 100%;
     margin: 0;
+    overflow: hidden;
     background: #e8ece9;
+    flex-direction: column;
   }
 
   .a3-preview-toolbar {
-    position: sticky;
+    position: relative;
     z-index: 100;
+    flex: 0 0 auto;
     top: 0;
     display: flex;
     align-items: center;
@@ -180,6 +239,15 @@ const previewCss = `
     background: rgba(255, 255, 255, 0.97);
     padding: 10px 16px;
     box-shadow: 0 5px 18px rgba(18, 48, 36, 0.1);
+  }
+
+  .a3-preview-scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .a3-preview-heading {
@@ -226,13 +294,18 @@ const previewCss = `
 
   .a3-preview-pages {
     display: grid;
+    align-content: start;
     justify-items: center;
     gap: 24px;
+    min-height: max-content;
+    overflow: visible;
     padding: 24px 16px 40px;
   }
 
   .a3-page-shell {
     position: relative;
+    display: block;
+    flex: none;
     break-after: page;
     page-break-after: always;
   }
@@ -372,8 +445,16 @@ const previewCss = `
 
   @media print {
     :root,
+    html,
     body {
+      width: auto;
+      height: auto;
+      overflow: visible !important;
       background: #fff !important;
+    }
+
+    body {
+      display: block;
     }
 
     .a3-preview-toolbar {
@@ -383,6 +464,11 @@ const previewCss = `
     .a3-preview-pages {
       display: block;
       padding: 0;
+    }
+
+    .a3-preview-scroll {
+      height: auto;
+      overflow: visible !important;
     }
 
     .a3-page-shell {
@@ -559,7 +645,7 @@ export async function openA3PrintPreview(node, title = "Family tree") {
     "Landscape A3 · print at 100% / actual size · disable browser headers and footers",
   );
   const scaleLabel = makeElement(previewWindow.document, "label", "");
-  const scaleText = makeElement(previewWindow.document, "span", "", "Tree scale");
+  const scaleText = makeElement(previewWindow.document, "span", "", "Tree size after fitting");
   const scaleSelect = makeElement(previewWindow.document, "select", "");
   const areaLabel = makeElement(previewWindow.document, "label", "");
   const areaText = makeElement(previewWindow.document, "span", "", "Print area width");
@@ -569,12 +655,13 @@ export async function openA3PrintPreview(node, title = "Family tree") {
   const heightSelect = makeElement(previewWindow.document, "select", "");
   const printButton = makeElement(previewWindow.document, "button", "", "Print all A3 pages");
   const closeButton = makeElement(previewWindow.document, "button", "", "Close");
+  const scrollViewport = makeElement(previewWindow.document, "div", "a3-preview-scroll");
   const pages = makeElement(previewWindow.document, "main", "a3-preview-pages");
 
   [
-    ["1", "100% · most readable"],
-    ["0.85", "85% · fewer sheets"],
-    ["0.7", "70% · compact"],
+    ["1", "100% of fitted size"],
+    ["0.85", "85% of fitted size"],
+    ["0.7", "70% of fitted size"],
   ].forEach(([value, label]) => {
     const option = makeElement(previewWindow.document, "option", "", label);
     option.value = value;
@@ -585,6 +672,8 @@ export async function openA3PrintPreview(node, title = "Family tree") {
     ["auto", "Automatic"],
     ["1", "1 A3 sheet wide"],
     ["2", "2 A3 sheets wide"],
+    ["3", "3 A3 sheets wide"],
+    ["4", "4 A3 sheets wide"],
   ].forEach(([value, label]) => {
     const option = makeElement(previewWindow.document, "option", "", label);
     option.value = value;
@@ -608,29 +697,23 @@ export async function openA3PrintPreview(node, title = "Family tree") {
   printButton.dataset.action = "print";
   closeButton.type = "button";
   toolbar.append(heading, scaleLabel, areaLabel, heightLabel, printButton, closeButton);
-  previewWindow.document.body.append(toolbar, pages);
+  scrollViewport.append(pages);
+  previewWindow.document.body.append(toolbar, scrollViewport);
 
   await waitForPreviewStyles(previewWindow);
   const dimensions = measurePrintableTree(sourceCanvas, previewWindow.document);
   const renderPages = () => {
-    const printArea = resolveA3PrintArea({
+    const printArea = resolveA3PreviewScale({
       contentWidth: dimensions.width,
-      preferredScale: scaleSelect.value,
+      contentHeight: dimensions.height,
+      sizeFactor: scaleSelect.value,
       requestedColumns: areaSelect.value,
+      fitHeight: heightSelect.value === "fit",
     });
-    // Height is fitted after width, so a tall tree is scaled onto a single row
-    // of sheets rather than being cut across two.
-    const heightFit =
-      heightSelect.value === "fit"
-        ? resolveA3HeightScale({
-            contentHeight: dimensions.height,
-            preferredScale: printArea.scale,
-          })
-        : { scale: printArea.scale, fitsAtPreferredScale: true };
     const layout = calculateA3Tiles({
       contentWidth: dimensions.width,
       contentHeight: dimensions.height,
-      scale: heightFit.scale,
+      scale: printArea.scale,
     });
     pages.replaceChildren(
       ...layout.tiles.map((tile, index) =>
@@ -647,12 +730,18 @@ export async function openA3PrintPreview(node, title = "Family tree") {
     );
     const minimumScaleNote =
       printArea.requestedColumns && layout.columns > printArea.requestedColumns
-        ? ` · minimum ${Math.round(A3_MIN_READABLE_SCALE * 100)}% readability requires ${layout.columns} sheets wide`
+        ? ` · minimum fitted scale ${Math.round(
+            printArea.minimumScale * 100,
+          )}% requires ${layout.columns} sheets wide`
         : "";
     headingHelp.textContent = `A3 landscape · ${layout.tiles.length} ${
       layout.tiles.length === 1 ? "sheet" : "sheets"
-    } · tree at ${Math.round(layout.scale * 100)}%${minimumScaleNote} · ${A3_PRINT_LAYOUT.overlapMm} mm overlap · print at 100% / actual size · disable browser headers and footers`;
+    } · ${layout.columns} across × ${layout.rows} high · tree at ${Math.round(
+      layout.scale * 100,
+    )}%${minimumScaleNote} · ${A3_PRINT_LAYOUT.overlapMm} mm overlap · print at 100% / actual size · disable browser headers and footers`;
     applyScreenPageScale(previewWindow);
+    scrollViewport.scrollTop = 0;
+    scrollViewport.scrollLeft = 0;
   };
 
   scaleSelect.addEventListener("change", renderPages);

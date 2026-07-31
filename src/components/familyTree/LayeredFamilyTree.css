@@ -12,9 +12,10 @@
 
 .tree-edge {
   fill: none;
-  stroke: var(--tree-connector, #64748b);
+  stroke: var(--tree-connector, #71645c);
   stroke-width: 1.5;
   stroke-linecap: square;
+  stroke-linejoin: miter;
 }
 
 /* Only a recorded couple who are not married is dashed. A person with one
@@ -26,13 +27,13 @@
 
 /* Marriage: two parallel lines. Anyone not married: one dotted line. */
 .tree-edge-partner.marital {
-  stroke: var(--tree-marriage, #1d4ed8);
+  stroke: var(--tree-marriage, #71645c);
   stroke-width: 1.5;
   stroke-dasharray: none;
 }
 
 .tree-edge-partner.partnership {
-  stroke: var(--tree-partnership, #b45309);
+  stroke: var(--tree-partnership, #71645c);
   stroke-width: 1.75;
   stroke-dasharray: 2 3;
 }
@@ -41,35 +42,15 @@
   stroke-width: 1.75;
 }
 
-/* Successive marriages of the same person, so the children of each mother read
-   as one set. Colour is a convenience only — the marriage double line, the
-   dotted partnership line and the separate bar depths all survive a black and
-   white print. */
-.tree-edge.marriage-0 {
-  stroke: var(--tree-marriage-0, #1d4ed8);
-}
-
-.tree-edge.marriage-1 {
-  stroke: var(--tree-marriage-1, #047857);
-}
-
-.tree-edge.marriage-2 {
-  stroke: var(--tree-marriage-2, #7c3aed);
-}
-
-.tree-edge.marriage-3 {
-  stroke: var(--tree-marriage-3, #be123c);
-}
-
 .tree-node {
   position: absolute;
   display: flex;
+  align-items: flex-start;
   box-sizing: border-box;
 }
 
-/* The given name is what identifies a person on the chart, so it carries the
-   weight. The surname is only shown where it differs from the father's, and is
-   set smaller when it is. */
+/* The given name carries the visual weight. The surname is always present and
+   set smaller so a wide imported generation remains compact. */
 .tree-stage .layered-family-tree .family-node-name {
   font-size: 0.92rem;
   font-weight: 700;

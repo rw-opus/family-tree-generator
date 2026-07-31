@@ -82,15 +82,7 @@ export function FamilyPersonCard({
   const surnameAtBirth = capitalisedName(person.surnameAtBirth);
   const differentBirthSurname =
     surnameAtBirth && surnameAtBirth.localeCompare(surname, "en-MT", { sensitivity: "base" }) !== 0;
-  // A descendant carrying the father's surname does not need it repeated on
-  // every card; it is only worth the space where it differs.
-  const fatherSurname = capitalisedName(
-    personSurname(people.find((candidate) => candidate.id === person.fatherId) || {}),
-  );
-  const showSurname =
-    Boolean(surname) &&
-    (!fatherSurname ||
-      fatherSurname.localeCompare(surname, "en-MT", { sensitivity: "base" }) !== 0);
+  const showSurname = Boolean(surname);
   const personName =
     !person.isPlaceholder && String(person.fullName || "").trim()
       ? capitalisedName(personDisplayName(person, people))

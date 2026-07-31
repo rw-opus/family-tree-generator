@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CARD_GAP,
+  CARD_HEIGHT,
   CARD_WIDTH,
+  ROW_GAP,
   assignGenerations,
   buildFamilyTreeLayout,
   buildUnions,
@@ -117,6 +119,31 @@ describe("buildUnions", () => {
     expect(union.parentIds).toEqual(["mother"]);
   });
 
+  it("draws a one-parent child from that parent's sole recorded marriage", () => {
+    const people = [
+      person("mother", { spouseIds: ["father"] }),
+      person("father", { spouseIds: ["mother"] }),
+      person("child", { motherId: "mother" }),
+    ];
+    const union = buildUnions(people).find((candidate) => candidate.childIds.includes("child"));
+
+    expect(union.parentIds).toEqual(expect.arrayContaining(["mother", "father"]));
+    expect(union.marital).toBe(true);
+  });
+
+  it("does not guess a missing parent when the recorded parent has several spouses", () => {
+    const people = [
+      person("mother", { spouseIds: ["first", "second"] }),
+      person("first", { spouseIds: ["mother"] }),
+      person("second", { spouseIds: ["mother"] }),
+      person("child", { motherId: "mother" }),
+    ];
+    const union = buildUnions(people).find((candidate) => candidate.childIds.includes("child"));
+
+    expect(union.parentIds).toEqual(["mother"]);
+    expect(union.type).toBe("single");
+  });
+
   it("keeps a childless marriage so the union is still drawn", () => {
     const people = [person("a", { spouseIds: ["b"] }), person("b", { spouseIds: ["a"] })];
     expect(buildUnions(people)).toHaveLength(1);
@@ -145,6 +172,20 @@ describe("buildFamilyTreeLayout", () => {
     const rowTops = [...new Set(layout.nodes.map((node) => node.y))].sort((a, b) => a - b);
     const gaps = rowTops.slice(1).map((top, index) => top - rowTops[index]);
     expect(new Set(gaps).size).toBe(1);
+  });
+
+  it("sets each row pitch from the tallest measured card in the generation", () => {
+    const layout = buildFamilyTreeLayout(threeGenerationFamily(), {
+      nodeHeights: { grandfather: 184, grandmother: 132 },
+    });
+    const cards = nodesById(layout);
+
+    expect(cards.get("grandfather").height).toBe(184);
+    expect(cards.get("grandmother").height).toBe(132);
+    expect(cards.get("father").y).toBe(cards.get("grandfather").y + 184 + ROW_GAP);
+    expect(cards.get("father").y).toBeGreaterThan(
+      cards.get("grandmother").y + CARD_HEIGHT + ROW_GAP,
+    );
   });
 
   it("never overlaps two cards on the same row", () => {
@@ -313,7 +354,7 @@ describe("a person married more than once", () => {
     expect(edgeFor("child-3").marriageIndex).toBe(unionWith(layout, "francesca").marriageIndex);
   });
 
-  it("does not run a partner bar through an intervening spouse", () => {
+  it("routes an outer marriage above an intervening spouse", () => {
     const layout = buildFamilyTreeLayout(thriceMarried());
     const cards = new Map(layout.nodes.map((node) => [node.id, node]));
 
@@ -326,7 +367,38 @@ describe("a person married more than once", () => {
             node.x + node.width / 2 > Math.min(edge.from.x, edge.to.x) + 1 &&
             node.x + node.width / 2 < Math.max(edge.from.x, edge.to.x) - 1,
         );
-        expect(spanned).toHaveLength(0);
+        if (spanned.length) {
+          expect(edge.route).toBe("over");
+          expect(edge.routeY).toBeLessThan(cards.get("nicola").y);
+        } else {
+          expect(edge.route).toBe("straight");
+        }
+      });
+  });
+
+  it("gives every marriage one child stem from its own union marker", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+
+    layout.unions
+      .filter((union) => union.childIds.length)
+      .forEach((union) => {
+        const stems = layout.edges.filter(
+          (edge) => edge.kind === "stem" && edge.id.startsWith(`${union.id}:stem`),
+        );
+        expect(stems).toHaveLength(1);
+        expect(stems[0].from).toEqual({ x: union.markerX, y: union.markerY });
+      });
+  });
+
+  it("places each marriage's child close to that union instead of across the chart", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+    const cards = nodesById(layout);
+
+    layout.unions
+      .filter((union) => union.childIds.length)
+      .forEach((union) => {
+        const childCentre = cards.get(union.childIds[0]).x + CARD_WIDTH / 2;
+        expect(Math.abs(childCentre - union.markerX)).toBeLessThanOrEqual(CARD_WIDTH + CARD_GAP);
       });
   });
 });

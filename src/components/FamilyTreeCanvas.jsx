@@ -74,10 +74,6 @@ export function FamilyTreeCanvas({
       people.filter((person) => person.id || person.fullName || personDesignations(person).length),
     [people],
   );
-  const peopleById = useMemo(
-    () => new Map(cleanPeople.map((person) => [person.id, person])),
-    [cleanPeople],
-  );
   const displayNamesById = useMemo(
     () => new Map(cleanPeople.map((person) => [person.id, personDisplayName(person, cleanPeople)])),
     [cleanPeople],
@@ -87,7 +83,7 @@ export function FamilyTreeCanvas({
   );
   const displayName = (person) =>
     displayNamesById.get(person?.id) || personDisplayName(person, cleanPeople);
-  const cardName = (person) => personCardName(person, cleanPeople, peopleById, displayNamesById);
+  const cardName = (person) => personCardName(person, cleanPeople, displayNamesById);
   const title =
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");

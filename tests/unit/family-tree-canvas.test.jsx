@@ -76,6 +76,14 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll("[data-person-id]")).toHaveLength(7);
   });
 
+  it("shows a person's surname even when it matches the father's", () => {
+    renderCanvas({ people: family() });
+
+    expect(container.querySelector('[data-person-id="c1"] .family-node-name').textContent).toBe(
+      "Joseph Borg",
+    );
+  });
+
   it("puts each generation on exactly one row", () => {
     renderCanvas({ people: family() });
 
@@ -86,6 +94,34 @@ describe("FamilyTreeCanvas", () => {
     });
 
     expect(rowByGeneration.size).toBe(3);
+  });
+
+  it("measures a tall card and relays out the generation below it", () => {
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get() {
+        return this.dataset?.personId === "gf" ? 184 : 108;
+      },
+    });
+
+    try {
+      renderCanvas({ people: family() });
+      const grandfather = container.querySelector('[data-tree-person-id="gf"]');
+      const father = container.querySelector('[data-tree-person-id="fa"]');
+
+      expect(parseFloat(father.style.top)).toBeGreaterThan(parseFloat(grandfather.style.top) + 108);
+      expect(parseFloat(grandfather.style.minHeight)).toBe(184);
+    } finally {
+      if (originalOffsetHeight) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
+      } else {
+        delete HTMLElement.prototype.offsetHeight;
+      }
+    }
   });
 
   it("never overlaps two cards on a row", () => {
