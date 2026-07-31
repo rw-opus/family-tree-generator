@@ -7,7 +7,7 @@ import { LOCAL_WORKSPACE_KEY, saveLocalWorkspace } from "../../src/services/loca
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-describe("family-group navigation", () => {
+describe("focused family workspace", () => {
   let container;
   let root;
 
@@ -24,7 +24,7 @@ describe("family-group navigation", () => {
     window.localStorage.clear();
   });
 
-  it("persists a cross-group person selection as the active family tree", () => {
+  it("persists the editable tree name and keeps family management on Home", () => {
     saveLocalWorkspace(
       [
         {
@@ -61,24 +61,24 @@ describe("family-group navigation", () => {
     const openButton = container.querySelector(".family-name-button");
     expect(openButton).not.toBeNull();
     act(() => openButton.click());
-    const personPicker = container.querySelector(".stage-person-picker select");
-    expect([...personPicker.options].map((option) => option.textContent)).toEqual([
-      "Joseph Borg",
-      "Maria Vella",
-    ]);
+    expect(container.querySelector(".case-view-tabs")).toBeNull();
+    expect(container.querySelector(".add-family-view")).toBeNull();
 
+    const treeName = container.querySelector('input[aria-label="Tree name"]');
     act(() => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
-        personPicker,
-        "vella",
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        treeName,
+        "Renamed family",
       );
-      personPicker.dispatchEvent(new Event("change", { bubbles: true }));
+      treeName.dispatchEvent(new Event("input", { bubbles: true }));
     });
-
-    expect(container.querySelectorAll('[data-person-id="vella"]')).toHaveLength(1);
-    const savedWorkspace = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));
-    expect(savedWorkspace.trees.find((item) => item.id === "case").activeFamilyGroupId).toBe(
-      "vella-tree",
+    const home = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Back to Home"),
     );
+    act(() => home.click());
+
+    expect(container.textContent).toContain("Renamed family");
+    const savedWorkspace = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));
+    expect(savedWorkspace.trees.find((item) => item.id === "case").title).toBe("Renamed family");
   });
 });

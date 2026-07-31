@@ -51,7 +51,7 @@ function TreePanel({ title, eyebrow, treeRef, onPrint, relational, helperText, c
           <h2>{title}</h2>
         </div>
         <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
-          <Printer size={16} /> Print
+          <Printer size={16} /> Print preview
         </button>
       </header>
       <div className="family-chart" ref={treeRef}>

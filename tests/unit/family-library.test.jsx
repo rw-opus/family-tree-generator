@@ -71,9 +71,20 @@ describe("FamilyLibrary", () => {
     expect(container.textContent).toContain("Borg family");
     expect(container.textContent).toContain("Vella family");
 
-    const open = container.querySelector('button[aria-label="Open Vella family"]');
+    const open = [...container.querySelectorAll(".family-name-button")].find((button) =>
+      button.textContent.includes("Vella family"),
+    );
     act(() => open.click());
     expect(handlers.onOpen).toHaveBeenCalledWith("vella");
+  });
+
+  it("offers a clearly labelled delete action on Home", () => {
+    const handlers = renderLibrary(root);
+    const remove = container.querySelector('button[aria-label="Delete Vella family"]');
+
+    act(() => remove.click());
+
+    expect(handlers.onRemove).toHaveBeenCalledWith("vella");
   });
 
   it("filters and renames families inline", () => {

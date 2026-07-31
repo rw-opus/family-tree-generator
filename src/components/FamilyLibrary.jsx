@@ -230,37 +230,32 @@ export function FamilyLibrary({
                 <span className="family-row-actions" role="cell">
                   <button
                     type="button"
-                    className="library-icon-button"
-                    onClick={() => onOpen(tree.id)}
-                    title={`Open ${tree.title || "family"}`}
-                    aria-label={`Open ${tree.title || "family"}`}
-                  >
-                    <FolderOpen size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    className="library-icon-button"
+                    className="library-row-action"
                     onClick={() => startRename(tree)}
                     title={`Rename ${tree.title || "family"}`}
                     aria-label={`Rename ${tree.title || "family"}`}
                   >
-                    <Pencil size={15} />
+                    <Pencil size={14} /> Rename
                   </button>
                   <button
                     type="button"
-                    className="library-icon-button danger"
+                    className="library-row-action danger"
                     onClick={() => onRemove(tree.id)}
-                    title={`Remove ${tree.title || "family"}`}
-                    aria-label={`Remove ${tree.title || "family"}`}
+                    title={`Delete ${tree.title || "family"}`}
+                    aria-label={`Delete ${tree.title || "family"}`}
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={14} /> Delete
                   </button>
                 </span>
               </div>
             ))}
           </div>
           {!filteredTrees.length && (
-            <p className="family-library-empty">No family matches that search.</p>
+            <p className="family-library-empty">
+              {trees.length
+                ? "No family matches that search."
+                : "No families yet. Create a new family or import a GEDCOM file."}
+            </p>
           )}
         </section>
       </div>

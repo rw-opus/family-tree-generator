@@ -1,5 +1,7 @@
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  --app-font:
+    "Monotype Corsiva", "Apple Chancery", "URW Chancery L", "Brush Script MT", cursive;
+  font-family: var(--app-font);
   color: #172033;
   background: #f4f7f5;
 }
@@ -43,9 +45,7 @@ button {
   align-items: center;
   gap: 0.55rem;
   color: #004225;
-  font:
-    700 1.3rem Georgia,
-    serif;
+  font: 700 1.3rem var(--app-font);
 }
 .app-header p,
 .helper-text,
@@ -154,9 +154,7 @@ input:focus {
 }
 h2 {
   margin: 0;
-  font:
-    700 1.15rem Georgia,
-    serif;
+  font: 700 1.15rem var(--app-font);
   color: #172033;
 }
 .eyebrow {
