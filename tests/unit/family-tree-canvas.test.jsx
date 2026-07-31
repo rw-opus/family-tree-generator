@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
+import { FamilyTreeCanvas as ProductionFamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
 import {
   anchoredBranchOffset,
   anchoredIncomingPath,
@@ -10,6 +10,10 @@ import {
 import { compactNodeWidth } from "../../src/components/familyTree/treePresentation.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+function FamilyTreeCanvas(props) {
+  return <ProductionFamilyTreeCanvas {...props} forceLegacyRenderer />;
+}
 
 function measuredRect({ left = 0, top = 0, width = 0, height = 0 } = {}) {
   return {
@@ -1335,5 +1339,17 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector(".family-parent-row")).not.toBeNull();
     expect(container.querySelector(".family-partner-link.marriage")).not.toBeNull();
     expect(container.querySelectorAll("[data-person-id]")).toHaveLength(people.length);
+  });
+
+  it("uses the proven genealogy renderer for very dense imported trees", () => {
+    const people = Array.from({ length: 120 }, (_, index) => ({
+      id: `person-${index}`,
+      fullName: `Person ${index}`,
+      fatherId: index > 0 ? `person-${index - 1}` : "",
+    }));
+
+    act(() => root.render(<ProductionFamilyTreeCanvas people={people} />));
+
+    expect(container.querySelector('[data-genealogy-renderer="family-chart"]')).not.toBeNull();
   });
 });

@@ -1,0 +1,78 @@
+.tree-stage .genealogy-layout-shell {
+  position: relative;
+  min-width: 100%;
+  min-height: 34rem;
+  margin: 1rem auto 0;
+}
+
+.tree-stage .genealogy-layout {
+  --background-color: transparent;
+  --text-color: #294737;
+  position: relative;
+  min-width: 100%;
+  min-height: 34rem;
+  overflow: visible;
+  background: transparent;
+  color: #294737;
+  font-family: inherit;
+}
+
+.tree-stage .genealogy-layout #f3Canvas,
+.tree-stage .genealogy-layout svg.main_svg,
+.tree-stage .genealogy-layout #htmlSvg {
+  overflow: visible;
+}
+
+.tree-stage .genealogy-layout .card_cont,
+.tree-stage .genealogy-layout div.card {
+  pointer-events: auto;
+}
+
+.tree-stage .genealogy-layout div.card {
+  color: inherit;
+}
+
+.tree-stage .genealogy-layout div.card > .family-node {
+  display: block;
+  transform: none;
+}
+
+.tree-stage .genealogy-layout div.card:hover > .family-node {
+  transform: translateY(-2px);
+}
+
+.tree-stage .genealogy-layout div.card-main > .family-node {
+  outline: 2px solid rgba(88, 40, 114, 0.35);
+  outline-offset: 2px;
+}
+
+.tree-stage .genealogy-layout .link {
+  stroke: #6d625c !important;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 2px !important;
+  shape-rendering: geometricPrecision;
+}
+
+.tree-stage .genealogy-layout .genealogy-union-link.partnership {
+  stroke-dasharray: 7 5;
+}
+
+.tree-stage .genealogy-layout .link-text text {
+  fill: #5b4d47 !important;
+  paint-order: stroke;
+  stroke: #f7f6f2;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  font-family: inherit;
+  font-size: 11px !important;
+}
+
+.tree-stage .genealogy-layout .link-text:has(text:empty) {
+  display: none;
+}
+
+.a3-print-tree .genealogy-layout-shell,
+.a3-print-tree .genealogy-layout {
+  overflow: visible !important;
+}
