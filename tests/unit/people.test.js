@@ -105,5 +105,4 @@ describe("family tree people", () => {
       "grandfather",
     ]);
   });
-
 });

@@ -16,6 +16,7 @@ import {
   shareFromPercentage,
   shareFromPercentageInput,
 } from "../domain/shares.js";
+import { DateInput } from "./DateInput.jsx";
 
 const OTHER_PERSON = "__other_person__";
 const totalPercentage = (rows = []) =>
@@ -182,13 +183,10 @@ export function IntestateHeirConfirmation({
                 {displayName(partner)}
               </button>
               {isPersonDeceased(partner) ? (
-                <input
+                <DateInput
                   aria-label={`Date of death for ${displayName(partner)}`}
-                  type="date"
                   value={partner.dateOfDeath || ""}
-                  onChange={(event) =>
-                    onUpdatePerson(partner.id, { dateOfDeath: event.target.value })
-                  }
+                  onChange={(value) => onUpdatePerson(partner.id, { dateOfDeath: value })}
                 />
               ) : (
                 <span>Living</span>

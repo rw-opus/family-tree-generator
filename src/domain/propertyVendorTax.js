@@ -45,11 +45,7 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
   );
   const coverage = declarationCoverage(declarationOwners, property.declarations || []);
   const saleRows = (property.saleLots || []).map((storedLot) => {
-    const ownerIsCompany =
-      ledger.parties.find((party) => party.id === storedLot.ownerId)?.type === "company";
-    const lot = ownerIsCompany
-      ? { ...storedLot, taxTreatment: "manual", selectedTaxMethod: "manual" }
-      : storedLot;
+    const lot = storedLot;
     const declaredCoverage = coverage.find((item) => item.heirId === lot.ownerId);
     const usePublishedValues =
       lot.useDeclaredValues !== false && Boolean(declaredCoverage?.hasUsablePublishedValues);
@@ -58,6 +54,7 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       ? {
           ...lot,
           acquisitionValue: declaredCoverage.publishedValue,
+          acquisitionValueBasis: lot.acquisitionValueBasis || "cm-declared",
           shareNumerator: declaredFraction.numerator,
           shareDenominator: declaredFraction.denominator,
         }

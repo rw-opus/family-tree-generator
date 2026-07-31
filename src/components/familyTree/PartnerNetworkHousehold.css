@@ -46,7 +46,8 @@
 }
 
 .family-partner-network-link,
-.family-partner-network-child-link {
+.family-partner-network-child-link,
+.family-partner-network-incoming-link {
   fill: none;
   stroke: #566b60;
   stroke-linecap: square;

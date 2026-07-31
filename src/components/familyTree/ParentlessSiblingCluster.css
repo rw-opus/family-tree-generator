@@ -1,0 +1,10 @@
+.family-parentless-sibling-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+}
+
+.family-parentless-sibling-rail {
+  width: max-content;
+}

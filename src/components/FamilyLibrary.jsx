@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Check,
+  Calculator,
   FileUp,
   FolderOpen,
   FolderPlus,
@@ -12,16 +13,11 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { isoDateToDisplay } from "../domain/dateFormat.js";
 
 const displayDate = (value) => {
   if (!value) return "Saved on this device";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Saved on this device";
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  return isoDateToDisplay(String(value).slice(0, 10)) || "Saved on this device";
 };
 
 const accountName = (session) => {
@@ -41,6 +37,7 @@ export function FamilyLibrary({
   onCreate,
   onImport,
   onOpen,
+  onOpenProperty,
   onRename,
   onRemove,
   onSignIn,
@@ -228,6 +225,15 @@ export function FamilyLibrary({
                   {displayDate(familyAddedDate(tree))}
                 </span>
                 <span className="family-row-actions" role="cell">
+                  <button
+                    type="button"
+                    className="library-row-action"
+                    onClick={() => onOpenProperty(tree.id)}
+                    title={`Open property and tax for ${tree.title || "family"}`}
+                    aria-label={`Open property and tax for ${tree.title || "family"}`}
+                  >
+                    <Calculator size={14} /> Property &amp; tax
+                  </button>
                   <button
                     type="button"
                     className="library-row-action"

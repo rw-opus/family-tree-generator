@@ -1,3 +1,5 @@
+import { isoDateToDisplay } from "./dateFormat.js";
+
 export const DESIGNATIONS = [
   "Deceased",
   "Spouse",
@@ -239,7 +241,5 @@ export function personAncestors(people = [], personId) {
 }
 
 export function formattedDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "";
-  const [year, month, day] = value.split("-");
-  return `${day}/${month}/${year}`;
+  return isoDateToDisplay(value);
 }

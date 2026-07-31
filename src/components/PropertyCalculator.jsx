@@ -13,6 +13,7 @@ import {
   shareFromPercentage,
   shareFromPercentageInput,
 } from "../domain/shares.js";
+import { DateInput } from "./DateInput.jsx";
 import { OwnershipTransfers } from "./OwnershipTransfers.jsx";
 import { SuccessionDeclarations } from "./SuccessionDeclarations.jsx";
 
@@ -157,10 +158,9 @@ export function PropertyCalculator({ caseData, onChange }) {
           </label>
           <label>
             Date of death
-            <input
-              type="date"
+            <DateInput
               value={succession.dateOfDeath}
-              onChange={(e) => setSuccession({ dateOfDeath: e.target.value })}
+              onChange={(value) => setSuccession({ dateOfDeath: value })}
             />
           </label>
           <label>
@@ -178,10 +178,9 @@ export function PropertyCalculator({ caseData, onChange }) {
             <>
               <label>
                 Will date
-                <input
-                  type="date"
+                <DateInput
                   value={succession.willDate}
-                  onChange={(e) => setSuccession({ willDate: e.target.value })}
+                  onChange={(value) => setSuccession({ willDate: value })}
                 />
               </label>
               <label>
@@ -516,10 +515,9 @@ export function PropertyCalculator({ caseData, onChange }) {
                 </label>
                 <label>
                   Inheritance date
-                  <input
-                    type="date"
+                  <DateInput
                     value={lot.inheritanceDate}
-                    onChange={(e) => updateLot(lot.id, { inheritanceDate: e.target.value })}
+                    onChange={(value) => updateLot(lot.id, { inheritanceDate: value })}
                   />
                 </label>
                 <label>

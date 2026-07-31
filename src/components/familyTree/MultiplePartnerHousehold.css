@@ -7,7 +7,8 @@
   width: max-content;
 }
 
-.family-remarriage-child-link {
+.family-remarriage-child-link,
+.family-remarriage-incoming-link {
   fill: none;
   stroke: #566b60;
   stroke-linecap: square;

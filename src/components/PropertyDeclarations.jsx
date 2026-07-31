@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { FilePlus2, Files, Plus, Trash2 } from "lucide-react";
+import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { declarationCoverage, validateDeclaration } from "../domain/declarations.js";
 import { approximateFraction } from "../domain/ownership.js";
+import { DateInput } from "./DateInput.jsx";
 
 const money = new Intl.NumberFormat("en-MT", {
   style: "currency",
@@ -101,10 +103,9 @@ export function PropertyDeclarations({ property, owners, declarations, onChange 
             </label>
             <label>
               Publication date
-              <input
-                type="date"
+              <DateInput
                 value={draft.date}
-                onChange={(e) => setDraft({ ...draft, date: e.target.value, error: "" })}
+                onChange={(value) => setDraft({ ...draft, date: value, error: "" })}
               />
             </label>
             <label>
@@ -314,7 +315,7 @@ export function PropertyDeclarations({ property, owners, declarations, onChange 
                 </strong>
                 <p>
                   {declaration.status === "published"
-                    ? `Published ${declaration.date || ""}`
+                    ? `Published ${isoDateToDisplay(declaration.date)}`
                     : "Draft / planned"}
                   {declaration.notaryName ? ` · ${declaration.notaryName}` : ""}
                   {declaration.reference ? ` · ${declaration.reference}` : ""}

@@ -67,7 +67,7 @@ describe("FamilyLibrary", () => {
 
     expect(container.textContent).toContain("Account Details");
     expect(container.textContent).toContain("Roland Wadge");
-    expect(container.textContent).toContain("29 Jul 2026");
+    expect(container.textContent).toContain("29-07-2026");
     expect(container.textContent).toContain("Borg family");
     expect(container.textContent).toContain("Vella family");
 

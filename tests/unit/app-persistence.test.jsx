@@ -180,9 +180,7 @@ describe("App local recovery", () => {
     );
     act(() => vella.click());
 
-    expect(container.querySelector('input[aria-label="Tree name"]').value).toBe(
-      "Vella succession",
-    );
+    expect(container.querySelector('input[aria-label="Tree name"]').value).toBe("Vella succession");
     expect(container.textContent).toContain("Maria Vella");
   });
 
