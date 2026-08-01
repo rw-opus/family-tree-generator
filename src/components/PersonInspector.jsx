@@ -24,6 +24,7 @@ import {
   personRelationshipCounts,
   personSurname,
   personDesignations,
+  removalWouldSeverFamily,
 } from "../domain/people.js";
 import {
   applyParentSuggestions,
@@ -914,20 +915,19 @@ export function PersonInspector({
     });
     if (parentChooserField === link.field) closeParentChooser();
   };
-  const blockingDescendants = sharedAcrossFamilies
-    ? descendants.filter((descendant) => currentFamilyPersonIdSet.has(descendant.id))
-    : descendants;
-  // Only descendants stop a person being removed. A partner or sibling link is
-  // no reason to keep somebody on the chart — removing them scrubs the link
-  // from the other side anyway — and it left a partner added by mistake
-  // impossible to take off without unpicking the marriage first.
+  // Having descendants is not itself a reason to keep somebody: a person at the
+  // top of a tree can go as long as nobody is severed by it. What blocks a
+  // removal is being the only thing holding two parts of the family together —
+  // the person a spouse reaches the rest of the tree through.
+  const seversFamily = removalWouldSeverFamily(
+    sharedAcrossFamilies
+      ? people.filter((entry) => currentFamilyPersonIdSet.has(entry.id))
+      : people,
+    selectedPersonId,
+  );
   const deleteBlockers = [
-    ...(blockingDescendants.length
-      ? [
-          `${blockingDescendants.length} ${
-            blockingDescendants.length === 1 ? "descendant" : "descendants"
-          }`,
-        ]
+    ...(seversFamily
+      ? ["the only link holding this family together — remove the people either side first"]
       : []),
     ...(!sharedAcrossFamilies && hasOwnership && ownership > 1e-10
       ? ["the person's property ownership"]

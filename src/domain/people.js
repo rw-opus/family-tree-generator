@@ -262,3 +262,101 @@ export function personAncestors(people = [], personId) {
 export function formattedDate(value) {
   return isoDateToDisplay(value);
 }
+
+/**
+ * Whether removing this person would sever anybody else from the rest of the
+ * family — that is, whether they are a cut vertex of the relationship graph.
+ *
+ * Somebody at the very top of a tree is not automatically undeletable. A spouse
+ * with nothing hanging off them can go; the person their partner reaches the
+ * rest of the family through cannot, because taking them out would leave the
+ * partner floating with no way back to the tree.
+ */
+export function removalWouldSeverFamily(people = [], personId = "") {
+  const target = String(personId || "");
+  const remaining = people.filter((person) => person?.id && person.id !== target);
+  if (remaining.length < 2) return false;
+
+  const present = new Set(remaining.map((person) => person.id));
+  const neighbours = new Map(remaining.map((person) => [person.id, []]));
+  const link = (first, second) => {
+    if (!present.has(first) || !present.has(second) || first === second) return;
+    neighbours.get(first).push(second);
+    neighbours.get(second).push(first);
+  };
+
+  remaining.forEach((person) => {
+    [person.fatherId, person.motherId].forEach((parentId) =>
+      link(person.id, String(parentId || "")),
+    );
+    (person.spouseIds || []).forEach((spouseId) => link(person.id, String(spouseId || "")));
+    (person.siblingIds || []).forEach((siblingId) => link(person.id, String(siblingId || "")));
+  });
+
+  const componentCount = (ids) => {
+    const seen = new Set();
+    let count = 0;
+    ids.forEach((id) => {
+      if (seen.has(id)) return;
+      count += 1;
+      const queue = [id];
+      while (queue.length) {
+        const current = queue.pop();
+        if (seen.has(current)) continue;
+        seen.add(current);
+        (neighbours.get(current) || []).forEach((next) => {
+          if (!seen.has(next)) queue.push(next);
+        });
+      }
+    });
+    return count;
+  };
+
+  const ids = [...present];
+  const withTarget = new Map(neighbours);
+  // Count the components the remaining people fall into once the person is out.
+  const after = componentCount(ids);
+
+  // Now count them as they stand, with the person still joining things up.
+  const targetPerson = people.find((person) => person?.id === target);
+  if (!targetPerson) return false;
+  const attached = new Set();
+  remaining.forEach((person) => {
+    if ([person.fatherId, person.motherId].map(String).includes(target)) attached.add(person.id);
+    if ((person.spouseIds || []).map(String).includes(target)) attached.add(person.id);
+    if ((person.siblingIds || []).map(String).includes(target)) attached.add(person.id);
+  });
+  [
+    targetPerson.fatherId,
+    targetPerson.motherId,
+    ...(targetPerson.spouseIds || []),
+    ...(targetPerson.siblingIds || []),
+  ]
+    .map(String)
+    .filter((id) => present.has(id))
+    .forEach((id) => attached.add(id));
+
+  if (attached.size < 2) return false;
+
+  const attachedComponents = new Set();
+  const componentOf = new Map();
+  let marker = 0;
+  ids.forEach((id) => {
+    if (componentOf.has(id)) return;
+    marker += 1;
+    const queue = [id];
+    while (queue.length) {
+      const current = queue.pop();
+      if (componentOf.has(current)) continue;
+      componentOf.set(current, marker);
+      (withTarget.get(current) || []).forEach((next) => {
+        if (!componentOf.has(next)) queue.push(next);
+      });
+    }
+  });
+  attached.forEach((id) => attachedComponents.add(componentOf.get(id)));
+
+  // If the people who were attached to them now sit in more than one piece,
+  // this person was the only thing holding those pieces together.
+  return attachedComponents.size > 1 && after >= attachedComponents.size;
+}
