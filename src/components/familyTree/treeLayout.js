@@ -33,6 +33,11 @@ const ORDERING_PASSES = 6;
 // there, so it sits level across the chart whatever else a card carries.
 const NAME_LINE_OFFSET = 24;
 
+// How far a spouse may be pushed from the one before to sit over their own
+// children. Two card widths keeps a later marriage recognisably beside its
+// partner rather than adrift somewhere across the chart.
+const MAX_SPOUSE_SEPARATION = (CARD_WIDTH + PARTNER_GAP) * 2;
+
 const UNION_BAR_OFFSET = 24;
 const UNION_BAR_STEP = 10;
 const UNION_BAR_MIN_CLEARANCE = 8;
@@ -644,10 +649,17 @@ function centreRows(rows, unions) {
 
     targets.forEach((target, index) => {
       const previous = centres[index];
+      // Centring a marriage on its children moves the far spouse twice the
+      // distance, so a wide first family would fling the second wife right
+      // across the chart. Past the ceiling the spouse stays put and the stem
+      // reaches its bar instead.
       centres.push(
         target === null
           ? previous + separation
-          : Math.max(2 * target - previous, previous + separation),
+          : Math.min(
+              Math.max(2 * target - previous, previous + separation),
+              previous + MAX_SPOUSE_SEPARATION,
+            ),
       );
     });
 
