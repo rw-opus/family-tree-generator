@@ -23,6 +23,7 @@ function edgeClassName(edge) {
 }
 
 const MARRIAGE_LINE_OFFSET = 2;
+const PARTNER_ROUTE_CLEARANCE = 7;
 
 /**
  * A marriage is two parallel horizontal lines between the spouses; anyone not
@@ -34,11 +35,15 @@ function PartnerLink({ edge }) {
   const right = Math.max(edge.from.x, edge.to.x);
 
   if (edge.route === "over") {
+    // Come down in the gap beside the far spouse and turn into the side of the
+    // box, rather than descending onto its centre from above.
+    const turn = right - PARTNER_ROUTE_CLEARANCE;
+
     if (!edge.marital) {
       return (
         <path
           className="tree-edge tree-edge-partner partnership"
-          d={`M ${left} ${edge.from.y} V ${edge.routeY} H ${right} V ${edge.to.y}`}
+          d={`M ${left} ${edge.from.y} V ${edge.routeY} H ${turn} V ${edge.to.y} H ${right}`}
         />
       );
     }
@@ -49,9 +54,9 @@ function PartnerLink({ edge }) {
           <path
             className="tree-edge tree-edge-partner marital"
             key={offset}
-            d={`M ${left + offset} ${edge.from.y} V ${edge.routeY + offset} H ${
-              right - offset
-            } V ${edge.to.y}`}
+            d={`M ${left} ${edge.from.y + offset} V ${edge.routeY + offset} H ${
+              turn + offset
+            } V ${edge.to.y + offset} H ${right}`}
           />
         ))}
       </g>
