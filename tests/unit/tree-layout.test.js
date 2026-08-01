@@ -264,7 +264,7 @@ describe("buildFamilyTreeLayout", () => {
     const parent = cards.get("parent");
 
     expect(stem.from.x).toBe(parent.x + parent.width / 2);
-    expect(stem.from.y).toBe(parent.y + parent.height);
+    expect(stem.from.y).toBe(parent.y + parent.height - 2);
     expect(stem.to.y).toBeGreaterThan(stem.from.y);
     expect(union.y).toBeLessThan(cards.get("child").y);
   });
@@ -358,7 +358,7 @@ describe("buildFamilyTreeLayout", () => {
     // of their two married children.
     expect(descents).toHaveLength(6);
     descents.forEach((edge) => {
-      expect(edge.to.y).toBe(cards.get(edge.childId).y);
+      expect(edge.to.y).toBe(cards.get(edge.childId).y + 2);
       expect(edge.from.x).toBe(edge.to.x);
     });
   });
@@ -923,15 +923,17 @@ describe("a short single parent beside a tall one", () => {
       person("short-child", { fatherId: "short" }),
     ];
     const layout = buildFamilyTreeLayout(people, {
-      nodeHeights: { tall: 220, "tall-spouse": 220, short: 108 },
+      nodeHeights: { tall: 220, "tall-spouse": 220, short: 62 },
     });
     const short = layout.nodes.find((node) => node.id === "short");
     const union = layout.unions.find((candidate) => candidate.childIds.includes("short-child"));
     const stem = layout.edges.find((edge) => edge.id === `${union.id}:stem`);
 
-    // The row is 220 tall because of the couple, but the short parent's branch
-    // must leave its own card at 108, not hang unattached below it.
-    expect(stem.from.y).toBe(short.y + short.height);
+    // The row reserves at least 108px, but the compact card itself is only
+    // 62px tall. The stem overlaps that visible card by 2px instead of hanging
+    // unattached from the bottom of the invisible row slot.
+    expect(short.height).toBe(CARD_HEIGHT);
+    expect(stem.from.y).toBe(short.y + 62 - 2);
     expect(stem.from.y).toBeLessThan(union.parentBottom);
   });
 });

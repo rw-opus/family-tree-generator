@@ -113,7 +113,7 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
         const card = node.querySelector(".family-node");
         if (!card) return;
         const height = Math.max(card.scrollHeight, card.offsetHeight);
-        if (height > CARD_HEIGHT) measured[node.dataset.treePersonId] = Math.ceil(height);
+        if (height > 0) measured[node.dataset.treePersonId] = Math.ceil(height);
       });
 
       setNodeHeights((current) => {
