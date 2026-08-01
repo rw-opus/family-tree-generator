@@ -34,9 +34,11 @@ const ORDERING_PASSES = 6;
 const NAME_LINE_OFFSET = 24;
 
 // How far a spouse may be pushed from the one before to sit over their own
-// children. Two card widths keeps a later marriage recognisably beside its
-// partner rather than adrift somewhere across the chart.
-const MAX_SPOUSE_SEPARATION = (CARD_WIDTH + PARTNER_GAP) * 2;
+// children. Spouses have to read as a couple first: a wide gap to one wife
+// while the next sits tight against her makes the pair look huddled and the
+// long marriage line look like it crosses the routed one. Where this is not
+// enough to centre the marriage, the stem reaches its bar instead.
+const MAX_SPOUSE_SEPARATION = (CARD_WIDTH + PARTNER_GAP) * 1.25;
 
 const UNION_BAR_OFFSET = 24;
 const UNION_BAR_STEP = 10;
@@ -972,12 +974,17 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
       rowTop(union.generation) -
       OUTER_MARRIAGE_ROUTE_OFFSET -
       union.marriageIndex * OUTER_MARRIAGE_ROUTE_STEP;
+    // A lone parent's stem leaves the bottom of that parent's own card.
+    // union.parentBottom is the bottom of the tallest card in the row, so a
+    // short card standing beside a tall one had the line start well below it,
+    // leaving a gap between the card and its own branch.
     union.markerY =
       union.parentCentres.length === 2
         ? union.adjacent
           ? union.cardMiddleY
           : union.routeY
-        : union.parentBottom;
+        : rowTop(union.generation) +
+          (parentCardHeights.length ? Math.max(...parentCardHeights) : CARD_HEIGHT);
     union.stemTurnY =
       union.barEntryX !== union.markerX
         ? Math.min(union.y - UNION_BAR_MIN_CLEARANCE, union.parentBottom + STEM_TURN_CLEARANCE)
