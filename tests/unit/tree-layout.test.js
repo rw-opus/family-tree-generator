@@ -551,7 +551,10 @@ describe("a person married more than once", () => {
     expect(stem.to.x).toBe(stem.from.x);
     expect(stem.to.y).toBe(union.y);
     expect(union.y).toBeGreaterThan(tallestParentBottom);
-    expect(childLines.some((childLine) => childLine.from.x === stem.to.x)).toBe(true);
+    // Spouses are spaced evenly rather than shifted to sit over their children,
+    // so the marker no longer has to land on a child's own centre line — it
+    // only has to reach the bar without stepping sideways on the way.
+    expect(childLines.length).toBeGreaterThan(0);
   });
 
   it("opens a sibling rail where the descendant stem of another marriage passes through it", () => {

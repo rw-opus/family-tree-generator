@@ -20,7 +20,7 @@
 export const CARD_WIDTH = 112;
 export const CARD_HEIGHT = 108;
 export const CARD_GAP = 14;
-export const PARTNER_GAP = 10;
+export const PARTNER_GAP = 20;
 export const ROW_GAP = 42;
 export const CANVAS_PADDING = 40;
 
@@ -32,13 +32,6 @@ const ORDERING_PASSES = 6;
 // padding plus half the given-name line. The marriage line meets both spouses
 // there, so it sits level across the chart whatever else a card carries.
 const NAME_LINE_OFFSET = 24;
-
-// How far a spouse may be pushed from the one before to sit over their own
-// children. Spouses have to read as a couple first: a wide gap to one wife
-// while the next sits tight against her makes the pair look huddled and the
-// long marriage line look like it crosses the routed one. Where this is not
-// enough to centre the marriage, the stem reaches its bar instead.
-const MAX_SPOUSE_SEPARATION = (CARD_WIDTH + PARTNER_GAP) * 1.25;
 
 const UNION_BAR_OFFSET = 24;
 const UNION_BAR_STEP = 10;
@@ -627,25 +620,15 @@ function centreRows(rows, unions) {
       return union ? (targetByUnionId.get(union.id) ?? null) : null;
     });
 
-    const firstTarget = targets.findIndex((target) => target !== null);
-    const centres = [firstTarget === 0 ? targets[0] - separation / 2 : 0];
-    const hasTarget = firstTarget >= 0;
+    const centres = [0];
+    const hasTarget = false;
 
-    targets.forEach((target, index) => {
-      const previous = centres[index];
-      // Centring a marriage on its children moves the far spouse twice the
-      // distance, so a wide first family would fling the second wife right
-      // across the chart. Past the ceiling the spouse stays put and the stem
-      // reaches its bar instead.
-      centres.push(
-        target === null
-          ? previous + separation
-          : Math.min(
-              Math.max(2 * target - previous, previous + separation),
-              previous + MAX_SPOUSE_SEPARATION,
-            ),
-      );
-    });
+    // Spouses are spaced evenly. Widening the gap to centre each marriage over
+    // its own children spent the room unevenly - one wife shoved out to her
+    // children while the next fell back to the minimum - so a row of wives read
+    // as huddled rather than as a series of marriages. Each marriage's stem
+    // reaches its bar instead.
+    targets.forEach((_, index) => centres.push(centres[index] + separation));
 
     const origin = centres[0] - CARD_WIDTH / 2;
     block.memberOffsets = centres.map((centre) => centre - origin);
