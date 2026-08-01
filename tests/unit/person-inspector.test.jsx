@@ -2554,3 +2554,71 @@ describe("PersonInspector", () => {
     );
   });
 });
+
+describe("PersonInspector pre-1992 succession note", () => {
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const deceasedBefore1992 = (extra = {}) => ({
+    id: "ancestor",
+    fullName: "Enrico Borg",
+    dateOfDeath: "1980-01-01",
+    isDeceased: true,
+    designations: [],
+    spouseIds: [],
+    ...extra,
+  });
+
+  const renderFor = (people) =>
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="ancestor"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+  it("states the 7% sale rate while an heir still holds the share", () => {
+    renderFor([
+      deceasedBefore1992(),
+      { id: "heir", fullName: "Maria Borg", fatherId: "ancestor", spouseIds: [], designations: [] },
+    ]);
+
+    expect(container.textContent).toContain("succession opened before 25");
+    expect(container.textContent).toContain("Article 5A(5)(c)(i)");
+  });
+
+  it("drops the rate once every heir has died and the share has passed again", () => {
+    renderFor([
+      deceasedBefore1992(),
+      {
+        id: "heir",
+        fullName: "Maria Borg",
+        fatherId: "ancestor",
+        dateOfDeath: "2015-06-01",
+        isDeceased: true,
+        spouseIds: [],
+        designations: [],
+      },
+    ]);
+
+    // Sales tax looks only at the last passage of title, so this succession's
+    // rate says nothing about a later sale.
+    expect(container.textContent).toContain("succession opened before 25");
+    expect(container.textContent).not.toContain("Article 5A(5)(c)(i)");
+  });
+});
