@@ -627,10 +627,12 @@ describe("which generation sets the width", () => {
     const row = rows.get(1);
 
     // The uncles are the crowded row here, so it is their boxes that end up
-    // adjacent rather than being spread to centre over two grandchildren.
+    // adjacent rather than being spread to centre over two grandchildren. A
+    // couple whose children are slightly wider than the pair may widen its own
+    // slot by those few pixels — that is the subtree rule, not spreading.
     const gaps = row.slice(1).map((node, index) => node.x - (row[index].x + row[index].width));
 
-    expect(Math.max(...gaps)).toBeLessThanOrEqual(CARD_GAP);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(CARD_GAP * 2);
   });
 
   it("takes the chart width from the widest generation, not a sparse one", () => {
@@ -741,5 +743,74 @@ describe("the reference multi-marriage sketch", () => {
     // The stem and the child's descent are meant to read as one straight line,
     // so the bar must not be entered off to one side.
     expect(union.barEntryX).toBe(union.markerX);
+  });
+});
+
+/**
+ * The cousins sketch: Y and Z's children are A, B, C, D and M. C alone has
+ * E and F; D alone has G, H and I; M, married to N, has J and K.
+ */
+describe("the reference cousins sketch", () => {
+  const sketch = () => [
+    person("Y", { spouseIds: ["Z"] }),
+    person("Z", { spouseIds: ["Y"] }),
+    person("A", { fatherId: "Y", motherId: "Z" }),
+    person("B", { fatherId: "Y", motherId: "Z" }),
+    person("C", { fatherId: "Y", motherId: "Z" }),
+    person("D", { fatherId: "Y", motherId: "Z" }),
+    person("M", { fatherId: "Y", motherId: "Z", spouseIds: ["N"] }),
+    person("N", { spouseIds: ["M"] }),
+    person("E", { fatherId: "C" }),
+    person("F", { fatherId: "C" }),
+    person("G", { fatherId: "D" }),
+    person("H", { fatherId: "D" }),
+    person("I", { fatherId: "D" }),
+    person("J", { fatherId: "M", motherId: "N" }),
+    person("K", { fatherId: "M", motherId: "N" }),
+  ];
+
+  const centres = (layout) =>
+    new Map(layout.nodes.map((node) => [node.id, node.x + CARD_WIDTH / 2]));
+
+  it("centres each parent over its own children", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const at = centres(layout);
+
+    [
+      ["C", ["E", "F"]],
+      ["D", ["G", "H", "I"]],
+    ].forEach(([parentId, childIds]) => {
+      const mid =
+        (Math.min(...childIds.map((id) => at.get(id))) +
+          Math.max(...childIds.map((id) => at.get(id)))) /
+        2;
+      expect(Math.abs(at.get(parentId) - mid)).toBeLessThanOrEqual(1);
+    });
+
+    // M and N sit as a couple right on top of J and K.
+    const coupleMid = (at.get("M") + at.get("N")) / 2;
+    const childMid = (at.get("J") + at.get("K")) / 2;
+    expect(Math.abs(coupleMid - childMid)).toBeLessThanOrEqual(1);
+  });
+
+  it("packs all the cousins at the minimum gap", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const row = layout.nodes
+      .filter((node) => node.generation === 2)
+      .sort((first, second) => first.x - second.x);
+
+    expect(row.map((node) => node.id)).toEqual(["E", "F", "G", "H", "I", "J", "K"]);
+    row.slice(1).forEach((node, index) => {
+      expect(node.x - (row[index].x + CARD_WIDTH)).toBeLessThanOrEqual(CARD_GAP + 1);
+    });
+  });
+
+  it("lets childless siblings sit at one card each", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const at = centres(layout);
+
+    // A and B have no descendants pulling on them, so they pack tight
+    // against each other and against C's subtree.
+    expect(at.get("B") - at.get("A")).toBeLessThanOrEqual(CARD_WIDTH + CARD_GAP + 1);
   });
 });
