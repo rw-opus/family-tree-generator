@@ -1,9 +1,4 @@
-import {
-  hasDesignation,
-  personDisplayName,
-  personGivenNames,
-  personSurname,
-} from "../../domain/people.js";
+import { hasDesignation, personDisplayName } from "../../domain/people.js";
 
 export const PARTNER_LINK_WIDTH = 40;
 
@@ -31,26 +26,12 @@ export function isDeceasedPerson(person, variant = "") {
   return Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
 }
 
-export function personCardName(person, people, peopleById, displayNamesById) {
+export function personCardName(person, people, displayNamesById) {
   const displayName = displayNamesById?.get(person?.id) || personDisplayName(person, people);
   if (person.isPlaceholder) return person.fullName;
-  if (!String(person.fullName || "").trim()) return displayName;
 
-  const surname = personSurname(person).trim();
-  const parentSurnames = [person.fatherId, person.motherId]
-    .map((parentId) => peopleById.get(parentId))
-    .filter(Boolean)
-    .map((parent) => personSurname(parent).trim())
-    .filter(Boolean);
-  const sharesParentSurname =
-    surname &&
-    parentSurnames.some(
-      (parentSurname) =>
-        parentSurname.localeCompare(surname, "en-MT", {
-          sensitivity: "base",
-        }) === 0,
-    );
-  const givenNames = personGivenNames(person).trim();
-
-  return capitalisedName(sharesParentSurname && givenNames ? givenNames : displayName);
+  // A repeated surname still identifies the person. Omitting it made dense
+  // imported trees ambiguous and gave the same person different labels in the
+  // index and on the chart.
+  return capitalisedName(displayName);
 }

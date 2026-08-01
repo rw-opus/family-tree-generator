@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   CARD_GAP,
+  CARD_HEIGHT,
   CARD_WIDTH,
+  ROW_GAP,
+  assignUnionBarLanes,
   assignGenerations,
   buildFamilyTreeLayout,
   buildUnions,
+  splitSiblingBar,
 } from "../../src/components/familyTree/treeLayout.js";
 
 const person = (id, extra = {}) => ({
@@ -31,7 +35,69 @@ const threeGenerationFamily = () => [
   person("cousin-b", { fatherId: "uncle", motherId: "aunt" }),
 ];
 
+const threeNeighbouringHouseholds = () => [
+  person("ancestor", { spouseIds: ["ancestor-spouse"] }),
+  person("ancestor-spouse", { spouseIds: ["ancestor"] }),
+  person("margherita", {
+    fatherId: "ancestor",
+    motherId: "ancestor-spouse",
+    spouseIds: ["joseph"],
+  }),
+  person("joseph", { spouseIds: ["margherita"] }),
+  ...["francesco-z", "paolo", "michele", "concetta"].map((id) =>
+    person(id, { fatherId: "joseph", motherId: "margherita" }),
+  ),
+  person("alfonso", { fatherId: "ancestor", motherId: "ancestor-spouse" }),
+  ...["francesco-a", "violette", "michelina", "amadeo"].map((id) =>
+    person(id, { fatherId: "alfonso" }),
+  ),
+  person("emanuele", {
+    fatherId: "ancestor",
+    motherId: "ancestor-spouse",
+    spouseIds: ["marianna"],
+  }),
+  person("marianna", { spouseIds: ["emanuele"] }),
+  ...["francesco-e", "michelangelo", "salvatore", "giovanni", "paolino"].map((id) =>
+    person(id, { fatherId: "emanuele" }),
+  ),
+];
+
 const nodesById = (layout) => new Map(layout.nodes.map((node) => [node.id, node]));
+
+describe("assignUnionBarLanes", () => {
+  it("separates complete family spans that would otherwise merge into one rail", () => {
+    const unions = assignUnionBarLanes([
+      {
+        id: "first-family",
+        generation: 2,
+        marriageIndex: 0,
+        childIds: ["first-child"],
+        barLeft: 100,
+        barRight: 260,
+      },
+      {
+        id: "second-family",
+        generation: 2,
+        marriageIndex: 0,
+        childIds: ["second-child"],
+        barLeft: 220,
+        barRight: 380,
+      },
+      {
+        id: "distant-family",
+        generation: 2,
+        marriageIndex: 0,
+        childIds: ["distant-child"],
+        barLeft: 500,
+        barRight: 600,
+      },
+    ]);
+
+    expect(unions.find((union) => union.id === "first-family").barLane).toBe(0);
+    expect(unions.find((union) => union.id === "second-family").barLane).toBe(1);
+    expect(unions.find((union) => union.id === "distant-family").barLane).toBe(0);
+  });
+});
 
 describe("assignGenerations", () => {
   it("puts spouses on the same generation", () => {
@@ -117,6 +183,31 @@ describe("buildUnions", () => {
     expect(union.parentIds).toEqual(["mother"]);
   });
 
+  it("draws a one-parent child from that parent's sole recorded marriage", () => {
+    const people = [
+      person("mother", { spouseIds: ["father"] }),
+      person("father", { spouseIds: ["mother"] }),
+      person("child", { motherId: "mother" }),
+    ];
+    const union = buildUnions(people).find((candidate) => candidate.childIds.includes("child"));
+
+    expect(union.parentIds).toEqual(expect.arrayContaining(["mother", "father"]));
+    expect(union.marital).toBe(true);
+  });
+
+  it("does not guess a missing parent when the recorded parent has several spouses", () => {
+    const people = [
+      person("mother", { spouseIds: ["first", "second"] }),
+      person("first", { spouseIds: ["mother"] }),
+      person("second", { spouseIds: ["mother"] }),
+      person("child", { motherId: "mother" }),
+    ];
+    const union = buildUnions(people).find((candidate) => candidate.childIds.includes("child"));
+
+    expect(union.parentIds).toEqual(["mother"]);
+    expect(union.type).toBe("single");
+  });
+
   it("keeps a childless marriage so the union is still drawn", () => {
     const people = [person("a", { spouseIds: ["b"] }), person("b", { spouseIds: ["a"] })];
     expect(buildUnions(people)).toHaveLength(1);
@@ -145,6 +236,79 @@ describe("buildFamilyTreeLayout", () => {
     const rowTops = [...new Set(layout.nodes.map((node) => node.y))].sort((a, b) => a - b);
     const gaps = rowTops.slice(1).map((top, index) => top - rowTops[index]);
     expect(new Set(gaps).size).toBe(1);
+  });
+
+  it("sets each row pitch from the tallest measured card in the generation", () => {
+    const layout = buildFamilyTreeLayout(threeGenerationFamily(), {
+      nodeHeights: { grandfather: 184, grandmother: 132 },
+    });
+    const cards = nodesById(layout);
+
+    expect(cards.get("grandfather").height).toBe(184);
+    expect(cards.get("grandmother").height).toBe(132);
+    expect(cards.get("father").y).toBe(cards.get("grandfather").y + 184 + ROW_GAP);
+    expect(cards.get("father").y).toBeGreaterThan(
+      cards.get("grandmother").y + CARD_HEIGHT + ROW_GAP,
+    );
+  });
+
+  it("starts a single-parent branch at the centre below the full parent card", () => {
+    const layout = buildFamilyTreeLayout(
+      [person("parent"), person("child", { fatherId: "parent" })],
+      { nodeHeights: { parent: 190 } },
+    );
+    const cards = nodesById(layout);
+    const union = layout.unions.find((candidate) => candidate.childIds.includes("child"));
+    const stem = layout.edges.find((edge) => edge.id === `${union.id}:stem`);
+    const parent = cards.get("parent");
+
+    expect(stem.from.x).toBe(parent.x + parent.width / 2);
+    expect(stem.from.y).toBe(parent.y + parent.height);
+    expect(stem.to.y).toBeGreaterThan(stem.from.y);
+    expect(union.y).toBeLessThan(cards.get("child").y);
+  });
+
+  it("keeps every child rail below the tallest parent card in its row", () => {
+    const layout = buildFamilyTreeLayout(threeGenerationFamily(), {
+      nodeHeights: { father: 184, mother: 142 },
+    });
+    const cards = nodesById(layout);
+    const union = layout.unions.find((candidate) => candidate.id === "union:father+mother");
+    const tallestParentBottom = Math.max(
+      cards.get("father").y + cards.get("father").height,
+      cards.get("mother").y + cards.get("mother").height,
+    );
+
+    expect(union.parentBottom).toBe(tallestParentBottom);
+    expect(union.y).toBeGreaterThan(tallestParentBottom);
+  });
+
+  it("keeps neighbouring households on three independent child bars", () => {
+    const layout = buildFamilyTreeLayout(threeNeighbouringHouseholds());
+    const cards = nodesById(layout);
+    const expectedFamilies = [
+      ["margherita", ["francesco-z", "paolo", "michele", "concetta"]],
+      ["alfonso", ["francesco-a", "violette", "michelina", "amadeo"]],
+      ["emanuele", ["francesco-e", "michelangelo", "salvatore", "giovanni", "paolino"]],
+    ];
+    const familyBars = expectedFamilies.map(([parentId, childIds]) => {
+      const union = layout.unions.find(
+        (candidate) =>
+          candidate.parentIds.includes(parentId) &&
+          childIds.every((childId) => candidate.childIds.includes(childId)),
+      );
+      const bar = layout.edges.find((edge) => edge.id === `${union.id}:bar`);
+      const childCentres = childIds.map((childId) => cards.get(childId).x + CARD_WIDTH / 2);
+
+      expect(union.childIds).toHaveLength(childIds.length);
+      expect(bar.from.x).toBe(Math.min(...childCentres));
+      expect(bar.to.x).toBe(Math.max(...childCentres));
+      return bar;
+    });
+
+    const sorted = [...familyBars].sort((first, second) => first.from.x - second.from.x);
+    expect(sorted[0].to.x).toBeLessThan(sorted[1].from.x);
+    expect(sorted[1].to.x).toBeLessThan(sorted[2].from.x);
   });
 
   it("never overlaps two cards on the same row", () => {
@@ -313,7 +477,7 @@ describe("a person married more than once", () => {
     expect(edgeFor("child-3").marriageIndex).toBe(unionWith(layout, "francesca").marriageIndex);
   });
 
-  it("does not run a partner bar through an intervening spouse", () => {
+  it("routes an outer marriage above an intervening spouse", () => {
     const layout = buildFamilyTreeLayout(thriceMarried());
     const cards = new Map(layout.nodes.map((node) => [node.id, node]));
 
@@ -326,7 +490,81 @@ describe("a person married more than once", () => {
             node.x + node.width / 2 > Math.min(edge.from.x, edge.to.x) + 1 &&
             node.x + node.width / 2 < Math.max(edge.from.x, edge.to.x) - 1,
         );
-        expect(spanned).toHaveLength(0);
+        if (spanned.length) {
+          expect(edge.route).toBe("over");
+          expect(edge.routeY).toBeLessThan(cards.get("nicola").y);
+        } else {
+          expect(edge.route).toBe("straight");
+        }
+      });
+  });
+
+  it("gives every marriage one child stem from its own union marker", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+
+    layout.unions
+      .filter((union) => union.childIds.length)
+      .forEach((union) => {
+        const stems = layout.edges.filter(
+          (edge) => edge.kind === "stem" && edge.id.startsWith(`${union.id}:stem`),
+        );
+        expect(stems).toHaveLength(1);
+        expect(stems[0].from).toEqual({ x: union.markerX, y: union.markerY });
+      });
+  });
+
+  it("doglegs a remarriage stem below the parent cards when a middle child's line is centred", () => {
+    const people = [
+      person("federico", { spouseIds: ["antonia"] }),
+      person("antonia", { spouseIds: ["federico", "joseph"] }),
+      person("joseph", { spouseIds: ["antonia"] }),
+      person("emanuel", { fatherId: "federico", motherId: "antonia" }),
+      person("alfio", { fatherId: "federico", motherId: "antonia" }),
+      person("francesco", { fatherId: "federico", motherId: "antonia" }),
+      person("giuseppina", { fatherId: "joseph", motherId: "antonia" }),
+      person("benedetta", { fatherId: "joseph", motherId: "antonia" }),
+      person("vincenza", { fatherId: "joseph", motherId: "antonia" }),
+    ];
+    const layout = buildFamilyTreeLayout(people, {
+      nodeHeights: { federico: 154, antonia: 126 },
+    });
+    const cards = nodesById(layout);
+    const union = layout.unions.find(
+      (candidate) =>
+        candidate.parentIds.includes("federico") && candidate.parentIds.includes("antonia"),
+    );
+    const stem = layout.edges.find((edge) => edge.id === `${union.id}:stem`);
+    const childLines = union.childIds.map((childId) =>
+      layout.edges.find((edge) => edge.kind === "descent" && edge.childId === childId),
+    );
+    const tallestParentBottom = Math.max(
+      cards.get("federico").y + cards.get("federico").height,
+      cards.get("antonia").y + cards.get("antonia").height,
+    );
+
+    expect(stem.from.x).toBe(union.markerX);
+    expect(stem.turnY).toBeGreaterThan(tallestParentBottom);
+    expect(stem.to.x).not.toBe(stem.from.x);
+    childLines.forEach((childLine) => expect(stem.to.x).not.toBe(childLine.from.x));
+    expect(stem.to.y).toBe(union.y);
+  });
+
+  it("opens a sibling rail where the descendant stem of another marriage passes through it", () => {
+    expect(splitSiblingBar(100, 300, [250])).toEqual([
+      { left: 100, right: 245 },
+      { left: 255, right: 300 },
+    ]);
+  });
+
+  it("places each marriage's child close to that union instead of across the chart", () => {
+    const layout = buildFamilyTreeLayout(thriceMarried());
+    const cards = nodesById(layout);
+
+    layout.unions
+      .filter((union) => union.childIds.length)
+      .forEach((union) => {
+        const childCentre = cards.get(union.childIds[0]).x + CARD_WIDTH / 2;
+        expect(Math.abs(childCentre - union.markerX)).toBeLessThanOrEqual(CARD_WIDTH + CARD_GAP);
       });
   });
 });
@@ -406,5 +644,102 @@ describe("which generation sets the width", () => {
 
     // Everything else has to fit inside the room the biggest generation needs.
     expect(layout.width).toBeLessThan(widestSpan + CARD_WIDTH * 2);
+  });
+});
+
+/**
+ * The reference sketch: X married A, B and C. D and E are X and A's children,
+ * F is X and B's, and G, H and J are X and C's. W and Z are X's parents and P
+ * is X's sibling.
+ */
+describe("the reference multi-marriage sketch", () => {
+  const sketch = () => [
+    person("W", { spouseIds: ["Z"] }),
+    person("Z", { spouseIds: ["W"] }),
+    person("X", { fatherId: "W", motherId: "Z", spouseIds: ["A", "B", "C"] }),
+    person("P", { fatherId: "W", motherId: "Z" }),
+    person("A", { spouseIds: ["X"] }),
+    person("B", { spouseIds: ["X"] }),
+    person("C", { spouseIds: ["X"] }),
+    person("D", { fatherId: "X", motherId: "A" }),
+    person("E", { fatherId: "X", motherId: "A" }),
+    person("F", { fatherId: "X", motherId: "B" }),
+    person("G", { fatherId: "X", motherId: "C" }),
+    person("H", { fatherId: "X", motherId: "C" }),
+    person("J", { fatherId: "X", motherId: "C" }),
+  ];
+
+  const rowOrder = (layout, generation) =>
+    layout.nodes
+      .filter((node) => node.generation === generation)
+      .sort((first, second) => first.x - second.x)
+      .map((node) => node.id);
+
+  const unionOf = (layout, spouseId) =>
+    layout.unions.find(
+      (union) => union.parentIds.includes("X") && union.parentIds.includes(spouseId),
+    );
+
+  it("puts the parents on one row and everyone else on the next two", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+
+    expect(rowOrder(layout, 0).sort()).toEqual(["W", "Z"]);
+    expect(rowOrder(layout, 1).sort()).toEqual(["A", "B", "C", "P", "X"]);
+    expect(rowOrder(layout, 2).sort()).toEqual(["D", "E", "F", "G", "H", "J"]);
+  });
+
+  it("keeps the sibling clear of the spouse chain", () => {
+    // Spouses may be interjected between siblings, but the much-married person
+    // belongs at the outer end so the parents' bar never crosses the corridor
+    // the outer marriage routes through.
+    expect(rowOrder(buildFamilyTreeLayout(sketch()), 1)).toEqual(["P", "A", "X", "B", "C"]);
+  });
+
+  it("gives each marriage its own children", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+
+    expect(unionOf(layout, "A").childIds.sort()).toEqual(["D", "E"]);
+    expect(unionOf(layout, "B").childIds.sort()).toEqual(["F"]);
+    expect(unionOf(layout, "C").childIds.sort()).toEqual(["G", "H", "J"]);
+  });
+
+  it("routes only the outer marriage over the spouse in between", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const routeFor = (spouseId) =>
+      layout.edges.find(
+        (edge) => edge.kind === "partner" && edge.unionId === unionOf(layout, spouseId).id,
+      ).route;
+
+    expect(routeFor("A")).toBe("straight");
+    expect(routeFor("B")).toBe("straight");
+    expect(routeFor("C")).toBe("over");
+  });
+
+  it("drops a vertical from the outer marriage to its own children", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const stem = layout.edges.find(
+      (edge) => edge.kind === "stem" && edge.unionId === unionOf(layout, "C").id,
+    );
+
+    expect(stem.route).toBe("outer-union");
+    // It leaves the raised route above the row and runs down past the children's row.
+    expect(stem.from.y).toBeLessThan(layout.nodes.find((node) => node.id === "X").y);
+    expect(stem.to.y).toBeGreaterThan(stem.from.y);
+  });
+
+  it("takes every marriage's children from a different depth", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const depths = ["A", "B", "C"].map((spouseId) => unionOf(layout, spouseId).y);
+
+    expect(new Set(depths).size).toBe(3);
+  });
+
+  it("enters an only child's bar straight below the marriage", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const union = unionOf(layout, "B");
+
+    // The stem and the child's descent are meant to read as one straight line,
+    // so the bar must not be entered off to one side.
+    expect(union.barEntryX).toBe(union.markerX);
   });
 });

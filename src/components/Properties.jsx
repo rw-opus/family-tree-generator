@@ -128,7 +128,7 @@ export function Properties({
         const {
           startingOwnership,
           ownership: result,
-          declarationOwners,
+          causaMortisDeclarationOwners,
           ledger,
           saleRows,
           deceasedVendorIds,
@@ -354,14 +354,22 @@ export function Properties({
                   </div>
                 )}
 
-                {startingOwnership.isComplete && (
+                {startingOwnership.isComplete && causaMortisDeclarationOwners.length > 0 && (
                   <PropertyDeclarations
                     property={property}
-                    owners={declarationOwners}
+                    owners={causaMortisDeclarationOwners}
                     declarations={property.declarations || []}
                     onChange={(declarations) => updateProperty(property.id, { declarations })}
                   />
                 )}
+                {startingOwnership.isComplete &&
+                  result.transmissions.length > 0 &&
+                  causaMortisDeclarationOwners.length === 0 && (
+                    <p className="helper-text causa-mortis-not-applicable">
+                      No Declaration Causa Mortis applies to the calculated current owners because
+                      their recorded inheritance opened before 25 November 1992.
+                    </p>
+                  )}
               </>
             )}
 
@@ -408,6 +416,10 @@ export function Properties({
                       effectiveLot,
                       declaredCoverage,
                       usePublishedValues,
+                      inheritanceSources,
+                      selectedInheritanceSource,
+                      inheritanceDateInferred,
+                      preCausaMortisCutoff,
                       result: lotResult,
                     }) => (
                       <article
@@ -440,6 +452,8 @@ export function Properties({
                                   ownerId: event.target.value,
                                   selectedTaxMethod: "",
                                   useDeclaredValues: true,
+                                  inheritanceSourceDeceasedId: "",
+                                  inheritanceDate: "",
                                   taxTreatment: "inheritance",
                                   acquisitionType:
                                     ledger.parties.find((party) => party.id === event.target.value)
@@ -504,6 +518,9 @@ export function Properties({
                               effectiveLot={effectiveLot}
                               usePublishedValues={usePublishedValues}
                               declaredCoverage={declaredCoverage}
+                              inheritanceSources={inheritanceSources}
+                              selectedInheritanceSource={selectedInheritanceSource}
+                              inheritanceDateInferred={inheritanceDateInferred}
                               onChange={(patch) => updateLot(property, lot.id, patch)}
                             />
                           )}
@@ -539,6 +556,7 @@ export function Properties({
                           )}
                         {lot.taxTreatment !== "manual" &&
                           (lot.acquisitionType || "inheritance") === "inheritance" &&
+                          !preCausaMortisCutoff &&
                           usePublishedValues &&
                           livingVendorIds.has(lot.ownerId) && (
                             <p className="tax-lot-source">
@@ -550,6 +568,7 @@ export function Properties({
                           )}
                         {lot.taxTreatment !== "manual" &&
                           (lot.acquisitionType || "inheritance") === "inheritance" &&
+                          !preCausaMortisCutoff &&
                           !declaredCoverage?.publishedCount &&
                           livingVendorIds.has(lot.ownerId) && (
                             <p className="tax-lot-source attention">
@@ -559,6 +578,7 @@ export function Properties({
                           )}
                         {lot.taxTreatment !== "manual" &&
                           (lot.acquisitionType || "inheritance") === "inheritance" &&
+                          !preCausaMortisCutoff &&
                           Boolean(declaredCoverage?.publishedCount) &&
                           !declaredCoverage?.hasUsablePublishedValues &&
                           livingVendorIds.has(lot.ownerId) && (

@@ -1,6 +1,6 @@
 import { buildPropertyOwnership } from "./familyOwnership.js";
+import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "./article5A.js";
 
-const CUTOFF_DATE = "1992-11-25";
 export const CAUSA_MORTIS_EPSILON = 1e-10;
 
 export const causaMortisDeclaredShare = (declaration = {}) => {
@@ -59,7 +59,7 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
       const person = peopleById.get(personId);
       if (!person) return;
       const deathDateUnknown = !person.dateOfDeath;
-      if (!deathDateUnknown && person.dateOfDeath <= CUTOFF_DATE) return;
+      if (!deathDateUnknown && person.dateOfDeath < INHERITANCE_CAUSA_MORTIS_CUTOFF) return;
 
       const declarations = (person.causaMortisDeclarations || []).filter(
         (declaration) =>

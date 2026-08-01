@@ -1,5 +1,6 @@
 import { approximateFraction } from "../../domain/ownership.js";
 import { linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
+import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../../domain/article5A.js";
 import { displayNotaryName } from "../../domain/notary.js";
 import {
   formattedDate,
@@ -36,6 +37,9 @@ function formattedCurrency(value) {
 }
 
 function availableCausaMortisDetails(person) {
+  if (person.dateOfDeath && person.dateOfDeath < INHERITANCE_CAUSA_MORTIS_CUTOFF) {
+    return [];
+  }
   return (person.causaMortisDeclarations || [])
     .filter((declaration) => declaration.status === "complete")
     .map((declaration) => ({
@@ -82,15 +86,7 @@ export function FamilyPersonCard({
   const surnameAtBirth = capitalisedName(person.surnameAtBirth);
   const differentBirthSurname =
     surnameAtBirth && surnameAtBirth.localeCompare(surname, "en-MT", { sensitivity: "base" }) !== 0;
-  // A descendant carrying the father's surname does not need it repeated on
-  // every card; it is only worth the space where it differs.
-  const fatherSurname = capitalisedName(
-    personSurname(people.find((candidate) => candidate.id === person.fatherId) || {}),
-  );
-  const showSurname =
-    Boolean(surname) &&
-    (!fatherSurname ||
-      fatherSurname.localeCompare(surname, "en-MT", { sensitivity: "base" }) !== 0);
+  const showSurname = Boolean(surname);
   const personName =
     !person.isPlaceholder && String(person.fullName || "").trim()
       ? capitalisedName(personDisplayName(person, people))

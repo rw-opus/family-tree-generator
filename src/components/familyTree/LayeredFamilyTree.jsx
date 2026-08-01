@@ -1,12 +1,12 @@
-import { useMemo } from "react";
-import { buildFamilyTreeLayout } from "./treeLayout.js";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CARD_HEIGHT, buildFamilyTreeLayout } from "./treeLayout.js";
 import "./LayeredFamilyTree.css";
 
-/** Orthogonal connector: down, across, then down again. */
-function elbowPath(from, to) {
-  if (from.x === to.x) return `M ${from.x} ${from.y} V ${to.y}`;
-  const midY = from.y + (to.y - from.y) / 2;
-  return `M ${from.x} ${from.y} V ${midY} H ${to.x} V ${to.y}`;
+function stemPath(edge) {
+  if (Number.isFinite(edge.turnY) && edge.from.x !== edge.to.x) {
+    return `M ${edge.from.x} ${edge.from.y} V ${edge.turnY} H ${edge.to.x} V ${edge.to.y}`;
+  }
+  return `M ${edge.from.x} ${edge.from.y} V ${edge.to.y}`;
 }
 
 function edgeClassName(edge) {
@@ -17,9 +17,6 @@ function edgeClassName(edge) {
     // parent is drawn exactly like anybody else.
     edge.flagged ? "flagged" : "",
     edge.kind === "partner" ? (edge.marital ? "marital" : "partnership") : "",
-    // Colours the descent of each marriage so the children of one mother read
-    // as a set even where the bars run close together.
-    Number.isFinite(edge.marriageIndex) ? `marriage-${Math.min(edge.marriageIndex, 3)}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -35,6 +32,31 @@ const MARRIAGE_LINE_OFFSET = 2;
 function PartnerLink({ edge }) {
   const left = Math.min(edge.from.x, edge.to.x);
   const right = Math.max(edge.from.x, edge.to.x);
+
+  if (edge.route === "over") {
+    if (!edge.marital) {
+      return (
+        <path
+          className="tree-edge tree-edge-partner partnership"
+          d={`M ${left} ${edge.from.y} V ${edge.routeY} H ${right} V ${edge.to.y}`}
+        />
+      );
+    }
+
+    return (
+      <g className="tree-edge-partner-pair">
+        {[-MARRIAGE_LINE_OFFSET, MARRIAGE_LINE_OFFSET].map((offset) => (
+          <path
+            className="tree-edge tree-edge-partner marital"
+            key={offset}
+            d={`M ${left + offset} ${edge.from.y} V ${edge.routeY + offset} H ${
+              right - offset
+            } V ${edge.to.y}`}
+          />
+        ))}
+      </g>
+    );
+  }
 
   if (!edge.marital) {
     return (
@@ -69,13 +91,50 @@ function PartnerLink({ edge }) {
  * treeLayout; this component only paints it and keeps the cards interactive.
  */
 export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }) {
-  const layout = useMemo(() => buildFamilyTreeLayout(people), [people]);
+  const treeRef = useRef(null);
+  const [nodeHeights, setNodeHeights] = useState({});
+  const layout = useMemo(
+    () => buildFamilyTreeLayout(people, { nodeHeights }),
+    [nodeHeights, people],
+  );
+
+  useLayoutEffect(() => {
+    const tree = treeRef.current;
+    if (!tree) return undefined;
+
+    const measure = () => {
+      const measured = {};
+      tree.querySelectorAll("[data-tree-person-id]").forEach((node) => {
+        const card = node.querySelector(".family-node");
+        if (!card) return;
+        const height = Math.max(card.scrollHeight, card.offsetHeight);
+        if (height > CARD_HEIGHT) measured[node.dataset.treePersonId] = Math.ceil(height);
+      });
+
+      setNodeHeights((current) => {
+        const currentKeys = Object.keys(current);
+        const measuredKeys = Object.keys(measured);
+        const unchanged =
+          currentKeys.length === measuredKeys.length &&
+          measuredKeys.every((personId) => current[personId] === measured[personId]);
+        return unchanged ? current : measured;
+      });
+    };
+
+    measure();
+    if (typeof ResizeObserver !== "function") return undefined;
+
+    const observer = new ResizeObserver(measure);
+    tree.querySelectorAll(".family-node").forEach((card) => observer.observe(card));
+    return () => observer.disconnect();
+  }, [people, renderCard]);
 
   if (!layout.nodes.length) return emptyState;
 
   return (
     <div
       className="layered-family-tree"
+      ref={treeRef}
       style={{ width: `${layout.width}px`, height: `${layout.height}px` }}
       data-generation-count={layout.generationCount}
     >
@@ -95,21 +154,29 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
         {layout.edges
           .filter((edge) => edge.kind === "stem")
           .map((edge) => (
-            <path className={edgeClassName(edge)} key={edge.id} d={elbowPath(edge.from, edge.to)} />
+            <path className={edgeClassName(edge)} key={edge.id} d={stemPath(edge)} />
           ))}
 
         {layout.edges
           .filter((edge) => edge.kind === "sibling-bar")
-          .map((edge) => (
-            <line
-              className={edgeClassName(edge)}
-              key={edge.id}
-              x1={edge.from.x}
-              y1={edge.from.y}
-              x2={edge.to.x}
-              y2={edge.to.y}
-            />
-          ))}
+          .map((edge) => {
+            if (edge.segments?.length > 1) {
+              const path = edge.segments
+                .map((segment) => `M ${segment.from.x} ${segment.from.y} H ${segment.to.x}`)
+                .join(" ");
+              return <path className={edgeClassName(edge)} key={edge.id} d={path} />;
+            }
+            return (
+              <line
+                className={edgeClassName(edge)}
+                key={edge.id}
+                x1={edge.from.x}
+                y1={edge.from.y}
+                x2={edge.to.x}
+                y2={edge.to.y}
+              />
+            );
+          })}
 
         {layout.edges
           .filter((edge) => edge.kind === "descent")
@@ -130,6 +197,7 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
           className={`tree-node ${node.bornOutsideMarriage ? "born-outside-marriage" : ""}`}
           key={node.id}
           data-family-generation={node.generation}
+          data-tree-person-id={node.id}
           style={{
             left: `${node.x}px`,
             top: `${node.y}px`,

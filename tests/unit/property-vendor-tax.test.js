@@ -6,6 +6,150 @@ import {
 import { buildPropertyVendorTaxReport } from "../../src/domain/propertyVendorTax.js";
 
 describe("property vendor tax reports", () => {
+  it("automatically applies 7% when a child sells a share inherited before 25 November 1992", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "1992-11-24",
+        inheritanceBasis: "intestacy",
+        spouseIds: [],
+        siblingIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Maria Borg",
+        fatherId: "deceased",
+        spouseIds: [],
+        siblingIds: [],
+      },
+    ];
+    const calculated = intestateAllocations(people, "deceased");
+    people[0] = {
+      ...people[0],
+      intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
+      intestateHeirsConfirmed: true,
+      intestateConfirmationBasis: intestacyAllocationSignature(people[0], calculated),
+    };
+    const property = {
+      id: "property",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+      declarations: [
+        {
+          id: "invalid-pre-cutoff-cm",
+          status: "published",
+          participants: [{ heirId: "child", numerator: 1, denominator: 1, declaredValue: 100 }],
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "child-sale",
+          ownerId: "child",
+          acquisitionType: "inheritance",
+          inheritanceDate: "",
+          transferDate: "2026-07-31",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 100,
+          acquisitionValueBasis: "cm-declared",
+          transferValue: 200,
+          useDeclaredValues: true,
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(property, people, []);
+    const row = report.saleRows[0];
+
+    expect(row).toMatchObject({
+      inheritanceDateInferred: true,
+      preCausaMortisCutoff: true,
+      usePublishedValues: false,
+      selectedInheritanceSource: {
+        deceasedId: "deceased",
+        inheritanceDate: "1992-11-24",
+        immediateDescendant: true,
+      },
+      effectiveLot: {
+        inheritanceDate: "1992-11-24",
+        acquisitionValue: "",
+        useDeclaredValues: false,
+      },
+      result: {
+        selected: "inheritance-7",
+        methods: [expect.objectContaining({ rate: 0.07, basis: 200 })],
+      },
+    });
+    expect(row.result.methods[0].tax).toBeCloseTo(14);
+    expect(report.causaMortisDeclarationOwners).toEqual([]);
+    expect(report.taxSummary.total).toBeCloseTo(14);
+  });
+
+  it("does not carry the pre-1992 treatment through a later second succession", () => {
+    const people = [
+      {
+        id: "grandparent",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "1992-11-24",
+        inheritanceBasis: "intestacy",
+        spouseIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Paul Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        fatherId: "grandparent",
+        inheritanceBasis: "intestacy",
+        spouseIds: [],
+      },
+      { id: "grandchild", fullName: "Maria Borg", fatherId: "child", spouseIds: [] },
+    ];
+    const calculated = intestateAllocations(people, "grandparent");
+    people[0] = {
+      ...people[0],
+      intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
+      intestateHeirsConfirmed: true,
+      intestateConfirmationBasis: intestacyAllocationSignature(people[0], calculated),
+    };
+    const property = {
+      id: "property",
+      owners: [{ personId: "grandparent", sharePercent: 100 }],
+      declarations: [],
+      transfers: [],
+      saleLots: [
+        {
+          id: "grandchild-sale",
+          ownerId: "grandchild",
+          acquisitionType: "inheritance",
+          inheritanceDate: "",
+          transferDate: "2026-07-31",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 100,
+          acquisitionValueBasis: "market-at-inheritance",
+          transferValue: 120,
+          useDeclaredValues: false,
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(property, people, []);
+
+    expect(report.saleRows[0]).toMatchObject({
+      preCausaMortisCutoff: false,
+      selectedInheritanceSource: { deceasedId: "child", inheritanceDate: "2020-01-01" },
+      effectiveLot: { inheritanceDate: "2020-01-01" },
+    });
+    expect(report.saleRows[0].result.methods.map((method) => method.key)).not.toContain(
+      "inheritance-7",
+    );
+    expect(report.taxSummary.total).toBeCloseTo(2.4);
+  });
+
   it("lists the living heir as vendor and excludes the deceased person's tax lot", () => {
     const people = [
       {

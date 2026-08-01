@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  A3_MIN_COMPACT_SCALE,
   A3_PRINT_LAYOUT,
   A3_PRINT_VIEWPORT_HEIGHT_PX,
   a3PrintableWidthForColumns,
   calculateA3Tiles,
   resolveA3HeightScale,
+  resolveA3PreviewScale,
   resolveA3PrintArea,
 } from "../../src/domain/a3PrintPreview.js";
 import { buildFamilyTreeLayout } from "../../src/components/familyTree/treeLayout.js";
@@ -162,6 +164,24 @@ describe("A3 print pagination", () => {
       }),
     ).toMatchObject({ scale: 0.85, requestedColumns: 0, limitedByMinimumScale: false });
   });
+
+  it("honours a compact sheet-width choice after height fitting", () => {
+    const printArea = resolveA3PrintArea({
+      contentWidth: 9000,
+      preferredScale: 0.5,
+      requestedColumns: "2",
+      minimumScale: A3_MIN_COMPACT_SCALE,
+    });
+    const layout = calculateA3Tiles({
+      contentWidth: 9000,
+      contentHeight: 1800,
+      scale: printArea.scale,
+    });
+
+    expect(printArea.scale).toBeGreaterThanOrEqual(A3_MIN_COMPACT_SCALE);
+    expect(layout.columns).toBe(2);
+    expect(layout.rows).toBe(1);
+  });
 });
 
 describe("A3 landscape height fitting", () => {
@@ -217,5 +237,50 @@ describe("A3 landscape height fitting", () => {
     });
 
     expect(tiles.rows).toBeGreaterThan(1);
+  });
+
+  it("applies the user's tree size after height fitting", () => {
+    const full = resolveA3PreviewScale({
+      contentWidth: 9000,
+      contentHeight: 1800,
+      sizeFactor: 1,
+    });
+    const medium = resolveA3PreviewScale({
+      contentWidth: 9000,
+      contentHeight: 1800,
+      sizeFactor: 0.85,
+    });
+    const compact = resolveA3PreviewScale({
+      contentWidth: 9000,
+      contentHeight: 1800,
+      sizeFactor: 0.7,
+    });
+
+    expect(medium.scale).toBeCloseTo(full.scale * 0.85);
+    expect(compact.scale).toBeCloseTo(full.scale * 0.7);
+    expect(full.scale).toBeGreaterThan(medium.scale);
+    expect(medium.scale).toBeGreaterThan(compact.scale);
+  });
+
+  it("lets the print-area width reduce a height-fitted wide tree", () => {
+    const automatic = resolveA3PreviewScale({
+      contentWidth: 9000,
+      contentHeight: 1800,
+      requestedColumns: "auto",
+    });
+    const twoSheetsWide = resolveA3PreviewScale({
+      contentWidth: 9000,
+      contentHeight: 1800,
+      requestedColumns: "2",
+    });
+
+    expect(twoSheetsWide.scale).toBeLessThan(automatic.scale);
+    expect(
+      calculateA3Tiles({
+        contentWidth: 9000,
+        contentHeight: 1800,
+        scale: twoSheetsWide.scale,
+      }).columns,
+    ).toBe(2);
   });
 });
