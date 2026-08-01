@@ -28,6 +28,10 @@ const ORDERING_PASSES = 6;
 
 // Each successive marriage of the same person drops its sibling bar a little
 // lower, so the children of each are read off their own bar.
+// Down from the top of a card to the middle of the surname line: the card's
+// padding, the given-name line, then half the surname line.
+const SURNAME_LINE_OFFSET = 42;
+
 const UNION_BAR_OFFSET = 24;
 const UNION_BAR_STEP = 10;
 const UNION_BAR_MIN_CLEARANCE = 8;
@@ -513,16 +517,16 @@ function groupSiblings(rows, unions) {
 /**
  * Bottom-up subtree placement, following the reference sketches.
  *
- * Every spouse block owns the blocks of its children, and a subtree's width is
- * the greater of the block itself and its children's packed span. Children are
- * packed at the minimum gap and centred under their parent block; the parent is
- * centred over them. So the space between siblings expands exactly where a
- * branch's descendants need the room — C's children spread beneath C until
- * D's three cousins push back — and a childless sibling takes one card.
+ * Two rules do the work:
  *
- * The previous passes placed whole rows against each other (first anchored on
- * the widest row, then top-down with a single return sweep), which always left
- * some boundary parent far from its own children.
+ *   Subtrees are separated by their per-row contours, not by a bounding box.
+ *   A branch that is wide three rows down only needs that room three rows down,
+ *   so a shallow neighbour slides underneath it instead of being held off by
+ *   space nothing occupies.
+ *
+ *   The gap between spouses opens up as far as their marriages need. Each
+ *   marriage is placed exactly over the middle of its own children, so no stem
+ *   leans sideways to reach its bar.
  */
 function centreRows(rows, unions) {
   const blocksByRow = rows.map((rowIds) => buildRowBlocks(rowIds, unions));
@@ -531,6 +535,9 @@ function centreRows(rows, unions) {
     blocks.forEach((block, orderIndex) => {
       block.rowIndex = rowIndex;
       block.orderIndex = orderIndex;
+      block.memberOffsets = block.memberIds.map(
+        (_, index) => index * (CARD_WIDTH + PARTNER_GAP) + CARD_WIDTH / 2,
+      );
       block.memberIds.forEach((id) => blockOfPerson.set(id, block));
     }),
   );
@@ -539,9 +546,7 @@ function centreRows(rows, unions) {
   unions.forEach((union) => union.childIds.forEach((childId) => unionByChild.set(childId, union)));
 
   // Attach every block to one parent block: the one holding the parents of its
-  // first member with recorded parents. A chain that marries two families
-  // together is anchored to one of them; the other family reaches it with a
-  // longer connector rather than the layout trying to serve both at once.
+  // first member with recorded parents.
   const childrenOf = new Map();
   const parentOf = new Map();
   blocksByRow.forEach((blocks) =>
@@ -561,50 +566,39 @@ function centreRows(rows, unions) {
     children.sort((first, second) => first.orderIndex - second.orderIndex),
   );
 
-  const subtreeWidth = new Map();
-  const measure = (block) => {
-    const children = childrenOf.get(block) || [];
-    const childrenWidth = children.reduce(
-      (total, child, index) => total + measure(child) + (index ? CARD_GAP : 0),
-      0,
-    );
-    const width = Math.max(blockWidth(block), childrenWidth);
-    subtreeWidth.set(block, width);
-    return width;
+  const mergeContour = (target, source, shift) => {
+    source.forEach((extent, row) => {
+      const min = extent.min + shift;
+      const max = extent.max + shift;
+      const existing = target.get(row);
+      target.set(
+        row,
+        existing
+          ? { min: Math.min(existing.min, min), max: Math.max(existing.max, max) }
+          : { min, max },
+      );
+    });
   };
 
-  const deepestRow = (block) =>
-    (childrenOf.get(block) || []).reduce(
-      (deepest, child) => Math.max(deepest, deepestRow(child)),
-      block.rowIndex,
-    );
+  // How far the next subtree must move right to clear what is already placed —
+  // judged row by row, so rows the neighbour does not reach cost nothing.
+  const clearingShift = (placed, next, gap) => {
+    let shift = 0;
+    next.forEach((extent, row) => {
+      const existing = placed.get(row);
+      if (!existing) return;
+      shift = Math.max(shift, existing.max + gap - extent.min);
+    });
+    return shift;
+  };
 
-  // A subtree is placed as one unit: the block centred in its span, and its
-  // children's spans packed at the minimum gap, centred beneath it.
-  const rowCursor = new Map();
-  const place = (block, left) => {
-    const span = subtreeWidth.get(block);
-    const width = blockWidth(block);
-    block.left = left + (span - width) / 2;
-    block.centre = block.left + width / 2;
-    rowCursor.set(
-      block.rowIndex,
-      Math.max(rowCursor.get(block.rowIndex) ?? -Infinity, block.left + width),
-    );
+  const shiftSubtree = (block, shift) => {
+    if (!shift) return;
+    block.left += shift;
+    (childrenOf.get(block) || []).forEach((child) => shiftSubtree(child, shift));
+  };
 
-    const children = childrenOf.get(block) || [];
-    if (!children.length) return;
-
-    // Children are grouped by the marriage they came from, and each group is
-    // centred under that marriage rather than under the whole block. Packing
-    // every child of a much-married person as one run left each marriage's
-    // stem leaning sideways to reach its own bar, and those leaning stems
-    // crossed the neighbouring marriage's children.
-    const memberCentre = (memberId) => {
-      const index = block.memberIds.indexOf(memberId);
-      return index < 0 ? null : block.left + index * (CARD_WIDTH + PARTNER_GAP) + CARD_WIDTH / 2;
-    };
-
+  const childGroups = (block, children) => {
     const groups = [];
     children.forEach((child) => {
       const union = child.memberIds.map((id) => unionByChild.get(id)).find(Boolean);
@@ -616,31 +610,129 @@ function centreRows(rows, unions) {
       }
       groups.push({ key, union, children: [child] });
     });
+    return groups;
+  };
 
-    groups.forEach((group) => {
-      group.width = group.children.reduce(
-        (total, child, index) => total + subtreeWidth.get(child) + (index ? CARD_GAP : 0),
-        0,
+  /**
+   * Spaces the members of a block so every marriage sits over the middle of its
+   * own children. Propagating the far spouse from the near one lands each
+   * marriage exactly on its target; the minimum separation only binds where the
+   * targets are closer together than two cards.
+   */
+  const spaceMembers = (block, targetByUnionId, fallbackCentre = null) => {
+    const separation = CARD_WIDTH + PARTNER_GAP;
+    const unionBetween = (index) => {
+      const first = block.memberIds[index];
+      const second = block.memberIds[index + 1];
+      return unions.find(
+        (union) =>
+          union.parentIds.length === 2 &&
+          union.parentIds.includes(first) &&
+          union.parentIds.includes(second),
       );
-      const centres = (group.union?.parentIds || []).map(memberCentre).filter((v) => v !== null);
-      group.desired = centres.length ? mean(centres) : null;
+    };
+
+    const targets = block.memberIds.slice(1).map((_, index) => {
+      const union = unionBetween(index);
+      return union ? (targetByUnionId.get(union.id) ?? null) : null;
     });
 
-    const totalWidth = groups.reduce(
-      (total, group, index) => total + group.width + (index ? CARD_GAP : 0),
+    const firstTarget = targets.findIndex((target) => target !== null);
+    const centres = [firstTarget === 0 ? targets[0] - separation / 2 : 0];
+    const hasTarget = firstTarget >= 0;
+
+    targets.forEach((target, index) => {
+      const previous = centres[index];
+      centres.push(
+        target === null
+          ? previous + separation
+          : Math.max(2 * target - previous, previous + separation),
+      );
+    });
+
+    const origin = centres[0] - CARD_WIDTH / 2;
+    block.memberOffsets = centres.map((centre) => centre - origin);
+    block.width = centres.at(-1) - centres[0] + CARD_WIDTH;
+
+    // A lone parent, or a couple whose children are recorded against only one
+    // of them, has no marriage to sit over. Centre the block on its children
+    // instead, or it stays at the origin while they sit somewhere else.
+    if (!hasTarget && fallbackCentre !== null) {
+      return fallbackCentre - block.width / 2;
+    }
+
+    return origin;
+  };
+
+  const layoutSubtree = (block) => {
+    const children = childrenOf.get(block) || [];
+    const contour = new Map();
+
+    if (!children.length) {
+      block.memberOffsets = block.memberIds.map(
+        (_, index) => index * (CARD_WIDTH + PARTNER_GAP) + CARD_WIDTH / 2,
+      );
+      block.width = blockWidth(block);
+      block.left = 0;
+      contour.set(block.rowIndex, { min: 0, max: block.width });
+      return contour;
+    }
+
+    const groups = childGroups(block, children);
+    const childrenContour = new Map();
+
+    groups.forEach((group) => {
+      const groupContour = new Map();
+      group.children.forEach((child) => {
+        const childContour = layoutSubtree(child);
+        const shift = clearingShift(groupContour, childContour, CARD_GAP);
+        shiftSubtree(child, shift);
+        mergeContour(groupContour, childContour, shift);
+      });
+
+      const shift = clearingShift(childrenContour, groupContour, CARD_GAP);
+      group.children.forEach((child) => shiftSubtree(child, shift));
+      mergeContour(childrenContour, groupContour, shift);
+
+      const extents = [...groupContour.values()];
+      group.centre =
+        (Math.min(...extents.map((extent) => extent.min)) +
+          Math.max(...extents.map((extent) => extent.max))) /
+          2 +
+        shift;
+    });
+
+    const targetByUnionId = new Map(
+      groups.filter((group) => group.union).map((group) => [group.union.id, group.centre]),
+    );
+    const spanExtents = [...childrenContour.values()];
+    const childrenCentre = spanExtents.length
+      ? (Math.min(...spanExtents.map((extent) => extent.min)) +
+          Math.max(...spanExtents.map((extent) => extent.max))) /
+        2
+      : null;
+    block.left = spaceMembers(block, targetByUnionId, childrenCentre);
+
+    // Keep the block clear of anything its own descendants occupy on its row.
+    const ownRow = childrenContour.get(block.rowIndex);
+    if (ownRow) block.left = Math.max(block.left, ownRow.max + CARD_GAP);
+
+    mergeContour(contour, childrenContour, 0);
+    mergeContour(
+      contour,
+      new Map([[block.rowIndex, { min: block.left, max: block.left + block.width }]]),
       0,
     );
-    let cursor = left + (span - totalWidth) / 2;
 
-    groups.forEach((group) => {
-      const wanted = group.desired === null ? cursor : group.desired - group.width / 2;
-      let childLeft = Math.max(cursor, wanted);
-      group.children.forEach((child) => {
-        place(child, childLeft);
-        childLeft += subtreeWidth.get(child) + CARD_GAP;
-      });
-      cursor = childLeft;
-    });
+    const leftmost = Math.min(...[...contour.values()].map((extent) => extent.min));
+    if (leftmost !== 0) {
+      shiftSubtree(block, -leftmost);
+      const normalised = new Map();
+      mergeContour(normalised, contour, -leftmost);
+      return normalised;
+    }
+
+    return contour;
   };
 
   const roots = blocksByRow
@@ -650,22 +742,26 @@ function centreRows(rows, unions) {
       (first, second) => first.rowIndex - second.rowIndex || first.orderIndex - second.orderIndex,
     );
 
+  const placed = new Map();
   roots.forEach((root) => {
-    measure(root);
-    // Start after anything already placed on any row this subtree touches.
-    let left = 0;
-    for (let rowIndex = root.rowIndex; rowIndex <= deepestRow(root); rowIndex += 1) {
-      const used = rowCursor.get(rowIndex);
-      if (Number.isFinite(used)) left = Math.max(left, used + CARD_GAP);
-    }
-    place(root, left);
+    const contour = layoutSubtree(root);
+    const shift = clearingShift(placed, contour, CARD_GAP);
+    shiftSubtree(root, shift);
+    mergeContour(placed, contour, shift);
   });
+
+  blocksByRow.forEach((blocks) =>
+    blocks.forEach((block) => {
+      block.centre = block.left + (block.width ?? blockWidth(block)) / 2;
+    }),
+  );
 
   const centreOf = (personId) => {
     const block = blockOfPerson.get(personId);
     if (!block) return null;
     const index = block.memberIds.indexOf(personId);
-    return block.left + index * (CARD_WIDTH + PARTNER_GAP) + CARD_WIDTH / 2;
+    if (index < 0) return null;
+    return block.left + block.memberOffsets[index];
   };
 
   const unionCentre = (union) => {
@@ -710,7 +806,7 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
     reorderRows(seedOrder(cleanPeople, generations, maxGeneration), unions, cleanPeople),
     unions,
   );
-  const { centreOf, unionCentre } = centreRows(rows, unions);
+  const { centreOf, unionCentre, blockOfPerson } = centreRows(rows, unions);
 
   const peopleById = new Map(cleanPeople.map((person) => [person.id, person]));
 
@@ -757,9 +853,18 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
         const marriageIndex = marriageIndexByUnion.get(union.id) || 0;
         const childCentres = union.childIds.map(centreOf).filter((value) => value !== null);
         const parentCentres = union.parentIds.map(centreOf).filter((value) => value !== null);
+        // Adjacent means nothing stands between the two spouses, not that they
+        // are exactly one card apart: the gap between them widens so each
+        // marriage can sit over its own children.
+        const spouseBlock = union.parentIds.map((id) => blockOfPerson.get(id));
+        const spouseIndexes = union.parentIds.map((id, index) =>
+          spouseBlock[index] ? spouseBlock[index].memberIds.indexOf(id) : -1,
+        );
         const adjacent =
           parentCentres.length === 2 &&
-          Math.abs(Math.abs(parentCentres[0] - parentCentres[1]) - (CARD_WIDTH + PARTNER_GAP)) < 1;
+          spouseBlock[0] === spouseBlock[1] &&
+          spouseIndexes.every((index) => index >= 0) &&
+          Math.abs(spouseIndexes[0] - spouseIndexes[1]) === 1;
         const parentDetails = union.parentIds
           .map((parentId) => ({
             id: parentId,
@@ -851,9 +956,16 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
     const parentCardHeights = union.parentIds
       .map((parentId) => heightByPerson.get(parentId))
       .filter(Number.isFinite);
+    // A marriage line meets the spouses at the height of the surname, measured
+    // down from the top of the card. Half the card height put it wherever the
+    // tallest legal note happened to end, so it sat at a different height on
+    // every couple.
     union.cardMiddleY =
       rowTop(union.generation) +
-      (parentCardHeights.length ? Math.min(...parentCardHeights) : CARD_HEIGHT) / 2;
+      Math.min(
+        SURNAME_LINE_OFFSET,
+        (parentCardHeights.length ? Math.min(...parentCardHeights) : CARD_HEIGHT) / 2,
+      );
     union.routeY =
       rowTop(union.generation) -
       OUTER_MARRIAGE_ROUTE_OFFSET -
