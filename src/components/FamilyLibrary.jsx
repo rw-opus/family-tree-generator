@@ -38,6 +38,7 @@ export function FamilyLibrary({
   canCreate = true,
   billingBusy = false,
   billingMessage = "",
+  storageStatus = "",
   onCreate,
   onImport,
   onOpen,
@@ -191,6 +192,11 @@ export function FamilyLibrary({
           {billingMessage && (
             <p className="library-billing-message" aria-live="polite">
               {billingMessage}
+            </p>
+          )}
+          {storageStatus && (
+            <p className="library-storage-message" aria-live="polite">
+              {storageStatus}
             </p>
           )}
         </section>

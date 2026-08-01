@@ -8,6 +8,12 @@ const rootDirectory = path.dirname(fileURLToPath(import.meta.url));
 const distributionDirectory = path.join(rootDirectory, "dist");
 const fallbackFile = path.join(distributionDirectory, "index.html");
 const port = Number(process.env.PORT) || 4173;
+const securityHeaders = {
+  "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+};
 
 // Written at build time by scripts/write-build-info.mjs, so /healthz can report the exact
 // commit a running deployment is serving without needing git available at runtime.
@@ -54,7 +60,7 @@ async function resolveFile(requestUrl) {
 
 const server = createServer(async (request, response) => {
   if (request.method !== "GET" && request.method !== "HEAD") {
-    response.writeHead(405, { Allow: "GET, HEAD" });
+    response.writeHead(405, { Allow: "GET, HEAD", ...securityHeaders });
     response.end("Method Not Allowed");
     return;
   }
@@ -65,6 +71,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, {
       "Cache-Control": "no-cache",
       "Content-Type": "application/json; charset=utf-8",
+      ...securityHeaders,
     });
     response.end(request.method === "HEAD" ? undefined : body);
     return;
@@ -81,7 +88,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, {
       "Cache-Control": cacheControl,
       "Content-Type": contentType,
-      "X-Content-Type-Options": "nosniff",
+      ...securityHeaders,
     });
 
     if (request.method === "HEAD") {
@@ -96,7 +103,10 @@ const server = createServer(async (request, response) => {
       })
       .pipe(response);
   } catch {
-    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.writeHead(400, {
+      "Content-Type": "text/plain; charset=utf-8",
+      ...securityHeaders,
+    });
     response.end("Bad Request");
   }
 });

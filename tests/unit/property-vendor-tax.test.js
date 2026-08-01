@@ -29,6 +29,7 @@ describe("property vendor tax reports", () => {
             immovablePropertyValue: "100000",
             date: "2020-04-01",
             notaryName: "Maria Notary",
+            declarantPersonIds: ["child"],
           },
         ],
       },
@@ -63,6 +64,171 @@ describe("property vendor tax reports", () => {
       "increase-12",
       "elected-whole-8",
     ]);
+  });
+
+  it("does not use an incomplete person-card CM declaration as a tax basis", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        dateOfDeath: "2020-01-01",
+        causaMortisDeclarations: [
+          {
+            id: "unfinished",
+            propertyId: "property",
+            status: "draft",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            immovablePropertyValue: "",
+            declarantPersonIds: ["child"],
+          },
+        ],
+      },
+      { id: "child", fullName: "Maria Borg" },
+    ];
+    const source = {
+      deceasedId: "deceased",
+      deceasedName: "Joseph Borg",
+      ownerId: "child",
+      inheritanceDate: "2020-01-01",
+      share: 1,
+      allocationShare: 1,
+    };
+    const vendorReport = {
+      livingVendors: [{ id: "child", name: "Maria Borg", share: 1 }],
+      saleRows: [],
+      inheritanceSourcesByOwner: new Map([["child", [source]]]),
+      ledger: { entries: [], parties: [] },
+      taxSummary: { excludedLotCount: 0 },
+    };
+
+    const row = buildTaxCalculationReport(
+      { id: "property", saleValue: 100000 },
+      people,
+      [],
+      vendorReport,
+    ).vendors[0].rows[0];
+
+    expect(row.declarations).toEqual([]);
+    expect(row.methods).toEqual([]);
+    expect(row.warning).toMatch(/value.*needed|causa mortis/i);
+  });
+
+  it("attributes separate CM declarations only to their named declarants", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        dateOfDeath: "2020-01-01",
+        causaMortisDeclarations: [
+          {
+            id: "cm-a",
+            propertyId: "property",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 2,
+            immovablePropertyValue: 100,
+            date: "2020-02-01",
+            notaryName: "Notary A",
+            declarantPersonIds: ["a"],
+          },
+          {
+            id: "cm-b",
+            propertyId: "property",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 2,
+            immovablePropertyValue: 200,
+            date: "2020-03-01",
+            notaryName: "Notary B",
+            declarantPersonIds: ["b"],
+          },
+        ],
+      },
+      { id: "a", fullName: "Heir A" },
+      { id: "b", fullName: "Heir B" },
+    ];
+    const sourceA = {
+      deceasedId: "deceased",
+      deceasedName: "Joseph Borg",
+      ownerId: "a",
+      inheritanceDate: "2020-01-01",
+      share: 0.5,
+      allocationShare: 0.5,
+    };
+    const sourceB = { ...sourceA, ownerId: "b" };
+    const inheritanceSourcesByOwner = new Map([
+      ["a", [sourceA]],
+      ["b", [sourceB]],
+    ]);
+    const vendorReport = {
+      livingVendors: [
+        { id: "a", name: "Heir A", share: 0.5 },
+        { id: "b", name: "Heir B", share: 0.5 },
+      ],
+      saleRows: [],
+      inheritanceSourcesByOwner,
+      ledger: { entries: [], parties: [] },
+      taxSummary: { excludedLotCount: 0 },
+    };
+
+    const report = buildTaxCalculationReport(
+      { id: "property", saleValue: 1000 },
+      people,
+      [],
+      vendorReport,
+    );
+
+    expect(report.vendors[0].rows[0]).toMatchObject({
+      declaredValue: 100,
+      declarations: [{ id: "cm-a", declaredShare: 0.5, declaredValue: 100 }],
+    });
+    expect(report.vendors[1].rows[0]).toMatchObject({
+      declaredValue: 200,
+      declarations: [{ id: "cm-b", declaredShare: 0.5, declaredValue: 200 }],
+    });
+  });
+
+  it("recalculates a legacy zero-share row after assigning the vendor's sole share", () => {
+    const vendorReport = {
+      livingVendors: [{ id: "vendor", name: "Vendor", share: 1 }],
+      saleRows: [
+        {
+          lot: { id: "lot", ownerId: "vendor", acquisitionType: "inheritance" },
+          effectiveLot: {
+            id: "lot",
+            ownerId: "vendor",
+            acquisitionType: "inheritance",
+            inheritanceDate: "2020-01-01",
+            transferDate: "2026-08-01",
+            shareNumerator: 0,
+            shareDenominator: 1,
+            acquisitionValue: 50000,
+            transferValue: 0,
+            cmValueEligibilityConfirmed: true,
+          },
+          result: { share: 0, transferValue: 0 },
+          selectedInheritanceSource: null,
+        },
+      ],
+      inheritanceSourcesByOwner: new Map(),
+      ledger: { entries: [], parties: [] },
+      taxSummary: { excludedLotCount: 0 },
+    };
+
+    const vendor = buildTaxCalculationReport(
+      { id: "property", saleValue: 100000 },
+      [],
+      [],
+      vendorReport,
+    ).vendors[0];
+
+    expect(vendor.rows[0]).toMatchObject({
+      share: 1,
+      attributedSaleValue: 100000,
+      difference: 50000,
+      tax: 6000,
+      net: 94000,
+    });
+    expect(vendor).toMatchObject({ attributedSaleValue: 100000, tax: 6000, net: 94000 });
   });
 
   it("automatically applies 7% when a child sells a share inherited before 25 November 1992", () => {

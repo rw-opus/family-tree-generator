@@ -3,7 +3,11 @@ import { withSupabase } from "@supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 import type { CommercialDatabase } from "../_shared/database.types.ts";
-import { paidTreeOrderUpdate, treeCheckoutEventAction } from "./logic.ts";
+import {
+  paidTreeOrderUpdate,
+  treeCheckoutEventAction,
+  treeOrderWasAlreadyFulfilled,
+} from "./logic.ts";
 
 const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY") || "";
 const webhookSecret = Deno.env.get("STRIPE_TREE_WEBHOOK_SECRET") || "";
@@ -56,12 +60,13 @@ export default {
       }
 
       if (action === "expire") {
-        await admin
+        const { error: expireError } = await admin
           .from("tree_credit_orders")
           .update({ status: "expired" })
           .eq("id", orderId)
           .eq("user_id", userId)
           .eq("status", "pending");
+        if (expireError) throw expireError;
         return Response.json({ received: true });
       }
 
@@ -81,7 +86,20 @@ export default {
         .select("id")
         .maybeSingle();
       if (fulfilError) throw fulfilError;
-      if (!fulfilledOrder) throw new Error("matching pending tree order was not found");
+      if (!fulfilledOrder) {
+        const { data: existingOrder, error: existingOrderError } = await admin
+          .from("tree_credit_orders")
+          .select("id,status")
+          .eq("id", orderId)
+          .eq("user_id", userId)
+          .eq("unit_amount_cents", 3000)
+          .eq("currency", "eur")
+          .maybeSingle();
+        if (existingOrderError) throw existingOrderError;
+        if (!treeOrderWasAlreadyFulfilled(existingOrder)) {
+          throw new Error("matching pending or fulfilled tree order was not found");
+        }
+      }
 
       const customerId =
         typeof session.customer === "string" ? session.customer : session.customer?.id || "";

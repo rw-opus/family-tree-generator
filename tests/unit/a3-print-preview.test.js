@@ -129,11 +129,28 @@ describe("A3 print pagination", () => {
 
     expect(pages[0]).toMatchObject({
       offsetY: 0,
-      clipHeight: 620,
+      clipHeight: 700,
       breakAfterGeneration: 1,
     });
-    expect(pages[1].offsetY).toBe(520);
+    expect(pages[1].offsetY).toBe(600);
     expect(pages[1].breakAfterGeneration).toBe(2);
+  });
+
+  it("keeps page boundaries inside generation gaps rather than on card borders", () => {
+    const pages = calculateA3VerticalPages({
+      contentHeight: 1200,
+      viewportHeight: 700,
+      overlap: 100,
+      generationBands: [
+        { generation: 0, top: 0, bottom: 260 },
+        { generation: 1, top: 400, bottom: 760 },
+        { generation: 2, top: 920, bottom: 1200 },
+      ],
+    });
+
+    expect(pages[0].clipHeight).toBe(399);
+    expect(pages[0].breakAfterGeneration).toBe(0);
+    expect(pages[1].offsetY).toBe(299);
   });
 
   it("fits a tree to a user-selected one- or two-sheet print width", () => {

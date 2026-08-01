@@ -1,77 +1,131 @@
 import { isoDateToDisplay } from "./dateFormat.js";
 import { approximateFraction } from "./ownership.js";
 
-const escapeHtml = (value) =>
+const EXCEL_XML_MIME = "application/vnd.ms-excel;charset=utf-8";
+
+const escapeXml = (value) =>
   String(value ?? "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replaceAll("'", "&apos;");
 
 const fractionLabel = (share) => {
   const fraction = approximateFraction(share);
   return `${fraction.numerator}/${fraction.denominator}`;
 };
 
-const moneyCell = (value) =>
-  `<td class="money" x:num="${Math.max(0, Number(value) || 0)}">${escapeHtml(
-    Math.max(0, Number(value) || 0).toFixed(2),
-  )}</td>`;
+const stringCell = (value, styleId = "Text") =>
+  `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(value)}</Data></Cell>`;
 
-export function vendorTaxSpreadsheetHtml(report, property = {}) {
-  const rows = report.vendors.flatMap((vendor) =>
+const numberCell = (value, styleId = "Money") =>
+  `<Cell ss:StyleID="${styleId}"><Data ss:Type="Number">${Math.max(
+    0,
+    Number(value) || 0,
+  )}</Data></Cell>`;
+
+const percentageCell = (value) =>
+  value == null ? stringCell("") : numberCell(value, "Percentage");
+
+const rowXml = (cells, styleId) =>
+  `<Row${styleId ? ` ss:StyleID="${styleId}"` : ""}>${cells.join("")}</Row>`;
+
+const workbookRows = (report) =>
+  report.vendors.flatMap((vendor) =>
     vendor.rows.flatMap((row) => {
       const methods = row.methods.length ? row.methods : [null];
+      const declarations = row.declarations.length
+        ? row.declarations
+            .map(
+              (declaration) =>
+                `${isoDateToDisplay(declaration.date) || declaration.date || "Undated"}: EUR ${declaration.declaredValue.toFixed(2)}`,
+            )
+            .join("; ")
+        : "";
+
       return methods.map((method) => {
-        const declarations = row.declarations.length
-          ? row.declarations
-              .map(
-                (declaration) =>
-                  `${isoDateToDisplay(declaration.date) || declaration.date || "Undated"}: EUR ${declaration.declaredValue.toFixed(2)}`,
-              )
-              .join("; ")
-          : "";
         const tax = method?.tax || 0;
-        return `<tr>
-          <td>${escapeHtml(vendor.name)}</td>
-          <td>${escapeHtml(fractionLabel(vendor.share))}</td>
-          <td>${escapeHtml(row.provenance)}</td>
-          <td>${escapeHtml(fractionLabel(row.share))}</td>
-          <td>${escapeHtml(declarations)}</td>
-          ${moneyCell(row.declaredValue)}
-          ${moneyCell(row.attributedSaleValue)}
-          ${moneyCell(row.difference)}
-          <td>${escapeHtml(method?.label || row.warning || "Incomplete")}</td>
-          <td>${method?.rate == null ? "" : escapeHtml(`${method.rate * 100}%`)}</td>
-          ${moneyCell(method?.basis || 0)}
-          ${moneyCell(tax)}
-          ${moneyCell(row.attributedSaleValue - tax)}
-        </tr>`;
+        return rowXml([
+          stringCell(vendor.name),
+          stringCell(fractionLabel(vendor.share), "CenteredText"),
+          stringCell(row.provenance),
+          stringCell(fractionLabel(row.share), "CenteredText"),
+          stringCell(declarations),
+          numberCell(row.declaredValue),
+          numberCell(row.attributedSaleValue),
+          numberCell(row.difference),
+          stringCell(method?.label || row.warning || "Incomplete"),
+          percentageCell(method?.rate),
+          numberCell(method?.basis || 0),
+          numberCell(tax),
+          numberCell(row.attributedSaleValue - tax),
+        ]);
       });
     }),
   );
-  return `<!doctype html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
-<head><meta charset="utf-8"><style>
-  table { border-collapse: collapse; font-family: Arial, sans-serif; font-size: 10pt; }
-  th { background: #004225; color: #fff; font-weight: 700; }
-  th, td { border: 1px solid #9eb9aa; padding: 6px; vertical-align: top; }
-  .money { mso-number-format: "€#,##0.00"; text-align: right; }
-</style></head><body>
-<h2>${escapeHtml(property.address || "Property")} — Tax Calculation</h2>
-<table><thead><tr>
-  <th>Vendor</th><th>Total ownership fraction</th><th>Provenance</th><th>Source fraction</th>
-  <th>Relevant CM declarations</th><th>CM declared value</th><th>Attributed selling price</th>
-  <th>Difference</th><th>Tax calculation</th><th>Rate</th><th>Tax basis</th>
-  <th>Tax payable</th><th>Net balance</th>
-</tr></thead><tbody>${rows.join("")}</tbody></table>
-</body></html>`;
+
+export function vendorTaxSpreadsheetXml(report, property = {}) {
+  const headers = [
+    "Vendor",
+    "Total ownership fraction",
+    "Provenance",
+    "Source fraction",
+    "Relevant CM declarations",
+    "CM declared value",
+    "Attributed selling price",
+    "Difference",
+    "Tax calculation",
+    "Rate",
+    "Tax basis",
+    "Tax payable",
+    "Net balance",
+  ];
+  const title = `${property.address || "Property"} — Tax Calculation`;
+  const rows = workbookRows(report);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+  <Title>${escapeXml(title)}</Title>
+ </DocumentProperties>
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal"><Alignment ss:Vertical="Top"/><Font ss:FontName="Arial" ss:Size="10"/></Style>
+  <Style ss:ID="Title"><Font ss:FontName="Arial" ss:Size="14" ss:Bold="1" ss:Color="#004225"/></Style>
+  <Style ss:ID="Header"><Alignment ss:Vertical="Center" ss:WrapText="1"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#004225" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="Text"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E4DE"/></Borders></Style>
+  <Style ss:ID="CenteredText" ss:Parent="Text"><Alignment ss:Horizontal="Center" ss:Vertical="Top"/></Style>
+  <Style ss:ID="Money" ss:Parent="Text"><Alignment ss:Horizontal="Right" ss:Vertical="Top"/><NumberFormat ss:Format="€#,##0.00"/></Style>
+  <Style ss:ID="Percentage" ss:Parent="Text"><Alignment ss:Horizontal="Right" ss:Vertical="Top"/><NumberFormat ss:Format="0.00%"/></Style>
+ </Styles>
+ <Worksheet ss:Name="Tax Calculation">
+  <Table ss:ExpandedColumnCount="13" ss:ExpandedRowCount="${rows.length + 2}" x:FullColumns="1" x:FullRows="1">
+   <Column ss:Width="110"/><Column ss:Width="70"/><Column ss:Width="180"/><Column ss:Width="70"/>
+   <Column ss:Width="190"/><Column ss:Width="85"/><Column ss:Width="95"/><Column ss:Width="85"/>
+   <Column ss:Width="155"/><Column ss:Width="55"/><Column ss:Width="85"/><Column ss:Width="85"/><Column ss:Width="85"/>
+   ${rowXml([`<Cell ss:MergeAcross="12" ss:StyleID="Title"><Data ss:Type="String">${escapeXml(title)}</Data></Cell>`])}
+   ${rowXml(
+     headers.map((header) => stringCell(header, "Header")),
+     "Header",
+   )}
+   ${rows.join("\n   ")}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>2</SplitHorizontal><TopRowBottomPane>2</TopRowBottomPane><ActivePane>2</ActivePane>
+   <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
 }
 
 export function downloadVendorTaxSpreadsheet(report, property = {}) {
-  const html = vendorTaxSpreadsheetHtml(report, property);
-  const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const xml = vendorTaxSpreadsheetXml(report, property);
+  const blob = new Blob([xml], { type: EXCEL_XML_MIME });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   const baseName = String(property.address || "tax-calculation")
@@ -80,7 +134,7 @@ export function downloadVendorTaxSpreadsheet(report, property = {}) {
     .replace(/^-|-$/g, "")
     .toLowerCase();
   link.href = url;
-  link.download = `${baseName || "tax-calculation"}-tax-calculation.xls`;
+  link.download = `${baseName || "tax-calculation"}-tax-calculation.xml`;
   document.body.append(link);
   link.click();
   link.remove();

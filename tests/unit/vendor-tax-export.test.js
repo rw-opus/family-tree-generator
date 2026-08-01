@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { vendorTaxSpreadsheetHtml } from "../../src/domain/vendorTaxExport.js";
+import { vendorTaxSpreadsheetXml } from "../../src/domain/vendorTaxExport.js";
 
 describe("vendor tax Excel export", () => {
-  it("includes each vendor source, CM value, tax alternative and net balance", () => {
-    const html = vendorTaxSpreadsheetHtml(
+  it("creates a typed Excel workbook with each source, CM value, tax and net balance", () => {
+    const xml = vendorTaxSpreadsheetXml(
       {
         vendors: [
           {
@@ -35,22 +35,25 @@ describe("vendor tax Excel export", () => {
       { address: "1 Republic Street" },
     );
 
-    expect(html).toContain("Maria Borg");
-    expect(html).toContain("1/4");
-    expect(html).toContain("Inherited from Joseph Borg");
-    expect(html).toContain("02-01-2020: EUR 100.00");
-    expect(html).toContain("12% of difference");
-    expect(html).toContain("117.60");
-    expect(html).toContain("1 Republic Street");
+    expect(xml).toContain('<?mso-application progid="Excel.Sheet"?>');
+    expect(xml).toContain('<Worksheet ss:Name="Tax Calculation">');
+    expect(xml).toContain("Maria Borg");
+    expect(xml).toContain("1/4");
+    expect(xml).toContain("Inherited from Joseph Borg");
+    expect(xml).toContain("02-01-2020: EUR 100.00");
+    expect(xml).toContain("12% of difference");
+    expect(xml).toContain('<Data ss:Type="Number">117.6</Data>');
+    expect(xml).toContain("1 Republic Street");
+    expect(xml).toContain('<NumberFormat ss:Format="0.00%"/>');
   });
 
-  it("escapes workbook cell text", () => {
-    const html = vendorTaxSpreadsheetHtml(
+  it("escapes workbook text and strips invalid XML controls", () => {
+    const xml = vendorTaxSpreadsheetXml(
       {
         vendors: [
           {
             id: "vendor",
-            name: "<script>alert(1)</script>",
+            name: '<script>alert("x")</script>\u0000',
             share: 1,
             rows: [
               {
@@ -70,7 +73,8 @@ describe("vendor tax Excel export", () => {
       {},
     );
 
-    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
-    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(xml).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
+    expect(xml).not.toContain("<script>");
+    expect(xml).not.toContain("\u0000");
   });
 });

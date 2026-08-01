@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Calculator, GitBranch, House, Landmark, Settings2, UserRound, X } from "lucide-react";
 import { familyViewKey } from "./components/CaseViewTabs.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
@@ -26,6 +26,7 @@ import {
   removeFamilyTree,
   saveFamilyTree,
 } from "./services/familyTrees.js";
+import { createCloudSaveQueue } from "./services/cloudSaveQueue.js";
 import {
   loadLocalWorkspace,
   saveLocalWorkspace,
@@ -213,6 +214,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
+  const cloudSaveQueueRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
     () => normaliseTree(tree).activeFamilyGroupId,
   );
@@ -227,6 +229,32 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     return activation.caseData;
   }, []);
 
+  useEffect(() => {
+    if (!cloudMode) return undefined;
+    const queue = createCloudSaveQueue((snapshot) => saveFamilyTree(snapshot, session.user.id), {
+      onSaveStart: () => setStatus("Saving securely..."),
+      onSaveSuccess: () => setStatus("Saved securely to your workspace."),
+      onSaveError: (error) =>
+        setStatus(`Cloud save needs attention: ${error?.message || "Unknown error"}`),
+    });
+    cloudSaveQueueRef.current = queue;
+    return () => {
+      if (cloudSaveQueueRef.current === queue) cloudSaveQueueRef.current = null;
+      queue.dispose();
+    };
+  }, [cloudMode, session?.user?.id]);
+
+  useEffect(() => {
+    if (!cloudMode) return undefined;
+    const warnAboutUnsavedCloudChanges = (event) => {
+      if (!cloudSaveQueueRef.current?.hasUnsavedChanges()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnAboutUnsavedCloudChanges);
+    return () => window.removeEventListener("beforeunload", warnAboutUnsavedCloudChanges);
+  }, [cloudMode]);
+
   const refreshTreeEntitlement = useCallback(async () => {
     if (!cloudMode) {
       setEntitlement(defaultTreeEntitlement);
@@ -237,7 +265,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     return nextEntitlement;
   }, [cloudMode, session]);
 
-  const currentTree = normaliseTree(tree);
+  const currentTree = useMemo(() => normaliseTree(tree), [tree]);
   const requestedActiveFamilyGroup = currentTree.familyGroups.find(
     (group) => group.id === activeFamilyGroupId,
   );
@@ -282,10 +310,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       "a partner relationship",
       "a sibling relationship",
     ]);
-    return casePersonDependencyLabels(tree, selectedPersonId).filter(
+    return casePersonDependencyLabels(currentTree, selectedPersonId).filter(
       (label) => !relationshipLabels.has(label),
     );
-  }, [selectedPersonId, tree]);
+  }, [currentTree, selectedPersonId]);
 
   useEffect(() => {
     if (!activeFamilyGroup) {
@@ -309,8 +337,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   useEffect(() => {
     if (!activeTreeIsListed) return;
-    setTrees((items) => upsertWorkspaceTree(items, normaliseTree(tree)));
-  }, [activeTreeIsListed, tree]);
+    setTrees((items) => upsertWorkspaceTree(items, currentTree));
+  }, [activeTreeIsListed, currentTree]);
 
   useEffect(() => {
     if (cloudMode) return;
@@ -340,14 +368,9 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   useEffect(() => {
     if (!cloudMode || !activeTreeIsListed) return undefined;
-    const timeout = window.setTimeout(() => {
-      setStatus("Saving securely...");
-      saveFamilyTree(normaliseTree(tree), session.user.id)
-        .then(() => setStatus("Saved securely to your workspace."))
-        .catch((error) => setStatus(`Cloud save needs attention: ${error.message}`));
-    }, 900);
-    return () => window.clearTimeout(timeout);
-  }, [activeTreeIsListed, cloudMode, session, tree]);
+    cloudSaveQueueRef.current?.schedule(currentTree);
+    return undefined;
+  }, [activeTreeIsListed, cloudMode, currentTree]);
 
   useEffect(() => {
     if (!cloudMode) return undefined;
@@ -402,8 +425,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   }, [cloudMode, refreshTreeEntitlement]);
 
   const treeOptions = useMemo(
-    () => (activeTreeIsListed ? upsertWorkspaceTree(trees, normaliseTree(tree)) : trees),
-    [activeTreeIsListed, tree, trees],
+    () => (activeTreeIsListed ? upsertWorkspaceTree(trees, currentTree) : trees),
+    [activeTreeIsListed, currentTree, trees],
   );
 
   const selectPerson = (personId) => {
@@ -515,9 +538,17 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     }
   };
 
-  const openTree = (treeId, view = "tree") => {
+  const openTree = async (treeId, view = "tree") => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return;
+    if (cloudMode && treeId !== currentTree.id) {
+      try {
+        await cloudSaveQueueRef.current?.flush();
+      } catch (error) {
+        setStatus(`Could not open another family before saving: ${error.message}`);
+        return;
+      }
+    }
     setActiveTreeIsListed(true);
     activateCase(selectedTree);
     setWorkspaceView(view);
@@ -544,7 +575,13 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
     setStatus("Saving family name...");
     try {
-      const saved = await saveFamilyTree(renamed, session.user.id);
+      let saved;
+      if (treeId === currentTree.id && cloudSaveQueueRef.current) {
+        cloudSaveQueueRef.current.schedule(normaliseTree(renamed));
+        saved = await cloudSaveQueueRef.current.flush();
+      } else {
+        saved = await saveFamilyTree(renamed, session.user.id);
+      }
       setTrees((items) => items.map((item) => (item.id === treeId ? saved : item)));
       if (treeId === currentTree.id) setTree(saved);
       setStatus("Saved securely to your workspace.");
@@ -624,21 +661,41 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   };
 
   const returnHome = async () => {
-    setDashboardOpen(false);
-    setWorkspaceView("tree");
-    setShowLibrary(true);
     if (!cloudMode) {
+      setDashboardOpen(false);
+      setWorkspaceView("tree");
+      setShowLibrary(true);
       setStatus("Automatically saved on this device.");
       return;
     }
     setStatus("Saving before returning Home...");
     try {
-      const saved = await saveFamilyTree(currentTree, session.user.id);
+      cloudSaveQueueRef.current?.schedule(normaliseTree(currentTree));
+      const saved = await cloudSaveQueueRef.current?.flush();
+      if (!saved) throw new Error("The secure save queue is unavailable.");
       setTree(saved);
       setTrees((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
       setStatus("Saved securely to your workspace.");
+      setDashboardOpen(false);
+      setWorkspaceView("tree");
+      setShowLibrary(true);
     } catch (error) {
       setStatus(`Could not save: ${error.message}`);
+      setDashboardOpen(true);
+    }
+  };
+
+  const signOutSafely = async () => {
+    if (!cloudMode) {
+      await onSignOut();
+      return;
+    }
+    setStatus("Saving before signing out...");
+    try {
+      await cloudSaveQueueRef.current?.flush();
+      await onSignOut();
+    } catch (error) {
+      setStatus(`Could not sign out before saving: ${error.message}`);
     }
   };
 
@@ -653,6 +710,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         canCreate={!cloudMode || Boolean(entitlement?.canCreate)}
         billingBusy={billingBusy}
         billingMessage={billingMessage}
+        storageStatus={status}
         onCreate={createNewTree}
         onImport={importNewTree}
         onOpen={openTree}
@@ -660,7 +718,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         onRename={renameTree}
         onRemove={removeTree}
         onBuyTree={buyTreeCredit}
-        onSignOut={onSignOut}
+        onSignOut={signOutSafely}
       />
     );
   }

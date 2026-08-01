@@ -1,5 +1,9 @@
 export type TreeCheckoutAction = "fulfil" | "expire" | "ignore";
 
+export function treeOrderWasAlreadyFulfilled(order: { status?: string | null } | null) {
+  return order?.status === "paid";
+}
+
 export function treeCheckoutEventAction(eventType: string): TreeCheckoutAction {
   if (
     eventType === "checkout.session.completed" ||

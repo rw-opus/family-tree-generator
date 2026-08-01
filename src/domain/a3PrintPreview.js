@@ -127,8 +127,9 @@ export function calculateA3VerticalPages({
     }))
     .filter((band) => band.bottom > band.top)
     .sort((left, right) => left.top - right.top || left.generation - right.generation);
-  const safeBreaks = bands.slice(0, -1).map((band) => ({
-    position: band.bottom,
+  const safeGaps = bands.slice(0, -1).map((band, index) => ({
+    start: band.bottom + 1,
+    end: Math.max(band.bottom + 1, bands[index + 1].top - 1),
     generation: band.generation,
   }));
   const pages = [];
@@ -144,16 +145,14 @@ export function calculateA3VerticalPages({
     }
 
     const minimumUsefulEnd = offsetY + Math.max(1, sharedEdge * 1.25);
-    const rowBreak = [...safeBreaks]
+    const rowGap = [...safeGaps]
       .reverse()
-      .find(
-        (candidate) => candidate.position <= maximumEnd && candidate.position > minimumUsefulEnd,
-      );
-    const end = rowBreak?.position || maximumEnd;
+      .find((candidate) => candidate.start < maximumEnd && candidate.end > minimumUsefulEnd);
+    const end = rowGap ? Math.min(maximumEnd, rowGap.end) : maximumEnd;
     pages.push({
       offsetY,
       clipHeight: Math.min(pageHeight, Math.max(1, end - offsetY)),
-      breakAfterGeneration: rowBreak?.generation ?? null,
+      breakAfterGeneration: rowGap?.generation ?? null,
     });
     offsetY = Math.max(offsetY + 1, end - sharedEdge);
   }

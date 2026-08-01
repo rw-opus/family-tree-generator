@@ -1,5 +1,5 @@
 import { declarationCoverage } from "./declarations.js";
-import { causaMortisDeclaredShare } from "./causaMortisCoverage.js";
+import { causaMortisDeclaredShare, validateCausaMortisDeclaration } from "./causaMortisCoverage.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "./article5A.js";
 import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
 import {
@@ -51,24 +51,48 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
   return sources;
 }
 
-const matchingPersonDeclarations = (person, propertyId) =>
+const declarationAppliesToOwner = (declaration, ownerId) => {
+  const declarantIds = (declaration.declarantPersonIds || []).filter(Boolean);
+  return !declarantIds.length || declarantIds.includes(ownerId);
+};
+
+const matchingPersonDeclarations = (person, propertyId, ownerId) =>
   (person?.causaMortisDeclarations || []).filter(
     (declaration) =>
       (!propertyId || !declaration.propertyId || declaration.propertyId === propertyId) &&
-      causaMortisDeclaredShare(declaration) > 0 &&
-      Number.isFinite(Number(declaration.immovablePropertyValue)),
+      declarationAppliesToOwner(declaration, ownerId) &&
+      validateCausaMortisDeclaration(declaration, { valueRequired: true }) === "",
   );
 
-const declarationRowsForSource = (source, property, peopleById) => {
+const declarationAllocationWeight = (declaration, source, inheritanceSourcesByOwner) => {
+  const declarantIds = [...new Set((declaration.declarantPersonIds || []).filter(Boolean))];
+  if (!declarantIds.length) return Number(source.allocationShare) || 0;
+
+  const declaredRecipientShare = declarantIds.reduce((total, ownerId) => {
+    const matchingSource = (inheritanceSourcesByOwner.get(ownerId) || []).find(
+      (candidate) => candidate.deceasedId === source.deceasedId,
+    );
+    return total + (Number(matchingSource?.share) || 0);
+  }, 0);
+  if (!(declaredRecipientShare > 0)) return 0;
+  return (Number(source.share) || 0) / declaredRecipientShare;
+};
+
+const declarationRowsForSource = (source, property, peopleById, inheritanceSourcesByOwner) => {
   const deceased = peopleById.get(source.deceasedId);
-  return matchingPersonDeclarations(deceased, property.id).map((declaration) => {
-    const allocationShare = Number(source.allocationShare) || 0;
+  return matchingPersonDeclarations(deceased, property.id, source.ownerId).map((declaration) => {
+    const allocationWeight = declarationAllocationWeight(
+      declaration,
+      source,
+      inheritanceSourcesByOwner,
+    );
     return {
       id: declaration.id,
       date: declaration.date || "",
       notaryName: declaration.notaryName || "",
-      declaredShare: causaMortisDeclaredShare(declaration) * allocationShare,
-      declaredValue: Math.max(0, Number(declaration.immovablePropertyValue) || 0) * allocationShare,
+      declaredShare: causaMortisDeclaredShare(declaration) * allocationWeight,
+      declaredValue:
+        Math.max(0, Number(declaration.immovablePropertyValue) || 0) * allocationWeight,
     };
   });
 };
@@ -90,22 +114,40 @@ const provenanceLabel = (source, lot, ledger) => {
   return "Purchased or transferred share";
 };
 
-const displayRowFromLot = ({ property, row, source, ledger, peopleById }) => {
-  const lotShare = Number(row.result?.share) || 0;
+const displayRowFromLot = ({
+  property,
+  row,
+  source,
+  ledger,
+  peopleById,
+  inheritanceSourcesByOwner,
+  fallbackShare = 0,
+}) => {
+  const storedShare = Number(row.result?.share) || 0;
+  const lotShare = storedShare > OWNERSHIP_EPSILON ? storedShare : Number(fallbackShare) || 0;
   const propertySaleValue = Math.max(0, Number(property.saleValue) || 0);
   const attributedSaleValue =
     propertySaleValue && lotShare
       ? propertySaleValue * lotShare
       : Number(row.result?.transferValue) || 0;
-  const declarations = source ? declarationRowsForSource(source, property, peopleById) : [];
+  const declarations = source
+    ? declarationRowsForSource(source, property, peopleById, inheritanceSourcesByOwner)
+    : [];
   const declaredValueFromCards = declarations.reduce(
     (total, declaration) => total + declaration.declaredValue,
     0,
   );
   const acquisitionValue =
     declaredValueFromCards || Math.max(0, Number(row.effectiveLot?.acquisitionValue) || 0);
+  const normalisedLotFraction = lotShare !== storedShare ? approximateFraction(lotShare) : null;
   const effectiveLot = {
     ...row.effectiveLot,
+    ...(normalisedLotFraction
+      ? {
+          shareNumerator: normalisedLotFraction.numerator,
+          shareDenominator: normalisedLotFraction.denominator,
+        }
+      : {}),
     transferValue: attributedSaleValue,
     consideration: attributedSaleValue,
     acquisitionValue:
@@ -137,8 +179,20 @@ const displayRowFromLot = ({ property, row, source, ledger, peopleById }) => {
   };
 };
 
-const syntheticInheritedRow = ({ property, vendor, source, index, peopleById }) => {
-  const declarations = declarationRowsForSource(source, property, peopleById);
+const syntheticInheritedRow = ({
+  property,
+  vendor,
+  source,
+  index,
+  peopleById,
+  inheritanceSourcesByOwner,
+}) => {
+  const declarations = declarationRowsForSource(
+    source,
+    property,
+    peopleById,
+    inheritanceSourcesByOwner,
+  );
   const declaredValue = declarations.reduce(
     (total, declaration) => total + declaration.declaredValue,
     0,
@@ -198,14 +252,26 @@ export function buildTaxCalculationReport(
               (candidate) => candidate.deceasedId === row.lot.inheritanceSourceDeceasedId,
             ) ||
             (inheritanceSources.length === 1 ? inheritanceSources[0] : null);
-          return displayRowFromLot({ property, row, source, ledger: report.ledger, peopleById });
+          return displayRowFromLot({
+            property,
+            row,
+            source,
+            ledger: report.ledger,
+            peopleById,
+            inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
+            fallbackShare: storedRows.length === 1 ? vendor.share : 0,
+          });
         })
       : inheritanceSources.map((source, index) =>
-          syntheticInheritedRow({ property, vendor, source, index, peopleById }),
+          syntheticInheritedRow({
+            property,
+            vendor,
+            source,
+            index,
+            peopleById,
+            inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
+          }),
         );
-    if (storedRows.length === 1 && rows[0]?.share <= OWNERSHIP_EPSILON) {
-      rows[0].share = vendor.share;
-    }
     const coveredShare = rows.reduce((total, row) => total + row.share, 0);
     if (vendor.share - coveredShare > OWNERSHIP_EPSILON) {
       const share = vendor.share - coveredShare;
