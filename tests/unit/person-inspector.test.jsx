@@ -643,7 +643,9 @@ describe("PersonInspector", () => {
     expect(fatherButton.disabled).toBe(true);
     expect(fatherButton.querySelector(".relationship-count").textContent).toBe("1");
     expect(deleteButton.disabled).toBe(true);
-    expect(container.textContent).toContain("Remove 1 descendant first.");
+    // Joseph stands between his own father and his child, so removing him would
+    // leave those two with no way back to each other.
+    expect(container.textContent).toContain("the only link holding this family together");
   });
 
   it("changes a father link to an existing case person without creating a duplicate", () => {

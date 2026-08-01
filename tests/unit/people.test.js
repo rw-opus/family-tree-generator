@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  removalWouldSeverFamily,
   composeFullName,
   fatherSurnameDefaultPatch,
   givenNamesFromFullName,
@@ -126,5 +127,54 @@ describe("family tree people", () => {
       "father",
       "grandfather",
     ]);
+  });
+});
+
+describe("removalWouldSeverFamily", () => {
+  const person = (id, extra = {}) => ({
+    id,
+    fullName: id,
+    fatherId: "",
+    motherId: "",
+    spouseIds: [],
+    siblingIds: [],
+    ...extra,
+  });
+
+  /** Anna married Enrico; Pandolfo is Enrico's child; Kid is Pandolfo's. */
+  const family = () => [
+    person("Anna", { spouseIds: ["Enrico"] }),
+    person("Enrico", { spouseIds: ["Anna"] }),
+    person("Pandolfo", { fatherId: "Enrico" }),
+    person("Kid", { fatherId: "Pandolfo" }),
+  ];
+
+  it("lets a spouse at the top of the tree go", () => {
+    // Anna has nothing hanging off her; nobody loses their way back.
+    expect(removalWouldSeverFamily(family(), "Anna")).toBe(false);
+  });
+
+  it("keeps the person the rest of the family is reached through", () => {
+    // Anna reaches Pandolfo only through Enrico.
+    expect(removalWouldSeverFamily(family(), "Enrico")).toBe(true);
+    expect(removalWouldSeverFamily(family(), "Pandolfo")).toBe(true);
+  });
+
+  it("lets a leaf descendant go", () => {
+    expect(removalWouldSeverFamily(family(), "Kid")).toBe(false);
+  });
+
+  it("lets an ancestor go once the branch below has another route", () => {
+    // With Anna recorded as Pandolfo's mother too, Enrico is no longer the only
+    // way between them.
+    const people = family().map((entry) =>
+      entry.id === "Pandolfo" ? { ...entry, motherId: "Anna" } : entry,
+    );
+    expect(removalWouldSeverFamily(people, "Enrico")).toBe(false);
+  });
+
+  it("says no for an empty or single-person family", () => {
+    expect(removalWouldSeverFamily([], "any")).toBe(false);
+    expect(removalWouldSeverFamily([person("only")], "only")).toBe(false);
   });
 });
