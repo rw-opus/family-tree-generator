@@ -51,6 +51,7 @@ import {
   shareFromPercentageInput,
 } from "../domain/shares.js";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { operativeWillFromRecords, personWills, personWithWills } from "../domain/wills.js";
 import {
   findPartnerRelationship,
   PARTNER_RELATIONSHIP_TYPES,
@@ -311,6 +312,43 @@ export function PersonInspector({
 
   const updateWillHeirFraction = (heir, patch) => {
     updateWillHeir(heir.id, shareFromFractionInput(heir, patch));
+  };
+
+  const writeWills = (wills) => {
+    const updated = personWithWills(selectedPerson, wills);
+    updateSelected({
+      wills: updated.wills,
+      willDate: updated.willDate,
+      willNotaryName: updated.willNotaryName,
+      willDescription: updated.willDescription,
+    });
+  };
+
+  const addWill = () => {
+    writeWills([
+      ...personWills(selectedPerson),
+      {
+        id: crypto.randomUUID(),
+        date: "",
+        notaryName: "",
+        description: "",
+      },
+    ]);
+  };
+
+  const updateWill = (willId, patch) => {
+    const currentWills = personWills(selectedPerson);
+    if (!currentWills.length) {
+      writeWills([
+        { id: crypto.randomUUID(), date: "", notaryName: "", description: "", ...patch },
+      ]);
+      return;
+    }
+    writeWills(currentWills.map((will) => (will.id === willId ? { ...will, ...patch } : will)));
+  };
+
+  const removeWill = (willId) => {
+    writeWills(personWills(selectedPerson).filter((will) => will.id !== willId));
   };
 
   const addWillHeir = () => {
@@ -706,6 +744,11 @@ export function PersonInspector({
       )} before adding relatives.`;
   const selectedDisplayName = displayName(selectedPerson);
   const inheritanceBasis = selectedPerson.inheritanceBasis || "intestacy";
+  const recordedWills = personWills(selectedPerson);
+  const displayedWills = recordedWills.length
+    ? recordedWills
+    : [{ id: `${selectedPerson.id}:new-will`, date: "", notaryName: "", description: "" }];
+  const latestWill = operativeWillFromRecords(recordedWills);
   const willHeirs = selectedPerson.willHeirs || [];
   const willTotal = willHeirs.reduce((total, heir) => total + (Number(heir.sharePercent) || 0), 0);
   const automaticIntestacy = isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
@@ -744,8 +787,10 @@ export function PersonInspector({
   const hasRemainingCausaMortisShare = causaMortisCoverage.some(
     (row) => row.status === "under" && row.requiredShare - row.declaredShare > CAUSA_MORTIS_EPSILON,
   );
+  const canStartFirstCausaMortisDeclaration = causaMortisDeclarations.length === 0;
   const canAddCausaMortisDeclaration =
-    !hasDraftCausaMortisDeclaration && hasRemainingCausaMortisShare;
+    !hasDraftCausaMortisDeclaration &&
+    (canStartFirstCausaMortisDeclaration || hasRemainingCausaMortisShare);
   const visibleCausaMortisDeclarations = causaMortisDeclarations.filter(
     (declaration) => isCompletedCausaMortisDeclaration(declaration) || causaMortisDraftOpen,
   );
@@ -1413,21 +1458,73 @@ export function PersonInspector({
                 />
               ) : (
                 <div className="will-details">
-                  <label>
-                    <span>Will date</span>
-                    <DateInput
-                      value={selectedPerson.willDate || ""}
-                      onChange={(value) => updateSelected({ willDate: value })}
-                    />
-                  </label>
-                  <label>
-                    <span>Publishing Notary (optional)</span>
-                    <input
-                      value={selectedPerson.willNotaryName || ""}
-                      onChange={(event) => updateSelected({ willNotaryName: event.target.value })}
-                      placeholder="Publishing Notary's name"
-                    />
-                  </label>
+                  <div className="will-records-heading">
+                    <div>
+                      <strong>Wills</strong>
+                      <small>
+                        The most recent dated will applies. Enter its notary or a description such
+                        as UK will.
+                      </small>
+                    </div>
+                    <button type="button" className="secondary-button" onClick={addWill}>
+                      <FilePlus2 size={14} /> Add will
+                    </button>
+                  </div>
+                  <div className="will-records">
+                    {displayedWills.map((will, index) => {
+                      const isLatest = latestWill?.id === will.id;
+                      return (
+                        <section className="will-record" key={will.id}>
+                          <div className="will-record-heading">
+                            <strong>Will {index + 1}</strong>
+                            <span>
+                              {isLatest && <small className="will-applies">Latest — applies</small>}
+                              {recordedWills.length > 0 && (
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  aria-label={`Remove will ${index + 1}`}
+                                  onClick={() => removeWill(will.id)}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </span>
+                          </div>
+                          <label>
+                            <span>Will date</span>
+                            <DateInput
+                              aria-label={`Will date ${index + 1}`}
+                              value={will.date || ""}
+                              onChange={(value) => updateWill(will.id, { date: value })}
+                            />
+                          </label>
+                          <label>
+                            <span>Notary (optional)</span>
+                            <input
+                              aria-label={`Notary for will ${index + 1}`}
+                              value={will.notaryName || ""}
+                              onChange={(event) =>
+                                updateWill(will.id, { notaryName: event.target.value })
+                              }
+                              placeholder="Notary's name"
+                            />
+                          </label>
+                          <label>
+                            <span>Description (optional)</span>
+                            <input
+                              aria-label={`Description for will ${index + 1}`}
+                              value={will.description || ""}
+                              onChange={(event) =>
+                                updateWill(will.id, { description: event.target.value })
+                              }
+                              placeholder="e.g. UK will"
+                            />
+                          </label>
+                        </section>
+                      );
+                    })}
+                  </div>
                   <IntestacyProposal
                     calculated={automaticIntestacy}
                     people={people}
@@ -1439,7 +1536,7 @@ export function PersonInspector({
                   />
                   <div className="will-beneficiaries">
                     <div className="will-beneficiaries-heading">
-                      <strong>Beneficiaries</strong>
+                      <strong>Beneficiaries under the latest will</strong>
                       <span>
                         <button type="button" className="text-button" onClick={addWillHeir}>
                           Add beneficiary
@@ -1605,9 +1702,11 @@ export function PersonInspector({
                           ? causaMortisDraftOpen
                             ? "Close the draft Declaration Causa Mortis form."
                             : "Reopen the draft Declaration Causa Mortis form."
-                          : hasRemainingCausaMortisShare
-                            ? "Insert another Declaration Causa Mortis."
-                            : "No undeclared share remains."
+                          : canStartFirstCausaMortisDeclaration
+                            ? "Record the first Declaration Causa Mortis."
+                            : hasRemainingCausaMortisShare
+                              ? "Insert another Declaration Causa Mortis."
+                              : "No undeclared share remains."
                       }
                     >
                       <FilePlus2 size={14} />

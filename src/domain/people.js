@@ -176,6 +176,7 @@ export function createPerson(designation = "") {
     siblingIds: [],
     dateOfBirth: "",
     dateOfDeath: "",
+    wills: [],
     notes: "",
   };
 }

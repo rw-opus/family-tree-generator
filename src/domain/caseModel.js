@@ -1,4 +1,5 @@
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
+import { personWithWills } from "./wills.js";
 
 export const CASE_SCHEMA_VERSION = 2;
 
@@ -49,7 +50,7 @@ function normalizePeople(people = []) {
     const id = text(person.id);
     if (!id || seen.has(id)) return result;
     seen.add(id);
-    result.push({ ...cloneValue(person), id });
+    result.push(personWithWills({ ...cloneValue(person), id }));
     return result;
   }, []);
   return normalizePartnerRelationships(normalized);
