@@ -21,16 +21,17 @@ export const CARD_WIDTH = 112;
 export const CARD_HEIGHT = 108;
 export const CARD_GAP = 14;
 export const PARTNER_GAP = 10;
-export const ROW_GAP = 64;
+export const ROW_GAP = 42;
 export const CANVAS_PADDING = 40;
 
 const ORDERING_PASSES = 6;
 
 // Each successive marriage of the same person drops its sibling bar a little
 // lower, so the children of each are read off their own bar.
-// Down from the top of a card to the middle of the surname line: the card's
-// padding, the given-name line, then half the surname line.
-const SURNAME_LINE_OFFSET = 42;
+// Down from the top of a card to the middle of the name line: the card's
+// padding plus half the given-name line. The marriage line meets both spouses
+// there, so it sits level across the chart whatever else a card carries.
+const NAME_LINE_OFFSET = 24;
 
 const UNION_BAR_OFFSET = 24;
 const UNION_BAR_STEP = 10;
@@ -952,18 +953,25 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
   placedUnions.forEach((union) => {
     union.parentBottom = rowTop(union.generation) + rowHeight(union.generation);
     union.childTop = rowTop(union.generation + 1);
-    union.y = union.parentBottom + UNION_BAR_OFFSET + (union.barLane || 0) * UNION_BAR_STEP;
+    // The bar hangs just above the children, so the long vertical runs down
+    // from the marriage and only short stubs drop to each child. Sitting it
+    // under the parents instead left the connection to them looking like a
+    // stub and the drop to the children unattached.
+    union.y = Math.max(
+      union.parentBottom + UNION_BAR_MIN_CLEARANCE,
+      union.childTop - UNION_BAR_OFFSET - (union.barLane || 0) * UNION_BAR_STEP,
+    );
     const parentCardHeights = union.parentIds
       .map((parentId) => heightByPerson.get(parentId))
       .filter(Number.isFinite);
-    // A marriage line meets the spouses at the height of the surname, measured
+    // A marriage line meets the spouses at the height of the name, measured
     // down from the top of the card. Half the card height put it wherever the
     // tallest legal note happened to end, so it sat at a different height on
     // every couple.
     union.cardMiddleY =
       rowTop(union.generation) +
       Math.min(
-        SURNAME_LINE_OFFSET,
+        NAME_LINE_OFFSET,
         (parentCardHeights.length ? Math.min(...parentCardHeights) : CARD_HEIGHT) / 2,
       );
     union.routeY =
