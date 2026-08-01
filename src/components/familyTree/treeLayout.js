@@ -25,7 +25,6 @@ export const ROW_GAP = 64;
 export const CANVAS_PADDING = 40;
 
 const ORDERING_PASSES = 6;
-const RELAX_ROUNDS = 3;
 
 // Each successive marriage of the same person drops its sibling bar a little
 // lower, so the children of each are read off their own bar.
@@ -511,80 +510,118 @@ function groupSiblings(rows, unions) {
   return rows;
 }
 
-function packRow(blocks, desiredById, maximumRight = Infinity) {
-  let cursor = null;
-
-  const widths = blocks.map(blockWidth);
-  const lefts = [];
-
-  blocks.forEach((block, index) => {
-    const desired = desiredById.get(block);
-    const minimumLeft = cursor === null ? 0 : cursor + CARD_GAP;
-    lefts[index] =
-      desired === undefined ? minimumLeft : Math.max(desired - widths[index] / 2, minimumLeft);
-    cursor = lefts[index] + widths[index];
-  });
-
-  // The pass above can only ever push a block right to clear its neighbour, so
-  // on its own the rows widen a little more on every centring pass and the
-  // slack compounds. Relaxing lets each block slide back into the space its
-  // neighbours left behind, which is what keeps the chart narrow.
-  for (let round = 0; round < RELAX_ROUNDS; round += 1) {
-    for (let index = 0; index < blocks.length; index += 1) {
-      const desired = desiredById.get(blocks[index]);
-      const lowerBound = index === 0 ? 0 : lefts[index - 1] + widths[index - 1] + CARD_GAP;
-      const upperBound =
-        index === blocks.length - 1
-          ? Infinity
-          : Math.max(lowerBound, lefts[index + 1] - CARD_GAP - widths[index]);
-      const target = desired === undefined ? lowerBound : desired - widths[index] / 2;
-      lefts[index] = Math.min(Math.max(target, lowerBound), upperBound);
-    }
-  }
-
-  blocks.forEach((block, index) => {
-    block.left = lefts[index];
-    block.centre = lefts[index] + widths[index] / 2;
-  });
-
-  if (Number.isFinite(maximumRight) && blocks.length) {
-    let right = maximumRight;
-    for (let index = blocks.length - 1; index >= 0; index -= 1) {
-      blocks[index].left = Math.min(blocks[index].left, right - widths[index]);
-      right = blocks[index].left - CARD_GAP;
-    }
-
-    const correction = Math.max(0, -blocks[0].left);
-    blocks.forEach((block, index) => {
-      block.left += correction;
-      block.centre = block.left + widths[index] / 2;
-    });
-  }
-}
-
+/**
+ * Bottom-up subtree placement, following the reference sketches.
+ *
+ * Every spouse block owns the blocks of its children, and a subtree's width is
+ * the greater of the block itself and its children's packed span. Children are
+ * packed at the minimum gap and centred under their parent block; the parent is
+ * centred over them. So the space between siblings expands exactly where a
+ * branch's descendants need the room — C's children spread beneath C until
+ * D's three cousins push back — and a childless sibling takes one card.
+ *
+ * The previous passes placed whole rows against each other (first anchored on
+ * the widest row, then top-down with a single return sweep), which always left
+ * some boundary parent far from its own children.
+ */
 function centreRows(rows, unions) {
   const blocksByRow = rows.map((rowIds) => buildRowBlocks(rowIds, unions));
   const blockOfPerson = new Map();
-  blocksByRow.forEach((blocks) =>
-    blocks.forEach((block) => block.memberIds.forEach((id) => blockOfPerson.set(id, block))),
+  blocksByRow.forEach((blocks, rowIndex) =>
+    blocks.forEach((block, orderIndex) => {
+      block.rowIndex = rowIndex;
+      block.orderIndex = orderIndex;
+      block.memberIds.forEach((id) => blockOfPerson.set(id, block));
+    }),
   );
 
   const unionByChild = new Map();
-  const unionsById = new Map(unions.map((union) => [union.id, union]));
-  const unionsByParent = new Map();
   unions.forEach((union) => union.childIds.forEach((childId) => unionByChild.set(childId, union)));
-  unions.forEach((union) =>
-    union.parentIds.forEach((parentId) =>
-      unionsByParent.set(parentId, [...(unionsByParent.get(parentId) || []), union]),
-    ),
+
+  // Attach every block to one parent block: the one holding the parents of its
+  // first member with recorded parents. A chain that marries two families
+  // together is anchored to one of them; the other family reaches it with a
+  // longer connector rather than the layout trying to serve both at once.
+  const childrenOf = new Map();
+  const parentOf = new Map();
+  blocksByRow.forEach((blocks) =>
+    blocks.forEach((block) => {
+      for (const memberId of block.memberIds) {
+        const union = unionByChild.get(memberId);
+        const anchor = union ? blockOfPerson.get(union.parentIds[0]) : null;
+        if (anchor && anchor !== block && anchor.rowIndex < block.rowIndex) {
+          parentOf.set(block, anchor);
+          childrenOf.set(anchor, [...(childrenOf.get(anchor) || []), block]);
+          return;
+        }
+      }
+    }),
+  );
+  childrenOf.forEach((children) =>
+    children.sort((first, second) => first.orderIndex - second.orderIndex),
   );
 
-  const packedRowWidth = (blocks) =>
-    blocks.reduce((total, block) => total + blockWidth(block), 0) +
-    Math.max(0, blocks.length - 1) * CARD_GAP;
-  const targetWidth = Math.max(...blocksByRow.map(packedRowWidth));
+  const subtreeWidth = new Map();
+  const measure = (block) => {
+    const children = childrenOf.get(block) || [];
+    const childrenWidth = children.reduce(
+      (total, child, index) => total + measure(child) + (index ? CARD_GAP : 0),
+      0,
+    );
+    const width = Math.max(blockWidth(block), childrenWidth);
+    subtreeWidth.set(block, width);
+    return width;
+  };
 
-  blocksByRow.forEach((blocks) => packRow(blocks, new Map()));
+  const deepestRow = (block) =>
+    (childrenOf.get(block) || []).reduce(
+      (deepest, child) => Math.max(deepest, deepestRow(child)),
+      block.rowIndex,
+    );
+
+  // A subtree is placed as one unit: the block centred in its span, and its
+  // children's spans packed at the minimum gap, centred beneath it.
+  const rowCursor = new Map();
+  const place = (block, left) => {
+    const span = subtreeWidth.get(block);
+    const width = blockWidth(block);
+    block.left = left + (span - width) / 2;
+    block.centre = block.left + width / 2;
+    rowCursor.set(
+      block.rowIndex,
+      Math.max(rowCursor.get(block.rowIndex) ?? -Infinity, block.left + width),
+    );
+
+    const children = childrenOf.get(block) || [];
+    if (!children.length) return;
+    const childrenWidth = children.reduce(
+      (total, child, index) => total + subtreeWidth.get(child) + (index ? CARD_GAP : 0),
+      0,
+    );
+    let childLeft = left + (span - childrenWidth) / 2;
+    children.forEach((child) => {
+      place(child, childLeft);
+      childLeft += subtreeWidth.get(child) + CARD_GAP;
+    });
+  };
+
+  const roots = blocksByRow
+    .flat()
+    .filter((block) => !parentOf.has(block))
+    .sort(
+      (first, second) => first.rowIndex - second.rowIndex || first.orderIndex - second.orderIndex,
+    );
+
+  roots.forEach((root) => {
+    measure(root);
+    // Start after anything already placed on any row this subtree touches.
+    let left = 0;
+    for (let rowIndex = root.rowIndex; rowIndex <= deepestRow(root); rowIndex += 1) {
+      const used = rowCursor.get(rowIndex);
+      if (Number.isFinite(used)) left = Math.max(left, used + CARD_GAP);
+    }
+    place(root, left);
+  });
 
   const centreOf = (personId) => {
     const block = blockOfPerson.get(personId);
@@ -597,127 +634,6 @@ function centreRows(rows, unions) {
     const centres = union.parentIds.map(centreOf).filter((value) => value !== null);
     return centres.length ? mean(centres) : null;
   };
-
-  const groupWidth = (group) =>
-    group.blocks.reduce((total, block) => total + blockWidth(block), 0) +
-    Math.max(0, group.blocks.length - 1) * CARD_GAP;
-
-  const familyGroups = (blocks) => {
-    const groups = [];
-
-    blocks.forEach((block) => {
-      const originIds = [
-        ...new Set(
-          block.memberIds.map((memberId) => unionByChild.get(memberId)?.id).filter(Boolean),
-        ),
-      ].sort();
-      const key = originIds.length ? originIds.join("|") : `root:${block.memberIds.join("|")}`;
-      const previous = groups.at(-1);
-
-      if (originIds.length && previous?.key === key) {
-        previous.blocks.push(block);
-        return;
-      }
-
-      groups.push({ key, originIds, blocks: [block] });
-    });
-
-    return groups;
-  };
-
-  const placeGroups = (groups, desiredByGroup) => {
-    let cursor = 0;
-
-    groups.forEach((group) => {
-      const width = groupWidth(group);
-      const desired = desiredByGroup.get(group);
-      group.left = Math.max(cursor, desired === undefined ? cursor : desired - width / 2);
-      group.centre = group.left + width / 2;
-      cursor = group.left + width + CARD_GAP;
-    });
-
-    // Let a family slide back into newly available room without changing the
-    // order of this generation.
-    for (let round = 0; round < RELAX_ROUNDS; round += 1) {
-      for (let index = groups.length - 1; index >= 0; index -= 1) {
-        const group = groups[index];
-        const width = groupWidth(group);
-        const lowerBound =
-          index === 0 ? 0 : groups[index - 1].left + groupWidth(groups[index - 1]) + CARD_GAP;
-        const upperBound =
-          index === groups.length - 1
-            ? Infinity
-            : Math.max(lowerBound, groups[index + 1].left - CARD_GAP - width);
-        const desired = desiredByGroup.get(group);
-        const target = desired === undefined ? lowerBound : desired - width / 2;
-        group.left = Math.min(Math.max(target, lowerBound), upperBound);
-        group.centre = group.left + width / 2;
-      }
-    }
-
-    let right = targetWidth;
-    for (let index = groups.length - 1; index >= 0; index -= 1) {
-      const group = groups[index];
-      group.left = Math.min(group.left, right - groupWidth(group));
-      group.centre = group.left + groupWidth(group) / 2;
-      right = group.left - CARD_GAP;
-    }
-
-    const correction = Math.max(0, -(groups[0]?.left || 0));
-    groups.forEach((group) => {
-      group.left += correction;
-      group.centre = group.left + groupWidth(group) / 2;
-    });
-
-    groups.forEach((group) => {
-      let left = group.left;
-      group.blocks.forEach((block) => {
-        block.left = left;
-        block.centre = left + blockWidth(block) / 2;
-        left += blockWidth(block) + CARD_GAP;
-      });
-    });
-  };
-
-  // Place from ancestors down. A complete sibling set is treated as one group
-  // and centred under its own union. The old widest-row anchor pulled Nicola's
-  // three children thousands of pixels away from their respective marriages.
-  packRow(blocksByRow[0], new Map());
-  for (let rowIndex = 1; rowIndex < blocksByRow.length; rowIndex += 1) {
-    const groups = familyGroups(blocksByRow[rowIndex]);
-    const desired = new Map();
-
-    groups.forEach((group) => {
-      const targets = group.originIds
-        .map((unionId) => unionCentre(unionsById.get(unionId)))
-        .filter((value) => value !== null);
-      if (targets.length) desired.set(group, mean(targets));
-    });
-
-    placeGroups(groups, desired);
-  }
-
-  // Now work back towards the ancestors once. Descendant households are wider
-  // than their two parent cards, so a purely top-down pass can leave a marriage
-  // far to the left of its otherwise compact child group. Moving each complete
-  // spouse block over the centre of its children preserves the tight child row
-  // while shortening the parent-to-union stem.
-  for (let rowIndex = blocksByRow.length - 2; rowIndex >= 0; rowIndex -= 1) {
-    const desired = new Map();
-
-    blocksByRow[rowIndex].forEach((block) => {
-      const childUnions = [
-        ...new Set(block.memberIds.flatMap((parentId) => unionsByParent.get(parentId) || [])),
-      ];
-      const targets = childUnions
-        .filter((union) => union.childIds.length)
-        .flatMap((union) => union.childIds.map(centreOf))
-        .filter((value) => value !== null);
-      if (targets.length) desired.set(block, mean(targets));
-    });
-
-    packRow(blocksByRow[rowIndex], desired, targetWidth);
-  }
 
   return { blocksByRow, centreOf, unionCentre, blockOfPerson, anchorRow: 0 };
 }
