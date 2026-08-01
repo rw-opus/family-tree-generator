@@ -914,34 +914,18 @@ export function PersonInspector({
     });
     if (parentChooserField === link.field) closeParentChooser();
   };
-  const blockingPartners = sharedAcrossFamilies
-    ? linkedPartners.filter((partner) => currentFamilyPersonIdSet.has(partner.id))
-    : linkedPartners;
   const blockingDescendants = sharedAcrossFamilies
     ? descendants.filter((descendant) => currentFamilyPersonIdSet.has(descendant.id))
     : descendants;
-  const blockingSiblings = sharedAcrossFamilies
-    ? linkedSiblings.filter((sibling) => currentFamilyPersonIdSet.has(sibling.id))
-    : [];
+  // Only descendants stop a person being removed. A partner or sibling link is
+  // no reason to keep somebody on the chart — removing them scrubs the link
+  // from the other side anyway — and it left a partner added by mistake
+  // impossible to take off without unpicking the marriage first.
   const deleteBlockers = [
-    ...(blockingPartners.length
-      ? [
-          `${blockingPartners.length} ${
-            blockingPartners.length === 1 ? "partner link" : "partner links"
-          }`,
-        ]
-      : []),
     ...(blockingDescendants.length
       ? [
           `${blockingDescendants.length} ${
             blockingDescendants.length === 1 ? "descendant" : "descendants"
-          }`,
-        ]
-      : []),
-    ...(blockingSiblings.length
-      ? [
-          `${blockingSiblings.length} ${
-            blockingSiblings.length === 1 ? "sibling link" : "sibling links"
           }`,
         ]
       : []),
