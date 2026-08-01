@@ -216,7 +216,9 @@ describe("FamilyTreeCanvas", () => {
     });
 
     expect(container.querySelector(".tree-edge-partner.marital")).toBeNull();
-    expect(container.querySelector(".tree-edge.flagged")).not.toBeNull();
+    expect(container.querySelector(".tree-edge-partner.partnership")).not.toBeNull();
+    expect(container.querySelector(".tree-edge-stem.flagged")).toBeNull();
+    expect(container.querySelector(".tree-edge-descent.flagged")).toBeNull();
   });
 
   it("assumes a couple are married when the record does not say otherwise", () => {

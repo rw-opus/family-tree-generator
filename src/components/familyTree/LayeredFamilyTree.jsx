@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CARD_HEIGHT, buildFamilyTreeLayout } from "./treeLayout.js";
+import { buildFamilyTreeLayout } from "./treeLayout.js";
 import "./LayeredFamilyTree.css";
 
 function stemPath(edge) {
@@ -13,9 +13,6 @@ function edgeClassName(edge) {
   return [
     "tree-edge",
     `tree-edge-${edge.kind}`,
-    // Only a recorded unmarried couple is marked. A person with one unrecorded
-    // parent is drawn exactly like anybody else.
-    edge.flagged ? "flagged" : "",
     edge.kind === "partner" ? (edge.marital ? "marital" : "partnership") : "",
   ]
     .filter(Boolean)
@@ -113,7 +110,7 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
         const card = node.querySelector(".family-node");
         if (!card) return;
         const height = Math.max(card.scrollHeight, card.offsetHeight);
-        if (height > CARD_HEIGHT) measured[node.dataset.treePersonId] = Math.ceil(height);
+        if (height > 0) measured[node.dataset.treePersonId] = Math.ceil(height);
       });
 
       setNodeHeights((current) => {

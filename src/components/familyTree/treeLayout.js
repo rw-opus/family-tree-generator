@@ -39,6 +39,7 @@ const UNION_BAR_MIN_CLEARANCE = 8;
 const UNION_BAR_SEPARATION = 12;
 const STEM_TURN_CLEARANCE = 12;
 const CONNECTOR_OPENING_HALF_WIDTH = 5;
+const CARD_CONNECTOR_OVERLAP = 2;
 const OUTER_MARRIAGE_ROUTE_OFFSET = 10;
 const OUTER_MARRIAGE_ROUTE_STEP = 6;
 const COMPONENT_GAP = CARD_WIDTH;
@@ -54,10 +55,10 @@ const median = (values) => {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 
-const measuredCardHeight = (nodeHeights, personId) => {
+const renderedCardHeight = (nodeHeights, personId) => {
   const value = nodeHeights instanceof Map ? nodeHeights.get(personId) : nodeHeights?.[personId];
   const height = Number(value);
-  return Number.isFinite(height) ? Math.max(CARD_HEIGHT, Math.ceil(height)) : CARD_HEIGHT;
+  return Number.isFinite(height) && height > 0 ? Math.ceil(height) : CARD_HEIGHT;
 };
 
 /**
@@ -768,8 +769,14 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
 
   const generations = assignGenerations(cleanPeople);
   const maxGeneration = Math.max(...cleanPeople.map((person) => generations.get(person.id)));
+  const renderedHeightByPerson = new Map(
+    cleanPeople.map((person) => [person.id, renderedCardHeight(nodeHeights, person.id)]),
+  );
   const heightByPerson = new Map(
-    cleanPeople.map((person) => [person.id, measuredCardHeight(nodeHeights, person.id)]),
+    cleanPeople.map((person) => [
+      person.id,
+      Math.max(CARD_HEIGHT, renderedHeightByPerson.get(person.id)),
+    ]),
   );
   const generationHeights = Array.from({ length: maxGeneration + 1 }, () => CARD_HEIGHT);
   cleanPeople.forEach((person) => {
@@ -941,7 +948,7 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
       union.childTop - UNION_BAR_OFFSET - (union.barLane || 0) * UNION_BAR_STEP,
     );
     const parentCardHeights = union.parentIds
-      .map((parentId) => heightByPerson.get(parentId))
+      .map((parentId) => renderedHeightByPerson.get(parentId))
       .filter(Number.isFinite);
     // A marriage line meets the spouses at the height of the name, measured
     // down from the top of the card. Half the card height put it wherever the
@@ -967,7 +974,11 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
           ? union.cardMiddleY
           : union.routeY
         : rowTop(union.generation) +
-          (parentCardHeights.length ? Math.max(...parentCardHeights) : CARD_HEIGHT);
+          Math.max(
+            0,
+            (parentCardHeights.length ? Math.max(...parentCardHeights) : CARD_HEIGHT) -
+              CARD_CONNECTOR_OVERLAP,
+          );
     union.stemTurnY =
       union.barEntryX !== union.markerX
         ? Math.min(union.y - UNION_BAR_MIN_CLEARANCE, union.parentBottom + STEM_TURN_CLEARANCE)
@@ -1111,7 +1122,12 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
         marriageIndex: union.marriageIndex,
         childId,
         from: { x: centre, y: barY },
-        to: { x: centre, y: rowTop(generations.get(childId)) },
+        // Continue just inside the card's top border. Exact edge-to-edge SVG
+        // coordinates can rasterise with a white hairline at some zoom levels.
+        to: {
+          x: centre,
+          y: rowTop(generations.get(childId)) + CARD_CONNECTOR_OVERLAP,
+        },
       });
     });
   });
