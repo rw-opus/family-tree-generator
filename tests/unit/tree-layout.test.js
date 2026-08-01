@@ -3,6 +3,7 @@ import {
   CARD_GAP,
   CARD_HEIGHT,
   CARD_WIDTH,
+  PARTNER_GAP,
   ROW_GAP,
   assignUnionBarLanes,
   assignGenerations,
@@ -872,5 +873,35 @@ describe("a parent married more than once", () => {
 
     expect(union.markerX).toBeGreaterThanOrEqual(Math.min(...centres));
     expect(union.markerX).toBeLessThanOrEqual(Math.max(...centres));
+  });
+});
+
+describe("a second marriage beside a wide first family", () => {
+  const remarriedAfterWideBranch = () => [
+    person("first-wife", { spouseIds: ["husband"] }),
+    person("husband", { spouseIds: ["first-wife", "second-wife"] }),
+    person("second-wife", { spouseIds: ["husband"] }),
+    person("daughter", { fatherId: "husband", motherId: "first-wife", spouseIds: ["in-law"] }),
+    person("in-law", { spouseIds: ["daughter"] }),
+    ...Array.from({ length: 8 }, (_, index) =>
+      person(`grandchild-${index}`, { fatherId: "in-law", motherId: "daughter" }),
+    ),
+    ...["a", "b", "c", "d"].map((suffix) =>
+      person(`late-${suffix}`, { fatherId: "husband", motherId: "second-wife" }),
+    ),
+  ];
+
+  it("keeps the second spouse beside the first rather than across the chart", () => {
+    const layout = buildFamilyTreeLayout(remarriedAfterWideBranch());
+    const at = (id) => {
+      const node = layout.nodes.find((candidate) => candidate.id === id);
+      return node.x + CARD_WIDTH / 2;
+    };
+
+    // Centring a marriage on its children moves the far spouse twice the
+    // distance, so without a ceiling the second wife ends up beyond her own
+    // children.
+    expect(at("second-wife") - at("husband")).toBeLessThanOrEqual((CARD_WIDTH + PARTNER_GAP) * 2);
+    expect(at("second-wife")).toBeGreaterThan(at("husband"));
   });
 });
