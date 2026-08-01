@@ -43,7 +43,6 @@ const UNION_BAR_STEP = 10;
 const UNION_BAR_MIN_CLEARANCE = 8;
 const UNION_BAR_SEPARATION = 12;
 const STEM_TURN_CLEARANCE = 12;
-const STEM_CHILD_COLLISION_RADIUS = 4;
 const CONNECTOR_OPENING_HALF_WIDTH = 5;
 const OUTER_MARRIAGE_ROUTE_OFFSET = 10;
 const OUTER_MARRIAGE_ROUTE_STEP = 6;
@@ -67,29 +66,12 @@ const measuredCardHeight = (nodeHeights, personId) => {
 };
 
 /**
- * A centred marriage stem can land on the centre line of a middle child. In
- * that case the two verticals read as one continuous line. Enter the sibling
- * bar through the nearest gap between children instead, while keeping the
- * first part of the stem exactly at the middle of the parents' union.
+ * The stem enters the sibling bar directly below the middle of the marriage.
+ * Where a union has an odd number of children that point is the middle child's
+ * own centre line, and parent to bar to child reading as one straight line is
+ * exactly right - stepping aside to a gap put a jog on every such family.
  */
-function childBarEntry(markerX, childCentres = []) {
-  const centres = [...new Set(childCentres)].sort((first, second) => first - second);
-  const clashes = centres.some(
-    (childCentre) => Math.abs(childCentre - markerX) <= STEM_CHILD_COLLISION_RADIUS,
-  );
-  if (!clashes) return markerX;
-
-  const gaps = centres.slice(1).map((centre, index) => (centres[index] + centre) / 2);
-  if (gaps.length) {
-    return [...gaps].sort(
-      (first, second) => Math.abs(first - markerX) - Math.abs(second - markerX),
-    )[0];
-  }
-
-  // An only child has no internal gap to enter through, and it needs none: the
-  // union stem and the child's descent are meant to read as one straight line
-  // from the middle of the marriage down to the child. Stepping aside here put
-  // a dog-leg on every single-child branch.
+function childBarEntry(markerX) {
   return markerX;
 }
 
