@@ -974,8 +974,11 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
           ? union.cardMiddleY
           : union.routeY
         : rowTop(union.generation) +
-          (parentCardHeights.length ? Math.max(...parentCardHeights) : CARD_HEIGHT) -
-          CARD_CONNECTOR_OVERLAP;
+          Math.max(
+            0,
+            (parentCardHeights.length ? Math.max(...parentCardHeights) : CARD_HEIGHT) -
+              CARD_CONNECTOR_OVERLAP,
+          );
     union.stemTurnY =
       union.barEntryX !== union.markerX
         ? Math.min(union.y - UNION_BAR_MIN_CLEARANCE, union.parentBottom + STEM_TURN_CLEARANCE)

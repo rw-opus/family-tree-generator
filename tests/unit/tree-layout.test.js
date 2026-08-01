@@ -353,13 +353,23 @@ describe("buildFamilyTreeLayout", () => {
     const layout = buildFamilyTreeLayout(threeGenerationFamily());
     const cards = nodesById(layout);
     const descents = layout.edges.filter((edge) => edge.kind === "descent");
+    const barsByUnion = new Map(
+      layout.edges
+        .filter((edge) => edge.kind === "sibling-bar")
+        .map((edge) => [edge.unionId, edge]),
+    );
+    const stems = layout.edges.filter((edge) => edge.kind === "stem");
 
     // Three unions in this family produce children: the grandparents, and each
     // of their two married children.
     expect(descents).toHaveLength(6);
     descents.forEach((edge) => {
+      expect(edge.from.y).toBe(barsByUnion.get(edge.unionId).from.y);
       expect(edge.to.y).toBe(cards.get(edge.childId).y + 2);
       expect(edge.from.x).toBe(edge.to.x);
+    });
+    stems.forEach((edge) => {
+      expect(edge.to.y).toBe(barsByUnion.get(edge.unionId).from.y);
     });
   });
 

@@ -18,13 +18,6 @@
   stroke-linejoin: miter;
 }
 
-/* Only a recorded couple who are not married is dashed. A person with one
-   unrecorded parent is drawn like anybody else — a gap in the record says
-   nothing about how they were born. */
-.tree-edge.flagged {
-  stroke-dasharray: 5 4;
-}
-
 /* Marriage: two parallel lines. Anyone not married: one dotted line. */
 .tree-edge-partner.marital {
   stroke: var(--tree-marriage, #71645c);
