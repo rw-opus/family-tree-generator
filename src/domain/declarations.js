@@ -18,7 +18,7 @@ function participantValues(participant = {}) {
   };
 }
 
-function isUsablePublishedParticipant(participant = {}) {
+function isUsableParticipant(participant = {}) {
   const { numerator, denominator, declaredValue } = participantValues(participant);
   return (
     Boolean(participant.heirId) &&
@@ -66,23 +66,10 @@ export function validateDeclaration(declaration) {
     )
   )
     return "Enter a valid positive ownership fraction for every declarant.";
-  if (
-    participants.some(
-      (participant) =>
-        Number(participant.declaredValue) < 0 ||
-        !Number.isFinite(Number(participant.declaredValue)),
-    )
-  )
-    return "Enter a valid declared value for every declarant.";
-  if (
-    declaration.status === "published" &&
-    participants.some((participant) => !(Number(participant.declaredValue) > 0))
-  ) {
-    return "Enter a positive declared value for every declarant before publishing.";
-  }
-  if (declaration.status === "published" && !declaration.date) return "Enter the publication date.";
-  if (declaration.status === "published" && !String(declaration.notaryName || "").trim())
-    return "Enter the notary's name.";
+  if (participants.some((participant) => !(Number(participant.declaredValue) > 0)))
+    return "Enter a positive declared value for every declarant.";
+  if (!declaration.date) return "Enter the date of the Declaration Causa Mortis.";
+  if (!String(declaration.notaryName || "").trim()) return "Enter the notary's name.";
   return "";
 }
 
@@ -92,55 +79,60 @@ export function declarationCoverage(heirs = [], declarations = []) {
       const { participants } = participantsOf(declaration);
       return participants.some((participant) => participant.heirId === heir.id);
     });
-    const publishedRecords = records.filter((record) => record.status === "published");
-    const publishedParticipants = publishedRecords.flatMap((record) => {
+    const declarationParticipants = records.flatMap((record) => {
       const { participants, legacyUnquantified } = participantsOf(record);
       return participants
         .filter((participant) => participant.heirId === heir.id)
         .map((participant) => ({ participant, legacyUnquantified }));
     });
-    const usablePublishedParticipants = publishedParticipants.filter(
+    const usableParticipants = declarationParticipants.filter(
       ({ participant, legacyUnquantified }) =>
-        !legacyUnquantified && isUsablePublishedParticipant(participant),
+        !legacyUnquantified && isUsableParticipant(participant),
     );
-    const unusablePublishedCount =
-      publishedParticipants.length - usablePublishedParticipants.length;
-    const publishedFraction = usablePublishedParticipants.reduce((sum, { participant }) => {
+    const unusableDeclarationCount = declarationParticipants.length - usableParticipants.length;
+    const declaredFraction = usableParticipants.reduce((sum, { participant }) => {
       const { numerator, denominator } = participantValues(participant);
       return sum + numerator / denominator;
     }, 0);
-    const publishedValue = usablePublishedParticipants.reduce(
+    const declaredValue = usableParticipants.reduce(
       (sum, { participant }) => sum + participantValues(participant).declaredValue,
       0,
     );
     const requiredFraction = expectedShare(heir);
-    const difference = publishedFraction - requiredFraction;
-    const status = unusablePublishedCount
+    const difference = declaredFraction - requiredFraction;
+    const status = unusableDeclarationCount
       ? "invalid"
       : Math.abs(difference) <= COVERAGE_EPSILON
         ? "complete"
         : difference < 0
           ? "under"
           : "over";
-    const hasUsablePublishedValues =
-      publishedRecords.length > 0 &&
-      unusablePublishedCount === 0 &&
-      publishedFraction > COVERAGE_EPSILON &&
-      publishedValue > 0 &&
+    const hasUsableDeclaredValues =
+      records.length > 0 &&
+      unusableDeclarationCount === 0 &&
+      declaredFraction > COVERAGE_EPSILON &&
+      declaredValue > 0 &&
       status !== "over";
     return {
       heirId: heir.id,
       name: heir.name || "Unnamed heir",
       declarationCount: records.length,
-      publishedCount: publishedRecords.length,
+      usableDeclarationCount: records.length,
       declarationIds: records.map((record) => record.id),
-      publishedFraction,
-      publishedValue,
+      declaredFraction,
+      declaredValue,
       requiredFraction,
       difference,
       status,
-      unusablePublishedCount,
-      hasUsablePublishedValues,
+      unusableDeclarationCount,
+      hasUsableDeclaredValues,
+      // Compatibility aliases for existing saved tax lots and integrations.
+      // DCM status is deliberately ignored; every recorded declaration is counted.
+      publishedCount: records.length,
+      publishedFraction: declaredFraction,
+      publishedValue: declaredValue,
+      unusablePublishedCount: unusableDeclarationCount,
+      hasUsablePublishedValues: hasUsableDeclaredValues,
     };
   });
 }

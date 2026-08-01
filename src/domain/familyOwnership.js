@@ -5,7 +5,7 @@ import {
   partnerIdsForPerson,
   partnerRelationshipStatusAt,
 } from "./partnerRelationships.js";
-import { CURRENT_SUCCESSION_START } from "./propertyTax.js";
+import { successionRuleset } from "./propertyTax.js";
 
 const number = (input) => Math.max(0, Number(input) || 0);
 export const INTESTACY_SHARE_EPSILON = 1e-8;
@@ -15,6 +15,99 @@ const SURVIVAL_UNRESOLVED_DESTINATIONS = new Set([
   "death-date-unresolved",
   "survival-date-unresolved",
 ]);
+
+function stableContextHash(value) {
+  const source = String(value || "");
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < source.length; index += 1) {
+    const code = source.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${source.length}-${(first >>> 0).toString(36)}-${(second >>> 0).toString(36)}`;
+}
+
+function connectedRelationshipIds(people = [], rootPersonId = "") {
+  const validIds = new Set(people.map((person) => String(person?.id || "")).filter(Boolean));
+  if (!validIds.has(rootPersonId)) return new Set();
+  const neighbours = new Map([...validIds].map((personId) => [personId, new Set()]));
+  const connect = (leftId, rightId) => {
+    const left = String(leftId || "");
+    const right = String(rightId || "");
+    if (!validIds.has(left) || !validIds.has(right) || left === right) return;
+    neighbours.get(left).add(right);
+    neighbours.get(right).add(left);
+  };
+  people.forEach((person) => {
+    const personId = String(person?.id || "");
+    connect(personId, person?.fatherId);
+    connect(personId, person?.motherId);
+    (Array.isArray(person?.spouseIds) ? person.spouseIds : []).forEach((otherId) =>
+      connect(personId, otherId),
+    );
+    (Array.isArray(person?.siblingIds) ? person.siblingIds : []).forEach((otherId) =>
+      connect(personId, otherId),
+    );
+    (Array.isArray(person?.partnerRelationships) ? person.partnerRelationships : []).forEach(
+      (relationship) => connect(personId, relationship?.personId),
+    );
+  });
+
+  const connected = new Set([rootPersonId]);
+  const pending = [rootPersonId];
+  while (pending.length) {
+    const personId = pending.pop();
+    neighbours.get(personId)?.forEach((otherId) => {
+      if (connected.has(otherId)) return;
+      connected.add(otherId);
+      pending.push(otherId);
+    });
+  }
+  return connected;
+}
+
+function historicalFamilyContextSignature(people = [], deceasedId = "") {
+  const connectedIds = connectedRelationshipIds(people, deceasedId);
+  const topology = people
+    .filter((person) => connectedIds.has(String(person?.id || "")))
+    .map((person) => ({
+      id: String(person?.id || ""),
+      fatherId: String(person?.fatherId || ""),
+      motherId: String(person?.motherId || ""),
+      deceased:
+        Boolean(person?.isDeceased) ||
+        (person?.designations || []).some(
+          (designation) => String(designation).toLowerCase() === "deceased",
+        ),
+      dateOfDeath: String(person?.dateOfDeath || ""),
+      spouseIds: [...new Set(Array.isArray(person?.spouseIds) ? person.spouseIds : [])]
+        .map(String)
+        .sort(),
+      siblingIds: [...new Set(Array.isArray(person?.siblingIds) ? person.siblingIds : [])]
+        .map(String)
+        .sort(),
+      partnerRelationships: (Array.isArray(person?.partnerRelationships)
+        ? person.partnerRelationships
+        : []
+      )
+        .map((relationship) => ({
+          personId: String(relationship?.personId || ""),
+          type: String(relationship?.type || ""),
+          startDate: String(relationship?.startDate || ""),
+          startYear: String(relationship?.startYear || ""),
+          endDate: String(relationship?.endDate || ""),
+          endReason: String(relationship?.endReason || ""),
+        }))
+        .sort((left, right) =>
+          `${left.personId}:${left.type}:${left.startDate}:${left.endDate}`.localeCompare(
+            `${right.personId}:${right.type}:${right.startDate}:${right.endDate}`,
+          ),
+        ),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return stableContextHash(JSON.stringify(topology));
+}
 
 export function isPersonDeceased(person = {}) {
   return (
@@ -245,15 +338,29 @@ export function intestateAllocations(people = [], deceasedId) {
   const warnings = [];
   if (!deceased)
     return { shares, warnings: ["Deceased person not found."], destination: "unresolved" };
-  if (deceased.dateOfDeath && deceased.dateOfDeath < CURRENT_SUCCESSION_START) {
-    warnings.push("Historical intestacy rules before 1 March 2005 are not yet automated.");
-    return { shares, warnings, destination: "historical-unresolved" };
-  }
   if (!deceased.dateOfDeath) {
     warnings.push(
       `Enter the date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
     );
     return { shares, warnings, destination: "death-date-unresolved" };
+  }
+  const ruleset = successionRuleset(deceased.dateOfDeath);
+  if (ruleset.key === "invalid-date") {
+    warnings.push(
+      `Enter a valid date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
+    );
+    return { shares, warnings, destination: "death-date-unresolved" };
+  }
+  if (ruleset.key === "pre2005") {
+    warnings.push(
+      "The old-law intestacy distribution before 1 March 2005 is not determined by articles 614 to 620. Enter and confirm the historical heirs and their full shares manually.",
+    );
+    return {
+      shares,
+      warnings,
+      destination: "historical-unresolved",
+      contextSignature: historicalFamilyContextSignature(people, deceased.id),
+    };
   }
 
   const atDate = deceased.dateOfDeath;
@@ -417,12 +524,37 @@ export function intestateAllocations(people = [], deceasedId) {
   return { shares, warnings, destination: "government" };
 }
 
-export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
-  const shares = [...(allocation.shares || new Map()).entries()]
+export const INTESTACY_CONFIRMATION_SIGNATURE_VERSION = "v2";
+
+function calculatedIntestacySharesSignature(allocation = {}) {
+  return [...(allocation.shares || new Map()).entries()]
     .map(([personId, share]) => `${personId}:${number(share).toFixed(12)}`)
     .sort()
     .join("|");
-  return [deceased.dateOfDeath || "", allocation.destination || "", shares].join("::");
+}
+
+export function legacyIntestacyAllocationSignature(deceased = {}, allocation = {}) {
+  return [
+    deceased.dateOfDeath || "",
+    allocation.destination || "",
+    calculatedIntestacySharesSignature(allocation),
+  ].join("::");
+}
+
+export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
+  const shares = calculatedIntestacySharesSignature(allocation);
+  const confirmedRows = (Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [])
+    .map((row) => `${String(row?.personId || "")}:${number(row?.sharePercent).toFixed(12)}`)
+    .sort()
+    .join("|");
+  return [
+    INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
+    deceased.dateOfDeath || "",
+    allocation.destination || "",
+    shares,
+    allocation.contextSignature || "",
+    confirmedRows,
+  ].join("::");
 }
 
 export function intestacyShareTotalIsComplete(totalPercent) {
@@ -524,6 +656,44 @@ export function confirmedIntestacyAllocations(
 
   rows.forEach((row) => addShare(shares, row.personId, number(row.sharePercent) / 100));
   return { valid: true, shares, warnings, currentSignature };
+}
+
+export const WILL_SHARE_PERCENT_EPSILON = 1e-8;
+
+export function willAllocationReadiness(person = {}, validBeneficiaryIds = null) {
+  const rows = Array.isArray(person.willHeirs) ? person.willHeirs : [];
+  const selectedIds = rows.map((row) => String(row?.personId || "")).filter(Boolean);
+  const validIds =
+    validBeneficiaryIds instanceof Set
+      ? validBeneficiaryIds
+      : Array.isArray(validBeneficiaryIds)
+        ? new Set(validBeneficiaryIds.map(String))
+        : null;
+  const totalPercent = rows.reduce((sum, row) => sum + number(row?.sharePercent), 0);
+  const totalComplete = Math.abs(totalPercent - 100) <= WILL_SHARE_PERCENT_EPSILON;
+  const issues = [];
+
+  if (!rows.length) issues.push("Add at least one beneficiary.");
+  if (selectedIds.length !== rows.length) {
+    issues.push("Choose a person or company for every beneficiary row.");
+  }
+  if (rows.some((row) => number(row?.sharePercent) <= 0)) {
+    issues.push("Enter a positive share for every beneficiary.");
+  }
+  if (selectedIds.includes(String(person.id || ""))) {
+    issues.push("The deceased cannot be selected as their own beneficiary.");
+  }
+  if (validIds && selectedIds.some((personId) => !validIds.has(personId))) {
+    issues.push("Remove or replace beneficiaries who are no longer in this case.");
+  }
+  if (!totalComplete) issues.push("The beneficiary shares must total 100%.");
+
+  return {
+    valid: issues.length === 0,
+    totalComplete,
+    totalPercent,
+    issues,
+  };
 }
 
 export function willAllocations(person = {}) {

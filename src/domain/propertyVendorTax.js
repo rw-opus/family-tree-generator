@@ -1,4 +1,5 @@
 import { declarationCoverage } from "./declarations.js";
+import { causaMortisDeclaredShare } from "./causaMortisCoverage.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "./article5A.js";
 import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
 import {
@@ -35,6 +36,8 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
         ownerName: owner?.fullName || owner?.name || "Unnamed heir",
         inheritanceDate,
         share,
+        deceasedEstateShare: Number(transmission.amount) || 0,
+        allocationShare: Number(allocatedShare) || 0,
         immediateDescendant:
           owner?.fatherId === transmission.deceasedId ||
           owner?.motherId === transmission.deceasedId,
@@ -46,6 +49,208 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
   });
 
   return sources;
+}
+
+const matchingPersonDeclarations = (person, propertyId) =>
+  (person?.causaMortisDeclarations || []).filter(
+    (declaration) =>
+      (!propertyId || !declaration.propertyId || declaration.propertyId === propertyId) &&
+      causaMortisDeclaredShare(declaration) > 0 &&
+      Number.isFinite(Number(declaration.immovablePropertyValue)),
+  );
+
+const declarationRowsForSource = (source, property, peopleById) => {
+  const deceased = peopleById.get(source.deceasedId);
+  return matchingPersonDeclarations(deceased, property.id).map((declaration) => {
+    const allocationShare = Number(source.allocationShare) || 0;
+    return {
+      id: declaration.id,
+      date: declaration.date || "",
+      notaryName: declaration.notaryName || "",
+      declaredShare: causaMortisDeclaredShare(declaration) * allocationShare,
+      declaredValue: Math.max(0, Number(declaration.immovablePropertyValue) || 0) * allocationShare,
+    };
+  });
+};
+
+const transferSourceForLot = (ledger, lot) =>
+  [...(ledger.entries || [])]
+    .reverse()
+    .find((entry) => !entry.error && entry.buyerId === lot.ownerId);
+
+const provenanceLabel = (source, lot, ledger) => {
+  if (source) return `Inherited from ${source.deceasedName}`;
+  const transfer = transferSourceForLot(ledger, lot);
+  if (transfer) {
+    const seller = ledger.parties.find((party) => party.id === transfer.sellerId);
+    return `Acquired from ${seller?.name || "another owner"}`;
+  }
+  if ((lot.acquisitionType || "inheritance") === "inheritance") return "Inherited share";
+  if (lot.acquisitionType === "donation") return "Share acquired by donation";
+  return "Purchased or transferred share";
+};
+
+const displayRowFromLot = ({ property, row, source, ledger, peopleById }) => {
+  const lotShare = Number(row.result?.share) || 0;
+  const propertySaleValue = Math.max(0, Number(property.saleValue) || 0);
+  const attributedSaleValue =
+    propertySaleValue && lotShare
+      ? propertySaleValue * lotShare
+      : Number(row.result?.transferValue) || 0;
+  const declarations = source ? declarationRowsForSource(source, property, peopleById) : [];
+  const declaredValueFromCards = declarations.reduce(
+    (total, declaration) => total + declaration.declaredValue,
+    0,
+  );
+  const acquisitionValue =
+    declaredValueFromCards || Math.max(0, Number(row.effectiveLot?.acquisitionValue) || 0);
+  const effectiveLot = {
+    ...row.effectiveLot,
+    transferValue: attributedSaleValue,
+    consideration: attributedSaleValue,
+    acquisitionValue:
+      acquisitionValue || row.effectiveLot?.acquisitionValue === 0 ? acquisitionValue : "",
+    acquisitionValueBasis:
+      acquisitionValue || declarations.length
+        ? "cm-declared"
+        : row.effectiveLot?.acquisitionValueBasis || "",
+    cmValueEligibilityConfirmed:
+      declarations.length > 0 || Boolean(row.effectiveLot?.cmValueEligibilityConfirmed),
+  };
+  const result = saleTaxLot(effectiveLot);
+  const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
+  const tax = selectedMethod?.tax || 0;
+  return {
+    id: row.lot.id,
+    share: lotShare,
+    provenance: provenanceLabel(source, row.lot, ledger),
+    inheritanceDate: source?.inheritanceDate || result.acquisitionDate || "",
+    declarations,
+    declaredValue: acquisitionValue,
+    attributedSaleValue,
+    difference: attributedSaleValue - acquisitionValue,
+    methods: result.methods || [],
+    selectedMethod,
+    tax,
+    net: attributedSaleValue - tax,
+    warning: result.warning || "",
+  };
+};
+
+const syntheticInheritedRow = ({ property, vendor, source, index, peopleById }) => {
+  const declarations = declarationRowsForSource(source, property, peopleById);
+  const declaredValue = declarations.reduce(
+    (total, declaration) => total + declaration.declaredValue,
+    0,
+  );
+  const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * source.share;
+  const fraction = approximateFraction(source.share);
+  const result = saleTaxLot({
+    id: `${vendor.id}-${source.deceasedId}-${index}`,
+    ownerId: vendor.id,
+    acquisitionType: "inheritance",
+    inheritanceDate: source.inheritanceDate,
+    transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
+    shareNumerator: fraction.numerator,
+    shareDenominator: fraction.denominator,
+    acquisitionValue: declarations.length ? declaredValue : "",
+    acquisitionValueBasis: declarations.length ? "cm-declared" : "",
+    cmValueEligibilityConfirmed: declarations.length > 0,
+    transferValue: attributedSaleValue,
+    consideration: attributedSaleValue,
+  });
+  const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
+  const tax = selectedMethod?.tax || 0;
+  return {
+    id: `${vendor.id}-${source.deceasedId}-${index}`,
+    share: source.share,
+    provenance: `Inherited from ${source.deceasedName}`,
+    inheritanceDate: source.inheritanceDate,
+    declarations,
+    declaredValue,
+    attributedSaleValue,
+    difference: attributedSaleValue - declaredValue,
+    methods: result.methods || [],
+    selectedMethod,
+    tax,
+    net: attributedSaleValue - tax,
+    warning: result.warning || "",
+  };
+};
+
+/** Read-only vendor information used by the Tax Calculation screen and export. */
+export function buildTaxCalculationReport(
+  property = {},
+  people = [],
+  outsideParties = [],
+  vendorReport,
+) {
+  const report = vendorReport || buildPropertyVendorTaxReport(property, people, outsideParties);
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  const vendors = report.livingVendors.map((vendor) => {
+    const storedRows = report.saleRows.filter((row) => row.lot.ownerId === vendor.id);
+    const inheritanceSources = report.inheritanceSourcesByOwner.get(vendor.id) || [];
+    const rows = storedRows.length
+      ? storedRows.map((row) => {
+          const source =
+            row.selectedInheritanceSource ||
+            inheritanceSources.find(
+              (candidate) => candidate.deceasedId === row.lot.inheritanceSourceDeceasedId,
+            ) ||
+            (inheritanceSources.length === 1 ? inheritanceSources[0] : null);
+          return displayRowFromLot({ property, row, source, ledger: report.ledger, peopleById });
+        })
+      : inheritanceSources.map((source, index) =>
+          syntheticInheritedRow({ property, vendor, source, index, peopleById }),
+        );
+    if (storedRows.length === 1 && rows[0]?.share <= OWNERSHIP_EPSILON) {
+      rows[0].share = vendor.share;
+    }
+    const coveredShare = rows.reduce((total, row) => total + row.share, 0);
+    if (vendor.share - coveredShare > OWNERSHIP_EPSILON) {
+      const share = vendor.share - coveredShare;
+      const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
+      rows.push({
+        id: `${vendor.id}-unresolved`,
+        share,
+        provenance: report.ledger.entries.some(
+          (entry) => !entry.error && entry.buyerId === vendor.id,
+        )
+          ? "Transferred share — acquisition details incomplete"
+          : "Initial ownership — acquisition details incomplete",
+        inheritanceDate: "",
+        declarations: [],
+        declaredValue: 0,
+        attributedSaleValue,
+        difference: attributedSaleValue,
+        methods: [],
+        selectedMethod: null,
+        tax: 0,
+        net: attributedSaleValue,
+        warning: "The acquisition date and value are needed before tax can be calculated.",
+      });
+    }
+    const propertySaleValue = Math.max(0, Number(property.saleValue) || 0);
+    const attributedSaleValue = propertySaleValue
+      ? propertySaleValue * vendor.share
+      : rows.reduce((total, row) => total + row.attributedSaleValue, 0);
+    const tax = rows.reduce((total, row) => total + row.tax, 0);
+    return {
+      ...vendor,
+      rows,
+      attributedSaleValue,
+      tax,
+      net: attributedSaleValue - tax,
+      incompleteRowCount: rows.filter((row) => !row.selectedMethod).length,
+    };
+  });
+  return {
+    vendors,
+    totalSaleValue: vendors.reduce((total, vendor) => total + vendor.attributedSaleValue, 0),
+    totalTax: vendors.reduce((total, vendor) => total + vendor.tax, 0),
+    totalNet: vendors.reduce((total, vendor) => total + vendor.net, 0),
+    excludedLotCount: report.taxSummary.excludedLotCount,
+  };
 }
 
 export function propertyStartingOwnershipStatus(property = {}) {
@@ -122,15 +327,18 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       Boolean(sourcedLot.inheritanceDate) &&
       sourcedLot.inheritanceDate < INHERITANCE_CAUSA_MORTIS_CUTOFF;
     const declaredCoverage = coverage.find((item) => item.heirId === lot.ownerId);
-    const usePublishedValues =
-      !preCausaMortisCutoff &&
-      lot.useDeclaredValues !== false &&
+    const hasUsableDeclaredValues =
+      declaredCoverage?.hasUsableDeclaredValues ??
       Boolean(declaredCoverage?.hasUsablePublishedValues);
-    const declaredFraction = approximateFraction(declaredCoverage?.publishedFraction || 0);
-    const effectiveLot = usePublishedValues
+    const useDeclarationValues =
+      !preCausaMortisCutoff && lot.useDeclaredValues !== false && Boolean(hasUsableDeclaredValues);
+    const declaredFraction = approximateFraction(
+      declaredCoverage?.declaredFraction ?? declaredCoverage?.publishedFraction ?? 0,
+    );
+    const effectiveLot = useDeclarationValues
       ? {
           ...sourcedLot,
-          acquisitionValue: declaredCoverage.publishedValue,
+          acquisitionValue: declaredCoverage.declaredValue ?? declaredCoverage.publishedValue,
           acquisitionValueBasis: lot.acquisitionValueBasis || "cm-declared",
           shareNumerator: declaredFraction.numerator,
           shareDenominator: declaredFraction.denominator,
@@ -148,7 +356,9 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       lot,
       effectiveLot,
       declaredCoverage,
-      usePublishedValues,
+      useDeclarationValues,
+      // Compatibility alias for callers saved before DCM status was removed.
+      usePublishedValues: useDeclarationValues,
       inheritanceSources,
       selectedInheritanceSource,
       inheritanceDateInferred: Boolean(sourceDate),

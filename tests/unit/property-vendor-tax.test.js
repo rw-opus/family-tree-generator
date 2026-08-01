@@ -3,9 +3,68 @@ import {
   intestacyAllocationSignature,
   intestateAllocations,
 } from "../../src/domain/familyOwnership.js";
-import { buildPropertyVendorTaxReport } from "../../src/domain/propertyVendorTax.js";
+import {
+  buildPropertyVendorTaxReport,
+  buildTaxCalculationReport,
+} from "../../src/domain/propertyVendorTax.js";
 
 describe("property vendor tax reports", () => {
+  it("builds a read-only vendor row from the person-card CM declaration", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "share", personId: "child", sharePercent: 100 }],
+        spouseIds: [],
+        causaMortisDeclarations: [
+          {
+            id: "cm",
+            propertyId: "property",
+            status: "complete",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            immovablePropertyValue: "100000",
+            date: "2020-04-01",
+            notaryName: "Maria Notary",
+          },
+        ],
+      },
+      { id: "child", fullName: "Maria Borg", fatherId: "deceased", spouseIds: [] },
+    ];
+    const property = {
+      id: "property",
+      saleValue: "120000",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+
+    expect(report.vendors[0]).toMatchObject({
+      name: "Maria Borg",
+      share: 1,
+      attributedSaleValue: 120000,
+      tax: 2400,
+      net: 117600,
+    });
+    expect(report.vendors[0].rows[0]).toMatchObject({
+      provenance: "Inherited from Joseph Borg",
+      declaredValue: 100000,
+      difference: 20000,
+      selectedMethod: { key: "increase-12" },
+      tax: 2400,
+    });
+    expect(report.vendors[0].rows[0].methods.map((method) => method.key)).toEqual([
+      "increase-12",
+      "elected-whole-8",
+    ]);
+  });
+
   it("automatically applies 7% when a child sells a share inherited before 25 November 1992", () => {
     const people = [
       {
@@ -26,11 +85,14 @@ describe("property vendor tax reports", () => {
       },
     ];
     const calculated = intestateAllocations(people, "deceased");
-    people[0] = {
+    const deceasedWithRows = {
       ...people[0],
       intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
+    };
+    people[0] = {
+      ...deceasedWithRows,
       intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(people[0], calculated),
+      intestateConfirmationBasis: intestacyAllocationSignature(deceasedWithRows, calculated),
     };
     const property = {
       id: "property",
@@ -109,11 +171,14 @@ describe("property vendor tax reports", () => {
       { id: "grandchild", fullName: "Maria Borg", fatherId: "child", spouseIds: [] },
     ];
     const calculated = intestateAllocations(people, "grandparent");
-    people[0] = {
+    const grandparentWithRows = {
       ...people[0],
       intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
+    };
+    people[0] = {
+      ...grandparentWithRows,
       intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(people[0], calculated),
+      intestateConfirmationBasis: intestacyAllocationSignature(grandparentWithRows, calculated),
     };
     const property = {
       id: "property",
@@ -270,11 +335,14 @@ describe("property vendor tax reports", () => {
       { id: "child", fullName: "Maria Borg", fatherId: "deceased", spouseIds: [] },
     ];
     const calculated = intestateAllocations(people, "deceased");
-    people[0] = {
+    const deceasedWithRows = {
       ...people[0],
       intestateHeirs: [{ id: "company-heir", personId: "company", sharePercent: 100 }],
+    };
+    people[0] = {
+      ...deceasedWithRows,
       intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(people[0], calculated),
+      intestateConfirmationBasis: intestacyAllocationSignature(deceasedWithRows, calculated),
     };
     const outsideParties = [{ id: "company", name: "Legacy Holdings Limited", type: "company" }];
     const property = {
@@ -413,14 +481,14 @@ describe("property vendor tax reports", () => {
     expect(report.saleRows[0].result.methods[0].tax).toBeCloseTo(4.8);
   });
 
-  it("uses valid positive published declaration values for the matching tax lot", () => {
+  it("uses valid positive declaration values regardless of draft or published status", () => {
     const property = {
       id: "property",
       owners: [{ id: "owner-record", personId: "owner", sharePercent: 100 }],
       declarations: [
         {
-          id: "published",
-          status: "published",
+          id: "recorded-dcm",
+          status: "draft",
           participants: [{ heirId: "owner", numerator: 1, denominator: 1, declaredValue: 100 }],
         },
       ],
@@ -456,6 +524,7 @@ describe("property vendor tax reports", () => {
       },
       declaredCoverage: {
         status: "complete",
+        hasUsableDeclaredValues: true,
         hasUsablePublishedValues: true,
       },
     });

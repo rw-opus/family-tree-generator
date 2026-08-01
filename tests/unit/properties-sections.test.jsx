@@ -27,6 +27,7 @@ const properties = [
     declarations: [],
     transfers: [],
     saleLots: [],
+    saleValue: "250000",
   },
 ];
 
@@ -74,14 +75,36 @@ describe("Properties section views", () => {
     );
 
     expect(container.textContent).toContain("Initial owner/s of the property");
+    expect(container.textContent).toContain("Value of the property being sold today");
+    expect(container.textContent).toContain("Calculated title after inheritance");
     expect(container.textContent).toContain("Ownership transfers");
-    expect(container.textContent).toContain("Seller tax lots");
+    expect(container.textContent).toContain("Tax Calculation");
   });
 
   it.each([
-    ["property", ["Initial owner/s of the property"], ["Ownership transfers", "Seller tax lots"]],
-    ["ownership", ["Initial owner/s of the property", "Ownership transfers"], ["Seller tax lots"]],
-    ["tax", ["Seller tax lots"], ["Initial owner/s of the property", "Ownership transfers"]],
+    [
+      "property",
+      ["Value of the property being sold today", "Initial owner/s of the property"],
+      ["Calculated title after inheritance", "Ownership transfers", "Tax Calculation"],
+    ],
+    [
+      "ownership",
+      [
+        "Initial owner/s of the property",
+        "Calculated title after inheritance",
+        "Ownership transfers",
+      ],
+      ["Value of the property being sold today", "Tax Calculation"],
+    ],
+    [
+      "tax",
+      ["Tax Calculation"],
+      [
+        "Value of the property being sold today",
+        "Initial owner/s of the property",
+        "Ownership transfers",
+      ],
+    ],
   ])("renders only the %s section", (section, visibleText, hiddenText) => {
     renderSection(section);
 
@@ -89,7 +112,39 @@ describe("Properties section views", () => {
     hiddenText.forEach((text) => expect(container.textContent).not.toContain(text));
   });
 
-  it("keeps a manually assessed company vendor on a compact form", () => {
+  it("updates today's property value without exposing property-level declarations", () => {
+    const onChange = vi.fn();
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          section="property"
+          onChange={onChange}
+        />,
+      ),
+    );
+
+    expect(container.textContent).not.toContain("Declarations of succession");
+    expect(container.textContent).not.toContain("Declaration Causa Mortis");
+
+    const saleValue = container.querySelector(
+      'input[aria-label="Value of the property being sold today"]',
+    );
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    act(() => {
+      setValue.call(saleValue, "325000");
+      saleValue.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(onChange).toHaveBeenCalledWith({
+      properties: [{ ...properties[0], saleValue: "325000" }],
+    });
+  });
+
+  it("shows a manually assessed company vendor as read-only information", () => {
     act(() =>
       root.render(
         <Properties
@@ -127,10 +182,9 @@ describe("Properties section views", () => {
       ),
     );
 
-    const treatment = container.querySelector('select[aria-label="Tax treatment"]');
-    expect(treatment.value).toBe("manual");
-    expect(treatment.disabled).toBe(false);
-    expect(container.textContent).toContain("Manually assessed tax");
+    expect(container.querySelector("select")).toBeNull();
+    expect(container.textContent).toContain("Manually assessed tax: €5.00");
+    expect(container.textContent).toContain("Buyer Limited");
     expect(container.textContent).not.toContain("Inheritance date");
     expect(container.textContent).not.toContain("Accumulated causa mortis value");
   });
@@ -148,11 +202,14 @@ describe("Properties section views", () => {
       { id: "child", fullName: "Maria Borg", fatherId: "deceased", spouseIds: [] },
     ];
     const calculated = intestateAllocations(inheritedPeople, "deceased");
-    inheritedPeople[0] = {
+    const deceasedWithRows = {
       ...inheritedPeople[0],
       intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
+    };
+    inheritedPeople[0] = {
+      ...deceasedWithRows,
       intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(inheritedPeople[0], calculated),
+      intestateConfirmationBasis: intestacyAllocationSignature(deceasedWithRows, calculated),
     };
     const inheritedProperty = {
       id: "property",
@@ -190,16 +247,12 @@ describe("Properties section views", () => {
       ),
     );
 
-    expect(container.textContent).toContain("7% of its transfer value");
     expect(container.textContent).toContain("7% of transfer value");
     expect(container.textContent).not.toContain("Causa mortis value for this fraction");
     expect(container.textContent).not.toContain("Legal basis of acquisition value");
     expect(container.textContent).not.toContain("Use the accumulated value");
-    const inheritanceDate = [...container.querySelectorAll('input[placeholder="dd-mm-yyyy"]')].find(
-      (input) => input.value === "24-11-1992",
-    );
-    expect(inheritanceDate).not.toBeUndefined();
-    expect(inheritanceDate.disabled).toBe(true);
+    expect(container.textContent).toContain("Died 24-11-1992");
+    expect(container.querySelector("select")).toBeNull();
   });
 
   it("blocks calculated ownership until a starting owner is entered", () => {
@@ -250,7 +303,6 @@ describe("Properties section views", () => {
 
     expect(container.textContent).toContain("Starting ownership totals 60%.");
     expect(container.textContent).toContain("must equal 100%");
-    expect(container.textContent).not.toContain("Seller tax lots");
-    expect(container.textContent).not.toContain("Tax payable by each living vendor");
+    expect(container.textContent).not.toContain("Tax Calculation");
   });
 });

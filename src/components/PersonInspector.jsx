@@ -42,6 +42,7 @@ import {
   intestateAllocations,
   isPersonDeceased,
   linkedSpousesFor,
+  willAllocationReadiness,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
 import {
@@ -60,6 +61,7 @@ import {
 } from "../domain/partnerRelationships.js";
 import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
+import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
 import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 
 const relationshipActions = [
@@ -750,7 +752,11 @@ export function PersonInspector({
     : [{ id: `${selectedPerson.id}:new-will`, date: "", notaryName: "", description: "" }];
   const latestWill = operativeWillFromRecords(recordedWills);
   const willHeirs = selectedPerson.willHeirs || [];
-  const willTotal = willHeirs.reduce((total, heir) => total + (Number(heir.sharePercent) || 0), 0);
+  const willReadiness = willAllocationReadiness(
+    selectedPerson,
+    new Set([...people.map((person) => person.id), ...outsideParties.map((party) => party.id)]),
+  );
+  const willTotal = willReadiness.totalPercent;
   const automaticIntestacy = isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
   const confirmedIntestacy =
     inheritanceBasis === "intestacy" &&
@@ -1651,25 +1657,35 @@ export function PersonInspector({
                     })}
                     <small
                       className={
-                        Math.abs(willTotal - 100) < 1e-8
-                          ? "succession-total valid"
-                          : "succession-total invalid"
+                        willReadiness.valid ? "succession-total valid" : "succession-total invalid"
                       }
                     >
                       Total: {ownershipLabel(willTotal / 100, ownershipDisplay)}{" "}
-                      {Math.abs(willTotal - 100) < 1e-8
+                      {willReadiness.valid
                         ? "✓"
-                        : `— must equal ${
-                            ownershipDisplay === "fraction"
-                              ? "1/1"
-                              : ownershipDisplay === "percentage"
-                                ? "100%"
-                                : "1/1 · 100%"
-                          }`}
+                        : willReadiness.totalComplete
+                          ? `— ${willReadiness.issues[0]}`
+                          : `— must equal ${
+                              ownershipDisplay === "fraction"
+                                ? "1/1"
+                                : ownershipDisplay === "percentage"
+                                  ? "100%"
+                                  : "1/1 · 100%"
+                            }`}
                     </small>
                   </div>
                 </div>
               )}
+
+              <LegacyLegitimPanel
+                deceased={selectedPerson}
+                people={people}
+                shareDisplay={ownershipDisplay}
+                displayName={displayName}
+                onUpdatePerson={updatePerson}
+                intestacyConfirmed={confirmedIntestacy?.valid === true}
+                willAllocationValid={willReadiness.valid}
+              />
 
               {isPreCausaMortisCutoff && (
                 <p className="helper-text causa-mortis-not-applicable">
@@ -1700,8 +1716,8 @@ export function PersonInspector({
                       title={
                         hasDraftCausaMortisDeclaration
                           ? causaMortisDraftOpen
-                            ? "Close the draft Declaration Causa Mortis form."
-                            : "Reopen the draft Declaration Causa Mortis form."
+                            ? "Close the unfinished Declaration Causa Mortis form."
+                            : "Reopen the unfinished Declaration Causa Mortis form."
                           : canStartFirstCausaMortisDeclaration
                             ? "Record the first Declaration Causa Mortis."
                             : hasRemainingCausaMortisShare
@@ -1765,7 +1781,7 @@ export function PersonInspector({
 
                   {hasDraftCausaMortisDeclaration && !causaMortisDraftOpen && (
                     <small className="causa-mortis-empty">
-                      Draft CM declaration closed. Use Open CM Declaration to continue.
+                      Unfinished CM declaration closed. Use Open CM Declaration to continue.
                     </small>
                   )}
 
@@ -1777,12 +1793,7 @@ export function PersonInspector({
                       key={declaration.id}
                     >
                       <div className="causa-mortis-card-heading">
-                        <span>
-                          <strong>Declaration CM {index + 1}</strong>
-                          <small>
-                            {isCompletedCausaMortisDeclaration(declaration) ? "Complete" : "Draft"}
-                          </small>
-                        </span>
+                        <strong>Declaration CM {index + 1}</strong>
                         <button
                           type="button"
                           className="icon-button"
@@ -1947,7 +1958,7 @@ export function PersonInspector({
                           onClick={() => completeCausaMortisDeclaration(declaration)}
                         >
                           <Check size={14} />
-                          {isCompletedCausaMortisDeclaration(declaration) ? "Completed" : "OK"}
+                          OK
                         </button>
                       </div>
                     </div>

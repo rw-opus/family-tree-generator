@@ -11,7 +11,7 @@ const isHousingRate = (value) => String(value || "").startsWith("housing-");
 export function Article5ATaxLotFields({
   lot,
   effectiveLot,
-  usePublishedValues,
+  useDeclarationValues,
   declaredCoverage,
   inheritanceSources = [],
   selectedInheritanceSource = null,
@@ -119,7 +119,7 @@ export function Article5ATaxLotFields({
             type="number"
             min="0"
             step="1"
-            disabled={acquisitionType === "inheritance" && usePublishedValues}
+            disabled={acquisitionType === "inheritance" && useDeclarationValues}
             value={effectiveLot.shareNumerator ?? 0}
             onChange={(event) =>
               change({
@@ -134,7 +134,7 @@ export function Article5ATaxLotFields({
             type="number"
             min="1"
             step="1"
-            disabled={acquisitionType === "inheritance" && usePublishedValues}
+            disabled={acquisitionType === "inheritance" && useDeclarationValues}
             value={effectiveLot.shareDenominator ?? 1}
             onChange={(event) =>
               change({
@@ -153,7 +153,7 @@ export function Article5ATaxLotFields({
           <input
             type="number"
             min="0"
-            disabled={acquisitionType === "inheritance" && usePublishedValues}
+            disabled={acquisitionType === "inheritance" && useDeclarationValues}
             value={effectiveLot.acquisitionValue ?? ""}
             onChange={(event) =>
               change({
@@ -168,7 +168,7 @@ export function Article5ATaxLotFields({
         <label>
           Legal basis of acquisition value
           <select
-            value={lot.acquisitionValueBasis || (usePublishedValues ? "cm-declared" : "")}
+            value={lot.acquisitionValueBasis || (useDeclarationValues ? "cm-declared" : "")}
             onChange={(event) => change({ acquisitionValueBasis: event.target.value })}
           >
             <option value="">Choose basis</option>
@@ -181,7 +181,7 @@ export function Article5ATaxLotFields({
       {acquisitionType === "inheritance" &&
         !preCausaMortisCutoff &&
         (lot.acquisitionValueBasis === "cm-declared" ||
-          (!lot.acquisitionValueBasis && usePublishedValues)) && (
+          (!lot.acquisitionValueBasis && useDeclarationValues)) && (
           <label className="check-label">
             <input
               type="checkbox"
@@ -217,11 +217,11 @@ export function Article5ATaxLotFields({
         <label className="check-label full-width">
           <input
             type="checkbox"
-            disabled={!declaredCoverage?.hasUsablePublishedValues}
-            checked={usePublishedValues}
+            disabled={!declaredCoverage?.hasUsableDeclaredValues}
+            checked={useDeclarationValues}
             onChange={(event) => change({ useDeclaredValues: event.target.checked })}
           />
-          Use the accumulated value and fraction from published CM declarations
+          Use the accumulated value and fraction from the CM declarations
         </label>
       )}
 

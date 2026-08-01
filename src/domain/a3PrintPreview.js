@@ -4,10 +4,10 @@ const mmToPixels = (millimetres) => millimetres * MM_TO_CSS_PX;
 
 export const A3_PRINT_LAYOUT = Object.freeze({
   orientation: "landscape",
-  pageWidthMm: 400,
-  pageHeightMm: 277,
-  treeWidthMm: 390,
-  treeHeightMm: 249,
+  pageWidthMm: 420,
+  pageHeightMm: 297,
+  treeWidthMm: 410,
+  treeHeightMm: 269,
   overlapMm: 20,
 });
 
@@ -44,6 +44,7 @@ export function calculateA3Tiles({
   viewportWidth = defaultViewportWidth,
   viewportHeight = defaultViewportHeight,
   overlap = defaultOverlap,
+  generationBands = [],
 }) {
   const width = positiveNumber(contentWidth, 1);
   const height = positiveNumber(contentHeight, 1);
@@ -56,23 +57,31 @@ export function calculateA3Tiles({
     pageHeight / 3,
   );
   const horizontalAdvance = Math.max(1, pageWidth - sharedEdge);
-  const verticalAdvance = Math.max(1, pageHeight - sharedEdge);
   const scaledWidth = width * printScale;
   const scaledHeight = height * printScale;
   const columns =
     scaledWidth <= pageWidth ? 1 : Math.ceil((scaledWidth - sharedEdge) / horizontalAdvance);
-  const rows =
-    scaledHeight <= pageHeight ? 1 : Math.ceil((scaledHeight - sharedEdge) / verticalAdvance);
+  const verticalPages = calculateA3VerticalPages({
+    contentHeight: height,
+    scale: printScale,
+    viewportHeight: pageHeight,
+    overlap: sharedEdge,
+    generationBands,
+  });
+  const rows = verticalPages.length;
   const tiles = [];
 
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
+      const verticalPage = verticalPages[row];
       tiles.push({
         index: tiles.length,
         row,
         column,
         offsetX: column * horizontalAdvance,
-        offsetY: row * verticalAdvance,
+        offsetY: verticalPage.offsetY,
+        clipHeight: verticalPage.clipHeight,
+        breakAfterGeneration: verticalPage.breakAfterGeneration,
       });
     }
   }
@@ -88,6 +97,68 @@ export function calculateA3Tiles({
     overlap: sharedEdge,
     tiles,
   };
+}
+
+/**
+ * Produces vertical page slices whose lower edge falls in the gap between two
+ * measured generations whenever possible. The next page retains the requested
+ * assembly overlap without deliberately cutting a person's card in two.
+ */
+export function calculateA3VerticalPages({
+  contentHeight,
+  scale = 1,
+  viewportHeight = defaultViewportHeight,
+  overlap = defaultOverlap,
+  generationBands = [],
+}) {
+  const printScale = positiveNumber(scale, 1);
+  const height = positiveNumber(contentHeight, 1) * printScale;
+  const pageHeight = positiveNumber(viewportHeight, defaultViewportHeight);
+  const sharedEdge = Math.min(positiveNumber(overlap, defaultOverlap), pageHeight / 3);
+  if (height <= pageHeight) {
+    return [{ offsetY: 0, clipHeight: pageHeight, breakAfterGeneration: null }];
+  }
+
+  const bands = generationBands
+    .map((band) => ({
+      generation: Number(band.generation),
+      top: Math.max(0, Number(band.top) || 0) * printScale,
+      bottom: Math.max(0, Number(band.bottom) || 0) * printScale,
+    }))
+    .filter((band) => band.bottom > band.top)
+    .sort((left, right) => left.top - right.top || left.generation - right.generation);
+  const safeBreaks = bands.slice(0, -1).map((band) => ({
+    position: band.bottom,
+    generation: band.generation,
+  }));
+  const pages = [];
+  let offsetY = 0;
+  let guard = 0;
+
+  while (offsetY < height - 0.5 && guard < 1000) {
+    guard += 1;
+    const maximumEnd = offsetY + pageHeight;
+    if (maximumEnd >= height - 0.5) {
+      pages.push({ offsetY, clipHeight: pageHeight, breakAfterGeneration: null });
+      break;
+    }
+
+    const minimumUsefulEnd = offsetY + Math.max(1, sharedEdge * 1.25);
+    const rowBreak = [...safeBreaks]
+      .reverse()
+      .find(
+        (candidate) => candidate.position <= maximumEnd && candidate.position > minimumUsefulEnd,
+      );
+    const end = rowBreak?.position || maximumEnd;
+    pages.push({
+      offsetY,
+      clipHeight: Math.min(pageHeight, Math.max(1, end - offsetY)),
+      breakAfterGeneration: rowBreak?.generation ?? null,
+    });
+    offsetY = Math.max(offsetY + 1, end - sharedEdge);
+  }
+
+  return pages;
 }
 
 export function resolveA3PrintArea({
@@ -275,7 +346,7 @@ const previewCss = `
     gap: 6px;
   }
 
-  .a3-preview-toolbar select,
+  .a3-preview-toolbar input[type="range"],
   .a3-preview-toolbar button {
     min-height: 36px;
     border: 1px solid #9eb9aa;
@@ -290,6 +361,22 @@ const previewCss = `
     border-color: #004225;
     background: #004225;
     color: #fff;
+  }
+
+  .a3-preview-toolbar input[type="range"] {
+    width: min(260px, 34vw);
+    min-height: 28px;
+    border: 0;
+    padding: 0;
+    accent-color: #004225;
+  }
+
+  .a3-scale-output {
+    min-width: 44px;
+    color: #004225;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: right;
   }
 
   .a3-preview-pages {
@@ -320,9 +407,9 @@ const previewCss = `
     top: 0;
     left: 0;
     display: grid;
-    grid-template-rows: 10mm 249mm 8mm;
-    width: 400mm;
-    height: 277mm;
+    grid-template-rows: 10mm 269mm 8mm;
+    width: 420mm;
+    height: 297mm;
     overflow: hidden;
     background: #fff;
     padding: 5mm;
@@ -356,11 +443,17 @@ const previewCss = `
 
   .a3-tree-viewport {
     position: relative;
-    width: 390mm;
-    height: 249mm;
+    width: 410mm;
+    height: 269mm;
     overflow: hidden;
     border: 0.25mm solid #d7dfda;
     background: #fff;
+  }
+
+  .a3-tree-clip {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
   }
 
   .a3-print-tree {
@@ -440,7 +533,7 @@ const previewCss = `
 
   @page {
     size: A3 landscape;
-    margin: 10mm;
+    margin: 0;
   }
 
   @media print {
@@ -472,15 +565,15 @@ const previewCss = `
     }
 
     .a3-page-shell {
-      width: 400mm !important;
-      height: 277mm !important;
+      width: 420mm !important;
+      height: 297mm !important;
       margin: 0 !important;
     }
 
     .a3-page {
       position: relative;
-      width: 400mm;
-      height: 277mm;
+      width: 420mm;
+      height: 297mm;
       margin: 0;
       transform: none !important;
       box-shadow: none;
@@ -548,9 +641,26 @@ const measurePrintableTree = (sourceCanvas, previewDocument) => {
   previewDocument.body.append(measure);
 
   const bounds = tree.getBoundingClientRect();
+  const generations = new Map();
+  tree.querySelectorAll(".family-node[data-family-generation]").forEach((node) => {
+    const generation = Number(node.dataset.familyGeneration);
+    if (!Number.isFinite(generation)) return;
+    const nodeBounds = node.getBoundingClientRect();
+    const current = generations.get(generation) || {
+      generation,
+      top: Number.POSITIVE_INFINITY,
+      bottom: 0,
+    };
+    current.top = Math.min(current.top, nodeBounds.top - bounds.top);
+    current.bottom = Math.max(current.bottom, nodeBounds.bottom - bounds.top);
+    generations.set(generation, current);
+  });
   const result = {
     width: Math.max(1, Math.ceil(tree.scrollWidth || bounds.width)),
     height: Math.max(1, Math.ceil(tree.scrollHeight || bounds.height)),
+    generationBands: [...generations.values()].sort(
+      (left, right) => left.generation - right.generation,
+    ),
   };
   measure.remove();
   return result;
@@ -570,6 +680,7 @@ const createPage = ({ document, sourceCanvas, title, tile, layout, pageNumber, p
     }/${layout.rows}`,
   );
   const viewport = makeElement(document, "div", "tree-stage a3-tree-viewport");
+  const clip = makeElement(document, "div", "a3-tree-clip");
   const tree = cleanTreeClone(sourceCanvas.cloneNode(true));
   const footer = makeElement(document, "footer", "a3-page-footer");
   const overlapNote = makeElement(
@@ -584,7 +695,7 @@ const createPage = ({ document, sourceCanvas, title, tile, layout, pageNumber, p
   const centreX =
     layout.scaledWidth < layout.viewportWidth ? (layout.viewportWidth - layout.scaledWidth) / 2 : 0;
   const centreY =
-    layout.scaledHeight < layout.viewportHeight
+    layout.rows === 1 && layout.scaledHeight < layout.viewportHeight
       ? (layout.viewportHeight - layout.scaledHeight) / 2
       : 0;
 
@@ -592,7 +703,9 @@ const createPage = ({ document, sourceCanvas, title, tile, layout, pageNumber, p
     centreY - tile.offsetY
   }px) scale(${layout.scale})`;
   header.append(heading, pagePosition);
-  viewport.append(tree);
+  clip.style.height = `${Math.min(layout.viewportHeight, tile.clipHeight || layout.viewportHeight)}px`;
+  clip.append(tree);
+  viewport.append(clip);
   footer.append(overlapNote, sheetNumber);
   page.append(header, viewport, footer);
   shell.append(page);
@@ -645,75 +758,39 @@ export async function openA3PrintPreview(node, title = "Family tree") {
     "Landscape A3 · print at 100% / actual size · disable browser headers and footers",
   );
   const scaleLabel = makeElement(previewWindow.document, "label", "");
-  const scaleText = makeElement(previewWindow.document, "span", "", "Tree size after fitting");
-  const scaleSelect = makeElement(previewWindow.document, "select", "");
-  const areaLabel = makeElement(previewWindow.document, "label", "");
-  const areaText = makeElement(previewWindow.document, "span", "", "Print area width");
-  const areaSelect = makeElement(previewWindow.document, "select", "");
-  const heightLabel = makeElement(previewWindow.document, "label", "");
-  const heightText = makeElement(previewWindow.document, "span", "", "Sheet height");
-  const heightSelect = makeElement(previewWindow.document, "select", "");
+  const scaleText = makeElement(previewWindow.document, "span", "", "Tree scale");
+  const scaleSlider = makeElement(previewWindow.document, "input", "");
+  const scaleOutput = makeElement(previewWindow.document, "output", "a3-scale-output", "100%");
   const printButton = makeElement(previewWindow.document, "button", "", "Print all A3 pages");
   const closeButton = makeElement(previewWindow.document, "button", "", "Close");
   const scrollViewport = makeElement(previewWindow.document, "div", "a3-preview-scroll");
   const pages = makeElement(previewWindow.document, "main", "a3-preview-pages");
 
-  [
-    ["1", "100% of fitted size"],
-    ["0.85", "85% of fitted size"],
-    ["0.7", "70% of fitted size"],
-  ].forEach(([value, label]) => {
-    const option = makeElement(previewWindow.document, "option", "", label);
-    option.value = value;
-    scaleSelect.append(option);
-  });
-
-  [
-    ["auto", "Automatic"],
-    ["1", "1 A3 sheet wide"],
-    ["2", "2 A3 sheets wide"],
-    ["3", "3 A3 sheets wide"],
-    ["4", "4 A3 sheets wide"],
-  ].forEach(([value, label]) => {
-    const option = makeElement(previewWindow.document, "option", "", label);
-    option.value = value;
-    areaSelect.append(option);
-  });
-
-  [
-    ["fit", "Fit all generations on one sheet"],
-    ["actual", "Actual size · split across sheets"],
-  ].forEach(([value, label]) => {
-    const option = makeElement(previewWindow.document, "option", "", label);
-    option.value = value;
-    heightSelect.append(option);
-  });
-
   heading.append(headingTitle, headingHelp);
-  scaleLabel.append(scaleText, scaleSelect);
-  areaLabel.append(areaText, areaSelect);
-  heightLabel.append(heightText, heightSelect);
+  scaleSlider.type = "range";
+  scaleSlider.min = "10";
+  scaleSlider.max = "150";
+  scaleSlider.step = "5";
+  scaleSlider.setAttribute("aria-label", "Tree scale percentage");
+  scaleLabel.append(scaleText, scaleSlider, scaleOutput);
   printButton.type = "button";
   printButton.dataset.action = "print";
   closeButton.type = "button";
-  toolbar.append(heading, scaleLabel, areaLabel, heightLabel, printButton, closeButton);
+  toolbar.append(heading, scaleLabel, printButton, closeButton);
   scrollViewport.append(pages);
   previewWindow.document.body.append(toolbar, scrollViewport);
 
   await waitForPreviewStyles(previewWindow);
   const dimensions = measurePrintableTree(sourceCanvas, previewWindow.document);
+  const fittedScale = resolveA3HeightScale({ contentHeight: dimensions.height }).scale;
+  scaleSlider.value = String(Math.max(10, Math.min(150, Math.round(fittedScale * 100))));
   const renderPages = () => {
-    const printArea = resolveA3PreviewScale({
-      contentWidth: dimensions.width,
-      contentHeight: dimensions.height,
-      sizeFactor: scaleSelect.value,
-      requestedColumns: areaSelect.value,
-      fitHeight: heightSelect.value === "fit",
-    });
+    const selectedScale = Math.max(0.1, Number(scaleSlider.value) / 100 || fittedScale);
     const layout = calculateA3Tiles({
       contentWidth: dimensions.width,
       contentHeight: dimensions.height,
-      scale: printArea.scale,
+      scale: selectedScale,
+      generationBands: dimensions.generationBands,
     });
     pages.replaceChildren(
       ...layout.tiles.map((tile, index) =>
@@ -728,25 +805,18 @@ export async function openA3PrintPreview(node, title = "Family tree") {
         }),
       ),
     );
-    const minimumScaleNote =
-      printArea.requestedColumns && layout.columns > printArea.requestedColumns
-        ? ` · minimum fitted scale ${Math.round(
-            printArea.minimumScale * 100,
-          )}% requires ${layout.columns} sheets wide`
-        : "";
+    scaleOutput.textContent = `${Math.round(layout.scale * 100)}%`;
     headingHelp.textContent = `A3 landscape · ${layout.tiles.length} ${
       layout.tiles.length === 1 ? "sheet" : "sheets"
     } · ${layout.columns} across × ${layout.rows} high · tree at ${Math.round(
       layout.scale * 100,
-    )}%${minimumScaleNote} · ${A3_PRINT_LAYOUT.overlapMm} mm overlap · print at 100% / actual size · disable browser headers and footers`;
+    )}% · ${A3_PRINT_LAYOUT.overlapMm} mm overlap · print at 100% / actual size · disable browser headers and footers`;
     applyScreenPageScale(previewWindow);
     scrollViewport.scrollTop = 0;
     scrollViewport.scrollLeft = 0;
   };
 
-  scaleSelect.addEventListener("change", renderPages);
-  areaSelect.addEventListener("change", renderPages);
-  heightSelect.addEventListener("change", renderPages);
+  scaleSlider.addEventListener("input", renderPages);
   printButton.addEventListener("click", () => {
     previewWindow.focus();
     previewWindow.print();

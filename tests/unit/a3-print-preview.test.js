@@ -5,6 +5,7 @@ import {
   A3_PRINT_VIEWPORT_HEIGHT_PX,
   a3PrintableWidthForColumns,
   calculateA3Tiles,
+  calculateA3VerticalPages,
   resolveA3HeightScale,
   resolveA3PreviewScale,
   resolveA3PrintArea,
@@ -109,7 +110,30 @@ describe("A3 print pagination", () => {
 
     expect(layout.overlap).toBeCloseTo(expectedOverlapPx);
     expect(layout.tiles[1].offsetX).toBeCloseTo(1000 - expectedOverlapPx);
-    expect(a3PrintableWidthForColumns(2)).toBeCloseTo(2 * ((390 * 96) / 25.4) - expectedOverlapPx);
+    expect(a3PrintableWidthForColumns(2)).toBeCloseTo(2 * ((410 * 96) / 25.4) - expectedOverlapPx);
+  });
+
+  it("breaks a tall tree between measured generation rows", () => {
+    const pages = calculateA3VerticalPages({
+      contentHeight: 1500,
+      scale: 1,
+      viewportHeight: 700,
+      overlap: 100,
+      generationBands: [
+        { generation: 0, top: 20, bottom: 220 },
+        { generation: 1, top: 360, bottom: 620 },
+        { generation: 2, top: 820, bottom: 1080 },
+        { generation: 3, top: 1240, bottom: 1480 },
+      ],
+    });
+
+    expect(pages[0]).toMatchObject({
+      offsetY: 0,
+      clipHeight: 620,
+      breakAfterGeneration: 1,
+    });
+    expect(pages[1].offsetY).toBe(520);
+    expect(pages[1].breakAfterGeneration).toBe(2);
   });
 
   it("fits a tree to a user-selected one- or two-sheet print width", () => {

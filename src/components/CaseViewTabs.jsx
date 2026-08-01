@@ -42,7 +42,7 @@ export function CaseViewTabs({ familyGroups, activeView, onSelectView, onAddFami
           aria-pressed={activeView === vendorTaxViewKey}
           onClick={() => onSelectView(vendorTaxViewKey)}
         >
-          <ReceiptText size={15} /> Vendors & tax
+          <ReceiptText size={15} /> Tax Calculation
         </button>
       </div>
     </nav>

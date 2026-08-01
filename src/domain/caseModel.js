@@ -1,5 +1,11 @@
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
 import { personWithWills } from "./wills.js";
+import {
+  INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
+  intestacyAllocationSignature,
+  intestateAllocations,
+  legacyIntestacyAllocationSignature,
+} from "./familyOwnership.js";
 
 export const CASE_SCHEMA_VERSION = 2;
 
@@ -56,6 +62,31 @@ function normalizePeople(people = []) {
   return normalizePartnerRelationships(normalized);
 }
 
+function migrateIntestacyConfirmationSignatures(people = []) {
+  return people.map((person) => {
+    if (
+      person.intestateHeirsConfirmed !== true ||
+      !text(person.intestateConfirmationBasis) ||
+      text(person.intestateConfirmationBasis).startsWith(
+        `${INTESTACY_CONFIRMATION_SIGNATURE_VERSION}::`,
+      )
+    ) {
+      return person;
+    }
+    const calculated = intestateAllocations(people, person.id);
+    if (
+      person.intestateConfirmationBasis !== legacyIntestacyAllocationSignature(person, calculated)
+    ) {
+      return person;
+    }
+    return {
+      ...person,
+      intestateConfirmationBasis: intestacyAllocationSignature(person, calculated),
+      intestateConfirmationMigratedFromV1: true,
+    };
+  });
+}
+
 function normalizeFamilyGroup(group, index, caseData, validPersonIds) {
   const requestedRootId = text(group?.rootPersonId);
   const requestedPersonIds = uniqueIds(group?.personIds);
@@ -92,10 +123,11 @@ function legacyFamilyGroup(caseData) {
  */
 export function normalizeCase(value = {}) {
   const source = isRecord(value) ? cloneValue(value) : {};
+  const people = migrateIntestacyConfirmationSignatures(normalizePeople(source.people));
   const caseData = {
     ...source,
     id: text(source.id) || DEFAULT_CASE_ID,
-    people: normalizePeople(source.people),
+    people,
     schemaVersion: CASE_SCHEMA_VERSION,
   };
   const validPersonIds = new Set(caseData.people.map((person) => person.id));

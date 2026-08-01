@@ -9,6 +9,11 @@ import {
   promoteOutsideIndividual,
   removePersonFromFamilyGroup,
 } from "../../src/domain/caseModel.js";
+import {
+  confirmedIntestacyAllocations,
+  intestateAllocations,
+  legacyIntestacyAllocationSignature,
+} from "../../src/domain/familyOwnership.js";
 
 const legacyCase = () => ({
   id: "case-1",
@@ -110,6 +115,50 @@ describe("case model migration", () => {
         },
       ],
     });
+  });
+
+  it("migrates a valid old-format intestacy confirmation without changing its shares", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        spouseIds: ["spouse"],
+        intestateHeirs: [
+          { id: "spouse-share", personId: "spouse", sharePercent: 60 },
+          { id: "child-share", personId: "child", sharePercent: 40 },
+        ],
+      },
+      { id: "spouse", fullName: "Maria Borg", spouseIds: ["deceased"] },
+      {
+        id: "child",
+        fullName: "Anna Borg",
+        fatherId: "deceased",
+        motherId: "spouse",
+      },
+    ];
+    const calculated = intestateAllocations(people, "deceased");
+    people[0] = {
+      ...people[0],
+      intestateHeirsConfirmed: true,
+      intestateConfirmationBasis: legacyIntestacyAllocationSignature(people[0], calculated),
+    };
+
+    const normalized = normalizeCase({ id: "migration", people });
+    const migrated = normalized.people.find((person) => person.id === "deceased");
+    const migratedCalculation = intestateAllocations(normalized.people, "deceased");
+    const confirmed = confirmedIntestacyAllocations(
+      normalized.people,
+      "deceased",
+      migratedCalculation,
+    );
+
+    expect(migrated.intestateConfirmationBasis).toMatch(/^v2::/);
+    expect(migrated.intestateConfirmationMigratedFromV1).toBe(true);
+    expect(confirmed.valid).toBe(true);
+    expect(confirmed.shares.get("spouse")).toBeCloseTo(0.6);
+    expect(confirmed.shares.get("child")).toBeCloseTo(0.4);
   });
 
   it("keeps one canonical global person for duplicate IDs", () => {

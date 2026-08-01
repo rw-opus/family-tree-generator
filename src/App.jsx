@@ -700,22 +700,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
               placeholder="Full address"
             />
           </label>
-          <label>
-            Selling price (€)
-            <input
-              type="number"
-              min="0"
-              value={activeProperty.saleValue || ""}
-              onChange={(event) =>
-                updatePropertyWorkspace({
-                  properties: [
-                    { ...activeProperty, saleValue: event.target.value },
-                    ...currentTree.properties.slice(1),
-                  ],
-                })
-              }
-            />
-          </label>
         </section>
         <nav className="property-workspace-tabs" aria-label="Property workspace sections">
           <button
@@ -723,7 +707,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
             className={workspaceView === "property" ? "active" : ""}
             onClick={() => setWorkspaceView("property")}
           >
-            <Landmark size={16} /> Property &amp; declarations
+            <Landmark size={16} /> Property &amp; initial owners
           </button>
           <button
             type="button"
@@ -737,7 +721,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
             className={workspaceView === "tax" ? "active" : ""}
             onClick={() => setWorkspaceView("tax")}
           >
-            <Calculator size={16} /> Vendors &amp; Article 5A tax
+            <Calculator size={16} /> Tax Calculation
           </button>
         </nav>
         <section className="property-workspace-content">

@@ -73,6 +73,16 @@ describe("Maltese inherited property estimates", () => {
     expect(successionRuleset("2005-02-28").supported).toBe(false);
     expect(successionRuleset("2005-03-01").supported).toBe(true);
   });
+  it("does not select a legal regime from a malformed death date", () => {
+    expect(successionRuleset("28-02-2005")).toMatchObject({
+      key: "invalid-date",
+      supported: false,
+    });
+    expect(successionRuleset("2005-02-30")).toMatchObject({
+      key: "invalid-date",
+      supported: false,
+    });
+  });
   it("does not apply current intestacy rules when the death date is missing", () => {
     const heirs = [
       { id: "s", relationship: "Surviving spouse" },

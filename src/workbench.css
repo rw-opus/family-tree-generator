@@ -387,7 +387,7 @@
 
 .property-workspace-property {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(11rem, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
   border-bottom: 1px solid #dbe3df;
   background: #f8faf9;
@@ -1954,6 +1954,220 @@ button.family-link-person:hover {
   gap: 0.25rem;
 }
 
+.legacy-legitim-panel {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.18rem;
+  border: 1px solid #d8c9a8;
+  border-radius: 8px;
+  background: #fffdf7;
+  padding: 0.46rem;
+}
+
+.legacy-legitim-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.legacy-legitim-heading > div {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.legacy-legitim-heading strong,
+.legacy-legitim-heading b {
+  color: var(--ink);
+  font-size: 0.68rem;
+}
+
+.legacy-legitim-heading small,
+.legacy-legitim-rule,
+.legacy-legitim-advisory,
+.legacy-legitim-diagnostics small,
+.legacy-legitim-draft-note,
+.legacy-legitim-estate > small {
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.35;
+}
+
+.legacy-legitim-heading b {
+  color: #75551f;
+  text-align: right;
+}
+
+.legacy-legitim-rule {
+  margin: 0;
+}
+
+.legacy-legitim-advisory {
+  margin: 0;
+  border-radius: 6px;
+  background: #f3f1ea;
+  padding: 0.34rem;
+}
+
+.legacy-legitim-statuses,
+.legacy-legitim-results,
+.legacy-legitim-diagnostics {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.legacy-legitim-status-row {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.8fr) minmax(118px, 1.35fr) minmax(104px, 1fr);
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: calc(var(--legacy-depth, 0) * 0.6rem);
+}
+
+.legacy-legitim-status-row > span {
+  overflow: hidden;
+  color: #3f4b44;
+  font-size: 0.61rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legacy-legitim-status-row select {
+  width: 100%;
+  min-height: 1.8rem;
+  padding: 0.24rem 0.3rem;
+  font-size: 0.6rem;
+}
+
+.legacy-legitim-diagnostics {
+  border-radius: 6px;
+  background: #fff3e2;
+  padding: 0.34rem;
+}
+
+.legacy-legitim-diagnostics small {
+  color: #8b531d;
+}
+
+.legacy-legitim-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.legacy-legitim-summary span {
+  display: grid;
+  gap: 0.08rem;
+  border-radius: 6px;
+  background: #f5f0e4;
+  padding: 0.3rem;
+  color: #655b49;
+  font-size: 0.57rem;
+}
+
+.legacy-legitim-summary b {
+  color: #624817;
+  font-size: 0.64rem;
+}
+
+.legacy-legitim-result {
+  display: grid;
+  grid-template-columns: minmax(78px, 1fr) auto auto;
+  gap: 0.2rem 0.45rem;
+  border-left: 3px solid #93ad9c;
+  border-radius: 5px;
+  background: #f7faf8;
+  padding: 0.3rem 0.36rem;
+  color: #46534c;
+  font-size: 0.59rem;
+}
+
+.legacy-legitim-result.shortfall {
+  border-left-color: #b94c42;
+  background: #fff4f2;
+}
+
+.legacy-legitim-result.draft {
+  border-left-color: #aab1ad;
+  background: #f5f6f5;
+}
+
+.legacy-legitim-result > strong {
+  grid-column: 1 / -1;
+  color: #28704d;
+  font-size: 0.58rem;
+}
+
+.legacy-legitim-result.shortfall > strong {
+  color: #a23f38;
+}
+
+.legacy-legitim-result.draft > strong {
+  color: var(--muted);
+}
+
+.legacy-legitim-estate {
+  border-top: 1px solid #e6dcc5;
+  padding-top: 0.34rem;
+}
+
+.legacy-legitim-estate summary {
+  color: #655b49;
+  font-size: 0.61rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.legacy-legitim-estate > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 0.45rem;
+  margin-top: 0.34rem;
+}
+
+.legacy-legitim-estate label {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem;
+  color: #655b49;
+  font-size: 0.59rem;
+}
+
+.legacy-legitim-estate p {
+  margin: 0.3rem 0 0;
+  color: #655b49;
+  font-size: 0.61rem;
+}
+
+.legacy-legitim-estate > small {
+  display: block;
+  margin-top: 0.28rem;
+}
+
+.legacy-legitim-estate > .legacy-legitim-estate-warning {
+  color: #9a4e25;
+}
+
+@media (max-width: 560px) {
+  .legacy-legitim-status-row {
+    grid-template-columns: minmax(74px, 0.7fr) minmax(0, 1.3fr);
+  }
+
+  .legacy-legitim-status-row select:last-child {
+    grid-column: 2;
+  }
+
+  .legacy-legitim-summary,
+  .legacy-legitim-estate > div {
+    grid-template-columns: 1fr;
+  }
+
+  .legacy-legitim-result {
+    grid-template-columns: minmax(76px, 1fr) auto;
+  }
+}
+
 .outside-party-creator {
   display: grid;
   gap: 0.38rem;
@@ -2155,28 +2369,8 @@ button.family-link-person:hover {
   gap: 0.5rem;
 }
 
-.causa-mortis-card-heading > span {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.causa-mortis-card-heading small {
-  border-radius: 999px;
-  background: #fff0d9;
-  color: #8b571a;
-  padding: 0.12rem 0.35rem;
-  font-size: 0.54rem;
-  font-weight: 800;
-}
-
 .causa-mortis-card.complete {
   border-color: #b9d9c6;
-}
-
-.causa-mortis-card.complete .causa-mortis-card-heading small {
-  background: #e7f6ed;
-  color: #28704d;
 }
 
 .causa-mortis-card-heading .icon-button {
@@ -2695,6 +2889,17 @@ button.family-link-person:hover {
   display: grid;
   gap: 0.28rem;
   margin-top: 0.4rem;
+}
+
+.property-sale-value {
+  margin: 0 0 0.45rem;
+}
+
+.single-property-case .property-sale-value > label:not(.check-label) {
+  border: 1px solid #dce4df;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.35rem 0.45rem;
 }
 
 .ownership-blocking-notice {
@@ -4448,4 +4653,127 @@ button.family-link-person:hover {
   color: var(--muted);
   font-size: 0.59rem;
   line-height: 1.4;
+}
+
+.tax-calculation-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.tax-calculation-heading {
+  align-items: center;
+}
+
+.tax-calculation-vendors {
+  display: grid;
+  gap: 14px;
+}
+
+.tax-calculation-vendor {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.tax-calculation-vendor > header,
+.tax-calculation-vendor > footer,
+.tax-calculation-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+}
+
+.tax-calculation-vendor > header {
+  border-bottom: 1px solid var(--line);
+  background: #f5f8f6;
+}
+
+.tax-calculation-vendor > header span {
+  display: grid;
+  gap: 2px;
+}
+
+.tax-calculation-vendor > header span:last-child,
+.tax-calculation-vendor > footer span:last-child {
+  text-align: right;
+}
+
+.tax-calculation-vendor small,
+.tax-calculation-table td small {
+  display: block;
+  color: var(--muted);
+}
+
+.tax-calculation-table-wrap {
+  overflow-x: auto;
+}
+
+.tax-calculation-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.tax-calculation-table th,
+.tax-calculation-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tax-calculation-table th {
+  color: var(--muted);
+  background: #fbfcfb;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tax-calculation-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.tax-calculation-table small.selected {
+  color: var(--forest);
+  font-weight: 800;
+}
+
+.tax-calculation-table small.attention,
+.tax-calculation-warning {
+  color: #95520d;
+}
+
+.tax-calculation-vendor > footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+}
+
+.tax-calculation-warning {
+  margin: 0;
+  padding: 0 14px 12px;
+  font-size: 12px;
+}
+
+.tax-calculation-total {
+  flex-wrap: wrap;
+  border-radius: 10px;
+  background: var(--forest);
+  color: #fff;
+}
+
+@media (max-width: 680px) {
+  .tax-calculation-heading,
+  .tax-calculation-vendor > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tax-calculation-vendor > header span:last-child {
+    text-align: left;
+  }
 }

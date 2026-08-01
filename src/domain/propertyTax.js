@@ -1,4 +1,5 @@
 import { assessArticle5ATransfer, article5ATransferValue } from "./article5A.js";
+import { isValidIsoDate } from "./dateFormat.js";
 
 const number = (value) => Math.max(0, Number(value) || 0);
 
@@ -9,6 +10,12 @@ export const CURRENT_SUCCESSION_START = "2005-03-01";
 
 export function successionRuleset(dateOfDeath) {
   if (!dateOfDeath) return { key: "undated", label: "Enter the date of death", supported: false };
+  if (!isValidIsoDate(dateOfDeath))
+    return {
+      key: "invalid-date",
+      label: "Enter a valid date of death",
+      supported: false,
+    };
   if (dateOfDeath < CURRENT_SUCCESSION_START)
     return { key: "pre2005", label: "Historical law before 1 March 2005", supported: false };
   return { key: "current", label: "Current rules (from 1 March 2005)", supported: true };

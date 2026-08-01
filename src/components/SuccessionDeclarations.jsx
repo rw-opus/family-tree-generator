@@ -14,10 +14,8 @@ const money = new Intl.NumberFormat("en-MT", {
 });
 const blankDeclaration = () => ({
   type: "original",
-  status: "draft",
   date: "",
   notaryName: "",
-  reference: "",
   scope: "",
   notes: "",
   participants: [],
@@ -98,17 +96,7 @@ export function SuccessionDeclarations({ heirs, property, declarations, onChange
               </select>
             </label>
             <label>
-              Status
-              <select
-                value={draft.status}
-                onChange={(e) => setDraft({ ...draft, status: e.target.value, error: "" })}
-              >
-                <option value="draft">Draft / planned</option>
-                <option value="published">Published and registered</option>
-              </select>
-            </label>
-            <label>
-              Publication date
+              Declaration date
               <DateInput
                 value={draft.date}
                 onChange={(value) => setDraft({ ...draft, date: value, error: "" })}
@@ -120,13 +108,6 @@ export function SuccessionDeclarations({ heirs, property, declarations, onChange
                 value={draft.notaryName}
                 onChange={(e) => setDraft({ ...draft, notaryName: e.target.value, error: "" })}
                 placeholder="Notary's full name"
-              />
-            </label>
-            <label>
-              Deed or registration reference
-              <input
-                value={draft.reference}
-                onChange={(e) => setDraft({ ...draft, reference: e.target.value })}
               />
             </label>
             <label>
@@ -253,34 +234,24 @@ export function SuccessionDeclarations({ heirs, property, declarations, onChange
           </button>
         </form>
         <div className="coverage-panel">
-          <h3>Published coverage by heir</h3>
+          <h3>Declaration coverage by heir</h3>
           {coverage.length ? (
             coverage.map((item) => (
               <div className="coverage-row detailed" key={item.heirId}>
                 <span>
                   {item.name}
                   <small>
-                    {item.publishedCount
-                      ? `${item.publishedCount} published DCM${item.publishedCount === 1 ? "" : "s"}`
-                      : item.declarationCount
-                        ? `${item.declarationCount} draft`
-                        : "No DCM"}
+                    {item.declarationCount
+                      ? `${item.declarationCount} DCM${item.declarationCount === 1 ? "" : "s"}`
+                      : "No DCM"}
                   </small>
                 </span>
-                <strong
-                  className={
-                    item.status === "complete"
-                      ? "covered"
-                      : !item.publishedCount && item.declarationCount
-                        ? "draft"
-                        : "missing"
-                  }
-                >
-                  {item.publishedCount ? (
+                <strong className={item.status === "complete" ? "covered" : "missing"}>
+                  {item.declarationCount ? (
                     <>
-                      {approximateFraction(item.publishedFraction).numerator}/
-                      {approximateFraction(item.publishedFraction).denominator}
-                      <small>{money.format(item.publishedValue)}</small>
+                      {approximateFraction(item.declaredFraction).numerator}/
+                      {approximateFraction(item.declaredFraction).denominator}
+                      <small>{money.format(item.declaredValue)}</small>
                       <small>
                         {item.status === "invalid"
                           ? "Needs fraction/value details"
@@ -291,8 +262,6 @@ export function SuccessionDeclarations({ heirs, property, declarations, onChange
                               : "Complete"}
                       </small>
                     </>
-                  ) : item.declarationCount ? (
-                    "Draft only"
                   ) : (
                     "Not declared"
                   )}
@@ -303,8 +272,8 @@ export function SuccessionDeclarations({ heirs, property, declarations, onChange
             <p className="helper-text">No heirs added.</p>
           )}
           <p className="helper-text">
-            Totals aggregate published DCM entries for this case. Additional declarations remain
-            separate records.
+            Totals aggregate all DCM entries for this case. Additional declarations remain separate
+            records.
           </p>
         </div>
       </div>
@@ -320,11 +289,8 @@ export function SuccessionDeclarations({ heirs, property, declarations, onChange
                   {declaration.type === "additional" ? "Additional" : "Original"} DCM {index + 1}
                 </strong>
                 <p>
-                  {declaration.status === "published"
-                    ? `Published ${isoDateToDisplay(declaration.date)}`
-                    : "Draft / planned"}
+                  {isoDateToDisplay(declaration.date) || "Date not entered"}
                   {declaration.notaryName ? ` · ${displayNotaryName(declaration.notaryName)}` : ""}
-                  {declaration.reference ? ` · ${declaration.reference}` : ""}
                 </p>
                 <small>{declaration.scope || "Scope not specified"}</small>
                 <div className="declaration-participants">

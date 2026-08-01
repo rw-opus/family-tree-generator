@@ -33,29 +33,35 @@ describe("succession declarations", () => {
     ]);
     expect(coverage.find((item) => item.heirId === "a")).toMatchObject({
       declarationCount: 2,
-      publishedCount: 1,
-      publishedFraction: 1 / 6,
-      publishedValue: 100000,
+      declaredFraction: 1 / 4,
+      declaredValue: 150000,
     });
     expect(coverage.find((item) => item.heirId === "c")).toMatchObject({
       declarationCount: 1,
-      publishedCount: 1,
+      declaredFraction: 1 / 3,
     });
   });
-  it("requires a date and notary only when marked published", () => {
+  it("ignores draft or published status and requires the DCM details", () => {
     const participants = [{ heirId: "a", numerator: 1, denominator: 2, declaredValue: 50000 }];
-    expect(validateDeclaration({ status: "draft", participants })).toBe("");
-    expect(validateDeclaration({ status: "published", participants, notaryName: "" })).toContain(
-      "publication date",
+    expect(validateDeclaration({ status: "draft", participants })).toContain(
+      "date of the Declaration Causa Mortis",
     );
     expect(
       validateDeclaration({
-        status: "published",
+        status: "draft",
         participants,
         date: "2026-01-01",
         notaryName: "",
       }),
     ).toContain("notary");
+    expect(
+      validateDeclaration({
+        status: "published",
+        participants,
+        date: "2026-01-01",
+        notaryName: "Dr Vella",
+      }),
+    ).toBe("");
   });
 
   it("keeps unquantified legacy declarations visible but unusable for tax values", () => {
@@ -71,19 +77,19 @@ describe("succession declarations", () => {
     );
 
     expect(coverage).toMatchObject({
-      publishedCount: 1,
-      publishedFraction: 0,
-      publishedValue: 0,
+      declarationCount: 1,
+      declaredFraction: 0,
+      declaredValue: 0,
       status: "invalid",
-      unusablePublishedCount: 1,
-      hasUsablePublishedValues: false,
+      unusableDeclarationCount: 1,
+      hasUsableDeclaredValues: false,
     });
     expect(validateDeclaration({ status: "published", heirIds: ["a"] })).toContain(
       "legacy declaration",
     );
   });
 
-  it("rejects malformed published fractions and zero published values", () => {
+  it("rejects malformed fractions and zero declared values regardless of status", () => {
     const malformed = {
       status: "published",
       date: "2026-01-01",
@@ -99,9 +105,9 @@ describe("succession declarations", () => {
     expect(validateDeclaration(zeroValue)).toContain("positive declared value");
     const [coverage] = declarationCoverage([{ id: "a", share: 0.5 }], [malformed]);
     expect(coverage).toMatchObject({
-      publishedFraction: 0,
+      declaredFraction: 0,
       status: "invalid",
-      hasUsablePublishedValues: false,
+      hasUsableDeclaredValues: false,
     });
   });
 
@@ -117,7 +123,7 @@ describe("succession declarations", () => {
     expect(declarationCoverage([heir], [declaration("complete", 2)])[0].status).toBe("complete");
     expect(declarationCoverage([heir], [declaration("over", 3)])[0]).toMatchObject({
       status: "over",
-      hasUsablePublishedValues: false,
+      hasUsableDeclaredValues: false,
     });
   });
 });

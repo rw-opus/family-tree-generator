@@ -1834,7 +1834,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Required 1/2");
     expect(container.textContent).toContain("Missing 1/2");
     expect(container.textContent).toContain("Declaration CM 1");
-    expect(container.textContent).toContain("Draft");
+    expect(container.textContent).not.toContain("Draft");
     expect(container.textContent).toContain("Notary");
     expect(
       [...container.querySelectorAll("button")].find(
@@ -2378,14 +2378,14 @@ describe("PersonInspector", () => {
 
     const okButton = () =>
       [...container.querySelectorAll("button")].find(
-        (button) => button.textContent.trim() === "OK",
+        (button) => button.textContent.trim() === "OK" && !button.disabled,
       );
     act(() => okButton().click());
 
     expect(container.textContent).toContain("Declared 1/4");
     expect(declarationActionButton().disabled).toBe(false);
     expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
-    expect(container.textContent).toContain("Completed");
+    expect(container.textContent).not.toContain("Completed");
 
     act(() => declarationActionButton().click());
     expect(declarationActionButton().textContent).toContain("Close CM Declaration");
