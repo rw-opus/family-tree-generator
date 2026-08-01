@@ -29,11 +29,13 @@ const RELAX_ROUNDS = 3;
 
 // Each successive marriage of the same person drops its sibling bar a little
 // lower, so the children of each are read off their own bar.
-const UNION_BAR_OFFSET = 16;
+const UNION_BAR_OFFSET = 24;
 const UNION_BAR_STEP = 10;
 const UNION_BAR_MIN_CLEARANCE = 8;
 const UNION_BAR_SEPARATION = 12;
-const MAX_UNION_BAR_LANE = 2;
+const STEM_TURN_CLEARANCE = 12;
+const STEM_CHILD_COLLISION_RADIUS = 4;
+const CONNECTOR_OPENING_HALF_WIDTH = 5;
 const OUTER_MARRIAGE_ROUTE_OFFSET = 10;
 const OUTER_MARRIAGE_ROUTE_STEP = 6;
 const COMPONENT_GAP = CARD_WIDTH;
@@ -54,6 +56,53 @@ const measuredCardHeight = (nodeHeights, personId) => {
   const height = Number(value);
   return Number.isFinite(height) ? Math.max(CARD_HEIGHT, Math.ceil(height)) : CARD_HEIGHT;
 };
+
+/**
+ * A centred marriage stem can land on the centre line of a middle child. In
+ * that case the two verticals read as one continuous line. Enter the sibling
+ * bar through the nearest gap between children instead, while keeping the
+ * first part of the stem exactly at the middle of the parents' union.
+ */
+function childBarEntry(markerX, childCentres = []) {
+  const centres = [...new Set(childCentres)].sort((first, second) => first - second);
+  const clashes = centres.some(
+    (childCentre) => Math.abs(childCentre - markerX) <= STEM_CHILD_COLLISION_RADIUS,
+  );
+  if (!clashes) return markerX;
+
+  const gaps = centres.slice(1).map((centre, index) => (centres[index] + centre) / 2);
+  if (gaps.length) {
+    return [...gaps].sort(
+      (first, second) => Math.abs(first - markerX) - Math.abs(second - markerX),
+    )[0];
+  }
+
+  // A single child has no internal gap. A short side entry makes the union
+  // stem and the child's own descent line independently legible.
+  return markerX + PARTNER_GAP;
+}
+
+export function splitSiblingBar(left, right, crossingXs = []) {
+  const crossings = [...new Set(crossingXs)]
+    .filter(
+      (crossingX) =>
+        crossingX - CONNECTOR_OPENING_HALF_WIDTH > left &&
+        crossingX + CONNECTOR_OPENING_HALF_WIDTH < right,
+    )
+    .sort((first, second) => first - second);
+  if (!crossings.length) return [{ left, right }];
+
+  const segments = [];
+  let cursor = left;
+  crossings.forEach((crossingX) => {
+    const openingLeft = crossingX - CONNECTOR_OPENING_HALF_WIDTH;
+    const openingRight = crossingX + CONNECTOR_OPENING_HALF_WIDTH;
+    if (openingLeft > cursor) segments.push({ left: cursor, right: openingLeft });
+    cursor = Math.max(cursor, openingRight);
+  });
+  if (cursor < right) segments.push({ left: cursor, right });
+  return segments;
+}
 
 function unionFind(ids) {
   const parent = new Map(ids.map((id) => [id, id]));
@@ -270,6 +319,31 @@ function blockWidth(block) {
   return (
     block.memberIds.length * CARD_WIDTH + Math.max(0, block.memberIds.length - 1) * PARTNER_GAP
   );
+}
+
+/** Assigns a different vertical lane whenever complete child-bar spans meet. */
+export function assignUnionBarLanes(unions = []) {
+  const lanesByGeneration = new Map();
+  const laneByUnion = new Map();
+
+  [...unions]
+    .filter((union) => union.childIds?.length)
+    .sort((first, second) => first.generation - second.generation || first.barLeft - second.barLeft)
+    .forEach((union) => {
+      const lanes = lanesByGeneration.get(union.generation) || [];
+      let lane = union.marriageIndex || 0;
+      while (Number.isFinite(lanes[lane]) && union.barLeft <= lanes[lane] + UNION_BAR_SEPARATION) {
+        lane += 1;
+      }
+      lanes[lane] = Math.max(lanes[lane] ?? -Infinity, union.barRight);
+      lanesByGeneration.set(union.generation, lanes);
+      laneByUnion.set(union.id, lane);
+    });
+
+  return unions.map((union) => ({
+    ...union,
+    barLane: laneByUnion.get(union.id) || 0,
+  }));
 }
 
 function seedOrder(people, generations, maxGeneration) {
@@ -653,14 +727,6 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
       heightByPerson.get(person.id),
     );
   });
-  const rowTops = [];
-  generationHeights.forEach((height, generation) => {
-    rowTops[generation] =
-      generation === 0
-        ? CANVAS_PADDING
-        : rowTops[generation - 1] + generationHeights[generation - 1] + ROW_GAP;
-  });
-  const rowTop = (generation) => rowTops[generation] ?? CANVAS_PADDING;
   const rowHeight = (generation) => generationHeights[generation] ?? CARD_HEIGHT;
   const unions = buildUnions(cleanPeople);
 
@@ -679,21 +745,6 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
   unions.forEach((union) => {
     if (!union.flagged) return;
     union.childIds.forEach((childId) => outsideMarriage.add(childId));
-  });
-
-  const nodes = cleanPeople.map((person) => {
-    const generation = generations.get(person.id);
-    const centre = centreOf(person.id) ?? 0;
-    return {
-      id: person.id,
-      person,
-      generation,
-      x: centre - CARD_WIDTH / 2,
-      y: rowTop(generation),
-      width: CARD_WIDTH,
-      height: heightByPerson.get(person.id),
-      bornOutsideMarriage: outsideMarriage.has(person.id),
-    };
   });
 
   // Where somebody married more than once, each marriage needs its own sibling
@@ -721,60 +772,127 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
     ),
   );
 
-  const placedUnions = unions
-    .map((union) => {
-      const centre = unionCentre(union);
-      if (centre === null) return null;
-      const generation = unionParentGeneration(union);
-      const parentBottom = rowTop(generation) + rowHeight(generation);
-      const marriageIndex = marriageIndexByUnion.get(union.id) || 0;
-      const childTop = rowTop(generation + 1);
-      const childCentres = union.childIds.map(centreOf).filter((value) => value !== null);
-      return {
-        ...union,
-        x: centre,
-        y: parentBottom + UNION_BAR_OFFSET,
-        generation,
-        parentBottom,
-        childTop,
-        childSpanLeft: childCentres.length ? Math.min(...childCentres) : centre,
-        childSpanRight: childCentres.length ? Math.max(...childCentres) : centre,
-        marriageIndex,
-        // Only worth numbering on the chart when a parent married more than once.
-        numbered: union.parentIds.some((parentId) => marriageCountByParent.get(parentId) > 1),
-      };
-    })
-    .filter(Boolean);
+  const placedUnions = assignUnionBarLanes(
+    unions
+      .map((union) => {
+        const centre = unionCentre(union);
+        if (centre === null) return null;
+        const generation = unionParentGeneration(union);
+        const marriageIndex = marriageIndexByUnion.get(union.id) || 0;
+        const childCentres = union.childIds.map(centreOf).filter((value) => value !== null);
+        const parentCentres = union.parentIds.map(centreOf).filter((value) => value !== null);
+        const adjacent =
+          parentCentres.length === 2 &&
+          Math.abs(Math.abs(parentCentres[0] - parentCentres[1]) - (CARD_WIDTH + PARTNER_GAP)) < 1;
+        const parentDetails = union.parentIds
+          .map((parentId) => ({
+            id: parentId,
+            centre: centreOf(parentId),
+            marriageCount: marriageCountByParent.get(parentId) || 0,
+          }))
+          .filter((parent) => parent.centre !== null);
+        const anchor = [...parentDetails].sort(
+          (first, second) => second.marriageCount - first.marriageCount,
+        )[0];
+        const outerPartner = parentDetails.find((parent) => parent.id !== anchor?.id);
+        const direction = Math.sign((outerPartner?.centre ?? centre) - (anchor?.centre ?? centre));
+        const markerX =
+          parentCentres.length < 2
+            ? (parentCentres[0] ?? centre)
+            : adjacent
+              ? centre
+              : (outerPartner?.centre ?? centre) - (direction * (CARD_WIDTH + PARTNER_GAP)) / 2;
+        const childSpanLeft = childCentres.length ? Math.min(...childCentres) : centre;
+        const childSpanRight = childCentres.length ? Math.max(...childCentres) : centre;
+        const barEntryX = childBarEntry(markerX, childCentres);
+
+        return {
+          ...union,
+          x: centre,
+          generation,
+          parentCentres,
+          adjacent,
+          markerX,
+          barEntryX,
+          childSpanLeft,
+          childSpanRight,
+          barLeft: Math.min(childSpanLeft, barEntryX),
+          barRight: Math.max(childSpanRight, barEntryX),
+          marriageIndex,
+          // Only worth numbering on the chart when a parent married more than once.
+          numbered: union.parentIds.some((parentId) => marriageCountByParent.get(parentId) > 1),
+        };
+      })
+      .filter(Boolean),
+  );
 
   // Neighbouring first marriages used to share the same Y coordinate. When
-  // their child spans touched, several independent bars appeared to be one long
-  // rail. Allocate a lane per overlapping interval, while also keeping each
-  // remarriage of one person on a distinct depth.
-  const lanesByGeneration = new Map();
-  [...placedUnions]
+  // their complete parent-to-children spans touched, several independent bars
+  // appeared to be one long rail. Allocate a lane from the final drawn span,
+  // including the route back to the marriage marker, rather than from only the
+  // children. The latter misses almost every one-child branch.
+  // More independent family bars require more vertical lanes. Grow only the
+  // affected generation corridor so those rails never collapse together or
+  // run into the cards below.
+  const rowGaps = Array.from({ length: maxGeneration }, () => ROW_GAP);
+  placedUnions
     .filter((union) => union.childIds.length)
-    .sort(
-      (first, second) =>
-        first.generation - second.generation || first.childSpanLeft - second.childSpanLeft,
-    )
     .forEach((union) => {
-      const lanes = lanesByGeneration.get(union.generation) || [];
-      let lane = union.marriageIndex;
-      while (
-        Number.isFinite(lanes[lane]) &&
-        union.childSpanLeft <= lanes[lane] + UNION_BAR_SEPARATION
-      ) {
-        lane += 1;
-      }
-      lane = Math.min(lane, MAX_UNION_BAR_LANE);
-      lanes[lane] = union.childSpanRight;
-      lanesByGeneration.set(union.generation, lanes);
-      union.barLane = lane;
-      union.y = Math.min(
-        union.parentBottom + UNION_BAR_OFFSET + lane * UNION_BAR_STEP,
-        union.childTop - UNION_BAR_MIN_CLEARANCE,
+      rowGaps[union.generation] = Math.max(
+        rowGaps[union.generation] ?? ROW_GAP,
+        UNION_BAR_OFFSET + union.barLane * UNION_BAR_STEP + UNION_BAR_MIN_CLEARANCE,
       );
     });
+
+  const rowTops = [];
+  generationHeights.forEach((height, generation) => {
+    rowTops[generation] =
+      generation === 0
+        ? CANVAS_PADDING
+        : rowTops[generation - 1] + generationHeights[generation - 1] + rowGaps[generation - 1];
+  });
+  const rowTop = (generation) => rowTops[generation] ?? CANVAS_PADDING;
+
+  const nodes = cleanPeople.map((person) => {
+    const generation = generations.get(person.id);
+    const centre = centreOf(person.id) ?? 0;
+    return {
+      id: person.id,
+      person,
+      generation,
+      x: centre - CARD_WIDTH / 2,
+      y: rowTop(generation),
+      width: CARD_WIDTH,
+      height: heightByPerson.get(person.id),
+      bornOutsideMarriage: outsideMarriage.has(person.id),
+    };
+  });
+
+  placedUnions.forEach((union) => {
+    union.parentBottom = rowTop(union.generation) + rowHeight(union.generation);
+    union.childTop = rowTop(union.generation + 1);
+    union.y = union.parentBottom + UNION_BAR_OFFSET + (union.barLane || 0) * UNION_BAR_STEP;
+    const parentCardHeights = union.parentIds
+      .map((parentId) => heightByPerson.get(parentId))
+      .filter(Number.isFinite);
+    union.cardMiddleY =
+      rowTop(union.generation) +
+      (parentCardHeights.length ? Math.min(...parentCardHeights) : CARD_HEIGHT) / 2;
+    union.routeY =
+      rowTop(union.generation) -
+      OUTER_MARRIAGE_ROUTE_OFFSET -
+      union.marriageIndex * OUTER_MARRIAGE_ROUTE_STEP;
+    union.markerY =
+      union.parentCentres.length === 2
+        ? union.adjacent
+          ? union.cardMiddleY
+          : union.routeY
+        : union.parentBottom;
+    union.stemTurnY =
+      union.barEntryX !== union.markerX
+        ? Math.min(union.y - UNION_BAR_MIN_CLEARANCE, union.parentBottom + STEM_TURN_CLEARANCE)
+        : null;
+  });
 
   // Separate families were each centred over their own descendants with nothing
   // pulling them together, which left very large voids between them.
@@ -790,61 +908,62 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
 
   const edges = [];
 
+  const verticalRoutes = placedUnions.flatMap((union) => {
+    if (!union.childIds.length) return [];
+    const routes = [];
+    if (Number.isFinite(union.stemTurnY) && union.barEntryX !== union.markerX) {
+      routes.push({
+        unionId: union.id,
+        x: union.markerX,
+        fromY: union.markerY,
+        toY: union.stemTurnY,
+      });
+      routes.push({
+        unionId: union.id,
+        x: union.barEntryX,
+        fromY: union.stemTurnY,
+        toY: union.y,
+      });
+    } else {
+      routes.push({
+        unionId: union.id,
+        x: union.markerX,
+        fromY: union.markerY,
+        toY: union.y,
+      });
+    }
+    union.childIds.forEach((childId) => {
+      const childCentre = centreOf(childId);
+      if (childCentre === null) return;
+      routes.push({
+        unionId: union.id,
+        x: childCentre,
+        fromY: union.y,
+        toY: rowTop(generations.get(childId)),
+      });
+    });
+    return routes;
+  });
+
   placedUnions.forEach((union) => {
     const component = componentOf(union.parentIds[0]);
-    const parentCentres = union.parentIds.map(centreOf).filter((value) => value !== null);
+    const parentCentres = union.parentCentres;
     const barY = union.y;
-    // Two partners side by side get the classic bar across the gap between them.
-    // A later marriage sits further along the row, so its bar would strike
-    // through whoever stands in between — those join at the union marker below.
-    const adjacent =
-      parentCentres.length === 2 &&
-      Math.abs(Math.abs(parentCentres[0] - parentCentres[1]) - (CARD_WIDTH + PARTNER_GAP)) < 1;
-    const parentCardHeights = union.parentIds
-      .map((parentId) => heightByPerson.get(parentId))
-      .filter(Number.isFinite);
-    const cardMiddleY =
-      rowTop(union.generation) +
-      (parentCardHeights.length ? Math.min(...parentCardHeights) : CARD_HEIGHT) / 2;
-    const routeY =
-      rowTop(union.generation) -
-      OUTER_MARRIAGE_ROUTE_OFFSET -
-      union.marriageIndex * OUTER_MARRIAGE_ROUTE_STEP;
 
     if (parentCentres.length === 2) {
-      const parentDetails = union.parentIds
-        .map((parentId) => ({
-          id: parentId,
-          centre: centreOf(parentId),
-          marriageCount: marriageCountByParent.get(parentId) || 0,
-        }))
-        .filter((parent) => parent.centre !== null);
-      const anchor = [...parentDetails].sort(
-        (first, second) => second.marriageCount - first.marriageCount,
-      )[0];
-      const outerPartner = parentDetails.find((parent) => parent.id !== anchor?.id);
-      const direction = Math.sign((outerPartner?.centre ?? union.x) - (anchor?.centre ?? union.x));
-
-      union.markerX = adjacent
-        ? union.x
-        : (outerPartner?.centre ?? union.x) - (direction * (CARD_WIDTH + PARTNER_GAP)) / 2;
-      union.markerY = adjacent ? cardMiddleY : routeY;
-
       edges.push({
         id: `${union.id}:partners`,
+        unionId: union.id,
         kind: "partner",
         component,
         marital: union.marital,
         type: union.type,
         marriageIndex: union.marriageIndex,
-        route: adjacent ? "straight" : "over",
-        routeY,
-        from: { x: Math.min(...parentCentres), y: cardMiddleY },
-        to: { x: Math.max(...parentCentres), y: cardMiddleY },
+        route: union.adjacent ? "straight" : "over",
+        routeY: union.routeY,
+        from: { x: Math.min(...parentCentres), y: union.cardMiddleY },
+        to: { x: Math.max(...parentCentres), y: union.cardMiddleY },
       });
-    } else {
-      union.markerX = parentCentres[0] ?? union.x;
-      union.markerY = union.parentBottom;
     }
 
     if (!union.childIds.length) return;
@@ -854,40 +973,54 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
       .filter((entry) => entry.centre !== null);
     if (!childCentres.length) return;
 
-    const childSpanLeft = Math.min(...childCentres.map((entry) => entry.centre));
-    const childSpanRight = Math.max(...childCentres.map((entry) => entry.centre));
-    const barLeft = Math.min(childSpanLeft, union.markerX);
-    const barRight = Math.max(childSpanRight, union.markerX);
-
     // A child branch has one origin: the actual union marker. That keeps the
     // descendants attached to their own marriage instead of two card corners.
     edges.push({
       id: `${union.id}:stem`,
+      unionId: union.id,
       kind: "stem",
       component,
       flagged: union.flagged,
       marriageIndex: union.marriageIndex,
-      route: adjacent || parentCentres.length < 2 ? "direct" : "outer-union",
+      route: union.adjacent || parentCentres.length < 2 ? "direct" : "outer-union",
+      turnY: union.stemTurnY,
       from: { x: union.markerX, y: union.markerY },
-      to: { x: union.markerX, y: barY },
+      to: { x: union.barEntryX, y: barY },
     });
 
     // The bar spans this union's own children only. Reaching out to union.x as
     // well used to stretch it across unrelated families whenever the union sat
     // outside its children's span.
+    const crossingXs = verticalRoutes
+      .filter((route) => {
+        if (route.unionId === union.id) return false;
+        const top = Math.min(route.fromY, route.toY);
+        const bottom = Math.max(route.fromY, route.toY);
+        return top < barY && bottom > barY && route.x > union.barLeft && route.x < union.barRight;
+      })
+      .map((route) => route.x);
+    const barSegments = splitSiblingBar(union.barLeft, union.barRight, crossingXs).map(
+      (segment) => ({
+        from: { x: segment.left, y: barY },
+        to: { x: segment.right, y: barY },
+      }),
+    );
     edges.push({
       id: `${union.id}:bar`,
+      unionId: union.id,
       kind: "sibling-bar",
       component,
       flagged: union.flagged,
       marriageIndex: union.marriageIndex,
-      from: { x: barLeft, y: barY },
-      to: { x: barRight, y: barY },
+      from: { x: union.barLeft, y: barY },
+      to: { x: union.barRight, y: barY },
+      segments: barSegments,
     });
 
     childCentres.forEach(({ childId, centre }) => {
       edges.push({
         id: `${union.id}:child:${childId}`,
+        unionId: union.id,
         kind: "descent",
         component,
         flagged: union.flagged,
@@ -937,6 +1070,10 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
       ...edge,
       from: movePoint(edge.from, edge.component),
       to: movePoint(edge.to, edge.component),
+      segments: edge.segments?.map((segment) => ({
+        from: movePoint(segment.from, edge.component),
+        to: movePoint(segment.to, edge.component),
+      })),
     })),
     peopleById,
   };

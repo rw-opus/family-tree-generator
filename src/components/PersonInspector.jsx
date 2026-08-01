@@ -35,6 +35,7 @@ import {
   isCompletedCausaMortisDeclaration,
   validateCausaMortisDeclaration,
 } from "../domain/causaMortisCoverage.js";
+import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../domain/article5A.js";
 import {
   confirmedIntestacyAllocations,
   intestateAllocations,
@@ -761,9 +762,12 @@ export function PersonInspector({
   const hasUnknownCausaMortisDeathDate = causaMortisCoverage.some(
     (row) => row.status === "date-unknown",
   );
+  const isPreCausaMortisCutoff =
+    Boolean(selectedPerson.dateOfDeath) &&
+    selectedPerson.dateOfDeath < INHERITANCE_CAUSA_MORTIS_CUTOFF;
   const requiresCausaMortisDetails =
     hasUnknownCausaMortisDeathDate ||
-    (Boolean(selectedPerson.dateOfDeath) && selectedPerson.dateOfDeath > "1992-11-25");
+    (Boolean(selectedPerson.dateOfDeath) && !isPreCausaMortisCutoff);
   const displayedSurnameAtBirth =
     selectedPerson.surnameAtBirth ||
     (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
@@ -1575,6 +1579,14 @@ export function PersonInspector({
                 </div>
               )}
 
+              {isPreCausaMortisCutoff && (
+                <p className="helper-text causa-mortis-not-applicable">
+                  No Declaration Causa Mortis applies because the succession opened before 25
+                  November 1992. A later sale of that inherited share is taxed at 7% of its transfer
+                  value under Article 5A(5)(c)(i).
+                </p>
+              )}
+
               {requiresCausaMortisDetails && (
                 <div className="causa-mortis-records">
                   <div className="causa-mortis-heading">
@@ -1583,7 +1595,7 @@ export function PersonInspector({
                       <small>
                         {hasUnknownCausaMortisDeathDate
                           ? "The exact death date is needed to decide whether a Declaration Causa Mortis is required."
-                          : "Required for a death after 25 November 1992. Complete this form with OK before starting another declaration."}
+                          : "Required for a death on or after 25 November 1992. Complete this form with OK before starting another declaration."}
                       </small>
                     </div>
                     <button

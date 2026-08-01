@@ -102,6 +102,16 @@ describe("buildCausaMortisShareCoverage", () => {
     expect(result.rows).toEqual([]);
   });
 
+  it("requires causa mortis coverage for a succession opening on 25 November 1992", () => {
+    const result = buildCausaMortisShareCoverage(peopleWithDeclarations([], "1992-11-25"), [
+      property,
+    ]);
+
+    expect(result.rows).toEqual([
+      expect.objectContaining({ personId: "deceased", status: "under", requiredShare: 0.5 }),
+    ]);
+  });
+
   it("flags an approximate or missing death date instead of omitting coverage", () => {
     const people = peopleWithDeclarations([], "");
     people[0].gedcomDeathDate = "ABT 1990";

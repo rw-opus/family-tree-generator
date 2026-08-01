@@ -1,5 +1,6 @@
 import { approximateFraction } from "../../domain/ownership.js";
 import { linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
+import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../../domain/article5A.js";
 import { displayNotaryName } from "../../domain/notary.js";
 import {
   formattedDate,
@@ -36,6 +37,9 @@ function formattedCurrency(value) {
 }
 
 function availableCausaMortisDetails(person) {
+  if (person.dateOfDeath && person.dateOfDeath < INHERITANCE_CAUSA_MORTIS_CUTOFF) {
+    return [];
+  }
   return (person.causaMortisDeclarations || [])
     .filter((declaration) => declaration.status === "complete")
     .map((declaration) => ({

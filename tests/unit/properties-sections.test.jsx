@@ -3,6 +3,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Properties } from "../../src/components/Properties.jsx";
+import {
+  intestacyAllocationSignature,
+  intestateAllocations,
+} from "../../src/domain/familyOwnership.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -129,6 +133,73 @@ describe("Properties section views", () => {
     expect(container.textContent).toContain("Manually assessed tax");
     expect(container.textContent).not.toContain("Inheritance date");
     expect(container.textContent).not.toContain("Accumulated causa mortis value");
+  });
+
+  it("shows automatic 7% treatment without causa mortis value fields for a pre-cutoff death", () => {
+    const inheritedPeople = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "1992-11-24",
+        inheritanceBasis: "intestacy",
+        spouseIds: [],
+      },
+      { id: "child", fullName: "Maria Borg", fatherId: "deceased", spouseIds: [] },
+    ];
+    const calculated = intestateAllocations(inheritedPeople, "deceased");
+    inheritedPeople[0] = {
+      ...inheritedPeople[0],
+      intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
+      intestateHeirsConfirmed: true,
+      intestateConfirmationBasis: intestacyAllocationSignature(inheritedPeople[0], calculated),
+    };
+    const inheritedProperty = {
+      id: "property",
+      address: "1 Republic Street",
+      owners: [{ id: "initial-owner", personId: "deceased", sharePercent: 100 }],
+      declarations: [],
+      transfers: [],
+      saleLots: [
+        {
+          id: "child-sale",
+          ownerId: "child",
+          acquisitionType: "inheritance",
+          inheritanceDate: "",
+          transferDate: "2026-07-31",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: "",
+          transferValue: 200,
+          consideration: 200,
+          useDeclaredValues: true,
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[inheritedProperty]}
+          people={inheritedPeople}
+          outsideParties={[]}
+          singleProperty
+          section="tax"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("7% of its transfer value");
+    expect(container.textContent).toContain("7% of transfer value");
+    expect(container.textContent).not.toContain("Causa mortis value for this fraction");
+    expect(container.textContent).not.toContain("Legal basis of acquisition value");
+    expect(container.textContent).not.toContain("Use the accumulated value");
+    const inheritanceDate = [...container.querySelectorAll('input[placeholder="dd-mm-yyyy"]')].find(
+      (input) => input.value === "24-11-1992",
+    );
+    expect(inheritanceDate).not.toBeUndefined();
+    expect(inheritanceDate.disabled).toBe(true);
   });
 
   it("blocks calculated ownership until a starting owner is entered", () => {

@@ -2,7 +2,7 @@ const ARTICLE_5A_START = "2005-11-01";
 const MODERN_RATE_START = "2015-01-01";
 const UCA_RATE_START = "2016-01-01";
 const HOUSING_RELIEF_START = "2022-01-01";
-const INHERITANCE_CUTOFF = "1992-11-25";
+export const INHERITANCE_CAUSA_MORTIS_CUTOFF = "1992-11-25";
 const PRE_2004_CUTOFF = "2004-01-01";
 
 const number = (value) => Math.max(0, Number(value) || 0);
@@ -677,12 +677,12 @@ export function assessArticle5ATransfer(lot = {}) {
 
   if (
     acquisitionType === "inheritance" &&
-    (acquisitionDate < INHERITANCE_CUTOFF || lot.isJudicialSale)
+    (acquisitionDate < INHERITANCE_CAUSA_MORTIS_CUTOFF || lot.isJudicialSale)
   ) {
     const result = method({
       key: "inheritance-7",
       label: "7% of transfer value",
-      rule: acquisitionDate < INHERITANCE_CUTOFF ? "5A(5)(c)(i)" : "5A(5)(c)(ii)",
+      rule: acquisitionDate < INHERITANCE_CAUSA_MORTIS_CUTOFF ? "5A(5)(c)(i)" : "5A(5)(c)(ii)",
       rate: 0.07,
       basis: values.transferValue,
       tax: values.transferValue * 0.07,
@@ -738,7 +738,7 @@ export function assessArticle5ATransfer(lot = {}) {
 
   const alternative = qualifying.method || fiveYear.method || normalMethod;
   const usesIncreaseMethod =
-    (acquisitionType === "inheritance" && acquisitionDate >= INHERITANCE_CUTOFF) ||
+    (acquisitionType === "inheritance" && acquisitionDate >= INHERITANCE_CAUSA_MORTIS_CUTOFF) ||
     (acquisitionType === "donation" && !donationWithinFiveYears && !lot.isProject);
 
   if (usesIncreaseMethod) {

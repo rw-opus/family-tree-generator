@@ -3,6 +3,9 @@ import { CARD_HEIGHT, buildFamilyTreeLayout } from "./treeLayout.js";
 import "./LayeredFamilyTree.css";
 
 function stemPath(edge) {
+  if (Number.isFinite(edge.turnY) && edge.from.x !== edge.to.x) {
+    return `M ${edge.from.x} ${edge.from.y} V ${edge.turnY} H ${edge.to.x} V ${edge.to.y}`;
+  }
   return `M ${edge.from.x} ${edge.from.y} V ${edge.to.y}`;
 }
 
@@ -156,16 +159,24 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
 
         {layout.edges
           .filter((edge) => edge.kind === "sibling-bar")
-          .map((edge) => (
-            <line
-              className={edgeClassName(edge)}
-              key={edge.id}
-              x1={edge.from.x}
-              y1={edge.from.y}
-              x2={edge.to.x}
-              y2={edge.to.y}
-            />
-          ))}
+          .map((edge) => {
+            if (edge.segments?.length > 1) {
+              const path = edge.segments
+                .map((segment) => `M ${segment.from.x} ${segment.from.y} H ${segment.to.x}`)
+                .join(" ");
+              return <path className={edgeClassName(edge)} key={edge.id} d={path} />;
+            }
+            return (
+              <line
+                className={edgeClassName(edge)}
+                key={edge.id}
+                x1={edge.from.x}
+                y1={edge.from.y}
+                x2={edge.to.x}
+                y2={edge.to.y}
+              />
+            );
+          })}
 
         {layout.edges
           .filter((edge) => edge.kind === "descent")

@@ -1,4 +1,9 @@
-import { ARTICLE_5A_QUALIFYING_RATES, ARTICLE_5A_SPECIAL_TREATMENTS } from "../domain/article5A.js";
+import {
+  ARTICLE_5A_QUALIFYING_RATES,
+  ARTICLE_5A_SPECIAL_TREATMENTS,
+  INHERITANCE_CAUSA_MORTIS_CUTOFF,
+} from "../domain/article5A.js";
+import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { DateInput } from "./DateInput.jsx";
 
 const isHousingRate = (value) => String(value || "").startsWith("housing-");
@@ -8,12 +13,19 @@ export function Article5ATaxLotFields({
   effectiveLot,
   usePublishedValues,
   declaredCoverage,
+  inheritanceSources = [],
+  selectedInheritanceSource = null,
+  inheritanceDateInferred = false,
   onChange,
 }) {
   const acquisitionType = lot.acquisitionType || "inheritance";
   const change = (patch) => onChange({ ...patch, selectedTaxMethod: "" });
   const dateField = acquisitionType === "inheritance" ? "inheritanceDate" : "acquisitionDate";
-  const acquisitionDate = lot[dateField] || "";
+  const acquisitionDate = effectiveLot[dateField] || lot[dateField] || "";
+  const preCausaMortisCutoff =
+    acquisitionType === "inheritance" &&
+    Boolean(acquisitionDate) &&
+    acquisitionDate < INHERITANCE_CAUSA_MORTIS_CUTOFF;
 
   return (
     <>
@@ -34,6 +46,41 @@ export function Article5ATaxLotFields({
           <option value="donation">Donation</option>
         </select>
       </label>
+      {acquisitionType === "inheritance" && inheritanceSources.length > 0 && (
+        <label>
+          Inherited from
+          <select
+            aria-label="Inherited from deceased owner"
+            value={
+              lot.inheritanceSourceDeceasedId ||
+              (inheritanceSources.length === 1
+                ? selectedInheritanceSource?.deceasedId || ""
+                : "manual")
+            }
+            onChange={(event) => {
+              const source = inheritanceSources.find(
+                (candidate) => candidate.deceasedId === event.target.value,
+              );
+              change({
+                inheritanceSourceDeceasedId: source ? source.deceasedId : "manual",
+                inheritanceDate: source?.inheritanceDate || lot.inheritanceDate || "",
+                useDeclaredValues: source?.preCausaMortisCutoff ? false : lot.useDeclaredValues,
+              });
+            }}
+          >
+            {inheritanceSources.length > 1 && <option value="manual">Enter date manually</option>}
+            {inheritanceSources.map((source) => (
+              <option key={source.deceasedId} value={source.deceasedId}>
+                {source.deceasedName}
+                {source.inheritanceDate
+                  ? ` · ${isoDateToDisplay(source.inheritanceDate)}`
+                  : " · death date missing"}
+                {source.preCausaMortisCutoff ? " · 7% treatment" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         Transfer or intended deed date
         <DateInput
@@ -43,8 +90,18 @@ export function Article5ATaxLotFields({
       </label>
       <label>
         {acquisitionType === "inheritance" ? "Inheritance date" : "Acquisition date"}
-        <DateInput value={acquisitionDate} onChange={(value) => change({ [dateField]: value })} />
+        <DateInput
+          value={acquisitionDate}
+          disabled={inheritanceDateInferred}
+          onChange={(value) => change({ [dateField]: value })}
+        />
       </label>
+      {preCausaMortisCutoff && (
+        <p className="tax-lot-source full-width">
+          No Declaration Causa Mortis or declared CM value applies. This inherited fraction is taxed
+          at 7% of its transfer value under Article 5A(5)(c)(i).
+        </p>
+      )}
       {acquisitionType === "donation" && (
         <label>
           Donor&apos;s preceding acquisition date
@@ -88,24 +145,26 @@ export function Article5ATaxLotFields({
           />
         </span>
       </label>
-      <label>
-        {acquisitionType === "inheritance"
-          ? "Causa mortis value for this fraction (€)"
-          : "Acquisition value for this fraction (€)"}
-        <input
-          type="number"
-          min="0"
-          disabled={acquisitionType === "inheritance" && usePublishedValues}
-          value={effectiveLot.acquisitionValue ?? ""}
-          onChange={(event) =>
-            change({
-              acquisitionValue: event.target.value,
-              useDeclaredValues: false,
-            })
-          }
-        />
-      </label>
-      {acquisitionType === "inheritance" && (
+      {!preCausaMortisCutoff && (
+        <label>
+          {acquisitionType === "inheritance"
+            ? "Causa mortis value for this fraction (€)"
+            : "Acquisition value for this fraction (€)"}
+          <input
+            type="number"
+            min="0"
+            disabled={acquisitionType === "inheritance" && usePublishedValues}
+            value={effectiveLot.acquisitionValue ?? ""}
+            onChange={(event) =>
+              change({
+                acquisitionValue: event.target.value,
+                useDeclaredValues: false,
+              })
+            }
+          />
+        </label>
+      )}
+      {acquisitionType === "inheritance" && !preCausaMortisCutoff && (
         <label>
           Legal basis of acquisition value
           <select
@@ -120,6 +179,7 @@ export function Article5ATaxLotFields({
         </label>
       )}
       {acquisitionType === "inheritance" &&
+        !preCausaMortisCutoff &&
         (lot.acquisitionValueBasis === "cm-declared" ||
           (!lot.acquisitionValueBasis && usePublishedValues)) && (
           <label className="check-label">
@@ -153,7 +213,7 @@ export function Article5ATaxLotFields({
           onChange={(event) => change({ marketValue: event.target.value })}
         />
       </label>
-      {acquisitionType === "inheritance" && (
+      {acquisitionType === "inheritance" && !preCausaMortisCutoff && (
         <label className="check-label full-width">
           <input
             type="checkbox"

@@ -1852,6 +1852,104 @@ describe("PersonInspector", () => {
     expect(declarant.querySelector("input").checked).toBe(true);
   });
 
+  it("suppresses causa mortis forms for a death before 25 November 1992", () => {
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "1992-11-24",
+      inheritanceBasis: "intestacy",
+      causaMortisDeclarations: [
+        {
+          id: "legacy-cm",
+          status: "draft",
+          declarantPersonIds: ["child"],
+        },
+      ],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const child = {
+      id: "child",
+      fullName: "Maria Borg",
+      fatherId: "deceased",
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, child]}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[]}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain(
+      "No Declaration Causa Mortis applies because the succession opened before 25 November 1992.",
+    );
+    expect(container.textContent).toContain("taxed at 7% of its transfer value");
+    expect(container.querySelector(".causa-mortis-records")).toBeNull();
+    expect(
+      container.querySelector('input[aria-label="Date of Declaration Causa Mortis 1"]'),
+    ).toBeNull();
+  });
+
+  it("allows a causa mortis declaration when the death occurred on 25 November 1992", () => {
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "1992-11-25",
+      inheritanceBasis: "intestacy",
+      causaMortisDeclarations: [],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const child = {
+      id: "child",
+      fullName: "Maria Borg",
+      fatherId: "deceased",
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, child]}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[
+            {
+              personId: "deceased",
+              propertyId: "property-1",
+              propertyAddress: "1 Republic Street",
+              requiredShare: 1,
+              declaredShare: 0,
+              difference: -1,
+              status: "under",
+            },
+          ]}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".causa-mortis-records")).not.toBeNull();
+    expect(container.textContent).toContain("Required for a death on or after 25 November 1992");
+  });
+
   it("suggests intestate heirs for a testate estate and allows editable will fractions", () => {
     let latestPeople = [];
     const initialPeople = [
