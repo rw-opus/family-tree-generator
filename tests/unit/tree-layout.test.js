@@ -909,3 +909,26 @@ describe("a second marriage beside a wide first family", () => {
     expect(at("second-wife")).toBeGreaterThan(at("husband"));
   });
 });
+
+describe("a short single parent beside a tall one", () => {
+  it("starts the branch at that parent's own card, not the row's tallest", () => {
+    const people = [
+      person("tall", { spouseIds: ["tall-spouse"] }),
+      person("tall-spouse", { spouseIds: ["tall"] }),
+      person("short"),
+      person("their-child", { fatherId: "tall", motherId: "tall-spouse" }),
+      person("short-child", { fatherId: "short" }),
+    ];
+    const layout = buildFamilyTreeLayout(people, {
+      nodeHeights: { tall: 220, "tall-spouse": 220, short: 108 },
+    });
+    const short = layout.nodes.find((node) => node.id === "short");
+    const union = layout.unions.find((candidate) => candidate.childIds.includes("short-child"));
+    const stem = layout.edges.find((edge) => edge.id === `${union.id}:stem`);
+
+    // The row is 220 tall because of the couple, but the short parent's branch
+    // must leave its own card at 108, not hang unattached below it.
+    expect(stem.from.y).toBe(short.y + short.height);
+    expect(stem.from.y).toBeLessThan(union.parentBottom);
+  });
+});
