@@ -594,14 +594,52 @@ function centreRows(rows, unions) {
 
     const children = childrenOf.get(block) || [];
     if (!children.length) return;
-    const childrenWidth = children.reduce(
-      (total, child, index) => total + subtreeWidth.get(child) + (index ? CARD_GAP : 0),
+
+    // Children are grouped by the marriage they came from, and each group is
+    // centred under that marriage rather than under the whole block. Packing
+    // every child of a much-married person as one run left each marriage's
+    // stem leaning sideways to reach its own bar, and those leaning stems
+    // crossed the neighbouring marriage's children.
+    const memberCentre = (memberId) => {
+      const index = block.memberIds.indexOf(memberId);
+      return index < 0 ? null : block.left + index * (CARD_WIDTH + PARTNER_GAP) + CARD_WIDTH / 2;
+    };
+
+    const groups = [];
+    children.forEach((child) => {
+      const union = child.memberIds.map((id) => unionByChild.get(id)).find(Boolean);
+      const key = union?.id ?? `loose:${child.orderIndex}`;
+      const previous = groups.at(-1);
+      if (previous?.key === key) {
+        previous.children.push(child);
+        return;
+      }
+      groups.push({ key, union, children: [child] });
+    });
+
+    groups.forEach((group) => {
+      group.width = group.children.reduce(
+        (total, child, index) => total + subtreeWidth.get(child) + (index ? CARD_GAP : 0),
+        0,
+      );
+      const centres = (group.union?.parentIds || []).map(memberCentre).filter((v) => v !== null);
+      group.desired = centres.length ? mean(centres) : null;
+    });
+
+    const totalWidth = groups.reduce(
+      (total, group, index) => total + group.width + (index ? CARD_GAP : 0),
       0,
     );
-    let childLeft = left + (span - childrenWidth) / 2;
-    children.forEach((child) => {
-      place(child, childLeft);
-      childLeft += subtreeWidth.get(child) + CARD_GAP;
+    let cursor = left + (span - totalWidth) / 2;
+
+    groups.forEach((group) => {
+      const wanted = group.desired === null ? cursor : group.desired - group.width / 2;
+      let childLeft = Math.max(cursor, wanted);
+      group.children.forEach((child) => {
+        place(child, childLeft);
+        childLeft += subtreeWidth.get(child) + CARD_GAP;
+      });
+      cursor = childLeft;
     });
   };
 
@@ -899,8 +937,12 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
         marriageIndex: union.marriageIndex,
         route: union.adjacent ? "straight" : "over",
         routeY: union.routeY,
-        from: { x: Math.min(...parentCentres), y: union.cardMiddleY },
-        to: { x: Math.max(...parentCentres), y: union.cardMiddleY },
+        // A marriage line meets the side of each spouse's box. Running it
+        // centre to centre hid it behind both cards, and on the routed form the
+        // descent landed on the far card's centre, dropping in from above
+        // instead of meeting its edge.
+        from: { x: Math.min(...parentCentres) + CARD_WIDTH / 2, y: union.cardMiddleY },
+        to: { x: Math.max(...parentCentres) - CARD_WIDTH / 2, y: union.cardMiddleY },
       });
     }
 

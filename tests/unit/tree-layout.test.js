@@ -814,3 +814,63 @@ describe("the reference cousins sketch", () => {
     expect(at.get("B") - at.get("A")).toBeLessThanOrEqual(CARD_WIDTH + CARD_GAP + 1);
   });
 });
+
+describe("a parent married more than once", () => {
+  const twoWives = () => [
+    person("first-wife", { spouseIds: ["husband"] }),
+    person("husband", { spouseIds: ["first-wife", "second-wife"] }),
+    person("second-wife", { spouseIds: ["husband"] }),
+    person("a1", { fatherId: "husband", motherId: "first-wife" }),
+    person("a2", { fatherId: "husband", motherId: "first-wife" }),
+    person("b1", { fatherId: "husband", motherId: "second-wife" }),
+    person("b2", { fatherId: "husband", motherId: "second-wife" }),
+  ];
+
+  const properlyCross = (first, second) => {
+    const side = (a, b, c) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+    const sides = [
+      side(first.from, first.to, second.from),
+      side(first.from, first.to, second.to),
+      side(second.from, second.to, first.from),
+      side(second.from, second.to, first.to),
+    ];
+    if (sides.some((value) => value === 0)) return false;
+    return sides[0] !== sides[1] && sides[2] !== sides[3];
+  };
+
+  it("keeps each marriage's children in their own group, in marriage order", () => {
+    const layout = buildFamilyTreeLayout(twoWives());
+    const order = layout.nodes
+      .filter((node) => node.generation === 1)
+      .sort((first, second) => first.x - second.x)
+      .map((node) => node.id);
+
+    expect(order).toEqual(["a1", "a2", "b1", "b2"]);
+  });
+
+  it("never crosses one marriage's connectors with another's", () => {
+    const layout = buildFamilyTreeLayout(twoWives());
+    const segments = layout.edges.filter((edge) =>
+      ["descent", "sibling-bar", "stem"].includes(edge.kind),
+    );
+
+    segments.forEach((first, index) => {
+      segments.slice(index + 1).forEach((second) => {
+        if (first.unionId === second.unionId) return;
+        expect(properlyCross(first, second)).toBe(false);
+      });
+    });
+  });
+
+  it("puts the first marriage's stem over its own children", () => {
+    const layout = buildFamilyTreeLayout(twoWives());
+    const union = layout.unions.find((candidate) => candidate.childIds.includes("a1"));
+    const centres = union.childIds.map((childId) => {
+      const node = layout.nodes.find((candidate) => candidate.id === childId);
+      return node.x + CARD_WIDTH / 2;
+    });
+
+    expect(union.markerX).toBeGreaterThanOrEqual(Math.min(...centres));
+    expect(union.markerX).toBeLessThanOrEqual(Math.max(...centres));
+  });
+});
