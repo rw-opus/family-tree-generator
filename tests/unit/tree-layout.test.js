@@ -646,3 +646,100 @@ describe("which generation sets the width", () => {
     expect(layout.width).toBeLessThan(widestSpan + CARD_WIDTH * 2);
   });
 });
+
+/**
+ * The reference sketch: X married A, B and C. D and E are X and A's children,
+ * F is X and B's, and G, H and J are X and C's. W and Z are X's parents and P
+ * is X's sibling.
+ */
+describe("the reference multi-marriage sketch", () => {
+  const sketch = () => [
+    person("W", { spouseIds: ["Z"] }),
+    person("Z", { spouseIds: ["W"] }),
+    person("X", { fatherId: "W", motherId: "Z", spouseIds: ["A", "B", "C"] }),
+    person("P", { fatherId: "W", motherId: "Z" }),
+    person("A", { spouseIds: ["X"] }),
+    person("B", { spouseIds: ["X"] }),
+    person("C", { spouseIds: ["X"] }),
+    person("D", { fatherId: "X", motherId: "A" }),
+    person("E", { fatherId: "X", motherId: "A" }),
+    person("F", { fatherId: "X", motherId: "B" }),
+    person("G", { fatherId: "X", motherId: "C" }),
+    person("H", { fatherId: "X", motherId: "C" }),
+    person("J", { fatherId: "X", motherId: "C" }),
+  ];
+
+  const rowOrder = (layout, generation) =>
+    layout.nodes
+      .filter((node) => node.generation === generation)
+      .sort((first, second) => first.x - second.x)
+      .map((node) => node.id);
+
+  const unionOf = (layout, spouseId) =>
+    layout.unions.find(
+      (union) => union.parentIds.includes("X") && union.parentIds.includes(spouseId),
+    );
+
+  it("puts the parents on one row and everyone else on the next two", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+
+    expect(rowOrder(layout, 0).sort()).toEqual(["W", "Z"]);
+    expect(rowOrder(layout, 1).sort()).toEqual(["A", "B", "C", "P", "X"]);
+    expect(rowOrder(layout, 2).sort()).toEqual(["D", "E", "F", "G", "H", "J"]);
+  });
+
+  it("keeps the sibling clear of the spouse chain", () => {
+    // Spouses may be interjected between siblings, but the much-married person
+    // belongs at the outer end so the parents' bar never crosses the corridor
+    // the outer marriage routes through.
+    expect(rowOrder(buildFamilyTreeLayout(sketch()), 1)).toEqual(["P", "A", "X", "B", "C"]);
+  });
+
+  it("gives each marriage its own children", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+
+    expect(unionOf(layout, "A").childIds.sort()).toEqual(["D", "E"]);
+    expect(unionOf(layout, "B").childIds.sort()).toEqual(["F"]);
+    expect(unionOf(layout, "C").childIds.sort()).toEqual(["G", "H", "J"]);
+  });
+
+  it("routes only the outer marriage over the spouse in between", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const routeFor = (spouseId) =>
+      layout.edges.find(
+        (edge) => edge.kind === "partner" && edge.unionId === unionOf(layout, spouseId).id,
+      ).route;
+
+    expect(routeFor("A")).toBe("straight");
+    expect(routeFor("B")).toBe("straight");
+    expect(routeFor("C")).toBe("over");
+  });
+
+  it("drops a vertical from the outer marriage to its own children", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const stem = layout.edges.find(
+      (edge) => edge.kind === "stem" && edge.unionId === unionOf(layout, "C").id,
+    );
+
+    expect(stem.route).toBe("outer-union");
+    // It leaves the raised route above the row and runs down past the children's row.
+    expect(stem.from.y).toBeLessThan(layout.nodes.find((node) => node.id === "X").y);
+    expect(stem.to.y).toBeGreaterThan(stem.from.y);
+  });
+
+  it("takes every marriage's children from a different depth", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const depths = ["A", "B", "C"].map((spouseId) => unionOf(layout, spouseId).y);
+
+    expect(new Set(depths).size).toBe(3);
+  });
+
+  it("enters an only child's bar straight below the marriage", () => {
+    const layout = buildFamilyTreeLayout(sketch());
+    const union = unionOf(layout, "B");
+
+    // The stem and the child's descent are meant to read as one straight line,
+    // so the bar must not be entered off to one side.
+    expect(union.barEntryX).toBe(union.markerX);
+  });
+});

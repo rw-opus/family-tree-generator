@@ -77,9 +77,11 @@ function childBarEntry(markerX, childCentres = []) {
     )[0];
   }
 
-  // A single child has no internal gap. A short side entry makes the union
-  // stem and the child's own descent line independently legible.
-  return markerX + PARTNER_GAP;
+  // An only child has no internal gap to enter through, and it needs none: the
+  // union stem and the child's descent are meant to read as one straight line
+  // from the middle of the marriage down to the child. Stepping aside here put
+  // a dog-leg on every single-child branch.
+  return markerX;
 }
 
 export function splitSiblingBar(left, right, crossingXs = []) {
@@ -444,6 +446,22 @@ function groupSiblings(rows, unions) {
   const unionByChild = new Map();
   unions.forEach((union) => union.childIds.forEach((childId) => unionByChild.set(childId, union)));
 
+  // Siblings of a much-married person tie with them on parent order, and the
+  // tie used to break on seed order, which could strand the plain sibling on
+  // the far side of the spouse chain. The parents' sibling bar then had to
+  // reach across every spouse — through the same corridor the outer marriage
+  // routes over. Keeping the longest chain outermost frees that corridor.
+  const marriageCount = new Map();
+  unions
+    .filter((union) => union.parentIds.length === 2)
+    .forEach((union) =>
+      union.parentIds.forEach((parentId) =>
+        marriageCount.set(parentId, (marriageCount.get(parentId) || 0) + 1),
+      ),
+    );
+  const chainWeight = (block) =>
+    Math.max(0, ...block.memberIds.map((id) => marriageCount.get(id) || 0));
+
   for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
     const effectiveParentOrder = buildRowBlocks(rows[rowIndex - 1], unions).flatMap(
       (block) => block.memberIds,
@@ -480,7 +498,11 @@ function groupSiblings(rows, unions) {
     decorated.sort((first, second) => {
       const firstKey = first.key ?? fallback.get(first);
       const secondKey = second.key ?? fallback.get(second);
-      return firstKey - secondKey || first.index - second.index;
+      return (
+        firstKey - secondKey ||
+        chainWeight(first.block) - chainWeight(second.block) ||
+        first.index - second.index
+      );
     });
 
     rows[rowIndex] = decorated.flatMap(({ block }) => block.memberIds);
@@ -1060,12 +1082,23 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
     height: rowTop(maxGeneration) + rowHeight(maxGeneration) + CANVAS_PADDING,
     generationHeights,
     nodes: nodes.map((node) => ({ ...node, x: node.x + shiftFor(componentOf(node.id)) })),
-    unions: placedUnions.map((union) => ({
-      ...union,
-      x: union.x + shiftFor(componentOf(union.parentIds[0])),
-      markerX: union.markerX + shiftFor(componentOf(union.parentIds[0])),
-      markerY: union.markerY,
-    })),
+    unions: placedUnions.map((union) => {
+      // Every horizontal field has to move with the family, or the union hands
+      // out a mixture of shifted and unshifted coordinates.
+      const shift = shiftFor(componentOf(union.parentIds[0]));
+      const moved = (value) => (Number.isFinite(value) ? value + shift : value);
+      return {
+        ...union,
+        x: moved(union.x),
+        markerX: moved(union.markerX),
+        markerY: union.markerY,
+        barEntryX: moved(union.barEntryX),
+        barLeft: moved(union.barLeft),
+        barRight: moved(union.barRight),
+        childSpanLeft: moved(union.childSpanLeft),
+        childSpanRight: moved(union.childSpanRight),
+      };
+    }),
     edges: edges.map((edge) => ({
       ...edge,
       from: movePoint(edge.from, edge.component),
