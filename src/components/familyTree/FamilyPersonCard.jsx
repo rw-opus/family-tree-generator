@@ -2,6 +2,7 @@ import { approximateFraction } from "../../domain/ownership.js";
 import { linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../../domain/article5A.js";
 import { displayNotaryName } from "../../domain/notary.js";
+import { displayWillDate, operativeWill, personWills } from "../../domain/wills.js";
 import {
   formattedDate,
   personDisplayName,
@@ -75,6 +76,10 @@ export function FamilyPersonCard({
   const ownershipValue = Number(propertyValue) * ownership;
   const causaMortisDetails = availableCausaMortisDetails(person);
   const isTestate = person.inheritanceBasis === "will";
+  const recordedWills = personWills(person).filter(
+    (will) => will.date || will.notaryName || will.description,
+  );
+  const latestWill = operativeWill(person);
   const spousesMissingDeathDates =
     isDeceased && !isTestate ? linkedSpousesMissingDeathDates(people, person.id) : [];
   const missingSpouseNames = spousesMissingDeathDates.map((spouse) =>
@@ -164,25 +169,35 @@ export function FamilyPersonCard({
         (stackedLegalDetails || fields.willDetails) &&
         isDeceased &&
         isTestate &&
-        (person.willDate || person.willNotaryName) &&
+        recordedWills.length > 0 &&
         (stackedLegalDetails ? (
           <>
-            {person.willDate && (
-              <div className="family-node-detail">Will {formattedDate(person.willDate)}</div>
-            )}
-            {person.willNotaryName && (
-              <div className="family-node-detail">
-                Publishing Notary {displayNotaryName(person.willNotaryName)}
+            {recordedWills.map((will) => (
+              <div className="family-node-will-details" key={will.id}>
+                {will.date && (
+                  <div className="family-node-detail">Will {displayWillDate(will.date)}</div>
+                )}
+                {will.notaryName && (
+                  <div className="family-node-detail">{displayNotaryName(will.notaryName)}</div>
+                )}
+                {!will.notaryName && will.description && (
+                  <div className="family-node-detail">{will.description}</div>
+                )}
               </div>
-            )}
+            ))}
           </>
         ) : (
-          <div className="family-node-detail">
-            Will{" "}
-            {[formattedDate(person.willDate), displayNotaryName(person.willNotaryName)]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
+          <>
+            <div className="family-node-detail">
+              Will{latestWill?.date ? ` ${displayWillDate(latestWill.date)}` : ""}
+            </div>
+            {latestWill?.notaryName && (
+              <div className="family-node-detail">{displayNotaryName(latestWill.notaryName)}</div>
+            )}
+            {!latestWill?.notaryName && latestWill?.description && (
+              <div className="family-node-detail">{latestWill.description}</div>
+            )}
+          </>
         ))}
       {!person.isPlaceholder &&
         stackedLegalDetails &&

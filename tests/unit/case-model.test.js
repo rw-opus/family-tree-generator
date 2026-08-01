@@ -86,6 +86,32 @@ describe("case model migration", () => {
     });
   });
 
+  it("migrates legacy will fields into a repeatable wills collection", () => {
+    const result = normalizeCase({
+      id: "legacy-will-case",
+      people: [
+        {
+          id: "testator",
+          fullName: "Paul Farrugia",
+          willDate: "1997-01-27",
+          willNotaryName: "Paul Pullicino",
+        },
+      ],
+    });
+
+    expect(result.people[0]).toMatchObject({
+      willDate: "1997-01-27",
+      willNotaryName: "Paul Pullicino",
+      wills: [
+        {
+          id: "testator:legacy-will",
+          date: "1997-01-27",
+          notaryName: "Paul Pullicino",
+        },
+      ],
+    });
+  });
+
   it("keeps one canonical global person for duplicate IDs", () => {
     const result = normalizeCase({
       id: "duplicates",

@@ -1821,7 +1821,10 @@ describe("PersonInspector", () => {
     );
 
     expect(container.textContent).toContain("Testate");
-    expect(container.textContent).toContain("Publishing Notary (optional)");
+    expect(container.textContent).toContain("Add will");
+    expect(container.textContent).toContain("The most recent dated will applies");
+    expect(container.textContent).toContain("Notary (optional)");
+    expect(container.textContent).toContain("Description (optional)");
     expect(container.textContent).toContain("Suggested heirs if intestate");
     expect(container.textContent).toContain("Use as beneficiaries");
     expect(container.textContent).not.toContain("Will notes");
@@ -1854,6 +1857,70 @@ describe("PersonInspector", () => {
       (label) => label.textContent.includes("Maria Borg"),
     );
     expect(declarant.querySelector("input").checked).toBe(true);
+  });
+
+  it("adds multiple wills and marks the latest dated will as operative", () => {
+    let latestPeople = [];
+    const initialPeople = [
+      {
+        id: "paul",
+        fullName: "Paul Farrugia",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2017-01-04",
+        inheritanceBasis: "will",
+        wills: [{ id: "english", date: "1981-10-15", notaryName: "" }],
+        willHeirs: [],
+        designations: ["Deceased"],
+        spouseIds: [],
+      },
+    ];
+
+    function Harness() {
+      const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="paul"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    const addWillButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Add will",
+    );
+    act(() => addWillButton.click());
+
+    expect(latestPeople[0].wills).toHaveLength(2);
+    expect(container.querySelectorAll(".will-record")).toHaveLength(2);
+
+    const secondWillDate = container.querySelector('input[aria-label="Will date 2"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        secondWillDate,
+        "27-01-1997",
+      );
+      secondWillDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(latestPeople[0].willDate).toBe("1997-01-27");
+    expect(container.textContent).toContain("Latest — applies");
+
+    const secondWillDescription = container.querySelector(
+      'input[aria-label="Description for will 2"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        secondWillDescription,
+        "UK will",
+      );
+      secondWillDescription.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(latestPeople[0].wills[1].description).toBe("UK will");
   });
 
   it("suppresses causa mortis forms for a death before 25 November 1992", () => {
@@ -2101,6 +2168,117 @@ describe("PersonInspector", () => {
       declaredShareDenominator: 2,
       declarantPersonIds: ["child"],
     });
+  });
+
+  it("allows a known causa mortis deed to be recorded before ownership is assigned", () => {
+    const onChange = vi.fn();
+    const deceased = {
+      id: "deceased",
+      fullName: "Paul Farrugia",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2017-01-04",
+      inheritanceBasis: "will",
+      wills: [{ id: "will", date: "1997-01-27", notaryName: "Paul Pullicino" }],
+      willHeirs: [],
+      causaMortisDeclarations: [],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased]}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const addButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Insert CM Declaration"),
+    );
+    expect(addButton.disabled).toBe(false);
+    expect(addButton.title).toContain("first Declaration Causa Mortis");
+
+    act(() => addButton.click());
+    expect(onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations[0]).toMatchObject({
+      status: "draft",
+      propertyId: "property-1",
+      declaredShareNumerator: 0,
+      declaredShareDenominator: 1,
+      declarantPersonIds: [],
+    });
+  });
+
+  it("keeps the first CM declaration available after intestate beneficiaries change", () => {
+    const onChange = vi.fn();
+    const deceased = {
+      id: "nathalie",
+      fullName: "Nathalie Vella",
+      sex: "Female",
+      isDeceased: true,
+      dateOfDeath: "2020-11-04",
+      inheritanceBasis: "intestacy",
+      intestateHeirs: [
+        {
+          id: "edited-heir",
+          personId: "beneficiary",
+          sharePercent: 100,
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      intestateHeirsConfirmed: false,
+      causaMortisDeclarations: [],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const beneficiary = {
+      id: "beneficiary",
+      fullName: "Maria Vella",
+      sex: "Female",
+      spouseIds: [],
+      siblingIds: [],
+      designations: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, beneficiary]}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[
+            {
+              personId: "nathalie",
+              propertyId: "property-1",
+              propertyAddress: "1 Republic Street",
+              requiredShare: 0,
+              declaredShare: 0,
+              difference: 0,
+              status: "complete",
+            },
+          ]}
+          selectedPersonId="nathalie"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const addButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Insert CM Declaration"),
+    );
+    expect(addButton.disabled).toBe(false);
+
+    act(() => addButton.click());
+    expect(onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations).toHaveLength(1);
   });
 
   it("counts a declaration only after OK and enables another only for a remaining share", () => {

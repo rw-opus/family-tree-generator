@@ -84,6 +84,46 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
+  it("formats a will and notary on separate card lines and supports a UK-will fallback", () => {
+    const people = [
+      person("testator", "Joseph Borg", {
+        isDeceased: true,
+        inheritanceBasis: "will",
+        spouseIds: ["spouse"],
+        wills: [
+          {
+            id: "will-1",
+            date: "2012-07-18",
+            notaryName: "Ivan Barbara",
+            description: "",
+          },
+        ],
+      }),
+      person("spouse", "Maria Borg", { spouseIds: ["testator"] }),
+    ];
+
+    renderCanvas({ people, personCardFields: { willDetails: true } });
+    let details = [
+      ...container.querySelectorAll('[data-person-id="testator"] .family-node-detail'),
+    ].map((element) => element.textContent.trim());
+    expect(details).toContain("Will 18.07.2012");
+    expect(details).toContain("Not. Ivan Barbara");
+    expect(container.textContent).not.toContain("Publishing Notary");
+
+    renderCanvas({
+      people: [
+        { ...people[0], wills: [{ id: "uk", date: "1981-10-15", description: "UK will" }] },
+        people[1],
+      ],
+      personCardFields: { willDetails: true },
+    });
+    details = [
+      ...container.querySelectorAll('[data-person-id="testator"] .family-node-detail'),
+    ].map((element) => element.textContent.trim());
+    expect(details).toContain("Will 15.10.1981");
+    expect(details).toContain("UK will");
+  });
+
   it("puts each generation on exactly one row", () => {
     renderCanvas({ people: family() });
 
