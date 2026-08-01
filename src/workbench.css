@@ -4376,3 +4376,12 @@ button.family-link-person:hover {
     overflow: visible;
   }
 }
+
+/* The pre-1992 note is background information, not an instruction, so it is set
+   at the same size as the other explanatory notes rather than at helper-text. */
+.tree-stage .causa-mortis-not-applicable,
+.context-dashboard .causa-mortis-not-applicable {
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.4;
+}

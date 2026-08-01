@@ -766,6 +766,17 @@ export function PersonInspector({
   const isPreCausaMortisCutoff =
     Boolean(selectedPerson.dateOfDeath) &&
     selectedPerson.dateOfDeath < INHERITANCE_CAUSA_MORTIS_CUTOFF;
+  // The 7% rule only bears on a share somebody is still holding. Where every
+  // heir has since died the share has passed again, and sales tax looks only at
+  // the last passage of title, so saying anything about this succession's rate
+  // would be wrong. One surviving heir is enough for it to hold.
+  const inheritedShareStillHeldBySurvivor = people.some(
+    (candidate) =>
+      (candidate.fatherId === selectedPerson.id || candidate.motherId === selectedPerson.id) &&
+      !candidate.isDeceased &&
+      !candidate.dateOfDeath &&
+      !hasDesignation(candidate, "Deceased"),
+  );
   const requiresCausaMortisDetails =
     hasUnknownCausaMortisDeathDate ||
     (Boolean(selectedPerson.dateOfDeath) && !isPreCausaMortisCutoff);
@@ -1566,8 +1577,10 @@ export function PersonInspector({
               {isPreCausaMortisCutoff && (
                 <p className="helper-text causa-mortis-not-applicable">
                   No Declaration Causa Mortis applies because the succession opened before 25
-                  November 1992. A later sale of that inherited share is taxed at 7% of its transfer
-                  value under Article 5A(5)(c)(i).
+                  November 1992.
+                  {inheritedShareStillHeldBySurvivor
+                    ? " A later sale of that inherited share is taxed at 7% of its transfer value under Article 5A(5)(c)(i)."
+                    : ""}
                 </p>
               )}
 
