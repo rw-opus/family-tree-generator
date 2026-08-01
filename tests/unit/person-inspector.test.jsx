@@ -794,7 +794,7 @@ describe("PersonInspector", () => {
     );
   });
 
-  it("blocks deletion while a partner is linked and can remove that link", () => {
+  it("allows deletion of a partner with no descendants, and can still unlink", () => {
     const onChange = vi.fn();
     const people = [
       {
@@ -827,8 +827,10 @@ describe("PersonInspector", () => {
     const unlinkButton = container.querySelector(
       'button[aria-label="Remove partner link to Joseph Borg"]',
     );
-    expect(deleteButton.disabled).toBe(true);
-    expect(container.textContent).toContain("Remove 1 partner link first.");
+    // A partner added by mistake has to be removable without first unpicking
+    // the marriage. Only descendants stand in the way of a deletion.
+    expect(deleteButton.disabled).toBe(false);
+    expect(container.textContent).not.toContain("Remove 1 partner link first.");
 
     act(() => unlinkButton.click());
 
