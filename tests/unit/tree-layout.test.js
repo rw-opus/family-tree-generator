@@ -514,7 +514,7 @@ describe("a person married more than once", () => {
       });
   });
 
-  it("doglegs a remarriage stem below the parent cards when a middle child's line is centred", () => {
+  it("drops a remarriage stem straight onto the bar even over a middle child", () => {
     const people = [
       person("federico", { spouseIds: ["antonia"] }),
       person("antonia", { spouseIds: ["federico", "joseph"] }),
@@ -543,11 +543,15 @@ describe("a person married more than once", () => {
       cards.get("antonia").y + cards.get("antonia").height,
     );
 
+    // The stem runs straight down from the middle of the marriage onto the bar.
+    // Over an odd number of children that point is the middle child's own
+    // centre line, and parent to bar to child reading as one line is correct —
+    // stepping aside to a gap put a visible jog on every such family.
     expect(stem.from.x).toBe(union.markerX);
-    expect(stem.turnY).toBeGreaterThan(tallestParentBottom);
-    expect(stem.to.x).not.toBe(stem.from.x);
-    childLines.forEach((childLine) => expect(stem.to.x).not.toBe(childLine.from.x));
+    expect(stem.to.x).toBe(stem.from.x);
     expect(stem.to.y).toBe(union.y);
+    expect(union.y).toBeGreaterThan(tallestParentBottom);
+    expect(childLines.some((childLine) => childLine.from.x === stem.to.x)).toBe(true);
   });
 
   it("opens a sibling rail where the descendant stem of another marriage passes through it", () => {
