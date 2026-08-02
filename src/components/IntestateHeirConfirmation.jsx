@@ -208,7 +208,8 @@ export function IntestateHeirConfirmation({
           ))}
           {partnersMissingDeathDate.length > 0 && (
             <small className="succession-warning">
-              Enter every deceased partner&apos;s date of death before relying on the automatic heirs.
+              Enter every deceased partner&apos;s date of death before relying on the automatic
+              heirs.
             </small>
           )}
         </div>

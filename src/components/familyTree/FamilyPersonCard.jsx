@@ -156,12 +156,9 @@ export function FamilyPersonCard({
         Number(propertyValue) > 0 && (
           <div className="family-node-detail">Value {formattedCurrency(ownershipValue)}</div>
         )}
-      {!person.isPlaceholder &&
-        fields.dateOfDeath &&
-        isDeceased &&
-        person.dateOfDeath && (
-          <div className="family-node-detail">Died {formattedDate(person.dateOfDeath)}</div>
-        )}
+      {!person.isPlaceholder && fields.dateOfDeath && isDeceased && person.dateOfDeath && (
+        <div className="family-node-detail">Died {formattedDate(person.dateOfDeath)}</div>
+      )}
       {!person.isPlaceholder && fields.successionBasis && isDeceased && (
         <div className="family-node-detail">{isTestate ? "Testate" : "Intestate"}</div>
       )}
