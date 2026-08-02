@@ -1,13 +1,11 @@
-import { isValidIsoDate } from "../domain/dateFormat.js";
-import { isPersonDeceased } from "../domain/familyOwnership.js";
 import {
+  applyLegacyArticle616ToWill,
+  buildLegacyArticle616ChildBranches,
   calculateLegacyArticle616Legitim,
   classifyLegacyArticle616Date,
   compareLegacyArticle616LegitimFloors,
 } from "../domain/legacyLegitim.js";
 import { approximateFraction } from "../domain/ownership.js";
-
-const REPRESENTED_PARTICIPATION = new Set(["predeceased", "represented"]);
 
 const money = new Intl.NumberFormat("en-MT", {
   style: "currency",
@@ -42,45 +40,6 @@ function shareLabel(share = 0, mode = "fraction") {
   return fractionText;
 }
 
-function inferredParticipation(person, deceased) {
-  if (!isPersonDeceased(person)) return "participating";
-  if (!isValidIsoDate(person.dateOfDeath) || !isValidIsoDate(deceased.dateOfDeath)) {
-    return "unconfirmed";
-  }
-  return person.dateOfDeath <= deceased.dateOfDeath ? "predeceased" : "participating";
-}
-
-function storedStatusMap(deceased) {
-  return new Map(
-    (Array.isArray(deceased.legacyArticle616Statuses) ? deceased.legacyArticle616Statuses : [])
-      .filter((row) => row?.personId)
-      .map((row) => [row.personId, row]),
-  );
-}
-
-function childrenOf(people, parentId) {
-  return people.filter((person) => person.fatherId === parentId || person.motherId === parentId);
-}
-
-function buildNode(person, deceased, people, statuses, trail = new Set()) {
-  if (!person || trail.has(person.id)) return null;
-  const stored = statuses.get(person.id) || {};
-  const participation = stored.participation || inferredParticipation(person, deceased);
-  const nextTrail = new Set(trail).add(person.id);
-  const children = REPRESENTED_PARTICIPATION.has(participation)
-    ? childrenOf(people, person.id)
-        .map((child) => buildNode(child, deceased, people, statuses, nextTrail))
-        .filter(Boolean)
-    : undefined;
-  return {
-    id: person.id,
-    name: person.fullName || person.givenNames || "Unnamed child",
-    article616Eligibility: stored.article616Eligibility || "unconfirmed",
-    participation,
-    ...(children === undefined ? {} : { children }),
-  };
-}
-
 function visibleStatusPeople(roots, peopleById) {
   const result = [];
   const visit = (node, depth) => {
@@ -103,13 +62,8 @@ export function LegacyLegitimPanel({
 }) {
   if (classifyLegacyArticle616Date(deceased?.dateOfDeath).regime !== "legacy") return null;
 
-  const directChildren = childrenOf(people, deceased.id);
-  if (!directChildren.length) return null;
-
-  const statuses = storedStatusMap(deceased);
-  const childBranches = directChildren
-    .map((child) => buildNode(child, deceased, people, statuses))
-    .filter(Boolean);
+  const childBranches = buildLegacyArticle616ChildBranches(people, deceased);
+  if (!childBranches.length) return null;
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const statusPeople = visibleStatusPeople(childBranches, peopleById);
   const estate = deceased.legacyArticle616Estate || {};
@@ -120,15 +74,21 @@ export function LegacyLegitimPanel({
   ].some((value) => String(value ?? "").trim() !== "");
   const calculation = calculateLegacyArticle616Legitim({ childBranches, estate });
   const inheritanceBasis = deceased.inheritanceBasis || "intestacy";
+  const protectedWill =
+    inheritanceBasis === "will" ? applyLegacyArticle616ToWill({ people, deceased }) : null;
   const actualAllocations =
-    inheritanceBasis === "will" ? deceased.willHeirs || [] : deceased.intestateHeirs || [];
+    inheritanceBasis === "will" && protectedWill?.resolved
+      ? [...protectedWill.shares].map(([personId, share]) => ({ personId, share }))
+      : inheritanceBasis === "will"
+        ? deceased.willHeirs || []
+        : deceased.intestateHeirs || [];
   const comparison = compareLegacyArticle616LegitimFloors(calculation, actualAllocations);
   const beneficiaryFloorsById = new Map(
     calculation.beneficiaryFloors.map((floor) => [floor.beneficiaryId, floor]),
   );
   const allocationIsComplete =
     inheritanceBasis === "will"
-      ? willAllocationValid === true
+      ? willAllocationValid === true && protectedWill?.resolved === true
       : allocationRowsAreComplete(actualAllocations);
   const actualSharesFinal =
     allocationIsComplete &&
@@ -168,10 +128,10 @@ export function LegacyLegitimPanel({
         satisfies and absorbs it; the minimum is never added on top.
       </p>
       <p className="legacy-legitim-advisory">
-        Advisory only: this check does not change property ownership or tax. Confirm satisfaction
-        across the whole estate, including any benefits that must be imputed, before changing the
-        property shares. Ascendant legitim and separate old-law child categories are not calculated
-        here.
+        For a complete will, these minimums are applied automatically to this property and the named
+        beneficiaries receive the disposable portion. Adjust the child statuses if the whole
+        estate satisfies the legitim elsewhere. Ascendant legitim and separate old-law child
+        categories are not calculated here.
       </p>
 
       <div className="legacy-legitim-statuses">

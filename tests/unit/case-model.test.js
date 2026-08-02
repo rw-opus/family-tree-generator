@@ -319,6 +319,34 @@ describe("family-scoped person removal", () => {
     expect(input).toEqual(snapshot);
   });
 
+  it("removes a CM declarant from the family group but retains their canonical identity", () => {
+    const input = removableCase({
+      people: [
+        { id: "person", fullName: "Maria Borg", spouseIds: [], siblingIds: [] },
+        {
+          id: "keeper",
+          fullName: "Paul Borg",
+          spouseIds: [],
+          siblingIds: [],
+          causaMortisDeclarations: [{ id: "cm-declaration", declarantPersonIds: ["person"] }],
+        },
+      ],
+    });
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+
+    expect(result.familyGroups[0]).toMatchObject({
+      rootPersonId: "keeper",
+      personIds: ["keeper"],
+    });
+    expect(result.people.find((person) => person.id === "person")).toMatchObject({
+      fullName: "Maria Borg",
+    });
+    expect(result.people.find((person) => person.id === "keeper").causaMortisDeclarations).toEqual([
+      { id: "cm-declaration", declarantPersonIds: ["person"] },
+    ]);
+  });
+
   it("deduplicates legal, declaration, transfer and tax-lot dependencies case-wide", () => {
     const input = removableCase({
       succession: { heirs: [{ id: "case-heir", personId: "person" }] },

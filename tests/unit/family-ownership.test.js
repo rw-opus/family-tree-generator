@@ -124,6 +124,32 @@ describe("automatic family ownership", () => {
     expect(result.transmissions[0].destination).toBe("descendants");
   });
 
+  it("cascades a pre-2005 testate property share through children's legitim", () => {
+    const people = [
+      person("edgar", {
+        fullName: "Edgar Wadge",
+        isDeceased: true,
+        dateOfDeath: "1990-04-02",
+        inheritanceBasis: "will",
+        willHeirs: [{ personId: "niece", sharePercent: 100 }],
+      }),
+      person("child-a", { fatherId: "edgar" }),
+      person("child-b", { fatherId: "edgar" }),
+      person("niece"),
+    ];
+
+    const result = buildPropertyOwnership(people, {
+      id: "property",
+      owners: [{ personId: "edgar", sharePercent: 100 }],
+    });
+
+    expect(result.ownershipByPerson["child-a"]).toBeCloseTo(1 / 6);
+    expect(result.ownershipByPerson["child-b"]).toBeCloseTo(1 / 6);
+    expect(result.ownershipByPerson.niece).toBeCloseTo(2 / 3);
+    expect(result.transmissions[0].destination).toBe("will-with-legacy-legitim");
+    expect(result.unresolved).toEqual([]);
+  });
+
   it("uses marriage dates to identify the legal spouse at the date of death", () => {
     const people = [
       person("deceased", {
@@ -197,7 +223,7 @@ describe("automatic family ownership", () => {
     expect(overlappingResult.warnings.join(" ")).toContain("More than one marriage appears active");
   });
 
-  it("uses confirmed intestate heirs and user-directed shares when they total 100%", () => {
+  it("uses edited intestate heirs and user-directed shares when they total 100%", () => {
     const people = [
       person("deceased", {
         isDeceased: true,
@@ -228,10 +254,10 @@ describe("automatic family ownership", () => {
 
     expect(result.ownershipByPerson.spouse).toBeCloseTo(0.6);
     expect(result.ownershipByPerson.child).toBeCloseTo(0.4);
-    expect(result.transmissions[0].destination).toBe("confirmed-intestacy");
+    expect(result.transmissions[0].destination).toBe("edited-intestacy");
   });
 
-  it("does not trust changed current-law heir rows until they are reconfirmed", () => {
+  it("uses changed current-law heir rows as soon as they total 100%", () => {
     const people = [
       person("deceased", {
         isDeceased: true,
@@ -264,10 +290,10 @@ describe("automatic family ownership", () => {
       owners: [{ personId: "deceased", sharePercent: 100 }],
     });
 
-    expect(result.ownershipByPerson.spouse).toBeCloseTo(0.5);
-    expect(result.ownershipByPerson.child).toBeCloseTo(0.5);
-    expect(result.transmissions[0].destination).toBe("spouse-and-descendants");
-    expect(result.transmissions[0].warnings.join(" ")).toContain("need review");
+    expect(result.ownershipByPerson.spouse).toBeCloseTo(0.9);
+    expect(result.ownershipByPerson.child).toBeCloseTo(0.1);
+    expect(result.transmissions[0].destination).toBe("edited-intestacy");
+    expect(result.transmissions[0].warnings.join(" ")).not.toContain("need review");
   });
 
   it("can confirm an unconnected person or company as a terminal heir", () => {
@@ -432,7 +458,7 @@ describe("automatic family ownership", () => {
     expect(allocation.warnings.join(" ")).toContain("father");
   });
 
-  it("falls back to the statutory proposal when an earlier confirmation becomes stale", () => {
+  it("keeps edited heir rows active when family topology changes", () => {
     const people = [
       person("deceased", {
         isDeceased: true,
@@ -462,10 +488,10 @@ describe("automatic family ownership", () => {
       owners: [{ personId: "deceased", sharePercent: 100 }],
     });
 
-    expect(result.ownershipByPerson.spouse).toBeCloseTo(0.5);
-    expect(result.ownershipByPerson["child-1"]).toBeCloseTo(0.25);
-    expect(result.ownershipByPerson["child-2"]).toBeCloseTo(0.25);
-    expect(result.transmissions[0].warnings.join(" ")).toContain("need review");
+    expect(result.ownershipByPerson.spouse).toBeCloseTo(0.6);
+    expect(result.ownershipByPerson["child-1"]).toBeCloseTo(0.4);
+    expect(result.ownershipByPerson["child-2"] || 0).toBe(0);
+    expect(result.transmissions[0].warnings.join(" ")).not.toContain("need review");
   });
 
   it("uses will shares instead of intestacy", () => {
@@ -639,7 +665,7 @@ describe("automatic family ownership", () => {
     allocation.shares.forEach((share) => expect(share).toBeCloseTo(1 / 8));
   });
 
-  it("leaves pre-1 March 2005 succession unresolved", () => {
+  it("calculates pre-1 March 2005 succession automatically", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -651,12 +677,14 @@ describe("automatic family ownership", () => {
 
     const allocation = intestateAllocations(people, "owner");
     const result = buildAutomaticFamilyOwnership(people);
-    expect(allocation.destination).toBe("historical-unresolved");
-    expect(result.ownershipByPerson.owner).toBe(1);
-    expect(result.unresolved).toHaveLength(1);
+    expect(allocation.destination).toBe("descendants");
+    expect(allocation.shares.get("child")).toBeCloseTo(1);
+    expect(result.ownershipByPerson.child).toBeCloseTo(1);
+    expect(result.ownershipByPerson.owner || 0).toBe(0);
+    expect(result.unresolved).toEqual([]);
   });
 
-  it("cascades a manually confirmed pre-2005 inheritance", () => {
+  it("cascades an edited pre-2005 inheritance without confirmation", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -665,16 +693,11 @@ describe("automatic family ownership", () => {
       }),
       person("child", { fatherId: "owner" }),
     ];
-    const calculated = intestateAllocations(people, "owner");
     const ownerWithRows = {
       ...people[0],
       intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
     };
-    people[0] = {
-      ...ownerWithRows,
-      intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(ownerWithRows, calculated),
-    };
+    people[0] = ownerWithRows;
 
     const result = buildAutomaticFamilyOwnership(people);
     expect(result.ownershipByPerson.child).toBeCloseTo(1);
@@ -682,7 +705,7 @@ describe("automatic family ownership", () => {
     expect(result.unresolved).toEqual([]);
   });
 
-  it("invalidates a pre-2005 confirmation when its approved rows or family topology change", () => {
+  it("lets edited pre-2005 rows override later family topology changes", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -692,41 +715,37 @@ describe("automatic family ownership", () => {
       person("child", { fatherId: "owner" }),
       person("outsider"),
     ];
-    const calculated = intestateAllocations(people, "owner");
     const ownerWithRows = {
       ...people[0],
       intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
     };
-    const confirmedOwner = {
-      ...ownerWithRows,
-      intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(ownerWithRows, calculated),
-    };
+    const editedOwner = ownerWithRows;
 
     const changedRows = [
       {
-        ...confirmedOwner,
+        ...editedOwner,
         intestateHeirs: [{ id: "changed-share", personId: "outsider", sharePercent: 100 }],
       },
       ...people.slice(1),
     ];
     const changedRowsResult = buildAutomaticFamilyOwnership(changedRows);
-    expect(changedRowsResult.ownershipByPerson.outsider || 0).toBe(0);
-    expect(changedRowsResult.ownershipByPerson.owner).toBeCloseTo(1);
-    expect(changedRowsResult.unresolved[0].warnings.join(" ")).toContain("need review");
+    expect(changedRowsResult.ownershipByPerson.outsider).toBeCloseTo(1);
+    expect(changedRowsResult.ownershipByPerson.owner || 0).toBe(0);
+    expect(changedRowsResult.unresolved).toEqual([]);
 
     const changedTopology = [
-      confirmedOwner,
+      editedOwner,
       ...people.slice(1),
       person("second-child", { fatherId: "owner" }),
     ];
     const changedTopologyResult = buildAutomaticFamilyOwnership(changedTopology);
-    expect(changedTopologyResult.ownershipByPerson.child || 0).toBe(0);
-    expect(changedTopologyResult.ownershipByPerson.owner).toBeCloseTo(1);
-    expect(changedTopologyResult.unresolved[0].warnings.join(" ")).toContain("need review");
+    expect(changedTopologyResult.ownershipByPerson.child).toBeCloseTo(1);
+    expect(changedTopologyResult.ownershipByPerson["second-child"] || 0).toBe(0);
+    expect(changedTopologyResult.ownershipByPerson.owner || 0).toBe(0);
+    expect(changedTopologyResult.unresolved).toEqual([]);
 
     const unrelatedEdit = [
-      confirmedOwner,
+      editedOwner,
       people[1],
       { ...people[2], isDeceased: true, dateOfDeath: "1990-01-01" },
       person("unrelated-child", { fatherId: "outsider" }),
@@ -736,17 +755,17 @@ describe("automatic family ownership", () => {
     expect(unrelatedEditResult.unresolved).toEqual([]);
 
     const changedSiblingEdge = [
-      confirmedOwner,
+      editedOwner,
       ...people.slice(1),
       person("new-sibling", { siblingIds: ["owner"] }),
     ];
     const changedSiblingResult = buildAutomaticFamilyOwnership(changedSiblingEdge);
-    expect(changedSiblingResult.ownershipByPerson.child || 0).toBe(0);
-    expect(changedSiblingResult.ownershipByPerson.owner).toBeCloseTo(1);
-    expect(changedSiblingResult.unresolved[0].warnings.join(" ")).toContain("need review");
+    expect(changedSiblingResult.ownershipByPerson.child).toBeCloseTo(1);
+    expect(changedSiblingResult.ownershipByPerson.owner || 0).toBe(0);
+    expect(changedSiblingResult.unresolved).toEqual([]);
   });
 
-  it("invalidates confirmed rows when the death date crosses the 1 March 2005 boundary", () => {
+  it("keeps edited rows active when the death date crosses the 1 March 2005 boundary", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -756,21 +775,18 @@ describe("automatic family ownership", () => {
       person("child", { fatherId: "owner" }),
       person("outsider"),
     ];
-    const calculated = intestateAllocations(people, "owner");
     const ownerWithRows = {
       ...people[0],
       intestateHeirs: [{ id: "outsider-share", personId: "outsider", sharePercent: 100 }],
     };
     people[0] = {
       ...ownerWithRows,
-      intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(ownerWithRows, calculated),
       dateOfDeath: "2005-03-01",
     };
 
     const result = buildAutomaticFamilyOwnership(people);
-    expect(result.ownershipByPerson.child).toBeCloseTo(1);
-    expect(result.ownershipByPerson.outsider || 0).toBe(0);
+    expect(result.ownershipByPerson.outsider).toBeCloseTo(1);
+    expect(result.ownershipByPerson.child || 0).toBe(0);
   });
 
   it("uses the exact 1 March 2005 boundary in the live ownership cascade", () => {
@@ -786,7 +802,7 @@ describe("automatic family ownership", () => {
       entry.id === "owner" ? { ...entry, dateOfDeath: "2005-03-01" } : entry,
     );
 
-    expect(intestateAllocations(before, "owner").destination).toBe("historical-unresolved");
+    expect(intestateAllocations(before, "owner").shares.get("child")).toBe(1);
     expect(intestateAllocations(fromBoundary, "owner").shares.get("child")).toBe(1);
   });
 

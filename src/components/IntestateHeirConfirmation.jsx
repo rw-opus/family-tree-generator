@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Check, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import {
-  confirmedIntestacyAllocations,
+  editedIntestacyAllocations,
   intestacyConfirmationReadiness,
-  intestacyAllocationSignature,
   intestacyShareTotalIsComplete,
   isPersonDeceased,
   linkedLegalSpousesFor,
@@ -120,7 +119,7 @@ export function IntestateHeirConfirmation({
     (party) => !selectedPersonIds.has(party.id),
   );
   const total = totalPercentage(rows);
-  const confirmation = confirmedIntestacyAllocations(
+  const editedAllocation = editedIntestacyAllocations(
     people,
     deceased.id,
     calculated,
@@ -128,7 +127,8 @@ export function IntestateHeirConfirmation({
   );
   const readiness = intestacyConfirmationReadiness(people, deceased.id, calculated, outsideParties);
   const totalComplete = readiness.totalComplete;
-  const canConfirm = readiness.valid;
+  const rowsCanOverride = editedAllocation.valid;
+  const footerIsValid = rows.length === 0 || totalComplete;
 
   const patchDeceased = (patch) => onUpdatePerson(deceased.id, patch);
   const replaceRows = (nextRows) =>
@@ -169,23 +169,16 @@ export function IntestateHeirConfirmation({
         ...shareFromPercentage(share * 100),
       })),
     );
-  const confirmRows = () => {
-    if (!canConfirm) return;
-    patchDeceased({
-      intestateHeirsConfirmed: true,
-      intestateConfirmationBasis: intestacyAllocationSignature(deceased, calculated),
-    });
-  };
 
   return (
     <div className="intestate-confirmation">
       <div className="intestate-confirmation-heading">
         <div>
-          <strong>Confirm who inherited</strong>
+          <strong>Adjust inheritance shares</strong>
           <small>
             Only relationships marked as married are treated as spouses. An unmarried partnership or
-            a shared child does not create a spouse share. You may still override the proposal, but
-            all confirmed shares must total 100%.
+            a shared child does not create a spouse share. The statutory proposal is applied
+            automatically; edited rows override it once they total 100%.
           </small>
         </div>
       </div>
@@ -215,7 +208,7 @@ export function IntestateHeirConfirmation({
           ))}
           {partnersMissingDeathDate.length > 0 && (
             <small className="succession-warning">
-              Enter every deceased partner&apos;s date of death before confirming the heirs.
+              Enter every deceased partner&apos;s date of death before relying on the automatic heirs.
             </small>
           )}
         </div>
@@ -231,7 +224,7 @@ export function IntestateHeirConfirmation({
       />
 
       <div className="confirmed-intestate-heirs">
-        <strong>Heirs to be confirmed</strong>
+        <strong>Edited heirs</strong>
         {rows.map((row) => {
           const person = peopleById.get(row.personId) || outsidePartiesById.get(row.personId);
           const fraction = fractionForShare(row);
@@ -243,7 +236,7 @@ export function IntestateHeirConfirmation({
               {shareDisplay !== "percentage" && (
                 <span className="confirmed-heir-fraction">
                   <input
-                    aria-label={`Confirmed share numerator for ${displayName(person)}`}
+                    aria-label={`Share numerator for ${displayName(person)}`}
                     type="number"
                     min="0"
                     step="1"
@@ -252,7 +245,7 @@ export function IntestateHeirConfirmation({
                   />
                   <b>/</b>
                   <input
-                    aria-label={`Confirmed share denominator for ${displayName(person)}`}
+                    aria-label={`Share denominator for ${displayName(person)}`}
                     type="number"
                     min="1"
                     step="1"
@@ -266,7 +259,7 @@ export function IntestateHeirConfirmation({
               {shareDisplay !== "fraction" && (
                 <span className="confirmed-heir-percent">
                   <input
-                    aria-label={`Confirmed share percentage for ${displayName(person)}`}
+                    aria-label={`Share percentage for ${displayName(person)}`}
                     type="number"
                     min="0"
                     max="100"
@@ -280,7 +273,7 @@ export function IntestateHeirConfirmation({
               <button
                 type="button"
                 className="icon-button"
-                aria-label={`Remove ${displayName(person)} from confirmed heirs`}
+                aria-label={`Remove ${displayName(person)} from edited heirs`}
                 onClick={() => replaceRows(rows.filter((candidate) => candidate.id !== row.id))}
               >
                 <Trash2 size={14} />
@@ -342,29 +335,24 @@ export function IntestateHeirConfirmation({
         )}
 
         <div className="intestate-confirmation-footer">
-          <small className={totalComplete ? "succession-total valid" : "succession-total invalid"}>
-            Total: {totalLabel(total, shareDisplay)}{" "}
-            {totalComplete
-              ? "Complete"
-              : `- must equal ${
-                  shareDisplay === "fraction"
-                    ? "1/1"
-                    : shareDisplay === "percentage"
-                      ? "100%"
-                      : "1/1 · 100%"
+          <small className={footerIsValid ? "succession-total valid" : "succession-total invalid"}>
+            {rows.length === 0
+              ? "No edited heirs. Automatic proposal applies."
+              : `Total: ${totalLabel(total, shareDisplay)} ${
+                  rowsCanOverride
+                    ? "Override active"
+                    : `- must equal ${
+                        shareDisplay === "fraction"
+                          ? "1/1"
+                          : shareDisplay === "percentage"
+                            ? "100%"
+                            : "1/1 · 100%"
+                      }`
                 }`}
           </small>
-          <button
-            type="button"
-            className={confirmation.valid ? "compact-confirm confirmed" : "compact-confirm"}
-            disabled={!canConfirm}
-            onClick={confirmRows}
-          >
-            <Check size={13} />
-            {confirmation.valid ? "Confirmed" : "Confirm heirs"}
-          </button>
         </div>
-        {!canConfirm &&
+        {rows.length > 0 &&
+          !rowsCanOverride &&
           totalComplete &&
           readiness.issues
             .filter((issue) => issue !== "The heir shares must total 100%.")
@@ -373,10 +361,9 @@ export function IntestateHeirConfirmation({
                 {issue}
               </small>
             ))}
-        {deceased.intestateHeirsConfirmed && !confirmation.valid && (
+        {rows.length > 0 && !editedAllocation.valid && (
           <small className="succession-warning">
-            The earlier confirmation needs review because the family details or calculated
-            succession changed.
+            These edited heirs are not yet usable, so the automatic proposal remains in force.
           </small>
         )}
       </div>

@@ -36,13 +36,14 @@ import {
 } from "../domain/causaMortisCoverage.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../domain/article5A.js";
 import {
-  confirmedIntestacyAllocations,
+  editedIntestacyAllocations,
   intestateAllocations,
   isPersonDeceased,
   linkedSpousesFor,
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
+import { applyLegacyArticle616ToWill } from "../domain/legacyLegitim.js";
 import {
   fractionForShare,
   shareFromFractionInput,
@@ -130,6 +131,7 @@ export function PersonInspector({
   shareDisplay = "both",
   onShareDisplayChange,
   caseDependencyLabels = [],
+  retainedIdentityLabels = [],
   familyPersonIds = null,
   personFamilyGroupCount = 1,
   outsideParties = [],
@@ -632,7 +634,9 @@ export function PersonInspector({
         ? `Remove ${displayName(selectedPerson)} from this family tree? The person will remain in the other linked family tree${
             personFamilyGroupCount === 2 ? "" : "s"
           }.`
-        : `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
+        : retainedIdentityLabels.length
+          ? `Remove ${displayName(selectedPerson)} from this family tree? The person will remain as an unconnected person because a Declaration Causa Mortis names them as a declarant.`
+          : `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
     );
     if (!confirmed) return;
     if (onDeletePerson) {
@@ -735,16 +739,22 @@ export function PersonInspector({
   );
   const willTotal = willReadiness.totalPercent;
   const automaticIntestacy = isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
-  const confirmedIntestacy =
+  const protectedWill =
+    isDeceased && inheritanceBasis === "will"
+      ? applyLegacyArticle616ToWill({ people, deceased: selectedPerson })
+      : null;
+  const editedIntestacy =
     inheritanceBasis === "intestacy" &&
     automaticIntestacy &&
-    confirmedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy, outsideParties);
+    editedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy, outsideParties);
   const successionHeirIds =
     inheritanceBasis === "will"
-      ? willHeirs.map((heir) => heir.personId).filter(Boolean)
+      ? protectedWill?.resolved
+        ? [...protectedWill.shares.keys()]
+        : willHeirs.map((heir) => heir.personId).filter(Boolean)
       : [
-          ...((confirmedIntestacy?.valid
-            ? confirmedIntestacy.shares
+          ...((editedIntestacy?.valid
+            ? editedIntestacy.shares
             : automaticIntestacy?.shares
           )?.keys() || []),
         ];
@@ -841,6 +851,15 @@ export function PersonInspector({
   const linkedSiblings = [...linkedSiblingIds]
     .map((personId) => peopleById.get(personId))
     .filter(Boolean);
+  const selectedParentIds = new Set(
+    [selectedPerson.fatherId, selectedPerson.motherId].filter(Boolean),
+  );
+  const explicitSiblingOnlyLinks = linkedSiblings.filter(
+    (sibling) =>
+      ![sibling.fatherId, sibling.motherId].some(
+        (parentId) => parentId && selectedParentIds.has(parentId),
+      ),
+  );
   const mostRecentlyLinkedPartnerId =
     [...(selectedPerson.spouseIds || [])]
       .reverse()
@@ -984,9 +1003,11 @@ export function PersonInspector({
         ? "Family-scoped removal is unavailable in this view."
         : deleteBlockers.length
           ? `Remove ${deleteBlockers.join(" and ")} first.`
-          : personFamilyGroupCount > 1
-            ? "This removes the person from this family only; the shared record remains elsewhere."
-            : "No partner or descendant dependencies. Confirmation is required.";
+          : retainedIdentityLabels.length
+            ? "This removes the person from the family tree but retains their identity as an unconnected person because a Declaration Causa Mortis names them as a declarant."
+            : personFamilyGroupCount > 1
+              ? "This removes the person from this family only; the shared record remains elsewhere."
+              : "No partner or descendant dependencies. Confirmation is required.";
 
   return (
     <div className="person-inspector">
@@ -1660,7 +1681,7 @@ export function PersonInspector({
                 shareDisplay={ownershipDisplay}
                 displayName={displayName}
                 onUpdatePerson={updatePerson}
-                intestacyConfirmed={confirmedIntestacy?.valid === true}
+                intestacyConfirmed={editedIntestacy?.valid === true}
                 willAllocationValid={willReadiness.valid}
               />
 
@@ -2042,11 +2063,11 @@ export function PersonInspector({
               </div>
             </div>
           )}
-          {linkedSiblings.length > 0 && (
+          {explicitSiblingOnlyLinks.length > 0 && (
             <div className="person-partner-links person-sibling-links">
               <span>Sibling links</span>
               <div>
-                {linkedSiblings.map((sibling) => (
+                {explicitSiblingOnlyLinks.map((sibling) => (
                   <span key={sibling.id}>
                     <span className="person-partner-link-identity">
                       <strong>{displayName(sibling)}</strong>
@@ -2071,7 +2092,9 @@ export function PersonInspector({
               onClick={removeSelected}
             >
               <Trash2 size={15} />
-              {personFamilyGroupCount > 1 ? "Remove from this family" : "Delete person"}
+              {personFamilyGroupCount > 1 || retainedIdentityLabels.length
+                ? "Remove from this family"
+                : "Delete person"}
             </button>
             <small>{deleteMessage}</small>
           </div>

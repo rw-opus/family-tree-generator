@@ -304,15 +304,22 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       propertyReport.startingOwnership.isComplete,
     ],
   );
-  const selectedCaseDependencyLabels = useMemo(() => {
+  const selectedCaseDependencies = useMemo(() => {
     const relationshipLabels = new Set([
       "a child relationship",
       "a partner relationship",
       "a sibling relationship",
     ]);
-    return casePersonDependencyLabels(currentTree, selectedPersonId).filter(
+    const legalLabels = casePersonDependencyLabels(currentTree, selectedPersonId).filter(
       (label) => !relationshipLabels.has(label),
     );
+    const retainedIdentityLabels = legalLabels.filter(
+      (label) => label === "a causa mortis declarant record",
+    );
+    return {
+      blockingLabels: legalLabels.filter((label) => label !== "a causa mortis declarant record"),
+      retainedIdentityLabels,
+    };
   }, [currentTree, selectedPersonId]);
 
   useEffect(() => {
@@ -846,7 +853,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                     settings: { ...currentTree.settings, shareDisplay },
                   })
                 }
-                caseDependencyLabels={selectedCaseDependencyLabels}
+                caseDependencyLabels={selectedCaseDependencies.blockingLabels}
+                retainedIdentityLabels={selectedCaseDependencies.retainedIdentityLabels}
                 personFamilyGroupCount={
                   findFamilyGroupsForPerson(currentTree, selectedPersonId).length
                 }

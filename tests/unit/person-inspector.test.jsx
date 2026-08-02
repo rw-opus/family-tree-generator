@@ -880,6 +880,43 @@ describe("PersonInspector", () => {
     ]);
   });
 
+  it("hides redundant sibling unlinking when the people already share a parent", () => {
+    const people = [
+      { id: "father", fullName: "Joseph Borg", spouseIds: [] },
+      {
+        id: "person",
+        fullName: "Maria Borg",
+        fatherId: "father",
+        siblingIds: ["sibling"],
+        spouseIds: [],
+      },
+      {
+        id: "sibling",
+        fullName: "Paul Borg",
+        fatherId: "father",
+        siblingIds: ["person"],
+        spouseIds: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    beginEditing();
+
+    expect(
+      container.querySelector('button[aria-label="Remove sibling link to Paul Borg"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain("Sibling links");
+  });
+
   it("keeps a shared-parent partnership linked until the child is reassigned", () => {
     const onChange = vi.fn();
     const people = [
@@ -1022,6 +1059,44 @@ describe("PersonInspector", () => {
     );
     expect(onDeletePerson).toHaveBeenCalledWith("person");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("removes a CM declarant from the tree while retaining their legal identity", () => {
+    const onDeletePerson = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            { id: "person", fullName: "Maria Borg", spouseIds: [] },
+            { id: "other", fullName: "Paul Vella", spouseIds: [] },
+          ]}
+          familyPersonIds={["person", "other"]}
+          selectedPersonId="person"
+          retainedIdentityLabels={["a causa mortis declarant record"]}
+          onChange={vi.fn()}
+          onDeletePerson={onDeletePerson}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    beginEditing();
+
+    const removeButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Remove from this family"),
+    );
+    expect(removeButton.disabled).toBe(false);
+    expect(container.textContent).toContain(
+      "retains their identity as an unconnected person because a Declaration Causa Mortis names them as a declarant",
+    );
+
+    act(() => removeButton.click());
+
+    expect(confirm).toHaveBeenCalledWith(
+      "Remove Maria Borg from this family tree? The person will remain as an unconnected person because a Declaration Causa Mortis names them as a declarant.",
+    );
+    expect(onDeletePerson).toHaveBeenCalledWith("person");
   });
 
   it("does not promise family-scoped removal without a scoped delete callback", () => {
@@ -1457,7 +1532,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Intestate");
   });
 
-  it("requires the proposed intestate heirs and 100% shares to be confirmed", () => {
+  it("uses proposed intestate heirs automatically and lets edited shares override them", () => {
     let latestPeople = [];
     const initialPeople = [
       {
@@ -1500,7 +1575,7 @@ describe("PersonInspector", () => {
 
     act(() => root.render(<Harness />));
 
-    expect(container.textContent).toContain("Confirm who inherited");
+    expect(container.textContent).toContain("Adjust inheritance shares");
     expect(container.textContent).toContain("Proposed under intestacy");
     expect(container.textContent).toContain("1/2");
 
@@ -1520,11 +1595,11 @@ describe("PersonInspector", () => {
       });
     };
     let childDenominator = container.querySelector(
-      'input[aria-label="Confirmed share denominator for Paul Borg"]',
+      'input[aria-label="Share denominator for Paul Borg"]',
     );
     setNumberInput(childDenominator, "");
     childDenominator = container.querySelector(
-      'input[aria-label="Confirmed share denominator for Paul Borg"]',
+      'input[aria-label="Share denominator for Paul Borg"]',
     );
     expect(childDenominator.value).toBe("");
 
@@ -1534,7 +1609,7 @@ describe("PersonInspector", () => {
     ).toBe(25);
 
     const childNumerator = container.querySelector(
-      'input[aria-label="Confirmed share numerator for Paul Borg"]',
+      'input[aria-label="Share numerator for Paul Borg"]',
     );
     setNumberInput(childNumerator, "2");
     expect(
@@ -1550,7 +1625,7 @@ describe("PersonInspector", () => {
     expect(container.querySelectorAll(".confirmed-heir-percent")).toHaveLength(2);
 
     const childPercentage = container.querySelector(
-      'input[aria-label="Confirmed share percentage for Paul Borg"]',
+      'input[aria-label="Share percentage for Paul Borg"]',
     );
     setNumberInput(childPercentage, "45");
     expect(latestPeople[0].intestateHeirs.find((heir) => heir.personId === "child")).toMatchObject({
@@ -1558,22 +1633,16 @@ describe("PersonInspector", () => {
       sharePercentInput: "45",
     });
     setNumberInput(
-      container.querySelector('input[aria-label="Confirmed share percentage for Paul Borg"]'),
+      container.querySelector('input[aria-label="Share percentage for Paul Borg"]'),
       "50",
     );
 
-    const confirm = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Confirm heirs"),
-    );
-    expect(confirm.disabled).toBe(false);
-    act(() => confirm.click());
-
-    expect(latestPeople[0].intestateHeirsConfirmed).toBe(true);
+    expect(latestPeople[0].intestateHeirsConfirmed).toBe(false);
     expect(latestPeople[0].intestateHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
-    expect(container.textContent).toContain("Confirmed");
+    expect(container.textContent).toContain("Override active");
   });
 
-  it("keeps confirmation disabled when an heir row points to a deleted person", () => {
+  it("warns when an edited heir row points to a deleted person", () => {
     const people = [
       {
         id: "deceased",
@@ -1606,11 +1675,8 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const confirm = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Confirm heirs"),
-    );
-    expect(confirm.disabled).toBe(true);
     expect(container.textContent).toContain("no longer on the family tree");
+    expect(container.textContent).toContain("automatic proposal remains in force");
   });
 
   it("allows a deceased linked partner's death date to be completed in the succession workflow", () => {
@@ -1650,7 +1716,7 @@ describe("PersonInspector", () => {
       'input[aria-label="Date of death for Maria Borg"]',
     );
     expect(spouseDeathDate).not.toBeNull();
-    expect(container.textContent).toContain("before confirming the heirs");
+    expect(container.textContent).toContain("before relying on the automatic heirs");
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         spouseDeathDate,

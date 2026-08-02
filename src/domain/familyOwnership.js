@@ -6,6 +6,7 @@ import {
   partnerRelationshipStatusAt,
 } from "./partnerRelationships.js";
 import { successionRuleset } from "./propertyTax.js";
+import { applyLegacyArticle616ToWill } from "./legacyLegitim.js";
 
 const number = (input) => Math.max(0, Number(input) || 0);
 export const INTESTACY_SHARE_EPSILON = 1e-8;
@@ -15,99 +16,6 @@ const SURVIVAL_UNRESOLVED_DESTINATIONS = new Set([
   "death-date-unresolved",
   "survival-date-unresolved",
 ]);
-
-function stableContextHash(value) {
-  const source = String(value || "");
-  let first = 0x811c9dc5;
-  let second = 0x9e3779b9;
-  for (let index = 0; index < source.length; index += 1) {
-    const code = source.charCodeAt(index);
-    first = Math.imul(first ^ code, 0x01000193);
-    second = Math.imul(second ^ code, 0x85ebca6b);
-  }
-  return `${source.length}-${(first >>> 0).toString(36)}-${(second >>> 0).toString(36)}`;
-}
-
-function connectedRelationshipIds(people = [], rootPersonId = "") {
-  const validIds = new Set(people.map((person) => String(person?.id || "")).filter(Boolean));
-  if (!validIds.has(rootPersonId)) return new Set();
-  const neighbours = new Map([...validIds].map((personId) => [personId, new Set()]));
-  const connect = (leftId, rightId) => {
-    const left = String(leftId || "");
-    const right = String(rightId || "");
-    if (!validIds.has(left) || !validIds.has(right) || left === right) return;
-    neighbours.get(left).add(right);
-    neighbours.get(right).add(left);
-  };
-  people.forEach((person) => {
-    const personId = String(person?.id || "");
-    connect(personId, person?.fatherId);
-    connect(personId, person?.motherId);
-    (Array.isArray(person?.spouseIds) ? person.spouseIds : []).forEach((otherId) =>
-      connect(personId, otherId),
-    );
-    (Array.isArray(person?.siblingIds) ? person.siblingIds : []).forEach((otherId) =>
-      connect(personId, otherId),
-    );
-    (Array.isArray(person?.partnerRelationships) ? person.partnerRelationships : []).forEach(
-      (relationship) => connect(personId, relationship?.personId),
-    );
-  });
-
-  const connected = new Set([rootPersonId]);
-  const pending = [rootPersonId];
-  while (pending.length) {
-    const personId = pending.pop();
-    neighbours.get(personId)?.forEach((otherId) => {
-      if (connected.has(otherId)) return;
-      connected.add(otherId);
-      pending.push(otherId);
-    });
-  }
-  return connected;
-}
-
-function historicalFamilyContextSignature(people = [], deceasedId = "") {
-  const connectedIds = connectedRelationshipIds(people, deceasedId);
-  const topology = people
-    .filter((person) => connectedIds.has(String(person?.id || "")))
-    .map((person) => ({
-      id: String(person?.id || ""),
-      fatherId: String(person?.fatherId || ""),
-      motherId: String(person?.motherId || ""),
-      deceased:
-        Boolean(person?.isDeceased) ||
-        (person?.designations || []).some(
-          (designation) => String(designation).toLowerCase() === "deceased",
-        ),
-      dateOfDeath: String(person?.dateOfDeath || ""),
-      spouseIds: [...new Set(Array.isArray(person?.spouseIds) ? person.spouseIds : [])]
-        .map(String)
-        .sort(),
-      siblingIds: [...new Set(Array.isArray(person?.siblingIds) ? person.siblingIds : [])]
-        .map(String)
-        .sort(),
-      partnerRelationships: (Array.isArray(person?.partnerRelationships)
-        ? person.partnerRelationships
-        : []
-      )
-        .map((relationship) => ({
-          personId: String(relationship?.personId || ""),
-          type: String(relationship?.type || ""),
-          startDate: String(relationship?.startDate || ""),
-          startYear: String(relationship?.startYear || ""),
-          endDate: String(relationship?.endDate || ""),
-          endReason: String(relationship?.endReason || ""),
-        }))
-        .sort((left, right) =>
-          `${left.personId}:${left.type}:${left.startDate}:${left.endDate}`.localeCompare(
-            `${right.personId}:${right.type}:${right.startDate}:${right.endDate}`,
-          ),
-        ),
-    }))
-    .sort((left, right) => left.id.localeCompare(right.id));
-  return stableContextHash(JSON.stringify(topology));
-}
 
 export function isPersonDeceased(person = {}) {
   return (
@@ -350,17 +258,6 @@ export function intestateAllocations(people = [], deceasedId) {
       `Enter a valid date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
     );
     return { shares, warnings, destination: "death-date-unresolved" };
-  }
-  if (ruleset.key === "pre2005") {
-    warnings.push(
-      "The old-law intestacy distribution before 1 March 2005 is not determined by articles 614 to 620. Enter and confirm the historical heirs and their full shares manually.",
-    );
-    return {
-      shares,
-      warnings,
-      destination: "historical-unresolved",
-      contextSignature: historicalFamilyContextSignature(people, deceased.id),
-    };
   }
 
   const atDate = deceased.dateOfDeath;
@@ -621,7 +518,7 @@ export function intestacyConfirmationReadiness(
   };
 }
 
-export function confirmedIntestacyAllocations(
+export function editedIntestacyAllocations(
   people = [],
   deceasedId,
   calculatedAllocation = null,
@@ -638,18 +535,15 @@ export function confirmedIntestacyAllocations(
   const readiness = intestacyConfirmationReadiness(people, deceasedId, calculated, outsideParties);
   const currentSignature = readiness.currentSignature;
   const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
+  const hasResolvedDeathDate = calculated.destination !== "death-date-unresolved";
   const valid =
-    deceased.intestateHeirsConfirmed === true &&
-    deceased.intestateConfirmationBasis === currentSignature &&
-    readiness.valid;
+    rows.length > 0 && readiness.rowsValid && readiness.totalComplete && hasResolvedDeathDate;
 
   if (!valid) {
-    if (deceased.intestateHeirsConfirmed) {
+    if (rows.length) {
       warnings.push(
-        "The confirmed intestate heirs need review because the family details or statutory calculation changed.",
+        "The edited intestate heirs need review before they can override the automatic calculation.",
       );
-    } else {
-      warnings.push("The intestate heirs and their shares have not yet been confirmed.");
     }
     return { valid: false, shares, warnings, currentSignature };
   }
@@ -657,6 +551,8 @@ export function confirmedIntestacyAllocations(
   rows.forEach((row) => addShare(shares, row.personId, number(row.sharePercent) / 100));
   return { valid: true, shares, warnings, currentSignature };
 }
+
+export const confirmedIntestacyAllocations = editedIntestacyAllocations;
 
 export const WILL_SHARE_PERCENT_EPSILON = 1e-8;
 
@@ -754,19 +650,24 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     const basis = person.inheritanceBasis || "intestacy";
     let result;
     if (basis === "will") {
-      result = { shares: willAllocations(person), warnings: [], destination: "will" };
+      const protectedWill = applyLegacyArticle616ToWill({ people, deceased: person });
+      result = {
+        shares: protectedWill.resolved ? protectedWill.shares : new Map(),
+        warnings: protectedWill.warnings,
+        destination: protectedWill.applies ? "will-with-legacy-legitim" : "will",
+      };
     } else {
       const calculated = intestateAllocations(people, personId);
-      const confirmed = confirmedIntestacyAllocations(people, personId, calculated, outsideParties);
-      result = confirmed.valid
+      const edited = editedIntestacyAllocations(people, personId, calculated, outsideParties);
+      result = edited.valid
         ? {
-            shares: confirmed.shares,
+            shares: edited.shares,
             warnings: calculated.warnings,
-            destination: "confirmed-intestacy",
+            destination: "edited-intestacy",
           }
         : {
             ...calculated,
-            warnings: [...calculated.warnings, ...confirmed.warnings],
+            warnings: [...calculated.warnings, ...edited.warnings],
           };
     }
     let allocated = [...result.shares.values()].reduce((sum, share) => sum + share, 0);

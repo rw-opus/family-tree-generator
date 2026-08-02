@@ -1,4 +1,5 @@
 import { isValidIsoDate } from "./dateFormat.js";
+import { findPartnerRelationship, PARTNER_RELATIONSHIP_TYPES } from "./partnerRelationships.js";
 
 export const LEGACY_SUCCESSION_CUTOFF = "2005-03-01";
 
@@ -7,11 +8,12 @@ export const LEGACY_SUCCESSION_CUTOFF = "2005-03-01";
  * former Civil Code article 616, with the estate-base inputs described by
  * article 620(2)-(3). It does not decide article 619 ascendant rights, article
  * 620(4) imputation, or the distinct pre-2005 intestacy rules in former
- * articles 808-830. The comparison helper is advisory: it never adds the
- * minimum to an inheritance or changes ownership.
+ * articles 808-830. For a complete will, applyLegacyArticle616ToWill protects
+ * the calculated personal minimums and leaves the balance to the named heirs.
  */
 
 const EPSILON = 1e-10;
+const REPRESENTED_PARTICIPATION = new Set(["predeceased", "represented"]);
 
 const finiteNonNegative = (value) => {
   const parsed = Number(value);
@@ -58,6 +60,86 @@ function nodeEligibility(node = {}) {
 
 function nodeParticipation(node = {}) {
   return String(node.participation || "unconfirmed");
+}
+
+function personName(person = {}) {
+  return (
+    String(person.fullName || "").trim() ||
+    [person.givenNames, person.surname].filter(Boolean).join(" ").trim() ||
+    "Unnamed child"
+  );
+}
+
+function personIsDeceased(person = {}) {
+  return (
+    person.isDeceased === true ||
+    Boolean(person.dateOfDeath) ||
+    (person.designations || []).some(
+      (designation) => String(designation).toLowerCase() === "deceased",
+    )
+  );
+}
+
+function storedStatusMap(deceased = {}) {
+  return new Map(
+    (Array.isArray(deceased.legacyArticle616Statuses) ? deceased.legacyArticle616Statuses : [])
+      .filter((row) => row?.personId)
+      .map((row) => [row.personId, row]),
+  );
+}
+
+function childrenOf(people, parentId) {
+  return people.filter((person) => person.fatherId === parentId || person.motherId === parentId);
+}
+
+function inferredEligibility(person, deceased, people) {
+  const otherParentId =
+    person.fatherId === deceased.id
+      ? person.motherId
+      : person.motherId === deceased.id
+        ? person.fatherId
+        : "";
+  const parentalRelationship = otherParentId
+    ? findPartnerRelationship(people, deceased.id, otherParentId)
+    : null;
+  return parentalRelationship?.type === PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
+    ? "separate-old-law"
+    : "qualifying";
+}
+
+function inferredParticipation(person, deceased) {
+  if (!personIsDeceased(person)) return "participating";
+  if (!isValidIsoDate(person.dateOfDeath) || !isValidIsoDate(deceased.dateOfDeath)) {
+    return "unconfirmed";
+  }
+  return person.dateOfDeath <= deceased.dateOfDeath ? "predeceased" : "participating";
+}
+
+function buildChildBranch(person, deceased, people, statuses, trail = new Set()) {
+  if (!person || trail.has(person.id)) return null;
+  const stored = statuses.get(person.id) || {};
+  const participation = stored.participation || inferredParticipation(person, deceased);
+  const nextTrail = new Set(trail).add(person.id);
+  const children = REPRESENTED_PARTICIPATION.has(participation)
+    ? childrenOf(people, person.id)
+        .map((child) => buildChildBranch(child, deceased, people, statuses, nextTrail))
+        .filter(Boolean)
+    : undefined;
+  return {
+    id: person.id,
+    name: personName(person),
+    article616Eligibility:
+      stored.article616Eligibility || inferredEligibility(person, deceased, people),
+    participation,
+    ...(children === undefined ? {} : { children }),
+  };
+}
+
+export function buildLegacyArticle616ChildBranches(people = [], deceased = {}) {
+  const statuses = storedStatusMap(deceased);
+  return childrenOf(people, deceased.id)
+    .map((child) => buildChildBranch(child, deceased, people, statuses))
+    .filter(Boolean);
 }
 
 function resolveBranchRecipients(node, diagnostics, trail = new Set()) {
@@ -282,6 +364,136 @@ function actualAllocationShare(record = {}) {
   }
   if (record.sharePercent !== undefined) return finiteNonNegative(record.sharePercent) / 100;
   return finiteNonNegative(record.share);
+}
+
+function allocationMap(records = []) {
+  const shares = new Map();
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const beneficiaryId = String(record?.beneficiaryId || record?.personId || "");
+    if (!beneficiaryId) return;
+    shares.set(beneficiaryId, (shares.get(beneficiaryId) || 0) + actualAllocationShare(record));
+  });
+  return shares;
+}
+
+/**
+ * Applies the former article 616 personal minimums to a complete testamentary
+ * allocation. Existing gifts to a protected descendant absorb the minimum;
+ * only a shortfall is topped up. The top-up is taken proportionally from the
+ * disposable surplus left to the named beneficiaries.
+ */
+export function applyLegacyArticle616ToWill({ people = [], deceased = {}, willHeirs } = {}) {
+  const testamentaryShares = allocationMap(willHeirs ?? deceased.willHeirs);
+  const regime = classifyLegacyArticle616Date(deceased.dateOfDeath).regime;
+  const childBranches = buildLegacyArticle616ChildBranches(people, deceased);
+  const applies = regime === "legacy" && childBranches.length > 0;
+  if (!applies) {
+    return {
+      applies: false,
+      adjusted: false,
+      resolved: true,
+      shares: testamentaryShares,
+      calculation: null,
+      warnings: [],
+    };
+  }
+
+  const calculation = calculateLegacyArticle616Legitim({
+    childBranches,
+    estate: deceased.legacyArticle616Estate || {},
+  });
+  if (calculation.unresolved) {
+    return {
+      applies: true,
+      adjusted: false,
+      resolved: false,
+      shares: testamentaryShares,
+      calculation,
+      warnings: calculation.diagnostics,
+    };
+  }
+
+  const testamentaryTotal = [...testamentaryShares.values()].reduce(
+    (total, share) => total + share,
+    0,
+  );
+  if (Math.abs(testamentaryTotal - 1) > EPSILON) {
+    return {
+      applies: true,
+      adjusted: false,
+      resolved: false,
+      shares: testamentaryShares,
+      calculation,
+      warnings: [
+        "Complete the will beneficiary allocation to 100% before applying the old-law child legitim.",
+      ],
+    };
+  }
+
+  const floors = new Map(
+    calculation.beneficiaryFloors.map((floor) => [floor.beneficiaryId, floor.fraction.decimal]),
+  );
+  const shortfalls = new Map();
+  floors.forEach((minimum, beneficiaryId) => {
+    const shortfall = Math.max(0, minimum - (testamentaryShares.get(beneficiaryId) || 0));
+    if (shortfall > EPSILON) shortfalls.set(beneficiaryId, shortfall);
+  });
+  const totalShortfall = [...shortfalls.values()].reduce((total, share) => total + share, 0);
+  if (totalShortfall <= EPSILON) {
+    return {
+      applies: true,
+      adjusted: false,
+      resolved: true,
+      shares: testamentaryShares,
+      calculation,
+      warnings: [],
+    };
+  }
+
+  const surplusByBeneficiary = new Map();
+  testamentaryShares.forEach((share, beneficiaryId) => {
+    const surplus = Math.max(0, share - (floors.get(beneficiaryId) || 0));
+    if (surplus > EPSILON) surplusByBeneficiary.set(beneficiaryId, surplus);
+  });
+  const totalSurplus = [...surplusByBeneficiary.values()].reduce(
+    (total, share) => total + share,
+    0,
+  );
+  if (totalSurplus + EPSILON < totalShortfall) {
+    return {
+      applies: true,
+      adjusted: false,
+      resolved: false,
+      shares: testamentaryShares,
+      calculation,
+      warnings: [
+        "The recorded will does not contain enough disposable surplus to satisfy the legitim.",
+      ],
+    };
+  }
+
+  const effectiveShares = new Map(testamentaryShares);
+  surplusByBeneficiary.forEach((surplus, beneficiaryId) => {
+    const reduction = totalShortfall * (surplus / totalSurplus);
+    effectiveShares.set(beneficiaryId, Math.max(0, effectiveShares.get(beneficiaryId) - reduction));
+  });
+  shortfalls.forEach((shortfall, beneficiaryId) => {
+    effectiveShares.set(beneficiaryId, (effectiveShares.get(beneficiaryId) || 0) + shortfall);
+  });
+  [...effectiveShares.entries()].forEach(([beneficiaryId, share]) => {
+    if (share <= EPSILON) effectiveShares.delete(beneficiaryId);
+  });
+
+  return {
+    applies: true,
+    adjusted: true,
+    resolved: true,
+    shares: effectiveShares,
+    calculation,
+    warnings: [
+      "Old-law child legitim was applied automatically; the named will beneficiaries receive the disposable portion.",
+    ],
+  };
 }
 
 export function compareLegacyArticle616LegitimFloors(calculation, actualAllocations = []) {

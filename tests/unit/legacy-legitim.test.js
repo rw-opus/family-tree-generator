@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyLegacyArticle616ToWill,
+  buildLegacyArticle616ChildBranches,
   calculateLegacyArticle616Legitim,
   classifyLegacyArticle616Date,
   compareLegacyArticle616LegitimFloors,
@@ -192,5 +194,120 @@ describe("old article 616 legitim", () => {
     expect(comparison.status).toBe("shortfall");
     expect(comparison.rows.map((row) => row.shortfall)).toEqual([1 / 6, 1 / 6]);
     expect(comparison.totalShortfall).toBeCloseTo(1 / 3);
+  });
+
+  it("automatically protects children's personal minimums when a legacy will names a niece", () => {
+    const deceased = {
+      id: "edgar",
+      fullName: "Edgar Wadge",
+      isDeceased: true,
+      dateOfDeath: "1990-04-02",
+      willHeirs: [{ personId: "niece", sharePercent: 100 }],
+    };
+    const people = [
+      deceased,
+      { id: "child-a", fullName: "Eric Wadge", fatherId: "edgar" },
+      { id: "child-b", fullName: "Harvey Wadge", fatherId: "edgar" },
+      { id: "niece", fullName: "Anna Wadge" },
+    ];
+
+    const result = applyLegacyArticle616ToWill({ people, deceased });
+
+    expect(result).toMatchObject({ applies: true, adjusted: true, resolved: true });
+    expect(result.shares.get("child-a")).toBeCloseTo(1 / 6);
+    expect(result.shares.get("child-b")).toBeCloseTo(1 / 6);
+    expect(result.shares.get("niece")).toBeCloseTo(2 / 3);
+  });
+
+  it("treats a larger testamentary share as absorbing the legitim", () => {
+    const deceased = {
+      id: "testator",
+      isDeceased: true,
+      dateOfDeath: "1990-01-01",
+      willHeirs: [
+        { personId: "child-a", sharePercent: 50 },
+        { personId: "child-b", sharePercent: 50 },
+      ],
+    };
+    const people = [
+      deceased,
+      { id: "child-a", fatherId: "testator" },
+      { id: "child-b", fatherId: "testator" },
+    ];
+
+    const result = applyLegacyArticle616ToWill({ people, deceased });
+
+    expect(result).toMatchObject({ applies: true, adjusted: false, resolved: true });
+    expect(result.shares.get("child-a")).toBeCloseTo(0.5);
+    expect(result.shares.get("child-b")).toBeCloseTo(0.5);
+  });
+
+  it("passes a predeceased child's protected branch to their descendants", () => {
+    const deceased = {
+      id: "testator",
+      isDeceased: true,
+      dateOfDeath: "1990-01-01",
+      willHeirs: [{ personId: "niece", sharePercent: 100 }],
+    };
+    const people = [
+      deceased,
+      { id: "living-child", fatherId: "testator" },
+      {
+        id: "predeceased-child",
+        fatherId: "testator",
+        isDeceased: true,
+        dateOfDeath: "1980-01-01",
+      },
+      { id: "grandchild-a", fatherId: "predeceased-child" },
+      { id: "grandchild-b", fatherId: "predeceased-child" },
+      { id: "niece" },
+    ];
+
+    const result = applyLegacyArticle616ToWill({ people, deceased });
+
+    expect(result.shares.get("living-child")).toBeCloseTo(1 / 6);
+    expect(result.shares.get("grandchild-a")).toBeCloseTo(1 / 12);
+    expect(result.shares.get("grandchild-b")).toBeCloseTo(1 / 12);
+    expect(result.shares.get("niece")).toBeCloseTo(2 / 3);
+  });
+
+  it("leaves a recorded unmarried child category unresolved for separate old-law treatment", () => {
+    const deceased = {
+      id: "testator",
+      isDeceased: true,
+      dateOfDeath: "1990-01-01",
+      spouseIds: ["partner"],
+      partnerRelationships: [{ personId: "partner", type: "partnership" }],
+      willHeirs: [{ personId: "niece", sharePercent: 100 }],
+    };
+    const people = [
+      deceased,
+      { id: "partner", spouseIds: ["testator"] },
+      { id: "child", fatherId: "testator", motherId: "partner" },
+      { id: "niece" },
+    ];
+
+    const branches = buildLegacyArticle616ChildBranches(people, deceased);
+    const result = applyLegacyArticle616ToWill({ people, deceased });
+
+    expect(branches[0].article616Eligibility).toBe("separate-old-law");
+    expect(result.resolved).toBe(false);
+    expect(result.warnings.join(" ")).toContain("separate old-law");
+  });
+
+  it("does not alter a will when death occurred on the modern-law boundary", () => {
+    const deceased = {
+      id: "testator",
+      isDeceased: true,
+      dateOfDeath: "2005-03-01",
+      willHeirs: [{ personId: "niece", sharePercent: 100 }],
+    };
+    const people = [deceased, { id: "child", fatherId: "testator" }, { id: "niece" }];
+
+    const result = applyLegacyArticle616ToWill({ people, deceased });
+
+    expect(result).toMatchObject({ applies: false, adjusted: false, resolved: true });
+    expect(result.shares.get("niece")).toBe(1);
+    expect(result.shares.has("child")).toBe(false);
   });
 });
