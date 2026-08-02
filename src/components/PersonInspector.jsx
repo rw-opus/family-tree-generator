@@ -1734,6 +1734,12 @@ export function PersonInspector({
                     <div className="causa-mortis-coverage" aria-label="Causa mortis share coverage">
                       {causaMortisCoverage.map((row) => {
                         const difference = Math.abs(row.difference);
+                        const property = properties.find(
+                          (candidate) => candidate.id === row.propertyId,
+                        );
+                        const sellingPrice = Number(property?.saleValue);
+                        const hasSellingPrice = Number.isFinite(sellingPrice) && sellingPrice > 0;
+                        const requiredShareSaleValue = sellingPrice * row.requiredShare;
                         const differenceLabel =
                           row.status === "date-unknown"
                             ? row.deathDateText
@@ -1760,6 +1766,12 @@ export function PersonInspector({
                                       row.requiredShare,
                                     )} · Declared ${fractionLabel(row.declaredShare)}`}
                               </small>
+                              {row.status !== "date-unknown" && hasSellingPrice && (
+                                <small>
+                                  Required share of selling price{" "}
+                                  {money.format(requiredShareSaleValue)}
+                                </small>
+                              )}
                             </span>
                             <b>{differenceLabel}</b>
                           </div>

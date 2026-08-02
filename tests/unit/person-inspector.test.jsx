@@ -1869,7 +1869,13 @@ describe("PersonInspector", () => {
       root.render(
         <PersonInspector
           people={[deceased, child]}
-          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          properties={[
+            {
+              id: "property-1",
+              address: "1 Republic Street",
+              saleValue: 240000,
+            },
+          ]}
           causaMortisCoverage={[
             {
               personId: "deceased",
@@ -1900,6 +1906,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Date of Declaration Causa Mortis");
     expect(container.textContent).toContain("Declarants / heirs");
     expect(container.textContent).toContain("Required 1/2");
+    expect(container.textContent).toContain("Required share of selling price €120,000.00");
     expect(container.textContent).toContain("Missing 1/2");
     expect(container.textContent).toContain("Declaration CM 1");
     expect(container.textContent).not.toContain("Draft");
