@@ -1023,34 +1023,6 @@ textarea {
   font-size: 0.86rem;
 }
 
-.dashboard-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-bottom: 1px solid #dfe5e1;
-  background: #f7f9f8;
-  padding: 0.35rem;
-}
-
-.dashboard-tabs button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  min-height: 2.6rem;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #667386;
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-.dashboard-tabs button.active {
-  background: #fff;
-  color: var(--forest);
-  box-shadow: 0 1px 6px rgba(21, 64, 45, 0.13);
-}
-
 .dashboard-content {
   flex: 1;
   width: 100%;
@@ -1267,90 +1239,16 @@ textarea {
   line-height: 1;
 }
 
-.family-link-list {
-  display: grid;
-  gap: 0.34rem;
+.person-parentage {
   margin-top: 0.55rem;
-}
-
-.family-link-list > strong {
-  color: #526158;
-  font-size: 0.64rem;
-}
-
-.family-link-row {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.36rem;
   border: 1px solid #d7e1dc;
   border-radius: 7px;
   background: #f8faf9;
-  padding: 0.34rem 0.42rem;
-}
-
-.family-link-label {
-  color: var(--muted);
-  font-size: 0.61rem;
-  font-weight: 800;
-}
-
-.family-link-person {
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  padding: 0;
-  font-size: 0.68rem;
-  font-weight: 700;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-button.family-link-person {
-  cursor: pointer;
-}
-
-button.family-link-person:hover {
-  color: var(--forest);
-  text-decoration: underline;
-}
-
-.family-link-person.missing {
-  color: #9b551d;
-}
-
-.family-link-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-}
-
-.family-link-actions .text-button {
-  min-height: auto;
-  padding: 0.18rem 0.24rem;
-  font-size: 0.6rem;
-}
-
-.family-link-actions .danger {
-  color: #922f2f;
-}
-
-.parent-link-chooser {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.34rem;
-  border-top: 1px solid #dce5e0;
-  padding-top: 0.34rem;
-}
-
-.parent-link-chooser select,
-.parent-link-chooser button {
-  min-height: 1.9rem;
-  font-size: 0.63rem;
+  color: #526158;
+  padding: 0.48rem 0.58rem;
+  font-size: 0.7rem;
+  font-style: italic;
+  line-height: 1.35;
 }
 
 .spouse-chooser {
@@ -3094,11 +2992,7 @@ button.family-link-person:hover {
 }
 
 .tree-stage-toolbar-minimal .stage-family-title {
-  grid-template-columns: auto minmax(0, 1fr);
-}
-
-.tree-stage-toolbar-minimal .stage-family-title input {
-  width: 100%;
+  min-width: 0;
 }
 
 .tree-zoom-slider {
@@ -3127,20 +3021,56 @@ button.family-link-person:hover {
 }
 
 .stage-family-title {
-  display: grid;
-  grid-template-columns: auto minmax(120px, 210px);
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
+  min-width: 0;
 }
 
-.stage-family-title span {
+.stage-family-title-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.55rem;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.18rem 0.45rem;
+  font: 500 clamp(1.2rem, 2.2vw, 1.65rem) / 1.1 var(--tracker-serif);
+  letter-spacing: -0.018em;
+  text-align: left;
+}
+
+.stage-family-title-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-family-title-button svg {
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 700;
 }
 
-.stage-family-title input {
-  min-height: 2.25rem;
+.stage-family-title-button:hover,
+.stage-family-title-button:focus-visible {
+  border-color: #b9cbc1;
+  background: #fff;
+  color: var(--forest);
+}
+
+.stage-family-title-input {
+  width: 100%;
+  min-height: 2.55rem;
+  border-color: #7fa18e !important;
+  background: #fff !important;
+  color: var(--ink);
+  font: 500 clamp(1.15rem, 2.1vw, 1.55rem) / 1.1 var(--tracker-serif) !important;
+  letter-spacing: -0.015em;
 }
 
 .stage-context {
@@ -3817,18 +3747,12 @@ button.family-link-person:hover {
 }
 
 .dashboard-topline,
-.dashboard-tabs,
 .dashboard-status,
 .inspector-profile,
 .inspector-section {
   border-color: #e2e8f0;
 }
 
-.dashboard-tabs {
-  background: #f8fafc;
-}
-
-.dashboard-tabs button,
 .person-edit-button,
 .relationship-actions button,
 .spouse-chooser,
@@ -3836,11 +3760,6 @@ button.family-link-person:hover {
 .secondary-button,
 .danger-button {
   border-radius: 0.55rem;
-}
-
-.dashboard-tabs button.active {
-  color: var(--forest);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
 }
 
 .inspector-profile {
@@ -3902,11 +3821,22 @@ button.family-link-person:hover {
 }
 
 .tree-stage .family-node.deceased {
-  box-shadow: 0 7px 17px rgba(15, 23, 42, 0.18);
+  color: #434947;
+  box-shadow:
+    inset 0 0 0 999px rgba(82, 88, 86, 0.045),
+    0 7px 17px rgba(15, 23, 42, 0.18);
+}
+
+.tree-stage .family-node.deceased.male {
+  background: #e3ebef;
+}
+
+.tree-stage .family-node.deceased.female {
+  background: #eee7e9;
 }
 
 .tree-stage .family-node.deceased:not(.male):not(.female) {
-  background: #ebe7e1;
+  background: #e7e7e4;
 }
 
 .tree-stage .family-node-name {
@@ -4131,11 +4061,7 @@ button.family-link-person:hover {
   }
 
   .stage-family-title {
-    grid-template-columns: minmax(110px, 170px);
-  }
-
-  .stage-family-title span {
-    display: none;
+    min-width: 110px;
   }
 
   .stage-context {
@@ -4462,7 +4388,7 @@ button.family-link-person:hover {
   }
 
   .tree-stage-toolbar-minimal .stage-family-title {
-    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
   }
 
   .tree-zoom-slider {
@@ -4471,16 +4397,12 @@ button.family-link-person:hover {
   }
 
   .stage-family-title {
-    grid-template-columns: minmax(0, 1fr);
     min-width: 0;
   }
 
-  .stage-family-title input {
+  .stage-family-title-input,
+  .stage-family-title-button {
     width: 100%;
-  }
-
-  .dashboard-tabs button {
-    font-size: 0.62rem;
   }
 
   .inspector-fields > label {

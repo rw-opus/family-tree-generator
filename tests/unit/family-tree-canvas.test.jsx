@@ -170,7 +170,7 @@ describe("FamilyTreeCanvas", () => {
     const card = container.querySelector('[data-person-id="testator"]');
     expect(card.textContent).toContain("1/2");
     expect(card.textContent).not.toContain("50%");
-    expect(card.textContent).toContain("Died 18-07-2020");
+    expect(card.textContent).toContain("d. 18-07-2020");
     expect(card.textContent).toContain("Will 18.07.2012");
     expect(card.textContent).toContain("Not. Ivan Barbara");
     expect(card.textContent).toContain("CM 20-08-2020");
@@ -222,7 +222,7 @@ describe("FamilyTreeCanvas", () => {
     });
 
     const card = container.querySelector('[data-person-id="person-0"]');
-    expect(card.textContent).not.toContain("Died");
+    expect(card.textContent).not.toContain("d. 18-07-2020");
     expect(card.textContent).not.toContain("Will");
     expect(card.textContent).not.toContain("CM");
   });
@@ -263,6 +263,55 @@ describe("FamilyTreeCanvas", () => {
         Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
       } else {
         delete HTMLElement.prototype.offsetHeight;
+      }
+    }
+  });
+
+  it("measures expanded card widths and relays out siblings without overlap", () => {
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetHeight",
+    );
+    const originalOffsetWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetWidth",
+    );
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get: () => 108,
+    });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get() {
+        if (this.dataset?.personId === "c1") return 184;
+        if (this.dataset?.personId === "c2") return 156;
+        return 112;
+      },
+    });
+
+    try {
+      renderCanvas({ people: family() });
+      const first = container.querySelector('[data-tree-person-id="c1"]');
+      const second = container.querySelector('[data-tree-person-id="c2"]');
+      const ordered = [first, second].sort(
+        (left, right) => parseFloat(left.style.left) - parseFloat(right.style.left),
+      );
+
+      expect(parseFloat(first.style.width)).toBe(184);
+      expect(parseFloat(second.style.width)).toBe(156);
+      expect(parseFloat(ordered[1].style.left)).toBeGreaterThanOrEqual(
+        parseFloat(ordered[0].style.left) + parseFloat(ordered[0].style.width),
+      );
+    } finally {
+      if (originalOffsetHeight) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
+      } else {
+        delete HTMLElement.prototype.offsetHeight;
+      }
+      if (originalOffsetWidth) {
+        Object.defineProperty(HTMLElement.prototype, "offsetWidth", originalOffsetWidth);
+      } else {
+        delete HTMLElement.prototype.offsetWidth;
       }
     }
   });

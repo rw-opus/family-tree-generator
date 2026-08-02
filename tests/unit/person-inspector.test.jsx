@@ -650,18 +650,23 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("the only link holding this family together");
   });
 
-  it("changes a father link to an existing case person without creating a duplicate", () => {
-    const onChange = vi.fn();
+  it("shows existing parents as one read-only italic relationship", () => {
     const people = [
       {
         id: "child",
-        fullName: "Anna Borg",
-        fatherId: "mistaken-father",
-        fatherExplicitlyUnassigned: true,
+        fullName: "Joseph Wadge",
+        sex: "Male",
+        fatherId: "father",
+        motherId: "mother",
         spouseIds: [],
       },
-      { id: "mistaken-father", fullName: "Joseph Borg", spouseIds: [] },
-      { id: "correct-father", fullName: "Paul Borg", spouseIds: [] },
+      { id: "father", fullName: "Roland Wadge", spouseIds: [] },
+      {
+        id: "mother",
+        fullName: "Alison Wadge",
+        surnameAtBirth: "Buttigieg",
+        spouseIds: [],
+      },
     ];
 
     act(() =>
@@ -669,133 +674,18 @@ describe("PersonInspector", () => {
         <PersonInspector
           people={people}
           selectedPersonId="child"
-          onChange={onChange}
-          onSelectPerson={vi.fn()}
-        />,
-      ),
-    );
-
-    const fatherRow = container.querySelector('[data-parent-link="father"]');
-    expect(fatherRow.textContent).toContain("Joseph Borg");
-    act(() =>
-      [...fatherRow.querySelectorAll("button")]
-        .find((button) => button.textContent.trim() === "Change")
-        .click(),
-    );
-
-    const fatherSelect = container.querySelector('select[aria-label="Change father"]');
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
-        fatherSelect,
-        "correct-father",
-      );
-      fatherSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    act(() =>
-      [...fatherRow.querySelectorAll("button")]
-        .find((button) => button.textContent.trim() === "Apply")
-        .click(),
-    );
-
-    const updatedPeople = onChange.mock.calls.at(-1)[0];
-    expect(updatedPeople).toHaveLength(people.length);
-    expect(updatedPeople.find((person) => person.id === "child")).toMatchObject({
-      fatherId: "correct-father",
-      fatherExplicitlyUnassigned: false,
-    });
-    expect(updatedPeople.filter((person) => person.id === "correct-father")).toHaveLength(1);
-  });
-
-  it("excludes the selected person and every descendant from parent-link candidates", () => {
-    const people = [
-      {
-        id: "person",
-        fullName: "Anna Borg",
-        fatherId: "current-father",
-        motherId: "current-mother",
-        spouseIds: [],
-      },
-      { id: "current-father", fullName: "Joseph Borg", spouseIds: [] },
-      { id: "current-mother", fullName: "Maria Borg", spouseIds: [] },
-      { id: "child", fullName: "Maria Borg", motherId: "person", spouseIds: [] },
-      { id: "grandchild", fullName: "Luca Borg", motherId: "child", spouseIds: [] },
-      { id: "candidate", fullName: "Paul Vella", spouseIds: [] },
-    ];
-
-    act(() =>
-      root.render(
-        <PersonInspector
-          people={people}
-          selectedPersonId="person"
           onChange={vi.fn()}
           onSelectPerson={vi.fn()}
         />,
       ),
     );
 
-    const fatherRow = container.querySelector('[data-parent-link="father"]');
-    act(() =>
-      [...fatherRow.querySelectorAll("button")]
-        .find((button) => button.textContent.trim() === "Change")
-        .click(),
+    expect(container.querySelector(".person-parentage").textContent).toBe(
+      "son of Roland Wadge & Alison Wadge nee Buttigieg",
     );
-
-    const optionValues = [
-      ...container.querySelector('select[aria-label="Change father"]').options,
-    ].map((option) => option.value);
-    expect(optionValues).toContain("candidate");
-    expect(optionValues).not.toContain("person");
-    expect(optionValues).not.toContain("current-mother");
-    expect(optionValues).not.toContain("child");
-    expect(optionValues).not.toContain("grandchild");
-  });
-
-  it("makes a mistaken father deletable after removing the parent link and rerendering", () => {
-    let latestPeople = [
-      {
-        id: "child",
-        fullName: "Anna Borg",
-        fatherId: "mistaken-father",
-        fatherExplicitlyUnassigned: true,
-        spouseIds: [],
-      },
-      { id: "mistaken-father", fullName: "Joseph Borg", spouseIds: [] },
-    ];
-    const onChange = vi.fn((nextPeople) => {
-      latestPeople = nextPeople;
-    });
-    const renderPerson = (selectedPersonId) => {
-      act(() =>
-        root.render(
-          <PersonInspector
-            people={latestPeople}
-            selectedPersonId={selectedPersonId}
-            onChange={onChange}
-            onSelectPerson={vi.fn()}
-          />,
-        ),
-      );
-    };
-
-    renderPerson("child");
-    act(() =>
-      container.querySelector('button[aria-label="Remove father link to Joseph Borg"]').click(),
-    );
-
-    expect(latestPeople.find((person) => person.id === "child")).toMatchObject({
-      fatherId: "",
-      fatherExplicitlyUnassigned: true,
-    });
-
-    renderPerson("mistaken-father");
-    beginEditing();
-    const deleteButton = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Delete person"),
-    );
-    expect(deleteButton.disabled).toBe(false);
-    expect(container.textContent).toContain(
-      "No partner or descendant dependencies. Confirmation is required.",
-    );
+    expect(container.querySelector('[data-parent-link="father"]')).toBeNull();
+    expect(container.querySelector('select[aria-label="Change father"]')).toBeNull();
+    expect(container.querySelector('button[aria-label^="Remove father link"]')).toBeNull();
   });
 
   it("allows deletion of a partner with no descendants, and can still unlink", () => {

@@ -143,22 +143,14 @@ describe("App local recovery", () => {
     act(() => root.render(<App />));
     openCurrentFamily();
 
-    const title = container.querySelector('input[aria-label="Tree name"]');
-    expect(title.value).toBe("Borg succession");
+    const title = container.querySelector('button[aria-label^="Edit tree name:"]');
+    expect(title.textContent).toContain("Borg succession");
+    expect(container.querySelector('input[aria-label="Tree name"]')).toBeNull();
     expect(container.textContent).toContain("Joseph Borg");
     expect(container.querySelector(".case-view-tabs")).toBeNull();
     expect(container.querySelector('input[aria-label="Property address"]')).toBeNull();
     expect(container.querySelector('input[aria-label="Property selling price"]')).toBeNull();
-    expect(
-      [...container.querySelectorAll(".dashboard-tabs button")].some(
-        (button) => button.textContent === "Property",
-      ),
-    ).toBe(false);
-    expect(
-      [...container.querySelectorAll(".dashboard-tabs button")].some(
-        (button) => button.textContent === "Summary",
-      ),
-    ).toBe(false);
+    expect(container.querySelector(".dashboard-tabs")).toBeNull();
     expect(container.querySelector(".dashboard-topline").textContent).toContain("Person Details");
 
     const personCard = container.querySelector('[data-person-id="person-1"]');
@@ -180,7 +172,9 @@ describe("App local recovery", () => {
     );
     act(() => vella.click());
 
-    expect(container.querySelector('input[aria-label="Tree name"]').value).toBe("Vella succession");
+    expect(container.querySelector('button[aria-label^="Edit tree name:"]').textContent).toContain(
+      "Vella succession",
+    );
     expect(container.textContent).toContain("Maria Vella");
   });
 

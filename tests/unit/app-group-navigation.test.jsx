@@ -64,6 +64,8 @@ describe("focused family workspace", () => {
     expect(container.querySelector(".case-view-tabs")).toBeNull();
     expect(container.querySelector(".add-family-view")).toBeNull();
 
+    const treeNameButton = container.querySelector('button[aria-label^="Edit tree name:"]');
+    act(() => treeNameButton.click());
     const treeName = container.querySelector('input[aria-label="Tree name"]');
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
@@ -72,6 +74,7 @@ describe("focused family workspace", () => {
       );
       treeName.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    act(() => treeName.blur());
     const home = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Back to Home"),
     );

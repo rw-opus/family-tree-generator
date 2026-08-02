@@ -1,4 +1,5 @@
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
+import { normalisePersonNameFields } from "./people.js";
 import { personWithWills } from "./wills.js";
 import {
   INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
@@ -56,7 +57,7 @@ function normalizePeople(people = []) {
     const id = text(person.id);
     if (!id || seen.has(id)) return result;
     seen.add(id);
-    result.push(personWithWills({ ...cloneValue(person), id }));
+    result.push(personWithWills(normalisePersonNameFields({ ...cloneValue(person), id })));
     return result;
   }, []);
   return normalizePartnerRelationships(normalized);

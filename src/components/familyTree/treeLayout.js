@@ -61,6 +61,12 @@ const renderedCardHeight = (nodeHeights, personId) => {
   return Number.isFinite(height) && height > 0 ? Math.ceil(height) : CARD_HEIGHT;
 };
 
+const renderedCardWidth = (nodeWidths, personId) => {
+  const value = nodeWidths instanceof Map ? nodeWidths.get(personId) : nodeWidths?.[personId];
+  const width = Number(value);
+  return Number.isFinite(width) && width > 0 ? Math.ceil(width) : CARD_WIDTH;
+};
+
 /**
  * The stem enters the sibling bar directly below the middle of the marriage.
  * Where a union has an odd number of children that point is the middle child's
@@ -304,9 +310,10 @@ function buildRowBlocks(rowIds, unions) {
   }));
 }
 
-function blockWidth(block) {
+function blockWidth(block, widthOf = () => CARD_WIDTH) {
   return (
-    block.memberIds.length * CARD_WIDTH + Math.max(0, block.memberIds.length - 1) * PARTNER_GAP
+    block.memberIds.reduce((total, personId) => total + widthOf(personId), 0) +
+    Math.max(0, block.memberIds.length - 1) * PARTNER_GAP
   );
 }
 
@@ -512,16 +519,25 @@ function groupSiblings(rows, unions) {
  *   marriage is placed exactly over the middle of its own children, so no stem
  *   leans sideways to reach its bar.
  */
-function centreRows(rows, unions) {
+function centreRows(rows, unions, widthByPerson = new Map()) {
+  const widthOf = (personId) => widthByPerson.get(personId) ?? CARD_WIDTH;
+  const memberOffsets = (memberIds) => {
+    const offsets = [];
+    let cursor = 0;
+    memberIds.forEach((personId, index) => {
+      const width = widthOf(personId);
+      offsets.push(cursor + width / 2);
+      cursor += width + (index < memberIds.length - 1 ? PARTNER_GAP : 0);
+    });
+    return offsets;
+  };
   const blocksByRow = rows.map((rowIds) => buildRowBlocks(rowIds, unions));
   const blockOfPerson = new Map();
   blocksByRow.forEach((blocks, rowIndex) =>
     blocks.forEach((block, orderIndex) => {
       block.rowIndex = rowIndex;
       block.orderIndex = orderIndex;
-      block.memberOffsets = block.memberIds.map(
-        (_, index) => index * (CARD_WIDTH + PARTNER_GAP) + CARD_WIDTH / 2,
-      );
+      block.memberOffsets = memberOffsets(block.memberIds);
       block.memberIds.forEach((id) => blockOfPerson.set(id, block));
     }),
   );
@@ -604,7 +620,6 @@ function centreRows(rows, unions) {
    * targets are closer together than two cards.
    */
   const spaceMembers = (block, targetByUnionId, fallbackCentre = null) => {
-    const separation = CARD_WIDTH + PARTNER_GAP;
     const unionBetween = (index) => {
       const first = block.memberIds[index];
       const second = block.memberIds[index + 1];
@@ -629,11 +644,19 @@ function centreRows(rows, unions) {
     // children while the next fell back to the minimum - so a row of wives read
     // as huddled rather than as a series of marriages. Each marriage's stem
     // reaches its bar instead.
-    targets.forEach((_, index) => centres.push(centres[index] + separation));
+    targets.forEach((_, index) => {
+      const firstWidth = widthOf(block.memberIds[index]);
+      const secondWidth = widthOf(block.memberIds[index + 1]);
+      centres.push(centres[index] + firstWidth / 2 + PARTNER_GAP + secondWidth / 2);
+    });
 
-    const origin = centres[0] - CARD_WIDTH / 2;
+    const origin = centres[0] - widthOf(block.memberIds[0]) / 2;
     block.memberOffsets = centres.map((centre) => centre - origin);
-    block.width = centres.at(-1) - centres[0] + CARD_WIDTH;
+    block.width =
+      centres.at(-1) -
+      centres[0] +
+      widthOf(block.memberIds[0]) / 2 +
+      widthOf(block.memberIds.at(-1)) / 2;
 
     // A lone parent, or a couple whose children are recorded against only one
     // of them, has no marriage to sit over. Centre the block on its children
@@ -650,10 +673,8 @@ function centreRows(rows, unions) {
     const contour = new Map();
 
     if (!children.length) {
-      block.memberOffsets = block.memberIds.map(
-        (_, index) => index * (CARD_WIDTH + PARTNER_GAP) + CARD_WIDTH / 2,
-      );
-      block.width = blockWidth(block);
+      block.memberOffsets = memberOffsets(block.memberIds);
+      block.width = blockWidth(block, widthOf);
       block.left = 0;
       contour.set(block.rowIndex, { min: 0, max: block.width });
       return contour;
@@ -733,7 +754,7 @@ function centreRows(rows, unions) {
 
   blocksByRow.forEach((blocks) =>
     blocks.forEach((block) => {
-      block.centre = block.left + (block.width ?? blockWidth(block)) / 2;
+      block.centre = block.left + (block.width ?? blockWidth(block, widthOf)) / 2;
     }),
   );
 
@@ -761,7 +782,7 @@ function centreRows(rows, unions) {
  *   width: number, height: number, generationCount: number
  * }}
  */
-export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
+export function buildFamilyTreeLayout(people = [], { nodeHeights = {}, nodeWidths = {} } = {}) {
   const cleanPeople = people.filter((person) => text(person?.id));
   if (!cleanPeople.length) {
     return { nodes: [], unions: [], edges: [], width: 0, height: 0, generationCount: 0 };
@@ -778,6 +799,13 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
       Math.max(CARD_HEIGHT, renderedHeightByPerson.get(person.id)),
     ]),
   );
+  const widthByPerson = new Map(
+    cleanPeople.map((person) => [
+      person.id,
+      Math.max(CARD_WIDTH, renderedCardWidth(nodeWidths, person.id)),
+    ]),
+  );
+  const widthOf = (personId) => widthByPerson.get(personId) ?? CARD_WIDTH;
   const generationHeights = Array.from({ length: maxGeneration + 1 }, () => CARD_HEIGHT);
   cleanPeople.forEach((person) => {
     const generation = generations.get(person.id);
@@ -793,7 +821,7 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
     reorderRows(seedOrder(cleanPeople, generations, maxGeneration), unions, cleanPeople),
     unions,
   );
-  const { centreOf, unionCentre, blockOfPerson } = centreRows(rows, unions);
+  const { centreOf, unionCentre, blockOfPerson } = centreRows(rows, unions, widthByPerson);
 
   const peopleById = new Map(cleanPeople.map((person) => [person.id, person]));
 
@@ -869,7 +897,8 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
             ? (parentCentres[0] ?? centre)
             : adjacent
               ? centre
-              : (outerPartner?.centre ?? centre) - (direction * (CARD_WIDTH + PARTNER_GAP)) / 2;
+              : (outerPartner?.centre ?? centre) -
+                (direction * (widthOf(outerPartner?.id) + PARTNER_GAP)) / 2;
         const childSpanLeft = childCentres.length ? Math.min(...childCentres) : centre;
         const childSpanRight = childCentres.length ? Math.max(...childCentres) : centre;
         const barEntryX = childBarEntry(markerX, childCentres);
@@ -924,13 +953,14 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
   const nodes = cleanPeople.map((person) => {
     const generation = generations.get(person.id);
     const centre = centreOf(person.id) ?? 0;
+    const width = widthOf(person.id);
     return {
       id: person.id,
       person,
       generation,
-      x: centre - CARD_WIDTH / 2,
+      x: centre - width / 2,
       y: rowTop(generation),
-      width: CARD_WIDTH,
+      width,
       height: heightByPerson.get(person.id),
       bornOutsideMarriage: outsideMarriage.has(person.id),
     };
@@ -1042,6 +1072,12 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
     const barY = union.y;
 
     if (parentCentres.length === 2) {
+      const parentDetails = union.parentIds
+        .map((personId) => ({ personId, centre: centreOf(personId) }))
+        .filter((parent) => parent.centre !== null)
+        .sort((first, second) => first.centre - second.centre);
+      const leftParent = parentDetails[0];
+      const rightParent = parentDetails.at(-1);
       edges.push({
         id: `${union.id}:partners`,
         unionId: union.id,
@@ -1056,8 +1092,14 @@ export function buildFamilyTreeLayout(people = [], { nodeHeights = {} } = {}) {
         // centre to centre hid it behind both cards, and on the routed form the
         // descent landed on the far card's centre, dropping in from above
         // instead of meeting its edge.
-        from: { x: Math.min(...parentCentres) + CARD_WIDTH / 2, y: union.cardMiddleY },
-        to: { x: Math.max(...parentCentres) - CARD_WIDTH / 2, y: union.cardMiddleY },
+        from: {
+          x: leftParent.centre + widthOf(leftParent.personId) / 2,
+          y: union.cardMiddleY,
+        },
+        to: {
+          x: rightParent.centre - widthOf(rightParent.personId) / 2,
+          y: union.cardMiddleY,
+        },
       });
     }
 

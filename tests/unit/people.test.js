@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  capitalisePersonName,
   removalWouldSeverFamily,
   composeFullName,
   fatherSurnameDefaultPatch,
@@ -13,6 +14,8 @@ import {
   personIdentityIssues,
   personRelationshipCounts,
   personSurname,
+  normalisePersonNameFields,
+  parentageDescription,
   surnameFromFullName,
 } from "../../src/domain/people.js";
 
@@ -30,6 +33,54 @@ describe("family tree people", () => {
     expect(composeFullName("Joseph Paul", "Borg")).toBe("Joseph Paul Borg");
     expect(personGivenNames({ fullName: "Joseph Borg" })).toBe("Joseph");
     expect(personSurname({ fullName: "Joseph Borg" })).toBe("Borg");
+  });
+
+  it("capitalises person names while retaining particles and existing mixed case", () => {
+    expect(capitalisePersonName("roland wadge")).toBe("Roland Wadge");
+    expect(capitalisePersonName("PANDOLFO TESTAFERRATA DE NOTO")).toBe(
+      "Pandolfo Testaferrata de Noto",
+    );
+    expect(capitalisePersonName("jean-paul o'neill mcpherson")).toBe("Jean-Paul O'Neill McPherson");
+    expect(capitalisePersonName("Mary McPherson")).toBe("Mary McPherson");
+  });
+
+  it("keeps all stored person-name fields capitalised and consistent", () => {
+    expect(
+      normalisePersonNameFields({
+        givenNames: "roland joseph",
+        surname: "wadge",
+        surnameAtBirth: "testaferrata de noto",
+        fullName: "stale name",
+      }),
+    ).toMatchObject({
+      givenNames: "Roland Joseph",
+      surname: "Wadge",
+      surnameAtBirth: "Testaferrata de Noto",
+      fullName: "Roland Joseph Wadge",
+    });
+  });
+
+  it("describes parentage with sex and a mother's different birth surname", () => {
+    const people = [
+      {
+        id: "child",
+        sex: "Male",
+        fatherId: "father",
+        motherId: "mother",
+      },
+      { id: "father", fullName: "roland wadge" },
+      {
+        id: "mother",
+        fullName: "alison wadge",
+        surnameAtBirth: "buttigieg",
+      },
+    ];
+
+    expect(parentageDescription(people[0], people)).toBe(
+      "son of Roland Wadge & Alison Wadge nee Buttigieg",
+    );
+    expect(parentageDescription({ ...people[0], sex: "Female" }, people)).toMatch(/^daughter of /);
+    expect(parentageDescription({ ...people[0], sex: "Other" }, people)).toMatch(/^child of /);
   });
 
   it("defaults empty descendant surnames from the father without overwriting edits", () => {

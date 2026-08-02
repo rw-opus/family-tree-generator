@@ -94,10 +94,18 @@ function PartnerLink({ edge }) {
  */
 export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }) {
   const treeRef = useRef(null);
-  const [nodeHeights, setNodeHeights] = useState({});
+  const [nodeSizes, setNodeSizes] = useState({});
   const layout = useMemo(
-    () => buildFamilyTreeLayout(people, { nodeHeights }),
-    [nodeHeights, people],
+    () =>
+      buildFamilyTreeLayout(people, {
+        nodeHeights: Object.fromEntries(
+          Object.entries(nodeSizes).map(([personId, size]) => [personId, size.height]),
+        ),
+        nodeWidths: Object.fromEntries(
+          Object.entries(nodeSizes).map(([personId, size]) => [personId, size.width]),
+        ),
+      }),
+    [nodeSizes, people],
   );
 
   useLayoutEffect(() => {
@@ -110,15 +118,25 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
         const card = node.querySelector(".family-node");
         if (!card) return;
         const height = Math.max(card.scrollHeight, card.offsetHeight);
-        if (height > 0) measured[node.dataset.treePersonId] = Math.ceil(height);
+        const width = card.offsetWidth;
+        if (height > 0) {
+          measured[node.dataset.treePersonId] = {
+            height: Math.ceil(height),
+            width: width > 0 ? Math.ceil(width) : 0,
+          };
+        }
       });
 
-      setNodeHeights((current) => {
+      setNodeSizes((current) => {
         const currentKeys = Object.keys(current);
         const measuredKeys = Object.keys(measured);
         const unchanged =
           currentKeys.length === measuredKeys.length &&
-          measuredKeys.every((personId) => current[personId] === measured[personId]);
+          measuredKeys.every(
+            (personId) =>
+              current[personId]?.height === measured[personId].height &&
+              current[personId]?.width === measured[personId].width,
+          );
         return unchanged ? current : measured;
       });
     };

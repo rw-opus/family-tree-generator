@@ -328,6 +328,47 @@ describe("buildFamilyTreeLayout", () => {
     });
   });
 
+  it("relayouts every row around measured card widths", () => {
+    const layout = buildFamilyTreeLayout(threeGenerationFamily(), {
+      nodeWidths: {
+        grandfather: 146,
+        grandmother: 178,
+        father: 164,
+        mother: 132,
+        "child-a": 190,
+      },
+    });
+    const rows = new Map();
+
+    layout.nodes.forEach((node) => {
+      rows.set(node.generation, [...(rows.get(node.generation) || []), node]);
+    });
+
+    rows.forEach((nodes) => {
+      const sorted = [...nodes].sort((first, second) => first.x - second.x);
+      sorted.slice(1).forEach((node, index) => {
+        const previous = sorted[index];
+        expect(node.x).toBeGreaterThanOrEqual(previous.x + previous.width);
+      });
+    });
+    expect(nodesById(layout).get("child-a").width).toBe(190);
+  });
+
+  it("joins differently sized spouses at the edges of their measured cards", () => {
+    const layout = buildFamilyTreeLayout(threeGenerationFamily(), {
+      nodeWidths: { father: 168, mother: 132 },
+    });
+    const cards = nodesById(layout);
+    const union = layout.unions.find((candidate) => candidate.id === "union:father+mother");
+    const partnerEdge = layout.edges.find((edge) => edge.id === `${union.id}:partners`);
+    const orderedParents = [cards.get("father"), cards.get("mother")].sort(
+      (first, second) => first.x - second.x,
+    );
+
+    expect(partnerEdge.from.x).toBe(orderedParents[0].x + orderedParents[0].width);
+    expect(partnerEdge.to.x).toBe(orderedParents[1].x);
+  });
+
   it("sits a union between its parents", () => {
     const layout = buildFamilyTreeLayout(threeGenerationFamily());
     const cards = nodesById(layout);

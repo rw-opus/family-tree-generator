@@ -45,6 +45,72 @@ export function composeFullName(givenNames = "", surname = "") {
   return `${String(givenNames).trim()} ${String(surname).trim()}`.trim();
 }
 
+const LOWERCASE_NAME_PARTICLES = new Set([
+  "da",
+  "de",
+  "dei",
+  "del",
+  "della",
+  "di",
+  "du",
+  "la",
+  "le",
+  "van",
+  "von",
+]);
+
+function capitaliseNameSegment(segment = "") {
+  if (!segment) return "";
+  const lower = segment.toLocaleLowerCase();
+  if (/^mc\p{L}/u.test(lower)) {
+    return `Mc${lower.charAt(2).toLocaleUpperCase()}${lower.slice(3)}`;
+  }
+  return `${lower.charAt(0).toLocaleUpperCase()}${lower.slice(1)}`;
+}
+
+/**
+ * Normalises names entered in lower or upper case without damaging an existing
+ * mixed-case spelling such as McPherson. Common surname particles remain lower
+ * case within a name, while apostrophised and hyphenated parts are capitalised.
+ */
+export function capitalisePersonName(value = "") {
+  const words = String(value).trim().split(/\s+/).filter(Boolean);
+  return words
+    .map((word, wordIndex) => {
+      if (/^\p{Lu}/u.test(word) && /\p{Ll}/u.test(word) && /\p{Lu}/u.test(word.slice(1))) {
+        return word;
+      }
+
+      const lower = word.toLocaleLowerCase();
+      if (wordIndex > 0 && LOWERCASE_NAME_PARTICLES.has(lower)) return lower;
+
+      return word
+        .split(/([-'])/u)
+        .map((segment) => (/^[-']$/u.test(segment) ? segment : capitaliseNameSegment(segment)))
+        .join("");
+    })
+    .join(" ");
+}
+
+export function normalisePersonNameFields(person = {}) {
+  const nextPerson = { ...person };
+  const hasGivenNames = Object.prototype.hasOwnProperty.call(person, "givenNames");
+  const hasSurname = Object.prototype.hasOwnProperty.call(person, "surname");
+
+  if (hasGivenNames) nextPerson.givenNames = capitalisePersonName(person.givenNames);
+  if (hasSurname) nextPerson.surname = capitalisePersonName(person.surname);
+  if (Object.prototype.hasOwnProperty.call(person, "surnameAtBirth")) {
+    nextPerson.surnameAtBirth = capitalisePersonName(person.surnameAtBirth);
+  }
+
+  nextPerson.fullName =
+    hasGivenNames || hasSurname
+      ? composeFullName(nextPerson.givenNames, nextPerson.surname)
+      : capitalisePersonName(person.fullName);
+
+  return nextPerson;
+}
+
 export function personGivenNames(person = {}) {
   return Object.prototype.hasOwnProperty.call(person, "givenNames")
     ? String(person.givenNames || "")
@@ -159,6 +225,38 @@ export function personDisplayName(person = {}, people = []) {
 
   const relationship = personDesignations(person).find((designation) => designation !== "Deceased");
   return relationship ? `Unnamed ${relationship.toLowerCase()}` : "New person";
+}
+
+export function parentageDescription(person = {}, people = []) {
+  const peopleById = new Map(
+    people.filter((candidate) => candidate?.id).map((candidate) => [candidate.id, candidate]),
+  );
+  const father = peopleById.get(person.fatherId);
+  const mother = peopleById.get(person.motherId);
+  if (!father && !mother) return "";
+
+  const parentName = (parent, includeBirthSurname = false) => {
+    const name = capitalisePersonName(personDisplayName(parent, people));
+    if (!includeBirthSurname) return name;
+
+    const birthSurname = capitalisePersonName(parent.surnameAtBirth);
+    const currentSurname = capitalisePersonName(personSurname(parent));
+    return birthSurname &&
+      birthSurname.localeCompare(currentSurname, "en-MT", { sensitivity: "base" }) !== 0
+      ? `${name} nee ${birthSurname}`
+      : name;
+  };
+  const relationship =
+    String(person.sex || "").toLowerCase() === "male"
+      ? "son"
+      : String(person.sex || "").toLowerCase() === "female"
+        ? "daughter"
+        : "child";
+  const parents = [father && parentName(father), mother && parentName(mother, true)].filter(
+    Boolean,
+  );
+
+  return `${relationship} of ${parents.join(" & ")}`;
 }
 
 export function createPerson(designation = "") {

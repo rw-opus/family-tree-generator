@@ -20,6 +20,7 @@ import {
   personAncestors,
   personGivenNames,
   personIdentityIssues,
+  parentageDescription,
   personRelationshipCounts,
   personSurname,
   personDesignations,
@@ -70,21 +71,6 @@ const relationshipActions = [
   { key: "partnership", label: "Partner", icon: Heart },
   { key: "child", label: "Child", icon: Baby },
   { key: "sibling", label: "Brother / sister", icon: UsersRound },
-];
-
-const parentLinkFields = [
-  {
-    key: "father",
-    field: "fatherId",
-    explicitUnassignedField: "fatherExplicitlyUnassigned",
-    label: "Father",
-  },
-  {
-    key: "mother",
-    field: "motherId",
-    explicitUnassignedField: "motherExplicitlyUnassigned",
-    label: "Mother",
-  },
 ];
 
 const shareDisplayMode = (value) =>
@@ -149,8 +135,6 @@ export function PersonInspector({
   const [existingSpouseId, setExistingSpouseId] = useState("");
   const [childPartnerChooserOpen, setChildPartnerChooserOpen] = useState(false);
   const [childPartnerId, setChildPartnerId] = useState("");
-  const [parentChooserField, setParentChooserField] = useState("");
-  const [existingParentId, setExistingParentId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [causaMortisErrors, setCausaMortisErrors] = useState({});
   const [causaMortisDraftOpen, setCausaMortisDraftOpen] = useState(true);
@@ -209,8 +193,6 @@ export function PersonInspector({
     setExistingSpouseId("");
     setChildPartnerChooserOpen(false);
     setChildPartnerId("");
-    setParentChooserField("");
-    setExistingParentId("");
     setCausaMortisErrors({});
     setWillOutsidePartyOpen(false);
     setCausaMortisDraftOpen(
@@ -913,66 +895,7 @@ export function PersonInspector({
       !descendantIds.has(person.id) &&
       !ancestorIds.has(person.id),
   );
-  const parentLinks = parentLinkFields
-    .filter(({ field }) => Boolean(selectedPerson[field]))
-    .map((link) => ({
-      ...link,
-      personId: selectedPerson[link.field],
-      person: peopleById.get(selectedPerson[link.field]),
-    }));
-  const activeParentLink = parentLinkFields.find(({ field }) => field === parentChooserField);
-  const otherParentField =
-    activeParentLink?.field === "fatherId"
-      ? "motherId"
-      : activeParentLink?.field === "motherId"
-        ? "fatherId"
-        : "";
-  const existingParentCandidates = activeParentLink
-    ? people.filter(
-        (person) =>
-          Boolean(person.id) &&
-          person.id !== selectedPerson.id &&
-          person.id !== selectedPerson[activeParentLink.field] &&
-          person.id !== selectedPerson[otherParentField] &&
-          !descendantIds.has(person.id),
-      )
-    : [];
-  const openParentChooser = (field) => {
-    setParentChooserField(field);
-    setExistingParentId("");
-  };
-  const closeParentChooser = () => {
-    setParentChooserField("");
-    setExistingParentId("");
-  };
-  const changeParentLink = () => {
-    if (!activeParentLink || !existingParentId) return;
-    const candidate = peopleById.get(existingParentId);
-    if (
-      !candidate ||
-      candidate.id === selectedPerson.id ||
-      candidate.id === selectedPerson[activeParentLink.field] ||
-      candidate.id === selectedPerson[otherParentField] ||
-      descendantIds.has(candidate.id)
-    ) {
-      return;
-    }
-    updateSelected({
-      [activeParentLink.field]: candidate.id,
-      [activeParentLink.explicitUnassignedField]: false,
-      ...(activeParentLink.field === "fatherId"
-        ? fatherSurnameDefaultPatch(selectedPerson, candidate)
-        : {}),
-    });
-    closeParentChooser();
-  };
-  const removeParentLink = (link) => {
-    updateSelected({
-      [link.field]: "",
-      [link.explicitUnassignedField]: true,
-    });
-    if (parentChooserField === link.field) closeParentChooser();
-  };
+  const parentage = parentageDescription(selectedPerson, people);
   // Having descendants is not itself a reason to keep somebody: a person at the
   // top of a tree can go as long as nobody is severed by it. What blocks a
   // removal is being the only thing holding two parts of the family together —
@@ -1100,89 +1023,7 @@ export function PersonInspector({
             Identify this person first: {identityIssues.join(", ")}.
           </p>
         )}
-        {parentLinks.length > 0 && (
-          <div className="family-link-list">
-            <strong>Family links</strong>
-            {parentLinks.map((link) => {
-              const linkedPersonName = link.person
-                ? displayName(link.person)
-                : "Missing person record";
-              const chooserOpen = parentChooserField === link.field;
-              return (
-                <div className="family-link-row" data-parent-link={link.key} key={link.field}>
-                  <span className="family-link-label">{link.label}</span>
-                  {link.person ? (
-                    <button
-                      type="button"
-                      className="family-link-person"
-                      onClick={() => onSelectPerson(link.personId)}
-                    >
-                      {linkedPersonName}
-                    </button>
-                  ) : (
-                    <span className="family-link-person missing">{linkedPersonName}</span>
-                  )}
-                  <span className="family-link-actions">
-                    <button
-                      type="button"
-                      className="text-button"
-                      aria-expanded={chooserOpen}
-                      onClick={() =>
-                        chooserOpen ? closeParentChooser() : openParentChooser(link.field)
-                      }
-                    >
-                      Change
-                    </button>
-                    <button
-                      type="button"
-                      className="text-button danger"
-                      aria-label={`Remove ${link.key} link to ${linkedPersonName}`}
-                      onClick={() => removeParentLink(link)}
-                    >
-                      Remove
-                    </button>
-                  </span>
-                  {chooserOpen && (
-                    <div className="parent-link-chooser">
-                      <select
-                        aria-label={`Change ${link.key}`}
-                        value={existingParentId}
-                        disabled={!existingParentCandidates.length}
-                        onChange={(event) => setExistingParentId(event.target.value)}
-                      >
-                        <option value="">
-                          {existingParentCandidates.length
-                            ? `Choose an existing ${link.key}`
-                            : "No valid people available"}
-                        </option>
-                        {existingParentCandidates.map((person) => (
-                          <option key={person.id} value={person.id}>
-                            {displayName(person)}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        disabled={!existingParentId}
-                        onClick={changeParentLink}
-                      >
-                        Apply
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={closeParentChooser}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {parentage && <p className="person-parentage">{parentage}</p>}
         {spouseChooserOpen && identityComplete && (
           <div className="spouse-chooser">
             <strong>

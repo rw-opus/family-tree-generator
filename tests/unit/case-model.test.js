@@ -169,8 +169,30 @@ describe("case model migration", () => {
         { id: "same", fullName: "Duplicate record" },
       ],
     });
-    expect(result.people).toEqual([{ id: "same", fullName: "First record" }]);
+    expect(result.people).toEqual([{ id: "same", fullName: "First Record" }]);
     expect(result.familyGroups[0].personIds).toEqual(["same"]);
+  });
+
+  it("capitalises person names whenever a case is normalised for saving", () => {
+    const result = normalizeCase({
+      id: "capitalised-names",
+      people: [
+        {
+          id: "person",
+          givenNames: "edgar anthony",
+          surname: "wadge",
+          surnameAtBirth: "wadge",
+          fullName: "edgar anthony wadge",
+        },
+      ],
+    });
+
+    expect(result.people[0]).toMatchObject({
+      givenNames: "Edgar Anthony",
+      surname: "Wadge",
+      surnameAtBirth: "Wadge",
+      fullName: "Edgar Anthony Wadge",
+    });
   });
 
   it("does not pull an unrelated person into a group whose members were removed", () => {

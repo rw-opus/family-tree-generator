@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Calculator, GitBranch, House, Landmark, Settings2, UserRound, X } from "lucide-react";
+import { Calculator, GitBranch, House, Landmark, X } from "lucide-react";
 import { familyViewKey } from "./components/CaseViewTabs.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
+import { EditableTreeTitle } from "./components/EditableTreeTitle.jsx";
 import { PersonCardDisplayControl } from "./components/PersonCardDisplayControl.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
-import { SettingsPanel } from "./components/SettingsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
   casePersonDependencyLabels,
@@ -182,11 +182,6 @@ export function caseActivationState(value) {
   };
 }
 
-const dashboardTabs = [
-  { key: "person", label: "Details", icon: UserRound },
-  { key: "settings", label: "Settings", icon: Settings2 },
-];
-
 export function App({ localOnlyMode = true, session = null, onSignOut = () => {} }) {
   const cloudMode = Boolean(session?.user?.id) && !localOnlyMode;
   const [startupWorkspace] = useState(() =>
@@ -214,7 +209,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const [activeTreeIsListed, setActiveTreeIsListed] = useState(
     () => startupWorkspace.trees.length > 0,
   );
-  const [panelTab, setPanelTab] = useState("person");
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
@@ -228,7 +222,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setZoom(activation.zoom);
     setActiveFamilyGroupId(activation.activeFamilyGroupId);
     setSelectedPersonId(activation.selectedPersonId);
-    setPanelTab("person");
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
   }, []);
@@ -453,7 +446,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       setTree({ ...currentTree, activeFamilyGroupId: targetGroup.id });
     }
     setSelectedPersonId(personId);
-    setPanelTab("person");
     setDashboardOpen(true);
   };
 
@@ -830,58 +822,35 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
               <X size={19} />
             </button>
           </div>
-          <nav className="dashboard-tabs" aria-label="Dashboard sections">
-            {dashboardTabs.map(({ key, label, icon: Icon }) => (
-              <button
-                type="button"
-                className={panelTab === key ? "active" : ""}
-                key={key}
-                onClick={() => setPanelTab(key)}
-              >
-                <Icon size={16} />
-                {label}
-              </button>
-            ))}
-          </nav>
-          <div className={`dashboard-content dashboard-${panelTab}`}>
-            {panelTab === "person" && (
-              <PersonInspector
-                people={currentTree.people}
-                outsideParties={currentTree.outsideParties}
-                familyPersonIds={activeFamilyGroup?.personIds || []}
-                properties={activeProperties}
-                ownershipByPerson={ownershipByPerson}
-                causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
-                selectedPersonId={selectedPersonId}
-                shareDisplay={currentTree.settings.shareDisplay}
-                onShareDisplayChange={(shareDisplay) =>
-                  setTree({
-                    ...currentTree,
-                    settings: { ...currentTree.settings, shareDisplay },
-                  })
-                }
-                caseDependencyLabels={selectedCaseDependencies.blockingLabels}
-                retainedIdentityLabels={selectedCaseDependencies.retainedIdentityLabels}
-                personFamilyGroupCount={
-                  findFamilyGroupsForPerson(currentTree, selectedPersonId).length
-                }
-                onSelectPerson={selectPerson}
-                onDeletePerson={removePerson}
-                onBackToTree={() => setDashboardOpen(false)}
-                onChange={updatePeople}
-                onOutsidePartiesChange={(outsideParties) =>
-                  setTree((current) => ({ ...normaliseTree(current), outsideParties }))
-                }
-              />
-            )}
-            {panelTab === "settings" && (
-              <SettingsPanel
-                settings={currentTree.settings}
-                zoom={zoom}
-                onZoomChange={updateZoom}
-                onChange={(settings) => setTree({ ...currentTree, settings })}
-              />
-            )}
+          <div className="dashboard-content dashboard-person">
+            <PersonInspector
+              people={currentTree.people}
+              outsideParties={currentTree.outsideParties}
+              familyPersonIds={activeFamilyGroup?.personIds || []}
+              properties={activeProperties}
+              ownershipByPerson={ownershipByPerson}
+              causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
+              selectedPersonId={selectedPersonId}
+              shareDisplay={currentTree.settings.shareDisplay}
+              onShareDisplayChange={(shareDisplay) =>
+                setTree({
+                  ...currentTree,
+                  settings: { ...currentTree.settings, shareDisplay },
+                })
+              }
+              caseDependencyLabels={selectedCaseDependencies.blockingLabels}
+              retainedIdentityLabels={selectedCaseDependencies.retainedIdentityLabels}
+              personFamilyGroupCount={
+                findFamilyGroupsForPerson(currentTree, selectedPersonId).length
+              }
+              onSelectPerson={selectPerson}
+              onDeletePerson={removePerson}
+              onBackToTree={() => setDashboardOpen(false)}
+              onChange={updatePeople}
+              onOutsidePartiesChange={(outsideParties) =>
+                setTree((current) => ({ ...normaliseTree(current), outsideParties }))
+              }
+            />
           </div>
           <p className="dashboard-status" aria-live="polite">
             {status}
@@ -895,14 +864,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 <button type="button" className="tree-home-button" onClick={returnHome}>
                   <House size={16} /> Back to Home
                 </button>
-                <label className="stage-family-title">
-                  <span>Tree name</span>
-                  <input
-                    aria-label="Tree name"
-                    value={currentTree.title}
-                    onChange={(event) => updateTreeTitle(event.target.value)}
-                  />
-                </label>
+                <EditableTreeTitle value={currentTree.title} onChange={updateTreeTitle} />
                 <label className="tree-zoom-slider">
                   <span>Zoom</span>
                   <input
