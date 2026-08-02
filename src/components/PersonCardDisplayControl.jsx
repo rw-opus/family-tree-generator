@@ -1,13 +1,11 @@
 import { SlidersHorizontal } from "lucide-react";
 
 const fieldOptions = [
-  ["ownershipFraction", "Ownership fraction"],
-  ["ownershipPercentage", "Ownership percentage"],
-  ["ownershipValue", "Ownership value"],
-  ["dateOfDeath", "Date of death"],
-  ["successionBasis", "Intestate or testate"],
-  ["willDetails", "Will date and notary"],
-  ["causaMortisDetails", "Causa mortis deed date(s) and notary name(s)"],
+  ["ownershipFraction", "Fractions"],
+  ["ownershipPercentage", "Percentages"],
+  ["willDetails", "Will details"],
+  ["causaMortisDetails", "Causa mortis details"],
+  ["dateOfDeath", "Dates of death"],
 ];
 
 export function PersonCardDisplayControl({ fields, onChange }) {
@@ -20,7 +18,7 @@ export function PersonCardDisplayControl({ fields, onChange }) {
         <span>Card details</span>
       </summary>
       <div className="person-card-display-menu">
-        <strong>Show on person cards</strong>
+        <strong>Show on person cards and printouts</strong>
         {fieldOptions.map(([key, label]) => (
           <label key={key}>
             <input

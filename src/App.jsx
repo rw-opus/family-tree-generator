@@ -4,6 +4,7 @@ import { familyViewKey } from "./components/CaseViewTabs.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
+import { PersonCardDisplayControl } from "./components/PersonCardDisplayControl.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { SettingsPanel } from "./components/SettingsPanel.jsx";
@@ -18,7 +19,10 @@ import {
 } from "./domain/caseModel.js";
 import { parseGedcom } from "./domain/gedcom.js";
 import { createPerson } from "./domain/people.js";
-import { normalisePersonCardFields } from "./domain/personCardDisplay.js";
+import {
+  buildTreeCardOwnershipByPerson,
+  normalisePersonCardFields,
+} from "./domain/personCardDisplay.js";
 import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
 import {
   createFamilyTree,
@@ -284,12 +288,15 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   );
   const ownershipByPerson = useMemo(() => {
     if (!propertyReport.startingOwnership.isComplete) return {};
-    return Object.fromEntries(
-      propertyReport.ledger.owners
-        .filter((owner) => owner.personId)
-        .map((owner) => [owner.personId, owner.share]),
+    return buildTreeCardOwnershipByPerson(
+      propertyReport.ledger.owners,
+      propertyReport.ownership.transmissions,
     );
-  }, [propertyReport.ledger.owners, propertyReport.startingOwnership.isComplete]);
+  }, [
+    propertyReport.ledger.owners,
+    propertyReport.ownership.transmissions,
+    propertyReport.startingOwnership.isComplete,
+  ]);
   const causaMortisCoverage = useMemo(
     () =>
       buildCausaMortisShareCoverage(
@@ -909,6 +916,15 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   />
                   <output>{zoom}%</output>
                 </label>
+                <PersonCardDisplayControl
+                  fields={currentTree.settings.personCardFields}
+                  onChange={(personCardFields) =>
+                    setTree({
+                      ...currentTree,
+                      settings: { ...currentTree.settings, personCardFields },
+                    })
+                  }
+                />
               </div>
               <FamilyTreeCanvas
                 treeTitle={currentTree.title}

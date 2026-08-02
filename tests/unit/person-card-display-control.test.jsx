@@ -30,14 +30,25 @@ describe("PersonCardDisplayControl", () => {
       ),
     );
 
-    const valueCheckbox = [...container.querySelectorAll('input[type="checkbox"]')].find((input) =>
-      input.parentElement.textContent.includes("Ownership value"),
+    const labels = [...container.querySelectorAll(".person-card-display-menu label")].map((label) =>
+      label.textContent.trim(),
     );
-    act(() => valueCheckbox.click());
+    expect(labels).toEqual([
+      "Fractions",
+      "Percentages",
+      "Will details",
+      "Causa mortis details",
+      "Dates of death",
+    ]);
+
+    const willCheckbox = [...container.querySelectorAll('input[type="checkbox"]')].find((input) =>
+      input.parentElement.textContent.includes("Will details"),
+    );
+    act(() => willCheckbox.click());
 
     expect(onChange).toHaveBeenCalledWith({
       ...DEFAULT_PERSON_CARD_FIELDS,
-      ownershipValue: true,
+      willDetails: true,
     });
   });
 });

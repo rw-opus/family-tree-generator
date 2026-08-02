@@ -157,7 +157,7 @@ export function FamilyPersonCard({
           <div className="family-node-detail">Value {formattedCurrency(ownershipValue)}</div>
         )}
       {!person.isPlaceholder &&
-        (stackedLegalDetails || fields.dateOfDeath) &&
+        fields.dateOfDeath &&
         isDeceased &&
         person.dateOfDeath && (
           <div className="family-node-detail">Died {formattedDate(person.dateOfDeath)}</div>
@@ -166,7 +166,7 @@ export function FamilyPersonCard({
         <div className="family-node-detail">{isTestate ? "Testate" : "Intestate"}</div>
       )}
       {!person.isPlaceholder &&
-        (stackedLegalDetails || fields.willDetails) &&
+        fields.willDetails &&
         isDeceased &&
         isTestate &&
         recordedWills.length > 0 &&
@@ -201,6 +201,7 @@ export function FamilyPersonCard({
         ))}
       {!person.isPlaceholder &&
         stackedLegalDetails &&
+        fields.causaMortisDetails &&
         causaMortisDetails.map((declaration, index) => (
           <div className="family-node-cm-details" key={`${declaration.date}-${index}`}>
             {declaration.date && (

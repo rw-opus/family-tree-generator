@@ -3071,7 +3071,7 @@ button.family-link-person:hover {
 
 .tree-stage-toolbar-minimal {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) minmax(190px, 300px);
+  grid-template-columns: auto minmax(180px, 1fr) minmax(190px, 300px) auto;
 }
 
 .tree-home-button {
@@ -4454,6 +4454,11 @@ button.family-link-person:hover {
 
   .tree-stage-toolbar-minimal {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .tree-stage-toolbar-minimal .person-card-display-control {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 
   .tree-stage-toolbar-minimal .stage-family-title {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
 import { CARD_WIDTH } from "../../src/components/familyTree/treeLayout.js";
 
@@ -131,6 +131,100 @@ describe("FamilyTreeCanvas", () => {
     ].map((element) => element.textContent.trim());
     expect(details).toContain("Will 15.10.1981");
     expect(details).toContain("UK will");
+  });
+
+  it("shows a deceased share and prints exactly the selected card details", () => {
+    const onPrint = vi.fn();
+    const people = [
+      person("testator", "Joseph Borg", {
+        isDeceased: true,
+        dateOfDeath: "2020-07-18",
+        inheritanceBasis: "will",
+        spouseIds: ["spouse"],
+        wills: [{ id: "will", date: "2012-07-18", notaryName: "Ivan Barbara" }],
+        causaMortisDeclarations: [
+          {
+            id: "cm",
+            status: "complete",
+            date: "2020-08-20",
+            notaryName: "Maria Vella",
+          },
+        ],
+      }),
+      person("spouse", "Maria Borg", { spouseIds: ["testator"] }),
+    ];
+
+    renderCanvas({
+      people,
+      ownershipByPerson: { testator: 0.5 },
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipPercentage: false,
+        dateOfDeath: true,
+        willDetails: true,
+        causaMortisDetails: true,
+      },
+      onPrint,
+    });
+
+    const card = container.querySelector('[data-person-id="testator"]');
+    expect(card.textContent).toContain("1/2");
+    expect(card.textContent).not.toContain("50%");
+    expect(card.textContent).toContain("Died 18-07-2020");
+    expect(card.textContent).toContain("Will 18.07.2012");
+    expect(card.textContent).toContain("Not. Ivan Barbara");
+    expect(card.textContent).toContain("CM 20-08-2020");
+    expect(card.textContent).toContain("Not. Maria Vella");
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Print preview"))
+        .click(),
+    );
+    const printedTree = onPrint.mock.calls[0][0];
+    expect(printedTree.querySelector('[data-person-id="testator"]').textContent).toBe(
+      card.textContent,
+    );
+  });
+
+  it("does not force hidden legal details onto cards in a dense tree", () => {
+    const people = Array.from({ length: 80 }, (_, index) =>
+      person(`person-${index}`, `Person ${index}`, {
+        fatherId: index > 0 ? `person-${index - 1}` : "",
+        ...(index === 0
+          ? {
+              isDeceased: true,
+              dateOfDeath: "2020-07-18",
+              inheritanceBasis: "will",
+              wills: [{ id: "will", date: "2012-07-18", notaryName: "Ivan Barbara" }],
+              causaMortisDeclarations: [
+                {
+                  id: "cm",
+                  status: "complete",
+                  date: "2020-08-20",
+                  notaryName: "Maria Vella",
+                },
+              ],
+            }
+          : {}),
+      }),
+    );
+
+    renderCanvas({
+      people,
+      personCardFields: {
+        ownershipFraction: false,
+        ownershipPercentage: false,
+        dateOfDeath: false,
+        willDetails: false,
+        causaMortisDetails: false,
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="person-0"]');
+    expect(card.textContent).not.toContain("Died");
+    expect(card.textContent).not.toContain("Will");
+    expect(card.textContent).not.toContain("CM");
   });
 
   it("puts each generation on exactly one row", () => {
