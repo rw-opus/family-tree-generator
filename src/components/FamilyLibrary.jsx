@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Check,
-  Calculator,
   CreditCard,
   FileUp,
   FolderOpen,
@@ -42,7 +41,6 @@ export function FamilyLibrary({
   onCreate,
   onImport,
   onOpen,
-  onOpenProperty,
   onRename,
   onRemove,
   onBuyTree,
@@ -299,16 +297,6 @@ export function FamilyLibrary({
                   {displayDate(familyAddedDate(tree))}
                 </span>
                 <span className="family-row-actions" role="cell">
-                  <button
-                    type="button"
-                    className="library-row-action"
-                    onClick={() => onOpenProperty(tree.id)}
-                    title={`Open property and tax for ${tree.title || "family"}`}
-                    aria-label={`Open property and tax for ${tree.title || "family"}`}
-                  >
-                    <Calculator size={14} />
-                    <span className="library-row-action-label">Property &amp; tax</span>
-                  </button>
                   <button
                     type="button"
                     className="library-row-action"

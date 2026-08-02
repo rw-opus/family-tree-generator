@@ -714,7 +714,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         onCreate={createNewTree}
         onImport={importNewTree}
         onOpen={openTree}
-        onOpenProperty={(treeId) => openTree(treeId, "property")}
         onRename={renameTree}
         onRemove={removeTree}
         onBuyTree={buyTreeCredit}

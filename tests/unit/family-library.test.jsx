@@ -82,6 +82,8 @@ describe("FamilyLibrary", () => {
     const handlers = renderLibrary(root);
     const remove = container.querySelector('button[aria-label="Delete Vella family"]');
 
+    expect(container.textContent).not.toContain("Property & tax");
+    expect(container.querySelector('button[aria-label="Rename Vella family"]')).not.toBeNull();
     act(() => remove.click());
 
     expect(handlers.onRemove).toHaveBeenCalledWith("vella");
