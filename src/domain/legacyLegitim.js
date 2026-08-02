@@ -1,5 +1,4 @@
 import { isValidIsoDate } from "./dateFormat.js";
-import { findPartnerRelationship, PARTNER_RELATIONSHIP_TYPES } from "./partnerRelationships.js";
 
 export const LEGACY_SUCCESSION_CUTOFF = "2005-03-01";
 
@@ -92,21 +91,6 @@ function childrenOf(people, parentId) {
   return people.filter((person) => person.fatherId === parentId || person.motherId === parentId);
 }
 
-function inferredEligibility(person, deceased, people) {
-  const otherParentId =
-    person.fatherId === deceased.id
-      ? person.motherId
-      : person.motherId === deceased.id
-        ? person.fatherId
-        : "";
-  const parentalRelationship = otherParentId
-    ? findPartnerRelationship(people, deceased.id, otherParentId)
-    : null;
-  return parentalRelationship?.type === PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
-    ? "separate-old-law"
-    : "qualifying";
-}
-
 function inferredParticipation(person, deceased) {
   if (!personIsDeceased(person)) return "participating";
   if (!isValidIsoDate(person.dateOfDeath) || !isValidIsoDate(deceased.dateOfDeath)) {
@@ -118,7 +102,10 @@ function inferredParticipation(person, deceased) {
 function buildChildBranch(person, deceased, people, statuses, trail = new Set()) {
   if (!person || trail.has(person.id)) return null;
   const stored = statuses.get(person.id) || {};
-  const participation = stored.participation || inferredParticipation(person, deceased);
+  const participation =
+    stored.participation && stored.participation !== "unconfirmed"
+      ? stored.participation
+      : inferredParticipation(person, deceased);
   const nextTrail = new Set(trail).add(person.id);
   const children = REPRESENTED_PARTICIPATION.has(participation)
     ? childrenOf(people, person.id)
@@ -129,7 +116,9 @@ function buildChildBranch(person, deceased, people, statuses, trail = new Set())
     id: person.id,
     name: personName(person),
     article616Eligibility:
-      stored.article616Eligibility || inferredEligibility(person, deceased, people),
+      stored.article616Eligibility && stored.article616Eligibility !== "unconfirmed"
+        ? stored.article616Eligibility
+        : "qualifying",
     participation,
     ...(children === undefined ? {} : { children }),
   };

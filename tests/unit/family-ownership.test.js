@@ -150,6 +150,38 @@ describe("automatic family ownership", () => {
     expect(result.unresolved).toEqual([]);
   });
 
+  it("ignores a predeceased child's will and gives that branch to their descendants", () => {
+    const people = [
+      person("testator", {
+        isDeceased: true,
+        dateOfDeath: "1990-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ personId: "niece", sharePercent: 100 }],
+      }),
+      person("living-child", { fatherId: "testator" }),
+      person("predeceased-child", {
+        fatherId: "testator",
+        isDeceased: true,
+        dateOfDeath: "1980-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ personId: "child-will-beneficiary", sharePercent: 100 }],
+      }),
+      person("grandchild", { fatherId: "predeceased-child" }),
+      person("child-will-beneficiary"),
+      person("niece"),
+    ];
+
+    const result = buildPropertyOwnership(people, {
+      id: "property",
+      owners: [{ personId: "testator", sharePercent: 100 }],
+    });
+
+    expect(result.ownershipByPerson["living-child"]).toBeCloseTo(1 / 6);
+    expect(result.ownershipByPerson.grandchild).toBeCloseTo(1 / 6);
+    expect(result.ownershipByPerson.niece).toBeCloseTo(2 / 3);
+    expect(result.ownershipByPerson["child-will-beneficiary"] || 0).toBe(0);
+  });
+
   it("uses marriage dates to identify the legal spouse at the date of death", () => {
     const people = [
       person("deceased", {

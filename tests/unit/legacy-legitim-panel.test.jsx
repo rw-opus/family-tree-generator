@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LegacyLegitimPanel } from "../../src/components/LegacyLegitimPanel.jsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -21,7 +21,7 @@ describe("LegacyLegitimPanel", () => {
     container.remove();
   });
 
-  it("automatically treats an ordinary recorded child as qualifying under article 616", () => {
+  it("automatically assumes an ordinary recorded child qualifies and takes", () => {
     const deceased = {
       id: "testator",
       fullName: "Testator Borg",
@@ -43,11 +43,11 @@ describe("LegacyLegitimPanel", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Old-law child legitim");
+    expect(container.textContent).toContain("Children's legitim");
     expect(container.textContent).toContain("1/3 collectively");
-    expect(container.textContent).toContain("Personal minimum 1/3");
-    expect(container.textContent).toContain("never added on top");
-    expect(container.textContent).toContain("applied automatically to this property");
+    expect(container.textContent).toContain("Personal legitim 1/3");
+    expect(container.textContent).toContain("assumed eligible and worthy");
+    expect(container.textContent).toContain("will is ignored");
   });
 
   it("shows the automatically protected child share when a will names an outsider", () => {
@@ -70,33 +70,23 @@ describe("LegacyLegitimPanel", () => {
           people={people}
           shareDisplay="fraction"
           displayName={(person) => person.fullName}
-          willAllocationValid
           onUpdatePerson={() => {}}
         />,
       ),
     );
-    expect(container.textContent).toContain("1/3 collectively");
-    expect(container.textContent).toContain("Personal minimum 1/3");
-    expect(container.textContent).toContain("Property allocation 1/3");
-    expect(container.textContent).toContain("Covered");
+
+    expect(container.textContent).toContain("Personal legitim 1/3");
+    expect(container.textContent).toContain("Effective share 1/3");
   });
 
-  it("marks the minimum as absorbed when an intestate child receives the whole estate", () => {
+  it("does not show a separate legitim workflow for intestacy", () => {
     const deceased = {
       id: "testator",
       fullName: "Testator Borg",
       isDeceased: true,
       dateOfDeath: "2005-02-28",
       inheritanceBasis: "intestacy",
-      intestateHeirsConfirmed: true,
       intestateHeirs: [{ personId: "child", sharePercent: 100 }],
-      legacyArticle616Statuses: [
-        {
-          personId: "child",
-          article616Eligibility: "qualifying",
-          participation: "participating",
-        },
-      ],
     };
     const child = { id: "child", fullName: "Child Borg", fatherId: "testator" };
 
@@ -105,19 +95,16 @@ describe("LegacyLegitimPanel", () => {
         <LegacyLegitimPanel
           deceased={deceased}
           people={[deceased, child]}
-          shareDisplay="fraction"
           displayName={(person) => person.fullName}
           onUpdatePerson={() => {}}
         />,
       ),
     );
 
-    expect(container.textContent).toContain("Personal minimum 1/3");
-    expect(container.textContent).toContain("Property allocation 1/1");
-    expect(container.textContent).toContain("Covered · absorbed in larger property share");
+    expect(container.textContent).toBe("");
   });
 
-  it("does not issue a satisfaction result for an incomplete will allocation", () => {
+  it("asks only for a complete will before applying the automatic shares", () => {
     const deceased = {
       id: "testator",
       fullName: "Testator Borg",
@@ -125,13 +112,6 @@ describe("LegacyLegitimPanel", () => {
       dateOfDeath: "2005-02-28",
       inheritanceBasis: "will",
       willHeirs: [{ personId: "child", sharePercent: 50 }],
-      legacyArticle616Statuses: [
-        {
-          personId: "child",
-          article616Eligibility: "qualifying",
-          participation: "participating",
-        },
-      ],
     };
     const child = { id: "child", fullName: "Child Borg", fatherId: "testator" };
 
@@ -146,8 +126,53 @@ describe("LegacyLegitimPanel", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Complete and confirm the inheritance allocation");
-    expect(container.textContent).not.toContain("Covered by property share");
+    expect(container.textContent).toContain(
+      "Complete the will beneficiary allocation to 100% before applying",
+    );
+    expect(container.textContent).not.toContain("Effective share");
+  });
+
+  it("keeps exceptional child treatment available as an optional override", () => {
+    const onUpdatePerson = vi.fn();
+    const deceased = {
+      id: "testator",
+      fullName: "Testator Borg",
+      isDeceased: true,
+      dateOfDeath: "1990-01-01",
+      inheritanceBasis: "will",
+      willHeirs: [{ personId: "outsider", sharePercent: 100 }],
+    };
+    const child = { id: "child", fullName: "Child Borg", fatherId: "testator" };
+
+    act(() =>
+      root.render(
+        <LegacyLegitimPanel
+          deceased={deceased}
+          people={[deceased, child]}
+          displayName={(person) => person.fullName}
+          onUpdatePerson={onUpdatePerson}
+        />,
+      ),
+    );
+
+    const exception = container.querySelector(
+      'select[aria-label="Old-law exception for Child Borg"]',
+    );
+    expect(exception.value).toBe("automatic");
+    act(() => {
+      exception.value = "renounced";
+      exception.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(onUpdatePerson).toHaveBeenCalledWith("testator", {
+      legacyArticle616Statuses: [
+        {
+          personId: "child",
+          article616Eligibility: "qualifying",
+          participation: "renounced",
+        },
+      ],
+    });
   });
 
   it("does not render the old-law panel from 1 March 2005", () => {
@@ -156,6 +181,8 @@ describe("LegacyLegitimPanel", () => {
       fullName: "Testator Borg",
       isDeceased: true,
       dateOfDeath: "2005-03-01",
+      inheritanceBasis: "will",
+      willHeirs: [{ personId: "outsider", sharePercent: 100 }],
     };
     const child = { id: "child", fullName: "Child Borg", fatherId: "testator" };
 

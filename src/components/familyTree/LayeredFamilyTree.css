@@ -42,20 +42,6 @@
   box-sizing: border-box;
 }
 
-/* The given name carries the visual weight. The surname is always present and
-   set smaller so a wide imported generation remains compact. */
-.tree-stage .layered-family-tree .family-node-name {
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.tree-stage .layered-family-tree .family-node-surname {
-  font-size: 0.72rem;
-  font-weight: 500;
-  line-height: 1.15;
-  opacity: 0.85;
-}
-
 .tree-node > * {
   width: 100%;
 }

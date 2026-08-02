@@ -61,6 +61,12 @@ describe("FamilyTreeCanvas", () => {
 
     expect(container.querySelector(".layered-family-tree")).toBeNull();
     expect(container.textContent).toContain("Visual family record");
+    expect(container.querySelector('[data-person-id="a"] .family-node-name').textContent).toBe(
+      "Solitary",
+    );
+    expect(container.querySelector('[data-person-id="a"] .family-node-surname').textContent).toBe(
+      "Person",
+    );
   });
 
   it("uses the layered layout as soon as anyone is linked", () => {
@@ -80,7 +86,10 @@ describe("FamilyTreeCanvas", () => {
     renderCanvas({ people: family() });
 
     expect(container.querySelector('[data-person-id="c1"] .family-node-name').textContent).toBe(
-      "Joseph Borg",
+      "Joseph",
+    );
+    expect(container.querySelector('[data-person-id="c1"] .family-node-surname').textContent).toBe(
+      "Borg",
     );
   });
 

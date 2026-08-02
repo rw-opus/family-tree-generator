@@ -1681,8 +1681,6 @@ export function PersonInspector({
                 shareDisplay={ownershipDisplay}
                 displayName={displayName}
                 onUpdatePerson={updatePerson}
-                intestacyConfirmed={editedIntestacy?.valid === true}
-                willAllocationValid={willReadiness.valid}
               />
 
               {isPreCausaMortisCutoff && (

@@ -128,7 +128,7 @@ export function FamilyPersonCard({
         "--family-node-width": `${stackedLegalDetails ? 112 : compactNodeWidth(name)}px`,
       }}
     >
-      {stackedLegalDetails && !person.isPlaceholder ? (
+      {!person.isPlaceholder ? (
         <div className="family-node-stacked-identity" title={accessibleName}>
           <div className="family-node-name">{givenNames || name}</div>
           {showSurname && <div className="family-node-surname">{surname}</div>}

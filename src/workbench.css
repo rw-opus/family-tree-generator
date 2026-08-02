@@ -1988,10 +1988,7 @@ button.family-link-person:hover {
 
 .legacy-legitim-heading small,
 .legacy-legitim-rule,
-.legacy-legitim-advisory,
-.legacy-legitim-diagnostics small,
-.legacy-legitim-draft-note,
-.legacy-legitim-estate > small {
+.legacy-legitim-diagnostics small {
   color: var(--muted);
   font-size: 0.59rem;
   line-height: 1.35;
@@ -2006,13 +2003,6 @@ button.family-link-person:hover {
   margin: 0;
 }
 
-.legacy-legitim-advisory {
-  margin: 0;
-  border-radius: 6px;
-  background: #f3f1ea;
-  padding: 0.34rem;
-}
-
 .legacy-legitim-statuses,
 .legacy-legitim-results,
 .legacy-legitim-diagnostics {
@@ -2022,7 +2012,7 @@ button.family-link-person:hover {
 
 .legacy-legitim-status-row {
   display: grid;
-  grid-template-columns: minmax(76px, 0.8fr) minmax(118px, 1.35fr) minmax(104px, 1fr);
+  grid-template-columns: minmax(90px, 0.7fr) minmax(180px, 1.3fr);
   align-items: center;
   gap: 0.25rem;
   padding-left: calc(var(--legacy-depth, 0) * 0.6rem);
@@ -2053,30 +2043,9 @@ button.family-link-person:hover {
   color: #8b531d;
 }
 
-.legacy-legitim-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.3rem;
-}
-
-.legacy-legitim-summary span {
-  display: grid;
-  gap: 0.08rem;
-  border-radius: 6px;
-  background: #f5f0e4;
-  padding: 0.3rem;
-  color: #655b49;
-  font-size: 0.57rem;
-}
-
-.legacy-legitim-summary b {
-  color: #624817;
-  font-size: 0.64rem;
-}
-
 .legacy-legitim-result {
   display: grid;
-  grid-template-columns: minmax(78px, 1fr) auto auto;
+  grid-template-columns: minmax(90px, 1fr) auto auto;
   gap: 0.2rem 0.45rem;
   border-left: 3px solid #93ad9c;
   border-radius: 5px;
@@ -2086,84 +2055,24 @@ button.family-link-person:hover {
   font-size: 0.59rem;
 }
 
-.legacy-legitim-result.shortfall {
-  border-left-color: #b94c42;
-  background: #fff4f2;
-}
-
-.legacy-legitim-result.draft {
-  border-left-color: #aab1ad;
-  background: #f5f6f5;
-}
-
-.legacy-legitim-result > strong {
-  grid-column: 1 / -1;
-  color: #28704d;
-  font-size: 0.58rem;
-}
-
-.legacy-legitim-result.shortfall > strong {
-  color: #a23f38;
-}
-
-.legacy-legitim-result.draft > strong {
-  color: var(--muted);
-}
-
-.legacy-legitim-estate {
+.legacy-legitim-exceptions {
   border-top: 1px solid #e6dcc5;
   padding-top: 0.34rem;
 }
 
-.legacy-legitim-estate summary {
+.legacy-legitim-exceptions summary {
   color: #655b49;
   font-size: 0.61rem;
   font-weight: 800;
   cursor: pointer;
 }
 
-.legacy-legitim-estate > div {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.25rem 0.45rem;
+.legacy-legitim-exceptions > div {
   margin-top: 0.34rem;
-}
-
-.legacy-legitim-estate label {
-  display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
-  align-items: center;
-  gap: 0.3rem;
-  color: #655b49;
-  font-size: 0.59rem;
-}
-
-.legacy-legitim-estate p {
-  margin: 0.3rem 0 0;
-  color: #655b49;
-  font-size: 0.61rem;
-}
-
-.legacy-legitim-estate > small {
-  display: block;
-  margin-top: 0.28rem;
-}
-
-.legacy-legitim-estate > .legacy-legitim-estate-warning {
-  color: #9a4e25;
 }
 
 @media (max-width: 560px) {
   .legacy-legitim-status-row {
-    grid-template-columns: minmax(74px, 0.7fr) minmax(0, 1.3fr);
-  }
-
-  .legacy-legitim-status-row select:last-child {
-    grid-column: 2;
-  }
-
-  .legacy-legitim-summary,
-  .legacy-legitim-estate > div {
     grid-template-columns: 1fr;
   }
 
@@ -3551,14 +3460,33 @@ button.family-link-person:hover {
 
 .tree-stage .family-node-name {
   color: var(--ink);
-  font-size: 0.82rem;
-  font-weight: 400;
+  font-size: 0.92rem;
+  font-weight: 700;
   line-height: 1.2;
   overflow: hidden;
   overflow-wrap: normal;
   text-overflow: ellipsis;
   text-transform: capitalize;
   white-space: nowrap;
+}
+
+.tree-stage .family-node-surname {
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.15;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-stage .family-node-birth-surname {
+  margin-top: 0.12rem;
+  color: #526073;
+  font-size: 0.58rem;
+  font-weight: 400;
+  line-height: 1.15;
 }
 
 .tree-stage .family-node-ownership {

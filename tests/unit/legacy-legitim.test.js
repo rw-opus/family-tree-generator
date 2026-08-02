@@ -257,9 +257,12 @@ describe("old article 616 legitim", () => {
         fatherId: "testator",
         isDeceased: true,
         dateOfDeath: "1980-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ personId: "child-will-beneficiary", sharePercent: 100 }],
       },
       { id: "grandchild-a", fatherId: "predeceased-child" },
       { id: "grandchild-b", fatherId: "predeceased-child" },
+      { id: "child-will-beneficiary" },
       { id: "niece" },
     ];
 
@@ -269,9 +272,51 @@ describe("old article 616 legitim", () => {
     expect(result.shares.get("grandchild-a")).toBeCloseTo(1 / 12);
     expect(result.shares.get("grandchild-b")).toBeCloseTo(1 / 12);
     expect(result.shares.get("niece")).toBeCloseTo(2 / 3);
+    expect(result.shares.has("child-will-beneficiary")).toBe(false);
   });
 
-  it("leaves a recorded unmarried child category unresolved for separate old-law treatment", () => {
+  it("continues representation through successive predeceased generations without using their wills", () => {
+    const deceased = {
+      id: "testator",
+      isDeceased: true,
+      dateOfDeath: "1990-01-01",
+      willHeirs: [{ personId: "niece", sharePercent: 100 }],
+    };
+    const people = [
+      deceased,
+      {
+        id: "child",
+        fatherId: "testator",
+        isDeceased: true,
+        dateOfDeath: "1970-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ personId: "child-outsider", sharePercent: 100 }],
+      },
+      {
+        id: "grandchild",
+        fatherId: "child",
+        isDeceased: true,
+        dateOfDeath: "1980-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ personId: "grandchild-outsider", sharePercent: 100 }],
+      },
+      { id: "great-grandchild-a", fatherId: "grandchild" },
+      { id: "great-grandchild-b", fatherId: "grandchild" },
+      { id: "child-outsider" },
+      { id: "grandchild-outsider" },
+      { id: "niece" },
+    ];
+
+    const result = applyLegacyArticle616ToWill({ people, deceased });
+
+    expect(result.shares.get("great-grandchild-a")).toBeCloseTo(1 / 6);
+    expect(result.shares.get("great-grandchild-b")).toBeCloseTo(1 / 6);
+    expect(result.shares.get("niece")).toBeCloseTo(2 / 3);
+    expect(result.shares.has("child-outsider")).toBe(false);
+    expect(result.shares.has("grandchild-outsider")).toBe(false);
+  });
+
+  it("assumes every recorded child qualifies unless the user records an exception", () => {
     const deceased = {
       id: "testator",
       isDeceased: true,
@@ -279,6 +324,13 @@ describe("old article 616 legitim", () => {
       spouseIds: ["partner"],
       partnerRelationships: [{ personId: "partner", type: "partnership" }],
       willHeirs: [{ personId: "niece", sharePercent: 100 }],
+      legacyArticle616Statuses: [
+        {
+          personId: "child",
+          article616Eligibility: "unconfirmed",
+          participation: "unconfirmed",
+        },
+      ],
     };
     const people = [
       deceased,
@@ -290,9 +342,11 @@ describe("old article 616 legitim", () => {
     const branches = buildLegacyArticle616ChildBranches(people, deceased);
     const result = applyLegacyArticle616ToWill({ people, deceased });
 
-    expect(branches[0].article616Eligibility).toBe("separate-old-law");
-    expect(result.resolved).toBe(false);
-    expect(result.warnings.join(" ")).toContain("separate old-law");
+    expect(branches[0].article616Eligibility).toBe("qualifying");
+    expect(branches[0].participation).toBe("participating");
+    expect(result.resolved).toBe(true);
+    expect(result.shares.get("child")).toBeCloseTo(1 / 3);
+    expect(result.shares.get("niece")).toBeCloseTo(2 / 3);
   });
 
   it("does not alter a will when death occurred on the modern-law boundary", () => {
