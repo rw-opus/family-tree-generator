@@ -56,6 +56,8 @@ describe("PersonInspector", () => {
         (button) => button.textContent.trim() === "Done",
       ),
     ).not.toBeNull();
+    expect(container.textContent).not.toContain("GEDCOM");
+    expect(container.querySelector('input[type="file"]')).toBeNull();
   });
 
   it("returns from an open person card to the tree", () => {

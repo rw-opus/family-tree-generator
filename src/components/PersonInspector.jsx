@@ -4,7 +4,6 @@ import {
   Baby,
   Check,
   FilePlus2,
-  FileUp,
   Heart,
   Pencil,
   Trash2,
@@ -30,7 +29,6 @@ import {
   applyParentSuggestions,
   solePartnerParentSuggestions,
 } from "../domain/parentSuggestions.js";
-import { parseGedcom } from "../domain/gedcom.js";
 import {
   CAUSA_MORTIS_EPSILON,
   isCompletedCausaMortisDeclaration,
@@ -141,8 +139,6 @@ export function PersonInspector({
   onDeletePerson,
   onBackToTree,
 }) {
-  const [importMode, setImportMode] = useState("replace");
-  const [importStatus, setImportStatus] = useState("");
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
   const [partnerRelationshipType, setPartnerRelationshipType] = useState(
     PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
@@ -693,31 +689,12 @@ export function PersonInspector({
     );
   };
 
-  const importGedcom = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      const result = parseGedcom(await file.text());
-      if (!result.people.length) throw new Error("No individual records were found.");
-      const nextPeople = importMode === "replace" ? result.people : [...people, ...result.people];
-      onChange(nextPeople, { replaceFamilyGroup: importMode === "replace" });
-      onSelectPerson(nextPeople[0]?.id || "");
-      setImportStatus(
-        `Imported ${result.individualCount} people and ${result.familyCount} families.`,
-      );
-    } catch (error) {
-      setImportStatus(`Could not import GEDCOM: ${error.message}`);
-    } finally {
-      event.target.value = "";
-    }
-  };
-
   if (!selectedPerson) {
     return (
       <div className="inspector-empty">
         <UsersRound size={30} />
         <h2>Start the family tree</h2>
-        <p>Add a person or import a GEDCOM file.</p>
+        <p>Add the first person to begin this family tree.</p>
         <button
           type="button"
           className="primary-button"
@@ -2099,31 +2076,6 @@ export function PersonInspector({
             <small>{deleteMessage}</small>
           </div>
         </fieldset>
-      </section>
-
-      <section className="inspector-section gedcom-tool">
-        <div>
-          <p className="eyebrow">Import</p>
-          <h3>GEDCOM family file</h3>
-        </div>
-        <select
-          aria-label="GEDCOM import behaviour"
-          value={importMode}
-          onChange={(event) => setImportMode(event.target.value)}
-        >
-          <option value="replace">Replace current tree</option>
-          <option value="merge">Merge into current tree</option>
-        </select>
-        <label className="gedcom-button">
-          <FileUp size={17} />
-          Choose GEDCOM file
-          <input type="file" accept=".ged,.gedcom,text/plain" onChange={importGedcom} />
-        </label>
-        {importStatus && (
-          <p className="import-status" aria-live="polite">
-            {importStatus}
-          </p>
-        )}
       </section>
     </div>
   );

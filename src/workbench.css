@@ -2682,41 +2682,6 @@ button.family-link-person:hover {
   line-height: 1.35;
 }
 
-.gedcom-tool {
-  display: grid;
-  gap: 0.6rem;
-  background: #f4f8f5;
-}
-
-.gedcom-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  min-height: 2.65rem;
-  border: 1px solid #82a996;
-  border-radius: 7px;
-  background: var(--forest);
-  color: #fff;
-  cursor: pointer;
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.gedcom-button:hover {
-  background: var(--forest-dark);
-}
-
-.gedcom-button input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .inspector-empty {
   display: grid;
   justify-items: center;
@@ -3941,8 +3906,7 @@ button.family-link-person:hover {
 .spouse-chooser,
 .primary-button,
 .secondary-button,
-.danger-button,
-.gedcom-button {
+.danger-button {
   border-radius: 0.55rem;
 }
 
@@ -3971,7 +3935,6 @@ button.family-link-person:hover {
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
 }
 
-.gedcom-tool,
 .dashboard-case,
 .person-edit-fields:disabled input,
 .person-edit-fields:disabled select,

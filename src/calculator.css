@@ -35,31 +35,6 @@ select {
   box-shadow: 0 8px 22px rgba(7, 50, 32, 0.06);
   padding: 1rem;
 }
-.gedcom-import {
-  display: grid;
-  grid-template-columns: auto 1fr 1fr;
-  align-items: end;
-  gap: 0.65rem;
-  margin-top: 1rem;
-  border-radius: 6px;
-  background: #edf6f0;
-  padding: 0.75rem;
-  color: #004225;
-}
-.gedcom-import > svg {
-  align-self: center;
-}
-.gedcom-import input[type="file"] {
-  min-height: 2.55rem;
-  padding: 0.42rem;
-  font-size: 0.75rem;
-}
-.import-status {
-  margin: 0.55rem 0 0;
-  color: #17683a;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
 .people-index {
   margin-top: 1rem;
   border: 1px solid #d8e2dc;
@@ -1191,12 +1166,6 @@ button:disabled {
   }
 }
 @media (max-width: 650px) {
-  .gedcom-import {
-    grid-template-columns: 1fr;
-  }
-  .gedcom-import > svg {
-    display: none;
-  }
   .index-heading {
     align-items: stretch;
     flex-direction: column;
