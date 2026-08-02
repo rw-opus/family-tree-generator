@@ -306,7 +306,8 @@ export function FamilyLibrary({
                     title={`Open property and tax for ${tree.title || "family"}`}
                     aria-label={`Open property and tax for ${tree.title || "family"}`}
                   >
-                    <Calculator size={14} /> Property &amp; tax
+                    <Calculator size={14} />
+                    <span className="library-row-action-label">Property &amp; tax</span>
                   </button>
                   <button
                     type="button"
@@ -315,7 +316,8 @@ export function FamilyLibrary({
                     title={`Rename ${tree.title || "family"}`}
                     aria-label={`Rename ${tree.title || "family"}`}
                   >
-                    <Pencil size={14} /> Rename
+                    <Pencil size={14} />
+                    <span className="library-row-action-label">Rename</span>
                   </button>
                   <button
                     type="button"
@@ -324,7 +326,8 @@ export function FamilyLibrary({
                     title={`Delete ${tree.title || "family"}`}
                     aria-label={`Delete ${tree.title || "family"}`}
                   >
-                    <Trash2 size={14} /> Delete
+                    <Trash2 size={14} />
+                    <span className="library-row-action-label">Delete</span>
                   </button>
                 </span>
               </div>
