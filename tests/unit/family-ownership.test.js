@@ -133,6 +133,32 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson.father || 0).toBe(0);
   });
 
+  it("excludes linked spouses when the deceased was unmarried or widowed at death", () => {
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        unmarriedOrWidowedAtDeath: true,
+        spouseIds: ["former-spouse"],
+      }),
+      person("former-spouse", {
+        spouseIds: ["deceased"],
+        isDeceased: true,
+        dateOfDeath: "",
+      }),
+      person("child", { fatherId: "deceased", motherId: "former-spouse" }),
+    ];
+
+    const result = buildPropertyOwnership(people, {
+      id: "property",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+    });
+
+    expect(result.ownershipByPerson["former-spouse"] || 0).toBe(0);
+    expect(result.ownershipByPerson.child).toBeCloseTo(1);
+    expect(result.transmissions[0].destination).toBe("descendants");
+  });
+
   it("does not treat shared parenthood alone as a legal spouse link", () => {
     const people = [
       person("edgar", {

@@ -36,6 +36,8 @@ describe("PersonCardDisplayControl", () => {
     expect(labels).toEqual([
       "Fractions",
       "Percentages",
+      "Current holding value",
+      "Testate / intestate",
       "Will details",
       "Causa mortis details",
       "Dates of death",

@@ -187,6 +187,63 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
+  it("shows the current holding value only for a person who still owns the share", () => {
+    const people = [
+      person("deceased", "Joseph Borg", {
+        isDeceased: true,
+        dateOfDeath: "2020-07-18",
+        fatherId: "ancestor",
+      }),
+      person("owner", "Maria Borg", { fatherId: "deceased" }),
+      person("ancestor", "Karmnu Borg"),
+    ];
+
+    renderCanvas({
+      people,
+      ownershipByPerson: { deceased: 0.5, owner: 0.5 },
+      currentOwnershipByPerson: { owner: 0.5 },
+      propertyValue: 300000,
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipValue: true,
+      },
+    });
+
+    expect(container.querySelector('[data-person-id="owner"]').textContent).toContain(
+      "Current value €150,000.00",
+    );
+    expect(container.querySelector('[data-person-id="deceased"]').textContent).not.toContain(
+      "Current value",
+    );
+  });
+
+  it("labels a traced person's percentage and value as belonging to that history step", () => {
+    const people = [
+      person("ancestor", "Karmnu Borg"),
+      person("owner", "Maria Borg", { fatherId: "ancestor" }),
+    ];
+
+    renderCanvas({
+      people,
+      ownershipByPerson: { owner: 0.25 },
+      currentOwnershipByPerson: { owner: 0.25 },
+      ownershipSnapshotActive: true,
+      propertyValue: 400000,
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipPercentage: true,
+        ownershipValue: true,
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="owner"]');
+    expect(card.classList.contains("trace-ownership-snapshot")).toBe(true);
+    expect(card.textContent).toContain("1/4");
+    expect(card.textContent).toContain("25%");
+    expect(card.textContent).toContain("Value at this step €100,000.00");
+    expect(card.textContent).not.toContain("Current value");
+  });
+
   it("does not force hidden legal details onto cards in a dense tree", () => {
     const people = Array.from({ length: 80 }, (_, index) =>
       person(`person-${index}`, `Person ${index}`, {

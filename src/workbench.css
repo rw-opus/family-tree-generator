@@ -992,6 +992,10 @@ textarea {
   overflow: hidden;
 }
 
+.workbench-body.person-card-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .context-dashboard {
   position: relative;
   z-index: 10;
@@ -1517,6 +1521,24 @@ textarea {
   min-height: 1.9rem;
   padding: 0.28rem 0.4rem;
   font-size: 0.7rem;
+}
+
+.marital-status-at-death .detail-checkbox {
+  font-weight: 700;
+}
+
+.person-succession .marital-status-at-death .detail-checkbox input {
+  width: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  padding: 0;
+}
+
+.succession-marital-status-note {
+  margin: -0.18rem 0 0 116px;
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.35;
 }
 
 .automatic-heirs > strong,
@@ -2969,7 +2991,547 @@ textarea {
 
 .tree-stage-toolbar-minimal {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) minmax(190px, 300px) auto;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(190px, 300px);
+}
+
+.tree-property-panel {
+  position: absolute;
+  z-index: 7;
+  top: 72px;
+  left: 0.75rem;
+  width: min(360px, calc(100% - 1.5rem));
+  max-height: calc(100% - 88px);
+  overflow: auto;
+  border: 1px solid #b8c9c0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 14px 36px rgba(17, 46, 33, 0.16);
+  scrollbar-width: thin;
+  backdrop-filter: blur(10px);
+}
+
+.tree-property-panel.collapsed {
+  width: min(340px, calc(100% - 1.5rem));
+  overflow: hidden;
+}
+
+.tree-property-panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3rem;
+  border: 0;
+  background: #f4f8f5;
+  color: var(--forest);
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+}
+
+.tree-property-panel-toggle > span {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.tree-property-panel-toggle strong {
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.tree-property-panel-price {
+  justify-content: flex-end;
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.tree-property-panel.expanded .tree-property-panel-price svg {
+  transform: rotate(180deg);
+}
+
+.tree-property-panel-body {
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px solid #dbe3de;
+  padding: 0.65rem;
+}
+
+.tree-property-summary {
+  display: grid;
+  gap: 0.45rem;
+  border-radius: 7px;
+  background: #f7f7f3;
+  padding: 0.55rem;
+}
+
+.tree-property-summary > span {
+  color: var(--ink);
+  font: 500 0.82rem/1.2 var(--tracker-serif);
+}
+
+.tree-property-summary label {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.tree-property-price-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tree-property-price-input input {
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.tree-control-section {
+  border: 1px solid #dbe3de;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.tree-control-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.55rem;
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tree-control-section > summary b {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.tree-control-section > summary b.valid {
+  color: var(--forest);
+}
+
+.tree-control-section > summary b.invalid {
+  color: #a33b2a;
+}
+
+.initial-ownership-editor.compact,
+.person-card-display-fields,
+.tree-current-owners {
+  border-top: 1px solid #e3e9e5;
+  padding: 0.55rem;
+}
+
+.initial-ownership-editor.compact .section-heading,
+.initial-ownership-editor.compact > .helper-text,
+.initial-ownership-editor.compact > .share-status,
+.initial-ownership-editor.compact .initial-owner-columns {
+  display: none;
+}
+
+.initial-ownership-editor.compact .initial-owner-row {
+  grid-template-columns: minmax(0, 1fr) minmax(76px, 0.75fr) 28px;
+}
+
+.initial-ownership-editor.compact .initial-owner-percentage {
+  display: none;
+}
+
+.initial-ownership-editor.compact select,
+.initial-ownership-editor.compact input {
+  min-width: 0;
+  min-height: 1.8rem;
+  padding: 0.2rem 0.25rem;
+  font-size: 0.64rem;
+}
+
+.initial-ownership-editor.compact .initial-owner-fraction input {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+}
+
+.initial-ownership-editor.compact .add-button {
+  width: 100%;
+  min-height: 2rem;
+  margin-top: 0.45rem;
+  font-size: 0.66rem;
+}
+
+.tree-current-owners {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.tree-current-owners > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  border-bottom: 1px solid #edf1ee;
+  padding-bottom: 0.32rem;
+  font-size: 0.68rem;
+}
+
+.tree-current-owners > div:last-child {
+  border-bottom: 0;
+}
+
+.tree-current-owners > div > span:last-child {
+  display: grid;
+  justify-items: end;
+}
+
+.tree-current-owners small,
+.tree-current-owners p {
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.tree-current-owners p {
+  margin: 0;
+}
+
+.person-card-display-fields {
+  margin: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+}
+
+.person-card-display-fields legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.person-card-display-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.person-card-display-grid label {
+  display: grid;
+  grid-template-columns: 0.95rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.25;
+}
+
+.person-card-display-grid input {
+  width: 0.95rem;
+  min-height: 0.95rem;
+  margin: 0;
+  accent-color: var(--forest);
+}
+
+.succession-trace-control {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid #c9d7cf;
+  border-radius: 7px;
+  background: #f7faf8;
+  padding: 0.55rem;
+}
+
+.succession-trace-heading,
+.succession-trace-counter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.succession-trace-heading > div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.succession-trace-heading span {
+  color: var(--forest);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.succession-trace-heading small,
+.succession-trace-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.trace-start-button,
+.trace-end-button,
+.succession-history-open-button,
+.tree-property-open-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 1.9rem;
+  border: 1px solid #a8beb2;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--forest);
+  padding: 0 0.5rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.succession-history-open-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  width: 100%;
+  min-height: 2rem;
+  border: 1px solid #a8beb2;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--forest);
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.succession-trace-event {
+  display: grid;
+  gap: 0.45rem;
+  border-top: 1px solid #dbe5df;
+  padding-top: 0.5rem;
+}
+
+.succession-trace-counter {
+  justify-content: center;
+}
+
+.succession-trace-counter button {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  min-height: 1.8rem;
+  border: 1px solid #becfc5;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--forest);
+  padding: 0;
+}
+
+.succession-trace-counter span {
+  min-width: 4rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.succession-trace-description {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.succession-trace-description > span {
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 750;
+}
+
+.succession-trace-description strong {
+  color: var(--ink);
+  font-size: 0.7rem;
+}
+
+.succession-trace-description p {
+  margin: 0;
+  color: #4b5b52;
+  font-size: 0.64rem;
+  line-height: 1.38;
+}
+
+.tree-property-open-button {
+  width: 100%;
+  min-height: 2.1rem;
+  background: var(--forest);
+  color: #fff;
+}
+
+body.succession-history-open {
+  overflow: hidden;
+}
+
+.succession-history-dialog {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  overflow: auto;
+  background: rgba(20, 36, 28, 0.62);
+  padding: clamp(0.6rem, 3vw, 2rem);
+}
+
+.succession-history-sheet {
+  width: min(900px, 100%);
+  min-height: min(100%, 720px);
+  margin: 0 auto;
+  border: 1px solid #c9d4ce;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(10, 28, 19, 0.3);
+  padding: clamp(1rem, 3vw, 2.2rem);
+}
+
+.succession-history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 2px solid var(--forest);
+  padding-bottom: 1rem;
+}
+
+.succession-history-header h2,
+.succession-history-header p {
+  margin: 0;
+}
+
+.succession-history-header h2 {
+  color: var(--ink);
+  font: 500 clamp(1.5rem, 4vw, 2.1rem) / 1.1 var(--tracker-serif);
+}
+
+.succession-history-header > div:first-child > p:last-child {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.succession-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.succession-history-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.succession-history-summary > div {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid #dbe3de;
+  border-radius: 7px;
+  background: #f7faf8;
+  padding: 0.65rem 0.8rem;
+}
+
+.succession-history-summary span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.succession-history-summary strong {
+  color: var(--forest);
+  font-size: 0.86rem;
+}
+
+.succession-history-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.succession-history-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr);
+  gap: 0.8rem;
+  padding: 0.7rem 0;
+  break-inside: avoid;
+}
+
+.succession-history-item:not(:last-child)::after {
+  position: absolute;
+  top: 2.4rem;
+  bottom: -0.2rem;
+  left: 1.08rem;
+  width: 2px;
+  background: #c8d5ce;
+  content: "";
+}
+
+.succession-history-number {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 2px solid var(--forest);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--forest);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.succession-history-item > div {
+  display: grid;
+  gap: 0.22rem;
+  border-bottom: 1px solid #e5ebe7;
+  padding: 0.1rem 0 0.75rem;
+}
+
+.succession-history-item > div > p {
+  margin: 0;
+  color: #4b5b52;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.succession-history-item > div > p:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.succession-history-item h3 {
+  margin: 0;
+  color: var(--ink);
+  font: 500 1rem/1.2 var(--tracker-serif);
+}
+
+.succession-history-empty {
+  border: 1px dashed #bdccc4;
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 1.2rem;
+  text-align: center;
 }
 
 .tree-home-button {
@@ -3449,6 +4011,17 @@ textarea {
 .tree-stage .family-node.cm-share-incomplete .family-node-ownership {
   background: #b52b2b;
   color: #fff;
+}
+
+.tree-stage .family-node.trace-ownership-snapshot .family-node-ownership {
+  background: #eee2f3;
+  color: #692d78;
+}
+
+.tree-stage .family-node.trace-ownership-snapshot {
+  box-shadow:
+    0 0 0 2px rgba(105, 45, 120, 0.18),
+    0 8px 18px rgba(55, 31, 63, 0.13);
 }
 
 .tree-stage .family-node-succession-alert {
@@ -4424,11 +4997,6 @@ textarea {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .tree-stage-toolbar-minimal .person-card-display-control {
-    grid-column: 1 / -1;
-    justify-self: end;
-  }
-
   .tree-stage-toolbar-minimal .stage-family-title {
     min-width: 0;
   }
@@ -4436,6 +5004,17 @@ textarea {
   .tree-zoom-slider {
     grid-column: 1 / -1;
     grid-template-columns: auto minmax(0, 1fr) 40px;
+  }
+
+  .tree-property-panel {
+    top: 112px;
+    left: 0.5rem;
+    width: min(350px, calc(100% - 1rem));
+    max-height: calc(100% - 124px);
+  }
+
+  .tree-property-panel.collapsed {
+    width: min(330px, calc(100% - 1rem));
   }
 
   .stage-family-title {
@@ -4500,6 +5079,31 @@ textarea {
   }
 }
 
+@media (max-width: 560px) {
+  .succession-history-dialog {
+    padding: 0;
+  }
+
+  .succession-history-sheet {
+    min-height: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 1rem;
+  }
+
+  .succession-history-header {
+    display: grid;
+  }
+
+  .succession-history-actions {
+    justify-content: space-between;
+  }
+
+  .succession-history-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media print {
   body {
     overflow: visible;
@@ -4508,6 +5112,7 @@ textarea {
   .workbench-header,
   .context-dashboard,
   .tree-stage-toolbar,
+  .tree-property-panel,
   .fraction-launcher {
     display: none !important;
   }
@@ -4518,6 +5123,35 @@ textarea {
     display: block;
     height: auto;
     overflow: visible;
+  }
+
+  body.succession-history-open {
+    overflow: visible;
+    background: #fff;
+  }
+
+  body.succession-history-open .tree-workbench {
+    display: none !important;
+  }
+
+  body.succession-history-open .succession-history-dialog {
+    position: static;
+    overflow: visible;
+    background: #fff;
+    padding: 0;
+  }
+
+  body.succession-history-open .succession-history-sheet {
+    width: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  body.succession-history-open .succession-history-actions {
+    display: none !important;
   }
 }
 
