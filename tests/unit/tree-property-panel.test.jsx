@@ -84,20 +84,23 @@ describe("TreePropertyPanel", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Property & Tree View");
-    expect(container.textContent).toContain("1 Republic Street");
+    expect(container.textContent).toContain("Property & Ownership");
     expect(container.textContent).toContain("€300,000.00");
-    expect(container.textContent).toContain("Define initial shares");
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    expect(container.querySelector('input[aria-label="Property address on tree"]').value).toBe(
+      "1 Republic Street",
+    );
+    expect(container.textContent).toContain("Initial ownership");
 
     const currentTitle = [...container.querySelectorAll("summary")].find((summary) =>
-      summary.textContent.includes("Current title and values"),
+      summary.textContent.includes("Current owners & values"),
     );
     act(() => currentTitle.click());
     expect(container.textContent).toContain("Maria Borg");
     expect(container.textContent).toContain("1/1");
 
     const cardView = [...container.querySelectorAll("summary")].find((summary) =>
-      summary.textContent.includes("View person cards"),
+      summary.textContent.includes("Person card details"),
     );
     act(() => cardView.click());
     const valueToggle = [...container.querySelectorAll("label")]
@@ -127,6 +130,7 @@ describe("TreePropertyPanel", () => {
       ),
     );
 
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
     const start = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Start"),
     );
@@ -181,6 +185,7 @@ describe("TreePropertyPanel", () => {
       ),
     );
 
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
     const openHistory = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("View full history"),
     );

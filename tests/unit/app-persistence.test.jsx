@@ -332,17 +332,18 @@ describe("App local recovery", () => {
     openCurrentFamily();
 
     expect(container.querySelector(".tree-property-panel")).not.toBeNull();
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
     const openProperty = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Open transfers and tax calculation"),
+      button.textContent.includes("Open property workspace"),
     );
     expect(openProperty).not.toBeUndefined();
     act(() => openProperty.click());
 
     expect(container.querySelector(".property-workspace-page")).not.toBeNull();
-    const ownershipTab = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Owners & transfers",
+    const setupTab = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Setup",
     );
-    expect(ownershipTab.className).toContain("active");
+    expect(setupTab.className).toContain("active");
 
     const backToTree = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Open family tree"),

@@ -5,7 +5,6 @@ import {
   FileUp,
   FolderOpen,
   FolderPlus,
-  Landmark,
   LogOut,
   Pencil,
   Search,
@@ -31,7 +30,6 @@ const familyAddedDate = (tree) => tree.createdAt || tree.created_at || tree.upda
 
 export function FamilyLibrary({
   trees,
-  propertySummaries = {},
   activeTreeId,
   session,
   commercialMode = false,
@@ -254,109 +252,74 @@ export function FamilyLibrary({
             <div className="family-library-row family-library-table-head" role="row">
               <span role="columnheader">Family name</span>
               <span role="columnheader">Added</span>
-              <span role="columnheader">Properties</span>
               <span role="columnheader">Actions</span>
             </div>
-            {filteredTrees.map((tree) => {
-              const propertySummary = propertySummaries[tree.id] || {
-                propertyCount: 0,
-                label: "",
-                tone: "empty",
-              };
-              return (
-                <div className="family-library-row" role="row" key={tree.id}>
-                  {renamingId === tree.id ? (
-                    <form
-                      className="family-rename-form"
-                      onSubmit={(event) => submitRename(event, tree.id)}
-                    >
-                      <input
-                        aria-label={`New name for ${tree.title || "family"}`}
-                        autoFocus
-                        value={renameDraft}
-                        onChange={(event) => setRenameDraft(event.target.value)}
-                      />
-                      <button
-                        type="submit"
-                        className="library-icon-button"
-                        aria-label="Save family name"
-                      >
-                        <Check size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        className="library-icon-button"
-                        onClick={cancelRename}
-                        aria-label="Cancel renaming"
-                      >
-                        <X size={15} />
-                      </button>
-                    </form>
-                  ) : (
-                    <button
-                      type="button"
-                      className="family-name-button"
-                      onClick={() => onOpen(tree.id)}
-                    >
-                      <span>{tree.title || "Untitled family"}</span>
-                      {tree.id === activeTreeId && <small>Open now</small>}
-                    </button>
-                  )}
-                  <span className="family-last-changed" role="cell">
-                    {displayDate(familyAddedDate(tree))}
-                  </span>
-                  <span
-                    className={`family-property-status tone-${propertySummary.tone}`}
-                    role="cell"
+            {filteredTrees.map((tree) => (
+              <div className="family-library-row" role="row" key={tree.id}>
+                {renamingId === tree.id ? (
+                  <form
+                    className="family-rename-form"
+                    onSubmit={(event) => submitRename(event, tree.id)}
                   >
+                    <input
+                      aria-label={`New name for ${tree.title || "family"}`}
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                    />
                     <button
-                      type="button"
-                      className="library-row-action"
-                      onClick={() => onOpen(tree.id, "property")}
-                      title={
-                        propertySummary.propertyCount > 0
-                          ? `Manage properties for ${tree.title || "family"}`
-                          : `Add a property for ${tree.title || "family"}`
-                      }
-                      aria-label={
-                        propertySummary.propertyCount > 0
-                          ? `Manage properties for ${tree.title || "family"}`
-                          : `Add a property for ${tree.title || "family"}`
-                      }
+                      type="submit"
+                      className="library-icon-button"
+                      aria-label="Save family name"
                     >
-                      <Landmark size={14} />
-                      <span className="library-row-action-label">
-                        {propertySummary.propertyCount > 0
-                          ? propertySummary.label
-                          : "No properties yet"}
-                      </span>
-                    </button>
-                  </span>
-                  <span className="family-row-actions" role="cell">
-                    <button
-                      type="button"
-                      className="library-row-action"
-                      onClick={() => startRename(tree)}
-                      title={`Rename ${tree.title || "family"}`}
-                      aria-label={`Rename ${tree.title || "family"}`}
-                    >
-                      <Pencil size={14} />
-                      <span className="library-row-action-label">Rename</span>
+                      <Check size={15} />
                     </button>
                     <button
                       type="button"
-                      className="library-row-action danger"
-                      onClick={() => onRemove(tree.id)}
-                      title={`Delete ${tree.title || "family"}`}
-                      aria-label={`Delete ${tree.title || "family"}`}
+                      className="library-icon-button"
+                      onClick={cancelRename}
+                      aria-label="Cancel renaming"
                     >
-                      <Trash2 size={14} />
-                      <span className="library-row-action-label">Delete</span>
+                      <X size={15} />
                     </button>
-                  </span>
-                </div>
-              );
-            })}
+                  </form>
+                ) : (
+                  <button
+                    type="button"
+                    className="family-name-button"
+                    onClick={() => onOpen(tree.id)}
+                  >
+                    <span>{tree.title || "Untitled family"}</span>
+                    {tree.id === activeTreeId && <small>Open now</small>}
+                  </button>
+                )}
+                <span className="family-last-changed" role="cell">
+                  {displayDate(familyAddedDate(tree))}
+                </span>
+                <span className="family-row-actions" role="cell">
+                  <button
+                    type="button"
+                    className="library-row-action"
+                    onClick={() => startRename(tree)}
+                    title={`Rename ${tree.title || "family"}`}
+                    aria-label={`Rename ${tree.title || "family"}`}
+                  >
+                    <Pencil size={14} />
+                    <span className="library-row-action-label">Rename</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="library-row-action danger"
+                    onClick={() => onRemove(tree.id)}
+                    title={`Delete ${tree.title || "family"}`}
+                    aria-label={`Delete ${tree.title || "family"}`}
+                  >
+                    <Trash2 size={14} />
+                    <span className="library-row-action-label">Delete</span>
+                  </button>
+                </span>
+              </div>
+            ))}
           </div>
           {!filteredTrees.length && (
             <p className="family-library-empty">

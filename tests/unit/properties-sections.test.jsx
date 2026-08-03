@@ -89,12 +89,12 @@ describe("Properties section views", () => {
     ],
     [
       "ownership",
+      ["Calculated title after inheritance", "Ownership transfers"],
       [
+        "Value of the property being sold today",
         "Initial owner/s of the property",
-        "Calculated title after inheritance",
-        "Ownership transfers",
+        "Tax Calculation",
       ],
-      ["Value of the property being sold today", "Tax Calculation"],
     ],
     [
       "tax",

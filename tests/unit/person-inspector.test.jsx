@@ -12,7 +12,7 @@ describe("PersonInspector", () => {
   let root;
   const beginEditing = () => {
     const editButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Edit",
+      (button) => button.textContent.trim() === "Edit identity",
     );
     if (editButton) act(() => editButton.click());
   };
@@ -60,8 +60,7 @@ describe("PersonInspector", () => {
     expect(container.querySelector('input[type="file"]')).toBeNull();
   });
 
-  it("returns from an open person card to the tree", () => {
-    const onBackToTree = vi.fn();
+  it("does not duplicate the surrounding drawer's Back to Tree navigation", () => {
     act(() =>
       root.render(
         <PersonInspector
@@ -74,18 +73,13 @@ describe("PersonInspector", () => {
             },
           ]}
           selectedPersonId="person"
-          onBackToTree={onBackToTree}
           onChange={vi.fn()}
           onSelectPerson={vi.fn()}
         />,
       ),
     );
 
-    const backButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Back to Tree",
-    );
-    act(() => backButton.click());
-    expect(onBackToTree).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("Back to Tree");
   });
 
   it("creates an editable missing mother for a post-2005 childless intestacy", () => {
@@ -1593,14 +1587,14 @@ describe("PersonInspector", () => {
 
     act(() => root.render(<Harness />));
 
-    expect(container.textContent).toContain("Adjust inheritance shares");
-    expect(container.textContent).toContain("Proposed under intestacy");
+    expect(container.textContent).toContain("Beneficiaries");
+    expect(container.textContent).toContain("Calculated beneficiaries");
     expect(container.textContent).toContain("1/2");
 
-    const useProposal = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Use proposed shares"),
+    const editBeneficiaries = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Edit Beneficiaries"),
     );
-    act(() => useProposal.click());
+    act(() => editBeneficiaries.click());
 
     expect(container.querySelectorAll(".confirmed-heir-row")).toHaveLength(2);
     expect(container.querySelectorAll(".confirmed-heir-fraction")).toHaveLength(2);
@@ -2672,7 +2666,7 @@ describe("PersonInspector", () => {
     });
     act(() =>
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent.trim() === "Edit")
+        .find((button) => button.textContent.trim() === "Edit identity")
         .click(),
     );
     const relationshipType = container.querySelector(".person-partner-link-row select");
@@ -2767,6 +2761,10 @@ describe("PersonInspector", () => {
     }
 
     act(() => root.render(<Harness />));
+    const editBeneficiaries = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Edit Beneficiaries"),
+    );
+    if (editBeneficiaries) act(() => editBeneficiaries.click());
     let heirSelect = container.querySelector(
       'select[aria-label="Add an heir or override the intestacy proposal"]',
     );
@@ -2777,7 +2775,7 @@ describe("PersonInspector", () => {
       );
       heirSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(latestPeople[0].intestateHeirs[0].personId).toBe("friend");
+    expect(latestPeople[0].intestateHeirs.map((heir) => heir.personId)).toContain("friend");
 
     heirSelect = container.querySelector(
       'select[aria-label="Add an heir or override the intestacy proposal"]',

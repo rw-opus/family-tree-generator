@@ -32,23 +32,17 @@ function hasRelationalLinks(person) {
   );
 }
 
-function TreePanel({ title, eyebrow, treeRef, onPrint, relational, helperText, children }) {
+function TreePanel({ treeRef, onPrint, relational, helperText, toolbar, children }) {
   return (
     <section className="tree-panel">
-      <header className="tree-toolbar">
-        <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h2>{title}</h2>
-        </div>
+      <header className="tree-stage-toolbar tree-stage-toolbar-unified">
+        {toolbar}
         <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
           <Printer size={16} /> Print preview
         </button>
       </header>
       <div className="family-chart" ref={treeRef}>
-        <div className={`family-canvas ${relational ? "relational-canvas" : ""}`}>
-          <h2 className="family-chart-title">{title}</h2>
-          {children}
-        </div>
+        <div className={`family-canvas ${relational ? "relational-canvas" : ""}`}>{children}</div>
       </div>
       <p className="helper-text">{helperText}</p>
     </section>
@@ -69,6 +63,7 @@ export function FamilyTreeCanvas({
   ownershipSnapshotActive = false,
   zoom = 100,
   onZoomChange,
+  toolbar,
 }) {
   const treeRef = useRef(null);
   const cleanPeople = useMemo(
@@ -141,12 +136,11 @@ export function FamilyTreeCanvas({
   if (usesRelationalLayout) {
     return (
       <TreePanel
-        title={title}
-        eyebrow="Relational family record"
         treeRef={treeRef}
         onPrint={printHandler}
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
+        toolbar={toolbar}
       >
         <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} />
       </TreePanel>
@@ -163,11 +157,10 @@ export function FamilyTreeCanvas({
 
   return (
     <TreePanel
-      title={title}
-      eyebrow="Visual family record"
       treeRef={treeRef}
       onPrint={printHandler}
       helperText="The diagram is a working visual aid. Dashed entries are connectors added only when a relative is needed to make another branch intelligible."
+      toolbar={toolbar}
     >
       <DesignationFamilyTree
         deceased={deceased}

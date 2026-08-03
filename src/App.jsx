@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Calculator, GitBranch, House, Landmark, X } from "lucide-react";
+import { ArrowLeft, Calculator, GitBranch, House, Landmark } from "lucide-react";
 import { familyViewKey } from "./components/CaseViewTabs.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { EditableTreeTitle } from "./components/EditableTreeTitle.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
+import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { TreePropertyPanel } from "./components/TreePropertyPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
@@ -25,7 +26,6 @@ import {
 } from "./domain/personCardDisplay.js";
 import {
   buildPropertyVendorTaxReport,
-  buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
 } from "./domain/propertyVendorTax.js";
 import {
@@ -186,60 +186,6 @@ export function caseActivationState(value) {
   };
 }
 
-const pluralProperty = (count) => `${count} propert${count === 1 ? "y" : "ies"}`;
-
-function familyPropertySummary(tree) {
-  const normalised = normaliseTree(tree);
-  const properties = normalised.properties || [];
-  if (!properties.length) {
-    return { propertyCount: 0, label: "No properties yet", tone: "empty" };
-  }
-
-  const incompleteOwnership = properties.filter(
-    (property) => !propertyStartingOwnershipStatus(property).isComplete,
-  );
-  if (incompleteOwnership.length) {
-    return {
-      propertyCount: properties.length,
-      label: `${pluralProperty(properties.length)} · ${incompleteOwnership.length} need${
-        incompleteOwnership.length === 1 ? "s" : ""
-      } starting owners`,
-      tone: "attention",
-    };
-  }
-
-  const missingSaleValue = properties.filter((property) => !Number(property.saleValue));
-  if (missingSaleValue.length) {
-    return {
-      propertyCount: properties.length,
-      label: `${pluralProperty(properties.length)} · needs a selling price`,
-      tone: "attention",
-    };
-  }
-
-  const hasIncompleteTax = properties.some((property) => {
-    const report = buildTaxCalculationReport(
-      property,
-      normalised.people,
-      normalised.outsideParties,
-    );
-    return report.vendors.some((vendor) => vendor.incompleteRowCount > 0);
-  });
-  if (hasIncompleteTax) {
-    return {
-      propertyCount: properties.length,
-      label: `${pluralProperty(properties.length)} · tax incomplete`,
-      tone: "attention",
-    };
-  }
-
-  return {
-    propertyCount: properties.length,
-    label: `${pluralProperty(properties.length)} · tax ready`,
-    tone: "ready",
-  };
-}
-
 export function App({ localOnlyMode = true, session = null, onSignOut = () => {} }) {
   const cloudMode = Boolean(session?.user?.id) && !localOnlyMode;
   const [startupWorkspace] = useState(() =>
@@ -270,6 +216,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [traceOwnershipSnapshot, setTraceOwnershipSnapshot] = useState(null);
+  const [propertyPanelExpanded, setPropertyPanelExpanded] = useState(false);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
@@ -282,6 +229,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setActiveFamilyGroupId(activation.activeFamilyGroupId);
     setSelectedPersonId(activation.selectedPersonId);
     setTraceOwnershipSnapshot(null);
+    setPropertyPanelExpanded(false);
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
   }, []);
@@ -333,6 +281,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const activePersonIds = new Set(activeFamilyGroup?.personIds || []);
   const visiblePeople = currentTree.people.filter((person) => activePersonIds.has(person.id));
   const activeProperty = currentTree.properties[0] || makePrimaryProperty("primary-property");
+  const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const propertyReport = useMemo(
     () =>
       buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties),
@@ -385,10 +334,15 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     () =>
       buildCausaMortisShareCoverage(
         currentTree.people,
-        completeProperties,
+        propertyReport.startingOwnership.isComplete ? activeProperties : [],
         currentTree.outsideParties,
       ),
-    [completeProperties, currentTree.outsideParties, currentTree.people],
+    [
+      activeProperties,
+      currentTree.outsideParties,
+      currentTree.people,
+      propertyReport.startingOwnership.isComplete,
+    ],
   );
   const selectedCaseDependencies = useMemo(() => {
     const relationshipLabels = new Set([
@@ -522,15 +476,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     [activeTreeIsListed, currentTree, trees],
   );
 
-  // Only worth computing while Home is actually visible — it re-derives tax
-  // completeness for every family and would otherwise redo that work on every
-  // keystroke made while editing the currently open tree.
-  const propertySummaries = useMemo(() => {
-    if (!showLibrary) return {};
-    return Object.fromEntries(treeOptions.map((item) => [item.id, familyPropertySummary(item)]));
-  }, [showLibrary, treeOptions]);
-
   const selectPerson = (personId) => {
+    setPropertyPanelExpanded(false);
     const targetGroup =
       findFamilyGroupsForPerson(currentTree, personId).find(
         (group) => group.id === activeFamilyGroupId,
@@ -792,8 +739,17 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       properties: [{ ...activeProperty, ...patch }, ...currentTree.properties.slice(1)],
     });
 
+  const updatePrimaryPropertyWorkspace = (patch) =>
+    updatePropertyWorkspace({
+      ...patch,
+      properties: patch.properties
+        ? [patch.properties[0] || activeProperty, ...currentTree.properties.slice(1)]
+        : currentTree.properties,
+    });
+
   const returnHome = async () => {
     setTraceOwnershipSnapshot(null);
+    setPropertyPanelExpanded(false);
     if (!cloudMode) {
       setDashboardOpen(false);
       setWorkspaceView("tree");
@@ -836,7 +792,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     return (
       <FamilyLibrary
         trees={treeOptions}
-        propertySummaries={propertySummaries}
         activeTreeId={activeTreeIsListed ? currentTree.id : ""}
         session={session}
         commercialMode={cloudMode}
@@ -881,14 +836,14 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
             className={workspaceView === "property" ? "active" : ""}
             onClick={() => setWorkspaceView("property")}
           >
-            <Landmark size={16} /> Property &amp; initial owners
+            <Landmark size={16} /> Setup
           </button>
           <button
             type="button"
             className={workspaceView === "ownership" ? "active" : ""}
             onClick={() => setWorkspaceView("ownership")}
           >
-            <GitBranch size={16} /> Owners &amp; transfers
+            <GitBranch size={16} /> Transfers
           </button>
           <button
             type="button"
@@ -900,11 +855,12 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         </nav>
         <section className="property-workspace-content">
           <Properties
-            properties={currentTree.properties}
+            properties={activeProperties}
             people={currentTree.people}
             outsideParties={currentTree.outsideParties}
+            singleProperty
             section={workspaceView}
-            onChange={updatePropertyWorkspace}
+            onChange={updatePrimaryPropertyWorkspace}
           />
         </section>
       </main>
@@ -919,20 +875,9 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         {dashboardOpen && selectedPersonId && (
           <aside className="context-dashboard open">
             <div className="dashboard-topline">
-              <div>
-                <p className="eyebrow">Person Details</p>
-                <strong>
-                  {currentTree.people.find((person) => person.id === selectedPersonId)?.fullName ||
-                    "New person"}
-                </strong>
-              </div>
-              <button
-                type="button"
-                className="dashboard-close"
-                onClick={closePersonCard}
-                aria-label="Close dashboard"
-              >
-                <X size={19} />
+              <p className="eyebrow">Person Details</p>
+              <button type="button" className="dashboard-back-button" onClick={closePersonCard}>
+                <ArrowLeft size={16} /> Back to Tree
               </button>
             </div>
             <div className="dashboard-content dashboard-person">
@@ -940,7 +885,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
                 familyPersonIds={activeFamilyGroup?.personIds || []}
-                properties={currentTree.properties}
+                properties={activeProperties}
                 ownershipByPerson={ownershipByPerson}
                 hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
@@ -959,7 +904,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 }
                 onSelectPerson={selectPerson}
                 onDeletePerson={removePerson}
-                onBackToTree={closePersonCard}
                 onChange={updatePeople}
                 onOutsidePartiesChange={(outsideParties) =>
                   setTree((current) => ({ ...normaliseTree(current), outsideParties }))
@@ -974,45 +918,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
         <section className="tree-stage" style={{ "--tree-zoom": zoom / 100 }}>
           {activeFamilyGroup && (
-            <>
-              <div className="tree-stage-toolbar tree-stage-toolbar-minimal">
-                <button type="button" className="tree-home-button" onClick={returnHome}>
-                  <House size={16} /> Back to Home
-                </button>
-                <EditableTreeTitle value={currentTree.title} onChange={updateTreeTitle} />
-                <label className="tree-zoom-slider">
-                  <span>Zoom</span>
-                  <input
-                    aria-label="Tree zoom"
-                    type="range"
-                    min="25"
-                    max="140"
-                    step="5"
-                    value={zoom}
-                    onChange={(event) => updateZoom(event.target.value)}
-                  />
-                  <output>{zoom}%</output>
-                </label>
-              </div>
-              <TreePropertyPanel
-                property={activeProperty}
-                people={currentTree.people}
-                outsideParties={currentTree.outsideParties}
-                propertyReport={propertyReport}
-                cardFields={currentTree.settings.personCardFields}
-                onCardFieldsChange={(personCardFields) =>
-                  setTree({
-                    ...currentTree,
-                    settings: { ...currentTree.settings, personCardFields },
-                  })
-                }
-                onPropertyChange={updateActiveProperty}
-                onFocusEvent={showTraceEventOnTree}
-                onOpenProperty={() => {
-                  setTraceOwnershipSnapshot(null);
-                  setWorkspaceView("ownership");
-                }}
-              />
+            <div className="tree-stage-main">
               <FamilyTreeCanvas
                 treeTitle={currentTree.title}
                 people={visiblePeople}
@@ -1035,8 +941,60 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 }
                 propertyValue={activeProperty.saleValue}
                 ownershipSnapshotActive={Boolean(traceOwnershipSnapshot)}
+                toolbar={
+                  <>
+                    <button type="button" className="tree-home-button" onClick={returnHome}>
+                      <House size={16} />
+                      <span className="tree-home-label-full">Back to Home</span>
+                      <span className="tree-home-label-short">Home</span>
+                    </button>
+                    <EditableTreeTitle value={currentTree.title} onChange={updateTreeTitle} />
+                    <PersonFinder
+                      people={currentTree.people}
+                      onSelectPerson={(personId) => {
+                        setPropertyPanelExpanded(false);
+                        focusPersonOnTree(personId);
+                      }}
+                    />
+                    <label className="tree-zoom-slider">
+                      <span>Zoom</span>
+                      <input
+                        aria-label="Tree zoom"
+                        type="range"
+                        min="25"
+                        max="140"
+                        step="5"
+                        value={zoom}
+                        onChange={(event) => updateZoom(event.target.value)}
+                      />
+                      <output>{zoom}%</output>
+                    </label>
+                  </>
+                }
               />
-            </>
+              <TreePropertyPanel
+                property={activeProperty}
+                people={currentTree.people}
+                outsideParties={currentTree.outsideParties}
+                propertyReport={propertyReport}
+                cardFields={currentTree.settings.personCardFields}
+                onCardFieldsChange={(personCardFields) =>
+                  setTree({
+                    ...currentTree,
+                    settings: { ...currentTree.settings, personCardFields },
+                  })
+                }
+                onPropertyChange={updateActiveProperty}
+                onFocusEvent={showTraceEventOnTree}
+                expanded={propertyPanelExpanded}
+                onExpandedChange={setPropertyPanelExpanded}
+                onOpenProperty={() => {
+                  setTraceOwnershipSnapshot(null);
+                  setPropertyPanelExpanded(false);
+                  setWorkspaceView("property");
+                }}
+              />
+            </div>
           )}
         </section>
       </div>

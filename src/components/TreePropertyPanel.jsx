@@ -39,10 +39,13 @@ export function TreePropertyPanel({
   onPropertyChange,
   onFocusEvent,
   onOpenProperty,
+  expanded: controlledExpanded,
+  onExpandedChange,
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [localExpanded, setLocalExpanded] = useState(false);
   const [traceIndex, setTraceIndex] = useState(-1);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const expanded = controlledExpanded ?? localExpanded;
   const traceEvents = useMemo(
     () => buildSuccessionTrace({ property, people, outsideParties, propertyReport }),
     [outsideParties, people, property, propertyReport],
@@ -68,6 +71,12 @@ export function TreePropertyPanel({
     onFocusEvent?.(null);
   };
 
+  const toggleExpanded = () => {
+    const nextExpanded = !expanded;
+    if (controlledExpanded === undefined) setLocalExpanded(nextExpanded);
+    onExpandedChange?.(nextExpanded);
+  };
+
   return (
     <>
       <aside className={`tree-property-panel ${expanded ? "expanded" : "collapsed"}`}>
@@ -75,11 +84,11 @@ export function TreePropertyPanel({
           type="button"
           className="tree-property-panel-toggle"
           aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
+          onClick={toggleExpanded}
         >
           <span>
             <Landmark size={17} />
-            <strong>Property &amp; Tree View</strong>
+            <strong>Property &amp; Ownership</strong>
           </span>
           <span className="tree-property-panel-price">
             {saleValue ? money.format(saleValue) : "Set selling price"}
@@ -90,7 +99,15 @@ export function TreePropertyPanel({
         {expanded && (
           <div className="tree-property-panel-body">
             <section className="tree-property-summary">
-              <span>{property.address || "Property address not entered"}</span>
+              <label>
+                <span>Property address</span>
+                <input
+                  aria-label="Property address on tree"
+                  value={property.address || ""}
+                  onChange={(event) => onPropertyChange({ address: event.target.value })}
+                  placeholder="Full address"
+                />
+              </label>
               <label>
                 <span>Selling price</span>
                 <span className="tree-property-price-input">
@@ -109,7 +126,7 @@ export function TreePropertyPanel({
 
             <details className="tree-control-section" open>
               <summary>
-                <span>Define initial shares</span>
+                <span>Initial ownership</span>
                 <b className={startingStatus.isComplete ? "valid" : "invalid"}>
                   {startingStatus.totalPercent.toLocaleString("en-MT", {
                     maximumFractionDigits: 4,
@@ -129,7 +146,7 @@ export function TreePropertyPanel({
 
             <details className="tree-control-section">
               <summary>
-                <span>Current title and values</span>
+                <span>Current owners &amp; values</span>
                 <b>{currentOwners.length}</b>
               </summary>
               <div className="tree-current-owners">
@@ -153,7 +170,7 @@ export function TreePropertyPanel({
 
             <details className="tree-control-section">
               <summary>
-                <span>View person cards</span>
+                <span>Person card details</span>
                 <b>Choose details</b>
               </summary>
               <PersonCardDisplayControl
@@ -236,7 +253,7 @@ export function TreePropertyPanel({
             </section>
 
             <button type="button" className="tree-property-open-button" onClick={onOpenProperty}>
-              <GitBranch size={15} /> Open transfers and tax calculation
+              <GitBranch size={15} /> Open property workspace
             </button>
           </div>
         )}

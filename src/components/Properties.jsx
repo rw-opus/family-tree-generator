@@ -1,4 +1,4 @@
-import { Home, Plus, Trash2 } from "lucide-react";
+import { Home, Trash2 } from "lucide-react";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
@@ -37,7 +37,7 @@ export function Properties({
   onChange,
 }) {
   const showSaleValue = section === "all" || section === "property";
-  const showProperty = section === "all" || section === "property" || section === "ownership";
+  const showProperty = section === "all" || section === "property";
   const showOwnership = section === "all" || section === "ownership";
   const showTax = section === "all" || section === "tax";
   const peopleById = new Map(people.map((person) => [person.id, person]));
@@ -68,21 +68,25 @@ export function Properties({
 
         return (
           <section className="editor-panel" key={property.id}>
-            {showProperty && !singleProperty && (
+            {showProperty && (
               <>
                 <div className="section-heading">
                   <div>
                     <p className="eyebrow">Property</p>
-                    <h2>{property.address || "Unnamed property"}</h2>
+                    <h2>
+                      {singleProperty ? "Property setup" : property.address || "Unnamed property"}
+                    </h2>
                   </div>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    title="Remove property"
-                    onClick={() => removeProperty(property.id)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  {!singleProperty && (
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title="Remove property"
+                      onClick={() => removeProperty(property.id)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
                 <div className="form-grid">
                   <label className="full-width">
@@ -95,16 +99,18 @@ export function Properties({
                       placeholder="Full address of the property"
                     />
                   </label>
-                  <label className="full-width">
-                    Description
-                    <input
-                      value={property.description}
-                      onChange={(event) =>
-                        updateProperty(property.id, { description: event.target.value })
-                      }
-                      placeholder="Optional registry, title or internal reference"
-                    />
-                  </label>
+                  {!singleProperty && (
+                    <label className="full-width">
+                      Description
+                      <input
+                        value={property.description}
+                        onChange={(event) =>
+                          updateProperty(property.id, { description: event.target.value })
+                        }
+                        placeholder="Optional registry, title or internal reference"
+                      />
+                    </label>
+                  )}
                 </div>
               </>
             )}
@@ -120,7 +126,7 @@ export function Properties({
                   {startingOwnership.isUnset
                     ? "Enter who owned this property before any transfers."
                     : "Starting ownership must equal 100% before calculated shares, transfers or tax figures are shown."}
-                  {!showProperty && " Open Owners & transfers to complete the initial title."}
+                  {!showProperty && " Open Setup to complete the initial title."}
                 </span>
               </div>
             )}

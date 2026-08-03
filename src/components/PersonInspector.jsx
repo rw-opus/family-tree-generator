@@ -1,15 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowLeft,
-  Baby,
-  Check,
-  FilePlus2,
-  Heart,
-  Pencil,
-  Trash2,
-  UserRound,
-  UsersRound,
-} from "lucide-react";
+import { Baby, Check, FilePlus2, Heart, Pencil, Trash2, UserRound, UsersRound } from "lucide-react";
 import {
   composeFullName,
   createPerson,
@@ -144,7 +134,6 @@ export function PersonInspector({
   onOutsidePartiesChange,
   onSelectPerson,
   onDeletePerson,
-  onBackToTree,
 }) {
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
   const [partnerRelationshipType, setPartnerRelationshipType] = useState(
@@ -982,7 +971,7 @@ export function PersonInspector({
   );
   const deleteBlockers = [
     ...(seversFamily
-      ? ["the only link holding this family together — remove the people either side first"]
+      ? ["the only link holding this family together — remove the people either side"]
       : []),
     ...(!sharedAcrossFamilies && (hasAnyPropertyOwnership || (hasOwnership && ownership > 1e-10))
       ? ["the person's property ownership"]
@@ -1013,16 +1002,9 @@ export function PersonInspector({
           {initials(selectedDisplayName)}
         </div>
         <div>
-          <p className="eyebrow">Selected person</p>
           <h2>{selectedDisplayName}</h2>
         </div>
         <div className="person-profile-actions">
-          {onBackToTree && (
-            <button type="button" className="person-back-button" onClick={onBackToTree}>
-              <ArrowLeft size={15} />
-              Back to Tree
-            </button>
-          )}
           <button
             type="button"
             className={`person-edit-button ${isEditing ? "active" : ""}`}
@@ -1030,7 +1012,7 @@ export function PersonInspector({
             onClick={() => setIsEditing((editing) => !editing)}
           >
             {isEditing ? <Check size={15} /> : <Pencil size={15} />}
-            {isEditing ? "Done" : "Edit"}
+            {isEditing ? "Done" : "Edit identity"}
           </button>
         </div>
       </section>
@@ -1342,51 +1324,6 @@ export function PersonInspector({
             {isDeceased && <small>Enter the date of death below to establish survivorship.</small>}
           </section>
         )}
-
-        <div className="person-share-summary">
-          <div className="person-share-heading">
-            <span>
-              Estimated property share
-              {properties.length > 1 && <small> (primary property only)</small>}
-            </span>
-            <span className="person-share-toggle" aria-label="Estimated share display">
-              <button
-                type="button"
-                className={ownershipDisplay === "fraction" ? "active" : ""}
-                aria-pressed={ownershipDisplay === "fraction"}
-                onClick={() => changeOwnershipDisplay("fraction")}
-              >
-                Fraction
-              </button>
-              <button
-                type="button"
-                className={ownershipDisplay === "percentage" ? "active" : ""}
-                aria-pressed={ownershipDisplay === "percentage"}
-                onClick={() => changeOwnershipDisplay("percentage")}
-              >
-                Percentage
-              </button>
-              <button
-                type="button"
-                className={ownershipDisplay === "both" ? "active" : ""}
-                aria-pressed={ownershipDisplay === "both"}
-                onClick={() => changeOwnershipDisplay("both")}
-              >
-                Both
-              </button>
-            </span>
-          </div>
-          <div className="person-share-value">
-            <strong>
-              {hasOwnership ? ownershipLabel(ownership, ownershipDisplay) : "Not yet calculated"}
-            </strong>
-            <small>
-              {hasOwnership && propertySaleValue > 0
-                ? `Estimated value ${money.format(estimatedPropertyValue)}`
-                : "Enter the initial owner and property selling price to calculate a value."}
-            </small>
-          </div>
-        </div>
 
         <fieldset className="person-edit-fields" disabled={!isEditing && !isDeceased}>
           {isDeceased && (
@@ -1956,6 +1893,50 @@ export function PersonInspector({
               )}
             </div>
           )}
+          <div className="person-share-summary">
+            <div className="person-share-heading">
+              <span>
+                Estimated property share
+                {properties.length > 1 && <small> (primary property only)</small>}
+              </span>
+              <span className="person-share-toggle" aria-label="Estimated share display">
+                <button
+                  type="button"
+                  className={ownershipDisplay === "fraction" ? "active" : ""}
+                  aria-pressed={ownershipDisplay === "fraction"}
+                  onClick={() => changeOwnershipDisplay("fraction")}
+                >
+                  Fraction
+                </button>
+                <button
+                  type="button"
+                  className={ownershipDisplay === "percentage" ? "active" : ""}
+                  aria-pressed={ownershipDisplay === "percentage"}
+                  onClick={() => changeOwnershipDisplay("percentage")}
+                >
+                  Percentage
+                </button>
+                <button
+                  type="button"
+                  className={ownershipDisplay === "both" ? "active" : ""}
+                  aria-pressed={ownershipDisplay === "both"}
+                  onClick={() => changeOwnershipDisplay("both")}
+                >
+                  Both
+                </button>
+              </span>
+            </div>
+            <div className="person-share-value">
+              <strong>
+                {hasOwnership ? ownershipLabel(ownership, ownershipDisplay) : "Not yet calculated"}
+              </strong>
+              <small>
+                {hasOwnership && propertySaleValue > 0
+                  ? `Estimated value ${money.format(estimatedPropertyValue)}`
+                  : "Enter the initial owner and property selling price to calculate a value."}
+              </small>
+            </div>
+          </div>
           {linkedPartners.length > 0 && (
             <div className="person-partner-links">
               <span>Marriage / partner links</span>

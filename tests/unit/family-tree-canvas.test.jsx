@@ -60,7 +60,7 @@ describe("FamilyTreeCanvas", () => {
     });
 
     expect(container.querySelector(".layered-family-tree")).toBeNull();
-    expect(container.textContent).toContain("Visual family record");
+    expect(container.textContent).toContain("Print preview");
     expect(container.querySelector('[data-person-id="a"] .family-node-name').textContent).toBe(
       "Solitary",
     );
@@ -73,7 +73,7 @@ describe("FamilyTreeCanvas", () => {
     renderCanvas({ people: family() });
 
     expect(container.querySelector(".layered-family-tree")).not.toBeNull();
-    expect(container.textContent).toContain("Relational family record");
+    expect(container.textContent).toContain("Select a person in the index");
   });
 
   it("renders a card for every linked person", () => {
@@ -472,17 +472,17 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll("[data-person-id]")).toHaveLength(people.length);
   });
 
-  it("titles the tree after the deceased when no title is supplied", () => {
+  it("does not repeat a generated title inside the tree canvas", () => {
     renderCanvas({
       people: family().map((entry) => (entry.id === "gf" ? { ...entry, isDeceased: true } : entry)),
     });
 
-    expect(container.textContent).toContain("Family Tree of");
+    expect(container.querySelector(".family-chart-title")).toBeNull();
   });
 
-  it("uses the supplied tree title when there is one", () => {
+  it("does not repeat a supplied title inside the tree canvas", () => {
     renderCanvas({ people: family(), treeTitle: "Borg succession" });
 
-    expect(container.textContent).toContain("Borg succession");
+    expect(container.querySelector(".family-chart-title")).toBeNull();
   });
 });
