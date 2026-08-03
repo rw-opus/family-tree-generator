@@ -315,6 +315,43 @@ describe("App local recovery", () => {
     expect(container.textContent).not.toContain("Vendors & tax");
   });
 
+  it("reaches the property and tax workspace from the tree screen and returns", () => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "tree",
+          title: "Borg family",
+          people: [{ id: "person-1", fullName: "Joseph Borg" }],
+          properties: [{ id: "property-1", address: "1 Republic Street", saleValue: "250000" }],
+        },
+      ],
+      "tree",
+      window.localStorage,
+    );
+    act(() => root.render(<App />));
+    openCurrentFamily();
+
+    expect(container.querySelector(".tree-property-panel")).not.toBeNull();
+    const openProperty = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Open transfers and tax calculation"),
+    );
+    expect(openProperty).not.toBeUndefined();
+    act(() => openProperty.click());
+
+    expect(container.querySelector(".property-workspace-page")).not.toBeNull();
+    const ownershipTab = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Owners & transfers",
+    );
+    expect(ownershipTab.className).toContain("active");
+
+    const backToTree = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Open family tree"),
+    );
+    act(() => backToTree.click());
+    expect(container.querySelector(".property-workspace-page")).toBeNull();
+    expect(container.querySelector(".tree-property-panel")).not.toBeNull();
+  });
+
   it("does not create a replacement family after the last family is deleted", () => {
     act(() => root.render(<App />));
     expect(container.querySelectorAll(".family-name-button")).toHaveLength(0);

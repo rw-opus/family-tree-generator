@@ -132,6 +132,32 @@ describe("FamilyLibrary", () => {
     expect(handlers.onImport).toHaveBeenCalledWith(file);
   });
 
+  it("shows each family's property status and opens straight into the property workspace", () => {
+    const handlers = renderLibrary(root, {
+      propertySummaries: {
+        borg: { propertyCount: 2, label: "2 properties · tax ready", tone: "ready" },
+        vella: { propertyCount: 0, label: "No properties yet", tone: "empty" },
+      },
+    });
+
+    expect(container.textContent).toContain("2 properties · tax ready");
+    expect(container.textContent).toContain("No properties yet");
+
+    const manageBorg = container.querySelector(
+      'button[aria-label="Manage properties for Borg family"]',
+    );
+    expect(manageBorg).not.toBeNull();
+    act(() => manageBorg.click());
+    expect(handlers.onOpen).toHaveBeenCalledWith("borg", "property");
+
+    const addVella = container.querySelector(
+      'button[aria-label="Add a property for Vella family"]',
+    );
+    expect(addVella).not.toBeNull();
+    act(() => addVella.click());
+    expect(handlers.onOpen).toHaveBeenCalledWith("vella", "property");
+  });
+
   it("shows the five-free pricing state and blocks creation until a paid credit exists", () => {
     const handlers = renderLibrary(root, {
       commercialMode: true,

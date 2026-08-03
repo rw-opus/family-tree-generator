@@ -305,4 +305,68 @@ describe("Properties section views", () => {
     expect(container.textContent).toContain("must equal 100%");
     expect(container.textContent).not.toContain("Tax Calculation");
   });
+
+  describe("multi-property workspace", () => {
+    it("lists every property with its own address and lets a second property be added", () => {
+      const onChange = vi.fn();
+      const secondProperty = {
+        id: "property-2",
+        address: "2 Merchants Street",
+        owners: [],
+        declarations: [],
+        transfers: [],
+        saleLots: [],
+      };
+      act(() =>
+        root.render(
+          <Properties
+            properties={[properties[0], secondProperty]}
+            people={people}
+            outsideParties={[]}
+            section="property"
+            onChange={onChange}
+          />,
+        ),
+      );
+
+      expect(container.textContent).toContain("1 Republic Street");
+      expect(container.textContent).toContain("2 Merchants Street");
+      expect(container.querySelectorAll(".editor-panel")).toHaveLength(2);
+
+      const addButton = [...container.querySelectorAll("button")].find((button) =>
+        button.textContent.includes("Add property"),
+      );
+      expect(addButton).not.toBeUndefined();
+      act(() => addButton.click());
+
+      expect(onChange).toHaveBeenCalledWith({
+        properties: [
+          properties[0],
+          secondProperty,
+          expect.objectContaining({ address: "", owners: [] }),
+        ],
+      });
+    });
+
+    it("shows the empty state and no add-property gate when there are no properties", () => {
+      act(() =>
+        root.render(
+          <Properties
+            properties={[]}
+            people={people}
+            outsideParties={[]}
+            section="property"
+            onChange={vi.fn()}
+          />,
+        ),
+      );
+
+      expect(container.textContent).toContain("No properties yet");
+      expect(
+        [...container.querySelectorAll("button")].some((button) =>
+          button.textContent.includes("Add property"),
+        ),
+      ).toBe(true);
+    });
+  });
 });

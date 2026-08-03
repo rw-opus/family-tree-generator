@@ -272,7 +272,7 @@
 
 .family-library-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 8rem 11rem;
+  grid-template-columns: minmax(0, 1fr) 7rem 11.5rem 11rem;
   align-items: center;
   gap: 0.65rem;
   min-height: 3.15rem;
@@ -345,6 +345,19 @@
   flex: 1 1 0;
 }
 
+.family-property-status .library-row-action {
+  width: 100%;
+  color: var(--muted);
+}
+
+.family-property-status.tone-attention .library-row-action {
+  color: #a15b1f;
+}
+
+.family-property-status.tone-ready .library-row-action {
+  color: var(--forest);
+}
+
 .property-workspace-page {
   min-height: 100dvh;
   background: var(--paper);
@@ -387,35 +400,6 @@
   color: var(--forest);
   padding: 0.55rem 0.75rem;
   font-weight: 800;
-}
-
-.property-workspace-property {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.75rem;
-  border-bottom: 1px solid #dbe3df;
-  background: #f8faf9;
-  padding: 0.7rem clamp(0.8rem, 3vw, 2rem);
-}
-
-.property-workspace-property label {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.55rem;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-.property-workspace-property input {
-  min-height: 2.25rem;
-  border: 1px solid #cbd7d0;
-  border-radius: 5px;
-  background: #fff;
-  padding: 0.45rem 0.55rem;
-  color: var(--ink);
-  font: inherit;
 }
 
 .property-workspace-tabs {
@@ -4742,10 +4726,6 @@ body.succession-history-open {
     grid-column: 1 / -1;
   }
 
-  .property-workspace-property {
-    grid-template-columns: 1fr;
-  }
-
   .family-row-actions {
     flex-wrap: wrap;
   }
@@ -4830,10 +4810,6 @@ body.succession-history-open {
     font-size: 1rem;
   }
 
-  .property-workspace-property label {
-    grid-template-columns: 1fr;
-  }
-
   .family-library-header {
     min-height: 58px;
     padding: 0.55rem 0.75rem;
@@ -4906,9 +4882,18 @@ body.succession-history-open {
     font-size: 0.6rem;
   }
 
+  .family-property-status {
+    grid-column: 1;
+  }
+
+  .family-property-status .library-row-action {
+    justify-content: flex-start;
+    padding: 0;
+  }
+
   .family-row-actions {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
   }
 
   .family-rename-form {

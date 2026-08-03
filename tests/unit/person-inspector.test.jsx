@@ -964,6 +964,34 @@ describe("PersonInspector", () => {
     expect(onSelectPerson).toHaveBeenCalledWith("parent");
   });
 
+  it("blocks deletion for ownership held in a second property, not just the primary one", () => {
+    const people = [
+      { id: "parent", fullName: "Joseph Borg", spouseIds: [] },
+      { id: "person", fullName: "Maria Borg", fatherId: "parent", spouseIds: [] },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[{ id: "property-1" }, { id: "property-2" }]}
+          selectedPersonId="person"
+          ownershipByPerson={{}}
+          hasAnyPropertyOwnership
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    beginEditing();
+
+    const deleteButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Delete person"),
+    );
+    expect(deleteButton.disabled).toBe(true);
+    expect(container.textContent).toContain("Remove the person's property ownership first.");
+  });
+
   it("removes a shared canonical person from only the current family", () => {
     const onChange = vi.fn();
     const onDeletePerson = vi.fn();
@@ -1898,7 +1926,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Required 1/2");
     expect(container.textContent).toContain("Required share of selling price €120,000.00");
     expect(container.textContent).toContain("Missing 1/2");
-    expect(container.textContent).toContain("Declaration CM 1");
+    expect(container.textContent).toContain("Declaration Causa Mortis 1");
     expect(container.textContent).not.toContain("Draft");
     expect(container.textContent).toContain("Notary");
     expect(

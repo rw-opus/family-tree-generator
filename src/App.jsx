@@ -23,7 +23,11 @@ import {
   buildTreeCardOwnershipByPerson,
   normalisePersonCardFields,
 } from "./domain/personCardDisplay.js";
-import { buildPropertyVendorTaxReport } from "./domain/propertyVendorTax.js";
+import {
+  buildPropertyVendorTaxReport,
+  buildTaxCalculationReport,
+  propertyStartingOwnershipStatus,
+} from "./domain/propertyVendorTax.js";
 import {
   createFamilyTree,
   listFamilyTrees,
@@ -182,6 +186,60 @@ export function caseActivationState(value) {
   };
 }
 
+const pluralProperty = (count) => `${count} propert${count === 1 ? "y" : "ies"}`;
+
+function familyPropertySummary(tree) {
+  const normalised = normaliseTree(tree);
+  const properties = normalised.properties || [];
+  if (!properties.length) {
+    return { propertyCount: 0, label: "No properties yet", tone: "empty" };
+  }
+
+  const incompleteOwnership = properties.filter(
+    (property) => !propertyStartingOwnershipStatus(property).isComplete,
+  );
+  if (incompleteOwnership.length) {
+    return {
+      propertyCount: properties.length,
+      label: `${pluralProperty(properties.length)} · ${incompleteOwnership.length} need${
+        incompleteOwnership.length === 1 ? "s" : ""
+      } starting owners`,
+      tone: "attention",
+    };
+  }
+
+  const missingSaleValue = properties.filter((property) => !Number(property.saleValue));
+  if (missingSaleValue.length) {
+    return {
+      propertyCount: properties.length,
+      label: `${pluralProperty(properties.length)} · needs a selling price`,
+      tone: "attention",
+    };
+  }
+
+  const hasIncompleteTax = properties.some((property) => {
+    const report = buildTaxCalculationReport(
+      property,
+      normalised.people,
+      normalised.outsideParties,
+    );
+    return report.vendors.some((vendor) => vendor.incompleteRowCount > 0);
+  });
+  if (hasIncompleteTax) {
+    return {
+      propertyCount: properties.length,
+      label: `${pluralProperty(properties.length)} · tax incomplete`,
+      tone: "attention",
+    };
+  }
+
+  return {
+    propertyCount: properties.length,
+    label: `${pluralProperty(properties.length)} · tax ready`,
+    tone: "ready",
+  };
+}
+
 export function App({ localOnlyMode = true, session = null, onSignOut = () => {} }) {
   const cloudMode = Boolean(session?.user?.id) && !localOnlyMode;
   const [startupWorkspace] = useState(() =>
@@ -275,7 +333,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const activePersonIds = new Set(activeFamilyGroup?.personIds || []);
   const visiblePeople = currentTree.people.filter((person) => activePersonIds.has(person.id));
   const activeProperty = currentTree.properties[0] || makePrimaryProperty("primary-property");
-  const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const propertyReport = useMemo(
     () =>
       buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties),
@@ -301,19 +358,37 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       ),
     [propertyReport.ledger.owners],
   );
+  const completeProperties = useMemo(
+    () =>
+      currentTree.properties.filter(
+        (property) => propertyStartingOwnershipStatus(property).isComplete,
+      ),
+    [currentTree.properties],
+  );
+  // Ownership blocks person deletion per-property (not just the primary property) so a
+  // second property's recorded owners can't be silently orphaned by deleting a person.
+  const anyPropertyOwnershipPersonIds = useMemo(() => {
+    const ids = new Set();
+    completeProperties.forEach((property) => {
+      const report = buildPropertyVendorTaxReport(
+        property,
+        currentTree.people,
+        currentTree.outsideParties,
+      );
+      report.ledger.owners.forEach((owner) => {
+        if (owner.personId && Number(owner.share) > 1e-10) ids.add(owner.personId);
+      });
+    });
+    return ids;
+  }, [completeProperties, currentTree.outsideParties, currentTree.people]);
   const causaMortisCoverage = useMemo(
     () =>
       buildCausaMortisShareCoverage(
         currentTree.people,
-        propertyReport.startingOwnership.isComplete ? activeProperties : [],
+        completeProperties,
         currentTree.outsideParties,
       ),
-    [
-      activeProperties,
-      currentTree.outsideParties,
-      currentTree.people,
-      propertyReport.startingOwnership.isComplete,
-    ],
+    [completeProperties, currentTree.outsideParties, currentTree.people],
   );
   const selectedCaseDependencies = useMemo(() => {
     const relationshipLabels = new Set([
@@ -446,6 +521,14 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     () => (activeTreeIsListed ? upsertWorkspaceTree(trees, currentTree) : trees),
     [activeTreeIsListed, currentTree, trees],
   );
+
+  // Only worth computing while Home is actually visible — it re-derives tax
+  // completeness for every family and would otherwise redo that work on every
+  // keystroke made while editing the currently open tree.
+  const propertySummaries = useMemo(() => {
+    if (!showLibrary) return {};
+    return Object.fromEntries(treeOptions.map((item) => [item.id, familyPropertySummary(item)]));
+  }, [showLibrary, treeOptions]);
 
   const selectPerson = (personId) => {
     const targetGroup =
@@ -753,6 +836,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     return (
       <FamilyLibrary
         trees={treeOptions}
+        propertySummaries={propertySummaries}
         activeTreeId={activeTreeIsListed ? currentTree.id : ""}
         session={session}
         commercialMode={cloudMode}
@@ -791,23 +875,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
             <GitBranch size={16} /> Open family tree
           </button>
         </header>
-        <section className="property-workspace-property">
-          <label>
-            Property address
-            <input
-              value={activeProperty.address || ""}
-              onChange={(event) =>
-                updatePropertyWorkspace({
-                  properties: [
-                    { ...activeProperty, address: event.target.value },
-                    ...currentTree.properties.slice(1),
-                  ],
-                })
-              }
-              placeholder="Full address"
-            />
-          </label>
-        </section>
         <nav className="property-workspace-tabs" aria-label="Property workspace sections">
           <button
             type="button"
@@ -833,10 +900,9 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         </nav>
         <section className="property-workspace-content">
           <Properties
-            properties={activeProperties}
+            properties={currentTree.properties}
             people={currentTree.people}
             outsideParties={currentTree.outsideParties}
-            singleProperty
             section={workspaceView}
             onChange={updatePropertyWorkspace}
           />
@@ -874,8 +940,9 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
                 familyPersonIds={activeFamilyGroup?.personIds || []}
-                properties={activeProperties}
+                properties={currentTree.properties}
                 ownershipByPerson={ownershipByPerson}
+                hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}

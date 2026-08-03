@@ -130,6 +130,7 @@ export function PersonInspector({
   people,
   properties = [],
   ownershipByPerson = {},
+  hasAnyPropertyOwnership = false,
   causaMortisCoverage = [],
   selectedPersonId,
   shareDisplay = "both",
@@ -983,7 +984,7 @@ export function PersonInspector({
     ...(seversFamily
       ? ["the only link holding this family together — remove the people either side first"]
       : []),
-    ...(!sharedAcrossFamilies && hasOwnership && ownership > 1e-10
+    ...(!sharedAcrossFamilies && (hasAnyPropertyOwnership || (hasOwnership && ownership > 1e-10))
       ? ["the person's property ownership"]
       : []),
     ...(!sharedAcrossFamilies ? caseDependencyLabels : []),
@@ -1344,7 +1345,10 @@ export function PersonInspector({
 
         <div className="person-share-summary">
           <div className="person-share-heading">
-            <span>Estimated property share</span>
+            <span>
+              Estimated property share
+              {properties.length > 1 && <small> (primary property only)</small>}
+            </span>
             <span className="person-share-toggle" aria-label="Estimated share display">
               <button
                 type="button"
@@ -1672,7 +1676,7 @@ export function PersonInspector({
                 <div className="causa-mortis-records">
                   <div className="causa-mortis-heading">
                     <div>
-                      <strong>Declarations Causa Mortis</strong>
+                      <strong>Declarations Causa Mortis (CM)</strong>
                       <small>
                         {hasUnknownCausaMortisDeathDate
                           ? "The exact death date is needed to decide whether a Declaration Causa Mortis is required."
@@ -1776,7 +1780,7 @@ export function PersonInspector({
                       key={declaration.id}
                     >
                       <div className="causa-mortis-card-heading">
-                        <strong>Declaration CM {index + 1}</strong>
+                        <strong>Declaration Causa Mortis {index + 1}</strong>
                         <button
                           type="button"
                           className="icon-button"
@@ -1810,7 +1814,9 @@ export function PersonInspector({
                         </select>
                       </label>
                       <label>
-                        <span>Share declared CM</span>
+                        <span>
+                          Share declared <abbr title="Declaration Causa Mortis">CM</abbr>
+                        </span>
                         <span className="causa-mortis-fraction">
                           <input
                             aria-label={`Causa mortis share numerator ${index + 1}`}
