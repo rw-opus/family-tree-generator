@@ -59,12 +59,14 @@ export function FamilyTreeCanvas({
   treeTitle = "",
   people = [],
   ownershipByPerson = {},
+  currentOwnershipByPerson = {},
   causaMortisCoverageByPerson = {},
   onPrint,
   selectedPersonId,
   onSelectPerson,
   personCardFields,
   propertyValue = 0,
+  ownershipSnapshotActive = false,
   zoom = 100,
   onZoomChange,
 }) {
@@ -123,9 +125,11 @@ export function FamilyTreeCanvas({
       people={cleanPeople}
       cardName={cardName}
       ownershipByPerson={ownershipByPerson}
+      currentOwnershipByPerson={currentOwnershipByPerson}
       causaMortisCoverageByPerson={causaMortisCoverageByPerson}
       personCardFields={personCardFields}
       propertyValue={propertyValue}
+      ownershipSnapshotActive={ownershipSnapshotActive}
       selectedPersonId={selectedPersonId}
       onSelectPerson={onSelectPerson}
       stackedLegalDetails={usesStackedLegalCards}

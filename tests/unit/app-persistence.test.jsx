@@ -146,12 +146,17 @@ describe("App local recovery", () => {
     const title = container.querySelector('button[aria-label^="Edit tree name:"]');
     expect(title.textContent).toContain("Borg succession");
     expect(container.querySelector('input[aria-label="Tree name"]')).toBeNull();
-    expect(container.textContent).toContain("Joseph Borg");
+    expect(
+      container.querySelector('[data-person-id="person-1"] .family-node-name').textContent,
+    ).toBe("Joseph");
+    expect(
+      container.querySelector('[data-person-id="person-1"] .family-node-surname').textContent,
+    ).toBe("Borg");
     expect(container.querySelector(".case-view-tabs")).toBeNull();
     expect(container.querySelector('input[aria-label="Property address"]')).toBeNull();
     expect(container.querySelector('input[aria-label="Property selling price"]')).toBeNull();
     expect(container.querySelector(".dashboard-tabs")).toBeNull();
-    expect(container.querySelector(".dashboard-topline").textContent).toContain("Person Details");
+    expect(container.querySelector(".dashboard-topline")).toBeNull();
 
     const personCard = container.querySelector('[data-person-id="person-1"]');
     act(() => personCard.click());
@@ -161,7 +166,8 @@ describe("App local recovery", () => {
       (button) => button.textContent.trim() === "Back to Tree",
     );
     act(() => backToTree.click());
-    expect(container.querySelector(".context-dashboard").classList.contains("open")).toBe(false);
+    expect(container.querySelector(".context-dashboard")).toBeNull();
+    expect(container.querySelector(".family-node.selected")).toBeNull();
 
     const home = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Back to Home"),
@@ -175,7 +181,12 @@ describe("App local recovery", () => {
     expect(container.querySelector('button[aria-label^="Edit tree name:"]').textContent).toContain(
       "Vella succession",
     );
-    expect(container.textContent).toContain("Maria Vella");
+    expect(
+      container.querySelector('[data-person-id="person-2"] .family-node-name').textContent,
+    ).toBe("Maria");
+    expect(
+      container.querySelector('[data-person-id="person-2"] .family-node-surname').textContent,
+    ).toBe("Vella");
   });
 
   it("keeps family creation and deletion on Home instead of the tree canvas", () => {

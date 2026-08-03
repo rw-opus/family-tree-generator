@@ -135,6 +135,7 @@ export function linkedSpousesFor(people = [], personId) {
 
 export function linkedLegalSpousesFor(people = [], personId, atDate = "") {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  if (peopleById.get(personId)?.unmarriedOrWidowedAtDeath === true) return [];
   return legalSpouseIdsForPerson(people, personId, atDate)
     .map((spouseId) => peopleById.get(spouseId))
     .filter(Boolean);
@@ -148,6 +149,7 @@ export function linkedSpousesMissingDeathDates(people = [], deceasedId, atDate =
 
 export function linkedMarriagesMissingEndDates(people = [], personId, atDate = "") {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  if (peopleById.get(personId)?.unmarriedOrWidowedAtDeath === true) return [];
   return partnerIdsForPerson(people, personId)
     .map((partnerId) => ({
       partner: peopleById.get(partnerId),
@@ -312,16 +314,18 @@ export function intestateAllocations(people = [], deceasedId) {
   }
 
   const atDate = deceased.dateOfDeath;
-  const marriagesNotStarted = partnerIdsForPerson(people, deceased.id)
-    .map((partnerId) => ({
-      partner: index.peopleById.get(partnerId),
-      relationship: findPartnerRelationship(people, deceased.id, partnerId),
-    }))
-    .filter(
-      ({ relationship }) => partnerRelationshipStatusAt(relationship, atDate) === "not-started",
-    )
-    .map(({ partner }) => partner)
-    .filter(Boolean);
+  const marriagesNotStarted = deceased.unmarriedOrWidowedAtDeath
+    ? []
+    : partnerIdsForPerson(people, deceased.id)
+        .map((partnerId) => ({
+          partner: index.peopleById.get(partnerId),
+          relationship: findPartnerRelationship(people, deceased.id, partnerId),
+        }))
+        .filter(
+          ({ relationship }) => partnerRelationshipStatusAt(relationship, atDate) === "not-started",
+        )
+        .map(({ partner }) => partner)
+        .filter(Boolean);
   if (marriagesNotStarted.length) {
     warnings.push(
       `The recorded marriage to ${marriagesNotStarted
@@ -537,6 +541,7 @@ export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
   return [
     INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
     deceased.dateOfDeath || "",
+    deceased.unmarriedOrWidowedAtDeath === true ? "no-spouse-at-death" : "spouse-status-derived",
     allocation.destination || "",
     shares,
     allocation.contextSignature || "",

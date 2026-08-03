@@ -1274,6 +1274,50 @@ describe("PersonInspector", () => {
     });
   });
 
+  it("records that a deceased person was unmarried or widowed at death", () => {
+    const onChange = vi.fn();
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      givenNames: "Joseph",
+      surname: "Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "intestacy",
+      spouseIds: ["former-spouse"],
+      designations: ["Deceased"],
+    };
+    const formerSpouse = {
+      id: "former-spouse",
+      fullName: "Maria Borg",
+      sex: "Female",
+      spouseIds: ["deceased"],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, formerSpouse]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const maritalStatus = container.querySelector(
+      'input[aria-label="Unmarried or widowed at the time of death"]',
+    );
+    expect(maritalStatus).not.toBeNull();
+    expect(maritalStatus.checked).toBe(false);
+
+    act(() => maritalStatus.click());
+    expect(onChange.mock.calls.at(-1)[0].find((person) => person.id === "deceased")).toMatchObject({
+      unmarriedOrWidowedAtDeath: true,
+    });
+  });
+
   it("immediately unlocks every succession field when a person is marked deceased", () => {
     let people = [
       {
@@ -1846,7 +1890,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Notary (optional)");
     expect(container.textContent).toContain("Description (optional)");
     expect(container.textContent).toContain("Suggested heirs if intestate");
-    expect(container.textContent).toContain("Use as beneficiaries");
+    expect(container.textContent).toContain("Edit Beneficiaries");
     expect(container.textContent).not.toContain("Will notes");
     expect(container.textContent).toContain("Declarations Causa Mortis");
     expect(container.textContent).toContain("Date of Declaration Causa Mortis");
@@ -2097,7 +2141,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("1/2");
 
     const applySuggestion = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Use as beneficiaries"),
+      button.textContent.includes("Edit Beneficiaries"),
     );
     act(() => applySuggestion.click());
 

@@ -1,10 +1,6 @@
 import { Home, Plus, Trash2 } from "lucide-react";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
-import {
-  fractionForShare,
-  shareFromFractionInput,
-  shareFromPercentageInput,
-} from "../domain/shares.js";
+import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyTransfers } from "./PropertyTransfers.jsx";
 import { TaxCalculationPanel } from "./TaxCalculationPanel.jsx";
 
@@ -23,14 +19,6 @@ const makeProperty = () => ({
   declarations: [],
   transfers: [],
   saleLots: [],
-});
-
-const makeOwner = () => ({
-  id: crypto.randomUUID(),
-  personId: "",
-  sharePercent: 0,
-  shareNumerator: 0,
-  shareDenominator: 1,
 });
 
 const viaLabel = (via) => {
@@ -61,18 +49,6 @@ export function Properties({
   const addProperty = () => updateProperties([...properties, makeProperty()]);
   const removeProperty = (id) =>
     updateProperties(properties.filter((property) => property.id !== id));
-  const addOwner = (property) =>
-    updateProperty(property.id, { owners: [...(property.owners || []), makeOwner()] });
-  const updateOwner = (property, ownerId, patch) =>
-    updateProperty(property.id, {
-      owners: (property.owners || []).map((owner) =>
-        owner.id === ownerId ? { ...owner, ...patch } : owner,
-      ),
-    });
-  const removeOwner = (property, ownerId) =>
-    updateProperty(property.id, {
-      owners: (property.owners || []).filter((owner) => owner.id !== ownerId),
-    });
   const handleTransfersChange = (property) => (patch) =>
     onChange({
       properties: properties.map((item) =>
@@ -84,7 +60,6 @@ export function Properties({
   return (
     <div className={`calculator-stack ${singleProperty ? "single-property-case" : ""}`}>
       {properties.map((property) => {
-        const owners = property.owners || [];
         const vendorReport = buildPropertyVendorTaxReport(property, people, outsideParties);
         const { startingOwnership, ownership: result } = vendorReport;
         const ownershipTotalLabel = startingOwnership.totalPercent.toLocaleString("en-MT", {
@@ -169,115 +144,12 @@ export function Properties({
             )}
 
             {showProperty && (
-              <>
-                <div className="section-heading">
-                  <div>
-                    <p className="eyebrow">Initial title</p>
-                    <h3>Initial owner/s of the property</h3>
-                  </div>
-                </div>
-                <p className="helper-text">
-                  Select any person already on the family tree and enter the fraction originally
-                  owned. Initial owners may be added whenever they are identified.
-                </p>
-                <p className={`share-status ${startingOwnership.isComplete ? "valid" : "invalid"}`}>
-                  Initial title allocated: {ownershipTotalLabel}% —{" "}
-                  {startingOwnership.isComplete ? "valid" : "must equal 100%"}
-                </p>
-                <div className="initial-owner-list">
-                  {owners.length > 0 && (
-                    <div className="initial-owner-columns" aria-hidden="true">
-                      <span>Person</span>
-                      <span>Fraction</span>
-                      <span>Percentage</span>
-                      <span />
-                    </div>
-                  )}
-                  {owners.map((owner) => {
-                    const ownerFraction = fractionForShare(owner);
-                    const ownerNumerator = owner.shareNumerator ?? ownerFraction.numerator;
-                    const ownerDenominator = owner.shareDenominator ?? ownerFraction.denominator;
-                    return (
-                      <div className="initial-owner-row" key={owner.id}>
-                        <select
-                          aria-label="Initial owner"
-                          value={owner.personId}
-                          onChange={(event) =>
-                            updateOwner(property, owner.id, { personId: event.target.value })
-                          }
-                        >
-                          <option value="">Choose person</option>
-                          {people.map((person) => (
-                            <option key={person.id} value={person.id}>
-                              {person.fullName || "Unnamed person"}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="initial-owner-fraction">
-                          <input
-                            aria-label="Initial ownership numerator"
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={ownerNumerator}
-                            onChange={(event) =>
-                              updateOwner(
-                                property,
-                                owner.id,
-                                shareFromFractionInput(owner, { numerator: event.target.value }),
-                              )
-                            }
-                          />
-                          <b>/</b>
-                          <input
-                            aria-label="Initial ownership denominator"
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={ownerDenominator}
-                            onChange={(event) =>
-                              updateOwner(
-                                property,
-                                owner.id,
-                                shareFromFractionInput(owner, { denominator: event.target.value }),
-                              )
-                            }
-                          />
-                        </span>
-                        <span className="initial-owner-percentage">
-                          <input
-                            aria-label="Initial ownership percentage"
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="any"
-                            value={owner.sharePercentInput ?? owner.sharePercent ?? ""}
-                            onChange={(event) =>
-                              updateOwner(
-                                property,
-                                owner.id,
-                                shareFromPercentageInput(event.target.value),
-                              )
-                            }
-                          />
-                          <b>%</b>
-                        </span>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          title="Remove owner"
-                          onClick={() => removeOwner(property, owner.id)}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-                <button type="button" className="add-button" onClick={() => addOwner(property)}>
-                  <Plus size={16} /> Add initial owner
-                </button>
-              </>
+              <InitialOwnershipEditor
+                property={property}
+                people={people}
+                onChange={(owners) => updateProperty(property.id, { owners })}
+                helperText="Select any person already on the family tree and enter the fraction originally owned. Initial owners may be added whenever they are identified."
+              />
             )}
 
             {showOwnership && startingOwnership.isComplete && (

@@ -1,7 +1,7 @@
 export const DEFAULT_PERSON_CARD_FIELDS = Object.freeze({
   ownershipFraction: true,
   ownershipPercentage: true,
-  ownershipValue: false,
+  ownershipValue: true,
   dateOfDeath: false,
   successionBasis: false,
   willDetails: false,

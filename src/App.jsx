@@ -5,9 +5,9 @@ import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { EditableTreeTitle } from "./components/EditableTreeTitle.jsx";
-import { PersonCardDisplayControl } from "./components/PersonCardDisplayControl.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { Properties } from "./components/Properties.jsx";
+import { TreePropertyPanel } from "./components/TreePropertyPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
   casePersonDependencyLabels,
@@ -211,6 +211,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   );
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
+  const [traceOwnershipSnapshot, setTraceOwnershipSnapshot] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
@@ -222,6 +223,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setZoom(activation.zoom);
     setActiveFamilyGroupId(activation.activeFamilyGroupId);
     setSelectedPersonId(activation.selectedPersonId);
+    setTraceOwnershipSnapshot(null);
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
   }, []);
@@ -290,6 +292,15 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     propertyReport.ownership.transmissions,
     propertyReport.startingOwnership.isComplete,
   ]);
+  const currentOwnershipByPerson = useMemo(
+    () =>
+      Object.fromEntries(
+        (propertyReport.ledger.owners || [])
+          .filter((owner) => owner.personId && Number(owner.share) > 0)
+          .map((owner) => [owner.personId, owner.share]),
+      ),
+    [propertyReport.ledger.owners],
+  );
   const causaMortisCoverage = useMemo(
     () =>
       buildCausaMortisShareCoverage(
@@ -334,7 +345,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       setSelectedPersonId("");
       return;
     }
-    if (!visiblePeople.some((person) => person.id === selectedPersonId)) {
+    if (selectedPersonId && !visiblePeople.some((person) => person.id === selectedPersonId)) {
       setSelectedPersonId(
         visiblePeople.find((person) => person.id === activeFamilyGroup.rootPersonId)?.id ||
           visiblePeople[0].id,
@@ -447,6 +458,33 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     }
     setSelectedPersonId(personId);
     setDashboardOpen(true);
+  };
+
+  const focusPersonOnTree = (personId) => {
+    const targetGroup =
+      findFamilyGroupsForPerson(currentTree, personId).find(
+        (group) => group.id === activeFamilyGroupId,
+      ) || findFamilyGroupsForPerson(currentTree, personId)[0];
+    if (targetGroup && !activePersonIds.has(personId)) {
+      setActiveFamilyGroupId(targetGroup.id);
+      setTree({ ...currentTree, activeFamilyGroupId: targetGroup.id });
+    }
+    setSelectedPersonId(personId);
+    setDashboardOpen(false);
+  };
+
+  const closePersonCard = () => {
+    setSelectedPersonId("");
+    setDashboardOpen(false);
+  };
+
+  const showTraceEventOnTree = (event) => {
+    setTraceOwnershipSnapshot(event?.ownershipSnapshot || null);
+    if (event?.personId) {
+      focusPersonOnTree(event.personId);
+      return;
+    }
+    closePersonCard();
   };
 
   const updateZoom = (nextZoom) => {
@@ -666,7 +704,13 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     });
   };
 
+  const updateActiveProperty = (patch) =>
+    updatePropertyWorkspace({
+      properties: [{ ...activeProperty, ...patch }, ...currentTree.properties.slice(1)],
+    });
+
   const returnHome = async () => {
+    setTraceOwnershipSnapshot(null);
     if (!cloudMode) {
       setDashboardOpen(false);
       setWorkspaceView("tree");
@@ -803,59 +847,63 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   return (
     <main className="tree-workbench">
-      <div className="workbench-body">
-        <aside className={`context-dashboard ${dashboardOpen ? "open" : ""}`}>
-          <div className="dashboard-topline">
-            <div>
-              <p className="eyebrow">Person Details</p>
-              <strong>
-                {currentTree.people.find((person) => person.id === selectedPersonId)?.fullName ||
-                  "New person"}
-              </strong>
+      <div
+        className={`workbench-body ${dashboardOpen && selectedPersonId ? "person-card-open" : "person-card-closed"}`}
+      >
+        {dashboardOpen && selectedPersonId && (
+          <aside className="context-dashboard open">
+            <div className="dashboard-topline">
+              <div>
+                <p className="eyebrow">Person Details</p>
+                <strong>
+                  {currentTree.people.find((person) => person.id === selectedPersonId)?.fullName ||
+                    "New person"}
+                </strong>
+              </div>
+              <button
+                type="button"
+                className="dashboard-close"
+                onClick={closePersonCard}
+                aria-label="Close dashboard"
+              >
+                <X size={19} />
+              </button>
             </div>
-            <button
-              type="button"
-              className="dashboard-close"
-              onClick={() => setDashboardOpen(false)}
-              aria-label="Close dashboard"
-            >
-              <X size={19} />
-            </button>
-          </div>
-          <div className="dashboard-content dashboard-person">
-            <PersonInspector
-              people={currentTree.people}
-              outsideParties={currentTree.outsideParties}
-              familyPersonIds={activeFamilyGroup?.personIds || []}
-              properties={activeProperties}
-              ownershipByPerson={ownershipByPerson}
-              causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
-              selectedPersonId={selectedPersonId}
-              shareDisplay={currentTree.settings.shareDisplay}
-              onShareDisplayChange={(shareDisplay) =>
-                setTree({
-                  ...currentTree,
-                  settings: { ...currentTree.settings, shareDisplay },
-                })
-              }
-              caseDependencyLabels={selectedCaseDependencies.blockingLabels}
-              retainedIdentityLabels={selectedCaseDependencies.retainedIdentityLabels}
-              personFamilyGroupCount={
-                findFamilyGroupsForPerson(currentTree, selectedPersonId).length
-              }
-              onSelectPerson={selectPerson}
-              onDeletePerson={removePerson}
-              onBackToTree={() => setDashboardOpen(false)}
-              onChange={updatePeople}
-              onOutsidePartiesChange={(outsideParties) =>
-                setTree((current) => ({ ...normaliseTree(current), outsideParties }))
-              }
-            />
-          </div>
-          <p className="dashboard-status" aria-live="polite">
-            {status}
-          </p>
-        </aside>
+            <div className="dashboard-content dashboard-person">
+              <PersonInspector
+                people={currentTree.people}
+                outsideParties={currentTree.outsideParties}
+                familyPersonIds={activeFamilyGroup?.personIds || []}
+                properties={activeProperties}
+                ownershipByPerson={ownershipByPerson}
+                causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
+                selectedPersonId={selectedPersonId}
+                shareDisplay={currentTree.settings.shareDisplay}
+                onShareDisplayChange={(shareDisplay) =>
+                  setTree({
+                    ...currentTree,
+                    settings: { ...currentTree.settings, shareDisplay },
+                  })
+                }
+                caseDependencyLabels={selectedCaseDependencies.blockingLabels}
+                retainedIdentityLabels={selectedCaseDependencies.retainedIdentityLabels}
+                personFamilyGroupCount={
+                  findFamilyGroupsForPerson(currentTree, selectedPersonId).length
+                }
+                onSelectPerson={selectPerson}
+                onDeletePerson={removePerson}
+                onBackToTree={closePersonCard}
+                onChange={updatePeople}
+                onOutsidePartiesChange={(outsideParties) =>
+                  setTree((current) => ({ ...normaliseTree(current), outsideParties }))
+                }
+              />
+            </div>
+            <p className="dashboard-status" aria-live="polite">
+              {status}
+            </p>
+          </aside>
+        )}
 
         <section className="tree-stage" style={{ "--tree-zoom": zoom / 100 }}>
           {activeFamilyGroup && (
@@ -878,27 +926,48 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   />
                   <output>{zoom}%</output>
                 </label>
-                <PersonCardDisplayControl
-                  fields={currentTree.settings.personCardFields}
-                  onChange={(personCardFields) =>
-                    setTree({
-                      ...currentTree,
-                      settings: { ...currentTree.settings, personCardFields },
-                    })
-                  }
-                />
               </div>
+              <TreePropertyPanel
+                property={activeProperty}
+                people={currentTree.people}
+                outsideParties={currentTree.outsideParties}
+                propertyReport={propertyReport}
+                cardFields={currentTree.settings.personCardFields}
+                onCardFieldsChange={(personCardFields) =>
+                  setTree({
+                    ...currentTree,
+                    settings: { ...currentTree.settings, personCardFields },
+                  })
+                }
+                onPropertyChange={updateActiveProperty}
+                onFocusEvent={showTraceEventOnTree}
+                onOpenProperty={() => {
+                  setTraceOwnershipSnapshot(null);
+                  setWorkspaceView("ownership");
+                }}
+              />
               <FamilyTreeCanvas
                 treeTitle={currentTree.title}
                 people={visiblePeople}
-                ownershipByPerson={ownershipByPerson}
+                ownershipByPerson={traceOwnershipSnapshot || ownershipByPerson}
+                currentOwnershipByPerson={traceOwnershipSnapshot || currentOwnershipByPerson}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}
                 onSelectPerson={selectPerson}
                 zoom={zoom}
                 onZoomChange={updateZoom}
-                personCardFields={currentTree.settings.personCardFields}
+                personCardFields={
+                  traceOwnershipSnapshot
+                    ? {
+                        ...currentTree.settings.personCardFields,
+                        ownershipFraction: true,
+                        ownershipPercentage: true,
+                        ownershipValue: true,
+                      }
+                    : currentTree.settings.personCardFields
+                }
                 propertyValue={activeProperty.saleValue}
+                ownershipSnapshotActive={Boolean(traceOwnershipSnapshot)}
               />
             </>
           )}

@@ -56,9 +56,11 @@ export function FamilyPersonCard({
   people,
   cardName,
   ownershipByPerson,
+  currentOwnershipByPerson = {},
   causaMortisCoverageByPerson,
   personCardFields = DEFAULT_PERSON_CARD_FIELDS,
   propertyValue,
+  ownershipSnapshotActive = false,
   selectedPersonId,
   onSelectPerson,
   stackedLegalDetails = false,
@@ -71,9 +73,14 @@ export function FamilyPersonCard({
   );
   const hasOwnership = Object.prototype.hasOwnProperty.call(ownershipByPerson, person.id);
   const ownership = hasOwnership ? ownershipByPerson[person.id] : 0;
+  const hasCurrentOwnership = Object.prototype.hasOwnProperty.call(
+    currentOwnershipByPerson,
+    person.id,
+  );
+  const currentOwnership = hasCurrentOwnership ? currentOwnershipByPerson[person.id] : 0;
   const fields = normalisePersonCardFields({ personCardFields });
   const shareParts = hasOwnership ? ownershipParts(ownership, fields) : [];
-  const ownershipValue = Number(propertyValue) * ownership;
+  const currentOwnershipValue = Number(propertyValue) * currentOwnership;
   const causaMortisDetails = availableCausaMortisDetails(person);
   const isTestate = person.inheritanceBasis === "will";
   const recordedWills = personWills(person).filter(
@@ -112,6 +119,7 @@ export function FamilyPersonCard({
     survivalStatusRequired && "survival-status-required",
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
+    ownershipSnapshotActive && hasOwnership && "trace-ownership-snapshot",
     selectedPersonId === person.id && "selected",
   ]
     .filter(Boolean)
@@ -157,9 +165,12 @@ export function FamilyPersonCard({
       )}
       {!person.isPlaceholder &&
         fields.ownershipValue &&
-        hasOwnership &&
+        hasCurrentOwnership &&
         Number(propertyValue) > 0 && (
-          <div className="family-node-detail">Value {formattedCurrency(ownershipValue)}</div>
+          <div className="family-node-detail">
+            {ownershipSnapshotActive ? "Value at this step" : "Current value"}{" "}
+            {formattedCurrency(currentOwnershipValue)}
+          </div>
         )}
       {!person.isPlaceholder && fields.dateOfDeath && isDeceased && person.dateOfDeath && (
         <div className="family-node-detail">d. {formattedDate(person.dateOfDeath)}</div>

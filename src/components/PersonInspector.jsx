@@ -533,6 +533,9 @@ export function PersonInspector({
       designations: checked ? ["Deceased", ...current] : current,
       isDeceased: checked,
       dateOfDeath: checked ? selectedPerson.dateOfDeath || "" : "",
+      unmarriedOrWidowedAtDeath: checked
+        ? selectedPerson.unmarriedOrWidowedAtDeath === true
+        : false,
       ...survivalPatch,
     });
   };
@@ -1388,6 +1391,26 @@ export function PersonInspector({
                 <span>Date of death</span>
                 <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
               </label>
+              <label className="succession-detail-row marital-status-at-death">
+                <span>Marital status at death</span>
+                <span className="detail-checkbox">
+                  <input
+                    type="checkbox"
+                    aria-label="Unmarried or widowed at the time of death"
+                    checked={selectedPerson.unmarriedOrWidowedAtDeath === true}
+                    onChange={(event) =>
+                      updateSelected({ unmarriedOrWidowedAtDeath: event.target.checked })
+                    }
+                  />
+                  Unmarried or widowed at the time of death.
+                </span>
+              </label>
+              {selectedPerson.unmarriedOrWidowedAtDeath === true && (
+                <small className="succession-marital-status-note">
+                  Recorded marriage and partner links remain on the tree but no spouse is included
+                  in this succession.
+                </small>
+              )}
               <label className="succession-detail-row">
                 <span>Estate</span>
                 <select
@@ -1487,7 +1510,7 @@ export function PersonInspector({
                     displayName={displayParty}
                     shareDisplay={ownershipDisplay}
                     title="Suggested heirs if intestate"
-                    actionLabel="Use as beneficiaries"
+                    actionLabel="Edit Beneficiaries"
                     onApply={applyIntestacySuggestionToWill}
                   />
                   <div className="will-beneficiaries">
