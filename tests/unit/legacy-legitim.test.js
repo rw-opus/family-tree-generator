@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyLegacyArticle616ToWill,
+  applyLegacyProtectedPortionsToWill,
   buildLegacyArticle616ChildBranches,
   calculateLegacyArticle616Legitim,
+  calculateLegacyArticle619Legitim,
   classifyLegacyArticle616Date,
   compareLegacyArticle616LegitimFloors,
   legacyArticle616EstateBase,
@@ -363,5 +365,123 @@ describe("old article 616 legitim", () => {
     expect(result).toMatchObject({ applies: false, adjusted: false, resolved: true });
     expect(result.shares.get("niece")).toBe(1);
     expect(result.shares.has("child")).toBe(false);
+  });
+});
+
+describe("old article 619 ascendant legitim", () => {
+  const person = (id, patch = {}) => ({
+    id,
+    fullName: id,
+    fatherId: "",
+    motherId: "",
+    spouseIds: [],
+    designations: [],
+    ...patch,
+  });
+
+  it("reserves one third equally between both surviving parents", () => {
+    const deceased = person("testator", {
+      isDeceased: true,
+      dateOfDeath: "2004-06-01",
+      fatherId: "father",
+      motherId: "mother",
+      inheritanceBasis: "will",
+      willHeirs: [{ personId: "outsider", sharePercent: 100 }],
+    });
+    const people = [deceased, person("father"), person("mother"), person("outsider")];
+
+    const calculation = calculateLegacyArticle619Legitim({ people, deceased });
+    const protection = applyLegacyProtectedPortionsToWill({ people, deceased });
+
+    expect(calculation.collectiveFraction).toMatchObject({ numerator: 1, denominator: 3 });
+    expect(
+      Object.fromEntries(
+        calculation.beneficiaryFloors.map((row) => [row.beneficiaryId, row.fraction.decimal]),
+      ),
+    ).toEqual({ father: 1 / 6, mother: 1 / 6 });
+    expect(protection.shares.get("father")).toBeCloseTo(1 / 6);
+    expect(protection.shares.get("mother")).toBeCloseTo(1 / 6);
+    expect(protection.shares.get("outsider")).toBeCloseTo(2 / 3);
+  });
+
+  it("gives the whole one-third legitim to the nearest ascendant line", () => {
+    const deceased = person("testator", {
+      isDeceased: true,
+      dateOfDeath: "2004-06-01",
+      fatherId: "father",
+      motherId: "mother",
+    });
+    const people = [
+      deceased,
+      person("father", {
+        isDeceased: true,
+        dateOfDeath: "2000-01-01",
+        fatherId: "paternal-grandfather",
+      }),
+      person("mother", {
+        isDeceased: true,
+        dateOfDeath: "2000-01-01",
+        motherId: "maternal-grandmother",
+      }),
+      person("paternal-grandfather"),
+      person("maternal-grandmother", {
+        isDeceased: true,
+        dateOfDeath: "1999-01-01",
+        motherId: "maternal-great-grandmother",
+      }),
+      person("maternal-great-grandmother"),
+    ];
+
+    const calculation = calculateLegacyArticle619Legitim({ people, deceased });
+
+    expect(calculation.nearestDegree).toBe(2);
+    expect(calculation.beneficiaryFloors).toHaveLength(1);
+    expect(calculation.beneficiaryFloors[0]).toMatchObject({
+      beneficiaryId: "paternal-grandfather",
+    });
+    expect(calculation.beneficiaryFloors[0].fraction).toMatchObject({
+      numerator: 1,
+      denominator: 3,
+    });
+  });
+
+  it("does not apply ascendant legitim where a spouse survived", () => {
+    const deceased = person("testator", {
+      isDeceased: true,
+      dateOfDeath: "2004-06-01",
+      fatherId: "father",
+      inheritanceBasis: "will",
+      willHeirs: [{ personId: "outsider", sharePercent: 100 }],
+    });
+    const people = [deceased, person("father"), person("outsider")];
+
+    const protection = applyLegacyProtectedPortionsToWill({
+      people,
+      deceased,
+      hasSurvivingSpouse: true,
+    });
+
+    expect(protection.applies).toBe(false);
+    expect(protection.shares.get("outsider")).toBe(1);
+  });
+
+  it("leaves ascendant legitim unresolved when the spouse's survival is unknown", () => {
+    const deceased = person("testator", {
+      isDeceased: true,
+      dateOfDeath: "2004-06-01",
+      fatherId: "father",
+      inheritanceBasis: "will",
+      willHeirs: [{ personId: "outsider", sharePercent: 100 }],
+    });
+    const people = [deceased, person("father"), person("outsider")];
+
+    const protection = applyLegacyProtectedPortionsToWill({
+      people,
+      deceased,
+      spouseSurvivalUnresolved: true,
+    });
+
+    expect(protection).toMatchObject({ applies: true, resolved: false });
+    expect(protection.warnings.join(" ")).toContain("spouse's date of death");
   });
 });

@@ -55,6 +55,7 @@ const LOWERCASE_NAME_PARTICLES = new Set([
   "du",
   "la",
   "le",
+  "of",
   "van",
   "von",
 ]);

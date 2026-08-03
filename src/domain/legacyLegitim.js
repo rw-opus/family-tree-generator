@@ -5,10 +5,11 @@ export const LEGACY_SUCCESSION_CUTOFF = "2005-03-01";
 /**
  * Calculates the descendants' old-law collective and personal fractions under
  * former Civil Code article 616, with the estate-base inputs described by
- * article 620(2)-(3). It does not decide article 619 ascendant rights, article
- * 620(4) imputation, or the distinct pre-2005 intestacy rules in former
- * articles 808-830. For a complete will, applyLegacyArticle616ToWill protects
- * the calculated personal minimums and leaves the balance to the named heirs.
+ * article 620(2)-(3). Article 619 ascendant rights are handled separately
+ * below. This module does not yet decide article 620(4) imputation or the
+ * distinct pre-2005 intestacy rules in former articles 808-830. For a complete
+ * will, applyLegacyProtectedPortionsToWill protects the supported personal
+ * minimums and leaves the disposable portion to the named heirs.
  */
 
 const EPSILON = 1e-10;
@@ -365,32 +366,12 @@ function allocationMap(records = []) {
   return shares;
 }
 
-/**
- * Applies the former article 616 personal minimums to a complete testamentary
- * allocation. Existing gifts to a protected descendant absorb the minimum;
- * only a shortfall is topped up. The top-up is taken proportionally from the
- * disposable surplus left to the named beneficiaries.
- */
-export function applyLegacyArticle616ToWill({ people = [], deceased = {}, willHeirs } = {}) {
-  const testamentaryShares = allocationMap(willHeirs ?? deceased.willHeirs);
-  const regime = classifyLegacyArticle616Date(deceased.dateOfDeath).regime;
-  const childBranches = buildLegacyArticle616ChildBranches(people, deceased);
-  const applies = regime === "legacy" && childBranches.length > 0;
-  if (!applies) {
-    return {
-      applies: false,
-      adjusted: false,
-      resolved: true,
-      shares: testamentaryShares,
-      calculation: null,
-      warnings: [],
-    };
-  }
-
-  const calculation = calculateLegacyArticle616Legitim({
-    childBranches,
-    estate: deceased.legacyArticle616Estate || {},
-  });
+function applyLegitimFloors({
+  testamentaryShares,
+  calculation,
+  incompleteMessage,
+  appliedMessage,
+}) {
   if (calculation.unresolved) {
     return {
       applies: true,
@@ -413,9 +394,7 @@ export function applyLegacyArticle616ToWill({ people = [], deceased = {}, willHe
       resolved: false,
       shares: testamentaryShares,
       calculation,
-      warnings: [
-        "Complete the will beneficiary allocation to 100% before applying the old-law child legitim.",
-      ],
+      warnings: [incompleteMessage],
     };
   }
 
@@ -479,10 +458,187 @@ export function applyLegacyArticle616ToWill({ people = [], deceased = {}, willHe
     resolved: true,
     shares: effectiveShares,
     calculation,
-    warnings: [
-      "Old-law child legitim was applied automatically; the named will beneficiaries receive the disposable portion.",
-    ],
+    warnings: [appliedMessage],
   };
+}
+
+/**
+ * Applies the former article 616 personal minimums to a complete testamentary
+ * allocation. Existing gifts to a protected descendant absorb the minimum;
+ * only a shortfall is topped up. The top-up is taken proportionally from the
+ * disposable surplus left to the named beneficiaries.
+ */
+export function applyLegacyArticle616ToWill({ people = [], deceased = {}, willHeirs } = {}) {
+  const testamentaryShares = allocationMap(willHeirs ?? deceased.willHeirs);
+  const regime = classifyLegacyArticle616Date(deceased.dateOfDeath).regime;
+  const childBranches = buildLegacyArticle616ChildBranches(people, deceased);
+  const applies = regime === "legacy" && childBranches.length > 0;
+  if (!applies) {
+    return {
+      applies: false,
+      adjusted: false,
+      resolved: true,
+      shares: testamentaryShares,
+      calculation: null,
+      warnings: [],
+    };
+  }
+
+  const calculation = calculateLegacyArticle616Legitim({
+    childBranches,
+    estate: deceased.legacyArticle616Estate || {},
+  });
+  return applyLegitimFloors({
+    testamentaryShares,
+    calculation,
+    incompleteMessage:
+      "Complete the will beneficiary allocation to 100% before applying the old-law child legitim.",
+    appliedMessage:
+      "Old-law child legitim was applied automatically; the named will beneficiaries receive the disposable portion.",
+  });
+}
+
+function nearestLegacyAscendants(people, deceased) {
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  let generation = [
+    { id: deceased.fatherId, line: "paternal" },
+    { id: deceased.motherId, line: "maternal" },
+  ].filter(({ id }) => id);
+  const visited = new Set([deceased.id]);
+  let degree = 1;
+
+  while (generation.length) {
+    const candidates = generation
+      .filter(({ id }) => !visited.has(id))
+      .map((entry) => ({ ...entry, person: peopleById.get(entry.id) }))
+      .filter(({ person }) => person);
+    candidates.forEach(({ id }) => visited.add(id));
+
+    const missing = candidates.filter(
+      ({ person }) => personIsDeceased(person) && !isValidIsoDate(person.dateOfDeath),
+    );
+    if (missing.length) return { degree, living: [], missing: missing.map(({ person }) => person) };
+
+    const living = candidates.filter(({ person }) => {
+      if (!personIsDeceased(person)) return true;
+      return person.dateOfDeath > deceased.dateOfDeath;
+    });
+    if (living.length) return { degree, living, missing: [] };
+
+    generation = candidates.flatMap(({ person, line }) =>
+      [person.fatherId, person.motherId].filter(Boolean).map((id) => ({ id, line })),
+    );
+    degree += 1;
+  }
+
+  return { degree: 0, living: [], missing: [] };
+}
+
+export function calculateLegacyArticle619Legitim({ people = [], deceased = {} } = {}) {
+  const diagnostics = [];
+  const nearest = nearestLegacyAscendants(people, deceased);
+  if (nearest.missing.length) {
+    diagnostics.push(
+      `Enter the date of death for ${nearest.missing.map(personName).join(", ")} before calculating the old-law ascendant legitim.`,
+    );
+  }
+
+  const beneficiaryFractions = new Map();
+  if (!diagnostics.length && nearest.living.length) {
+    const byLine = new Map();
+    nearest.living.forEach((entry) => {
+      if (!byLine.has(entry.line)) byLine.set(entry.line, []);
+      byLine.get(entry.line).push(entry.person);
+    });
+    const lineShare = fraction(1, 3 * byLine.size);
+    byLine.forEach((ascendants) => {
+      const personalShare = divideFraction(lineShare, ascendants.length);
+      ascendants.forEach((ascendant) => beneficiaryFractions.set(ascendant.id, personalShare));
+    });
+  }
+
+  return {
+    article: "619",
+    status: diagnostics.length ? "unresolved" : "calculated",
+    collectiveFraction: nearest.living.length ? fraction(1, 3) : fraction(0, 1),
+    beneficiaryFloors: [...beneficiaryFractions.entries()].map(
+      ([beneficiaryId, beneficiaryFraction]) => ({
+        beneficiaryId,
+        fraction: beneficiaryFraction,
+        amount: null,
+      }),
+    ),
+    nearestDegree: nearest.degree,
+    diagnostics,
+    warnings: diagnostics,
+    unresolved: diagnostics.length > 0,
+  };
+}
+
+export function applyLegacyProtectedPortionsToWill({
+  people = [],
+  deceased = {},
+  willHeirs,
+  hasSurvivingSpouse,
+  spouseSurvivalUnresolved = false,
+} = {}) {
+  const childResult = applyLegacyArticle616ToWill({ people, deceased, willHeirs });
+  if (
+    childResult.applies &&
+    (childResult.calculation?.countedBranchCount > 0 || childResult.calculation?.unresolved)
+  ) {
+    return childResult;
+  }
+
+  const testamentaryShares = allocationMap(willHeirs ?? deceased.willHeirs);
+  const regime = classifyLegacyArticle616Date(deceased.dateOfDeath).regime;
+  if (regime === "legacy" && spouseSurvivalUnresolved) {
+    return {
+      applies: true,
+      adjusted: false,
+      resolved: false,
+      shares: testamentaryShares,
+      calculation: null,
+      warnings: [
+        "Enter the linked spouse's date of death before deciding whether old article 619 ascendant legitim applies.",
+      ],
+    };
+  }
+  const spouseRecorded =
+    hasSurvivingSpouse === undefined
+      ? (Array.isArray(deceased.spouseIds) && deceased.spouseIds.length > 0) ||
+        (Array.isArray(deceased.partnerRelationships) && deceased.partnerRelationships.length > 0)
+      : hasSurvivingSpouse;
+  if (regime !== "legacy" || spouseRecorded) {
+    return {
+      applies: false,
+      adjusted: false,
+      resolved: true,
+      shares: testamentaryShares,
+      calculation: null,
+      warnings: [],
+    };
+  }
+
+  const calculation = calculateLegacyArticle619Legitim({ people, deceased });
+  if (!calculation.beneficiaryFloors.length && !calculation.unresolved) {
+    return {
+      applies: false,
+      adjusted: false,
+      resolved: true,
+      shares: testamentaryShares,
+      calculation,
+      warnings: [],
+    };
+  }
+  return applyLegitimFloors({
+    testamentaryShares,
+    calculation,
+    incompleteMessage:
+      "Complete the will beneficiary allocation to 100% before applying the old-law ascendant legitim.",
+    appliedMessage:
+      "Old-law ascendant legitim was applied automatically; the named will beneficiaries receive the disposable portion.",
+  });
 }
 
 export function compareLegacyArticle616LegitimFloors(calculation, actualAllocations = []) {

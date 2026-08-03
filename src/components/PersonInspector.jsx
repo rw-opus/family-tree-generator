@@ -40,18 +40,20 @@ import {
   editedIntestacyAllocations,
   intestateAllocations,
   isPersonDeceased,
+  linkedLegalSpousesFor,
   linkedSpousesFor,
+  missingPotentialIntestateParents,
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
-import { applyLegacyArticle616ToWill } from "../domain/legacyLegitim.js";
+import { applyLegacyProtectedPortionsToWill } from "../domain/legacyLegitim.js";
 import {
   fractionForShare,
   shareFromFractionInput,
   shareFromPercentage,
   shareFromPercentageInput,
 } from "../domain/shares.js";
-import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { isValidIsoDate, isoDateToDisplay } from "../domain/dateFormat.js";
 import { operativeWillFromRecords, personWills, personWithWills } from "../domain/wills.js";
 import {
   findPartnerRelationship,
@@ -107,6 +109,22 @@ const money = new Intl.NumberFormat("en-MT", {
   currency: "EUR",
   maximumFractionDigits: 2,
 });
+
+function legacyProtectedWillForPerson(people, deceased) {
+  const legalSpouses = linkedLegalSpousesFor(people, deceased.id, deceased.dateOfDeath);
+  return applyLegacyProtectedPortionsToWill({
+    people,
+    deceased,
+    hasSurvivingSpouse: legalSpouses.some(
+      (spouse) =>
+        !isPersonDeceased(spouse) ||
+        (spouse.dateOfDeath && spouse.dateOfDeath > deceased.dateOfDeath),
+    ),
+    spouseSurvivalUnresolved: legalSpouses.some(
+      (spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath,
+    ),
+  });
+}
 
 export function PersonInspector({
   people,
@@ -182,6 +200,10 @@ export function PersonInspector({
         : [],
     [parentSuggestions, selectedPerson],
   );
+  const missingIntestateParentRoles = useMemo(
+    () => (selectedPerson ? missingPotentialIntestateParents(people, selectedPerson.id) : []),
+    [people, selectedPerson],
+  );
 
   useEffect(() => {
     const nextPersonId = selectedPerson?.id || "";
@@ -208,6 +230,33 @@ export function PersonInspector({
   useEffect(() => {
     setOwnershipDisplay(shareDisplayMode(shareDisplay));
   }, [shareDisplay]);
+
+  useEffect(() => {
+    if (!selectedPerson || !missingIntestateParentRoles.length) return;
+    const subjectName = personGivenNames(selectedPerson).trim() || displayName(selectedPerson);
+    const selectedPatch = {};
+    const createdParents = missingIntestateParentRoles.map((role) => {
+      const relationship = role === "mother" ? "Mother" : "Father";
+      const parent = createPerson("Parent");
+      Object.assign(parent, {
+        givenNames: `${relationship} of ${subjectName}`,
+        fullName: `${relationship} of ${subjectName}`,
+        sex: role === "mother" ? "Female" : "Male",
+        isPotentialIntestateParent: true,
+        survivalStatusRequired: true,
+        survivalStatusReferencePersonId: selectedPerson.id,
+      });
+      selectedPatch[`${role}Id`] = parent.id;
+      selectedPatch[`${role}ExplicitlyUnassigned`] = false;
+      return parent;
+    });
+    onChange([
+      ...people.map((person) =>
+        person.id === selectedPerson.id ? { ...person, ...selectedPatch } : person,
+      ),
+      ...createdParents,
+    ]);
+  }, [displayName, missingIntestateParentRoles, onChange, people, selectedPerson]);
 
   const updatePerson = (personId, patch) => {
     onChange(people.map((person) => (person.id === personId ? { ...person, ...patch } : person)));
@@ -470,11 +519,31 @@ export function PersonInspector({
       (designation) => designation !== "Deceased",
     );
     if (checked) setIsEditing(true);
+    const survivalPatch = selectedPerson.isPotentialIntestateParent
+      ? checked
+        ? {
+            survivalStatusRequired: !isValidIsoDate(selectedPerson.dateOfDeath),
+            survivalStatusConfirmed: isValidIsoDate(selectedPerson.dateOfDeath)
+              ? "death-date-recorded"
+              : "",
+          }
+        : { survivalStatusRequired: false, survivalStatusConfirmed: "alive" }
+      : {};
     updateSelected({
       designations: checked ? ["Deceased", ...current] : current,
       isDeceased: checked,
       dateOfDeath: checked ? selectedPerson.dateOfDeath || "" : "",
+      ...survivalPatch,
     });
+  };
+
+  const updateDateOfDeath = (dateOfDeath) => {
+    const survivalPatch = selectedPerson.isPotentialIntestateParent
+      ? isValidIsoDate(dateOfDeath)
+        ? { survivalStatusRequired: false, survivalStatusConfirmed: "death-date-recorded" }
+        : { survivalStatusRequired: true, survivalStatusConfirmed: "" }
+      : {};
+    updateSelected({ dateOfDeath, ...survivalPatch });
   };
 
   const addRelative = (kind, secondParentId = "") => {
@@ -700,6 +769,7 @@ export function PersonInspector({
   const ownership = hasOwnership ? ownershipByPerson[selectedPerson.id] : 0;
   const isDeceased =
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
+  const survivalReferencePerson = peopleById.get(selectedPerson.survivalStatusReferencePersonId);
   const identityIssues = personIdentityIssues(selectedPerson);
   const identityComplete = identityIssues.length === 0;
   const identityMessage = identityComplete
@@ -723,7 +793,7 @@ export function PersonInspector({
   const automaticIntestacy = isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
   const protectedWill =
     isDeceased && inheritanceBasis === "will"
-      ? applyLegacyArticle616ToWill({ people, deceased: selectedPerson })
+      ? legacyProtectedWillForPerson(people, selectedPerson)
       : null;
   const editedIntestacy =
     inheritanceBasis === "intestacy" &&
@@ -1225,6 +1295,50 @@ export function PersonInspector({
           </label>
         </div>
 
+        {selectedPerson.survivalStatusRequired === true && (
+          <section className="potential-parent-survival-alert" role="alert">
+            <strong>Establish whether this parent survived</strong>
+            <p>
+              Confirm whether {selectedDisplayName} was alive or had already died when{" "}
+              {survivalReferencePerson ? displayName(survivalReferencePerson) : "the child"} died
+              {survivalReferencePerson?.dateOfDeath
+                ? ` on ${isoDateToDisplay(survivalReferencePerson.dateOfDeath)}`
+                : ""}
+              . The calculator treats this parent as a provisional surviving heir until that fact is
+              established.
+            </p>
+            <div>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  updateSelected({
+                    isDeceased: false,
+                    designations: personDesignations(selectedPerson).filter(
+                      (designation) => designation !== "Deceased",
+                    ),
+                    dateOfDeath: "",
+                    survivalStatusRequired: false,
+                    survivalStatusConfirmed: "alive",
+                  })
+                }
+              >
+                Confirm alive
+              </button>
+              {!isDeceased && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setDeceased(true)}
+                >
+                  Mark as deceased
+                </button>
+              )}
+            </div>
+            {isDeceased && <small>Enter the date of death below to establish survivorship.</small>}
+          </section>
+        )}
+
         <div className="person-share-summary">
           <div className="person-share-heading">
             <span>Estimated property share</span>
@@ -1272,10 +1386,7 @@ export function PersonInspector({
             <div className="person-succession">
               <label className="succession-detail-row">
                 <span>Date of death</span>
-                <DateInput
-                  value={selectedPerson.dateOfDeath || ""}
-                  onChange={(value) => updateSelected({ dateOfDeath: value })}
-                />
+                <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
               </label>
               <label className="succession-detail-row">
                 <span>Estate</span>

@@ -3333,6 +3333,14 @@ textarea {
     0 4px 14px rgba(28, 52, 40, 0.11);
 }
 
+.tree-stage .family-node.survival-status-required {
+  border-color: #b42318;
+  border-top-color: #7a1610;
+  box-shadow:
+    0 0 0 2px rgba(180, 35, 24, 0.16),
+    0 4px 14px rgba(28, 52, 40, 0.11);
+}
+
 .tree-stage .family-node.cm-share-incomplete {
   border-color: #b52b2b;
   border-top-color: #8e1717;
@@ -3453,6 +3461,40 @@ textarea {
   font-weight: 700;
   line-height: 1.2;
   overflow-wrap: anywhere;
+}
+
+.tree-stage .family-node-survival-alert {
+  margin-top: 0.32rem;
+  border-radius: 5px;
+  background: #fee4e2;
+  color: #8a1c13;
+  padding: 0.22rem 0.34rem;
+  font-size: 0.54rem;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.potential-parent-survival-alert {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.7rem 0;
+  border: 1px solid #d92d20;
+  border-radius: 10px;
+  background: #fff1f0;
+  color: #7a1610;
+  padding: 0.72rem;
+}
+
+.potential-parent-survival-alert p,
+.potential-parent-survival-alert small {
+  margin: 0;
+}
+
+.potential-parent-survival-alert > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .tree-stage .family-node-cm-alert {

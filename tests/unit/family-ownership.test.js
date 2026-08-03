@@ -5,10 +5,12 @@ import {
   buildFamilyPropertyOwnership,
   buildPropertyOwnership,
   descendantsMissingDeathDates,
+  editedIntestacyAllocations,
   intestacyAllocationSignature,
   intestacyConfirmationReadiness,
   intestacyShareTotalIsComplete,
   intestateAllocations,
+  missingPotentialIntestateParents,
   willAllocationReadiness,
 } from "../../src/domain/familyOwnership.js";
 
@@ -24,6 +26,57 @@ const person = (id, patch = {}) => ({
 });
 
 describe("automatic family ownership", () => {
+  it("identifies and provisionally allocates a missing post-2005 parent", () => {
+    const people = [
+      person("michael", {
+        fullName: "Michael Wadge",
+        isDeceased: true,
+        dateOfDeath: "2020-04-12",
+        fatherId: "edgar",
+      }),
+      person("edgar", {
+        fullName: "Edgar Wadge",
+        isDeceased: true,
+        dateOfDeath: "1990-01-01",
+      }),
+    ];
+
+    expect(missingPotentialIntestateParents(people, "michael")).toEqual(["mother"]);
+
+    const withPlaceholder = [
+      { ...people[0], motherId: "mother-placeholder" },
+      people[1],
+      person("mother-placeholder", {
+        fullName: "Mother of Michael",
+        sex: "Female",
+        isPotentialIntestateParent: true,
+        survivalStatusRequired: true,
+        survivalStatusReferencePersonId: "michael",
+      }),
+    ];
+    const allocation = intestateAllocations(withPlaceholder, "michael");
+
+    expect(allocation.destination).toBe("ascendants");
+    expect(allocation.shares.get("mother-placeholder")).toBe(1);
+    expect(allocation.warnings.join(" ")).toContain("provisionally treated as surviving");
+  });
+
+  it("does not create parent placeholders ahead of descendants or a surviving spouse", () => {
+    const base = person("owner", {
+      isDeceased: true,
+      dateOfDeath: "2020-04-12",
+    });
+    expect(
+      missingPotentialIntestateParents([base, person("child", { fatherId: "owner" })], "owner"),
+    ).toEqual([]);
+    expect(
+      missingPotentialIntestateParents(
+        [{ ...base, spouseIds: ["spouse"] }, person("spouse", { spouseIds: ["owner"] })],
+        "owner",
+      ),
+    ).toEqual([]);
+  });
+
   it("validates complete will beneficiary rows against current case parties", () => {
     const valid = willAllocationReadiness(
       {
@@ -709,11 +762,86 @@ describe("automatic family ownership", () => {
 
     const allocation = intestateAllocations(people, "owner");
     const result = buildAutomaticFamilyOwnership(people);
-    expect(allocation.destination).toBe("descendants");
+    expect(allocation.destination).toBe("legacy-descendants");
     expect(allocation.shares.get("child")).toBeCloseTo(1);
     expect(result.ownershipByPerson.child).toBeCloseTo(1);
     expect(result.ownershipByPerson.owner || 0).toBe(0);
     expect(result.unresolved).toEqual([]);
+  });
+
+  it("does not give a pre-2005 surviving spouse the modern ownership half", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2004-12-01",
+        spouseIds: ["spouse"],
+      }),
+      person("spouse", { spouseIds: ["owner"] }),
+      person("child-a", { fatherId: "owner", motherId: "spouse" }),
+      person("child-b", { fatherId: "owner", motherId: "spouse" }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.destination).toBe("legacy-descendants");
+    expect(Object.fromEntries(allocation.shares)).toEqual({
+      "child-a": 0.5,
+      "child-b": 0.5,
+    });
+    expect(allocation.warnings).toEqual([]);
+  });
+
+  it("requires edited heirs for an unresolved childless pre-2005 spouse succession", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2004-12-01",
+        spouseIds: ["spouse"],
+      }),
+      person("spouse", { spouseIds: ["owner"] }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.destination).toBe("legacy-spouse-law-unresolved");
+    expect(allocation.shares.size).toBe(0);
+    expect(allocation.warnings.join(" ")).toContain("825, 826, 827, 828, 829");
+  });
+
+  it("allows a complete manual allocation for an unresolved pre-2005 succession", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2004-12-01",
+        spouseIds: ["spouse"],
+        intestateHeirs: [
+          { id: "spouse-share", personId: "spouse", sharePercent: 50 },
+          { id: "sibling-share", personId: "sibling", sharePercent: 50 },
+        ],
+      }),
+      person("spouse", { spouseIds: ["owner"] }),
+      person("sibling", { siblingIds: ["owner"] }),
+    ];
+    const allocation = intestateAllocations(people, "owner");
+    const edited = editedIntestacyAllocations(people, "owner", allocation);
+
+    expect(edited.valid).toBe(true);
+    expect(Object.fromEntries(edited.shares)).toEqual({ spouse: 0.5, sibling: 0.5 });
+  });
+
+  it("flags the former article 815 period without silently changing historic status", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2010-01-01",
+      }),
+      person("child", { fatherId: "owner" }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.shares.get("child")).toBe(1);
+    expect(allocation.warnings.join(" ")).toContain("former Civil Code article 815");
   });
 
   it("cascades an edited pre-2005 inheritance without confirmation", () => {

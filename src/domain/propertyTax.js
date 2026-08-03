@@ -1,24 +1,18 @@
 import { assessArticle5ATransfer, article5ATransferValue } from "./article5A.js";
-import { isValidIsoDate } from "./dateFormat.js";
+import {
+  SUCCESSION_REFORM_START,
+  successionRuleset as classifySuccessionRuleset,
+} from "./successionRules.js";
 
 const number = (value) => Math.max(0, Number(value) || 0);
 
 export const percentageTotal = (heirs = []) =>
   heirs.reduce((total, heir) => total + number(heir.sharePercent), 0);
 
-export const CURRENT_SUCCESSION_START = "2005-03-01";
+export const CURRENT_SUCCESSION_START = SUCCESSION_REFORM_START;
 
 export function successionRuleset(dateOfDeath) {
-  if (!dateOfDeath) return { key: "undated", label: "Enter the date of death", supported: false };
-  if (!isValidIsoDate(dateOfDeath))
-    return {
-      key: "invalid-date",
-      label: "Enter a valid date of death",
-      supported: false,
-    };
-  if (dateOfDeath < CURRENT_SUCCESSION_START)
-    return { key: "pre2005", label: "Historical law before 1 March 2005", supported: false };
-  return { key: "current", label: "Current rules (from 1 March 2005)", supported: true };
+  return classifySuccessionRuleset(dateOfDeath);
 }
 
 const isActive = (heir) => !["renounced", "predeceased", "incapable"].includes(heir.status);
@@ -156,10 +150,29 @@ export function allocateCurrentIntestacy(heirs = []) {
   return { shares, warnings, destination: "government" };
 }
 
+export function allocateLegacyDescendantIntestacy(heirs = []) {
+  const shares = new Map(heirs.map((heir) => [heir.id, 0]));
+  const warnings = [];
+  const descendantShares = allocateBranches(heirs, "Child", "Descendant", 100, warnings);
+  const hasDescendants = [...descendantShares.values()].some((share) => share > 0);
+  if (!hasDescendants) {
+    warnings.push(
+      "The complete former Civil Code articles 810 to 830 are needed before this pre-1 March 2005 succession can be suggested automatically.",
+    );
+    return { shares, warnings, destination: "legacy-law-unresolved" };
+  }
+  descendantShares.forEach((share, id) => shares.set(id, share));
+  return { shares, warnings, destination: "legacy-descendants" };
+}
+
 export function suggestedIntestacyShares(heirs = [], dateOfDeath = "") {
   const ruleset = successionRuleset(dateOfDeath);
   if (!ruleset.supported) return heirs;
-  const allocation = allocateCurrentIntestacy(heirs);
+  const allocation =
+    ruleset.key === "pre2005"
+      ? allocateLegacyDescendantIntestacy(heirs)
+      : allocateCurrentIntestacy(heirs);
+  if (allocation.destination === "legacy-law-unresolved") return heirs;
   return heirs.map((heir) => ({ ...heir, sharePercent: allocation.shares.get(heir.id) || 0 }));
 }
 

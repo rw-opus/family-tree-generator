@@ -101,6 +101,7 @@ export function FamilyPersonCard({
       ? `. Missing spouse death ${missingSpouseNames.length === 1 ? "date" : "dates"} for ${missingSpouseNames.join(", ")}`
       : ""
   }`;
+  const survivalStatusRequired = person.survivalStatusRequired === true;
   const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
   const classNames = [
     "family-node",
@@ -108,6 +109,7 @@ export function FamilyPersonCard({
     isDeceased && "deceased",
     incompleteCausaMortis.length && "cm-share-incomplete",
     spousesMissingDeathDates.length && "succession-date-incomplete",
+    survivalStatusRequired && "survival-status-required",
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
     selectedPersonId === person.id && "selected",
@@ -146,6 +148,9 @@ export function FamilyPersonCard({
           Missing spouse death {missingSpouseNames.length === 1 ? "date" : "dates"}:{" "}
           {missingSpouseNames.join(", ")}
         </div>
+      )}
+      {!person.isPlaceholder && survivalStatusRequired && (
+        <div className="family-node-survival-alert">Confirm whether alive or dead</div>
       )}
       {!person.isPlaceholder && shareParts.length > 0 && (
         <div className="family-node-ownership">{shareParts.join(" · ")}</div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateCurrentIntestacy,
+  allocateLegacyDescendantIntestacy,
   inheritanceDuty,
   saleTaxLot,
   saleTaxLotsTotal,
@@ -69,9 +70,33 @@ describe("Maltese inherited property estimates", () => {
     expect(result.shares.get("a")).toBe(100);
     expect(result.shares.get("b1")).toBe(0);
   });
-  it("locks automatic allocation before the current-law boundary", () => {
-    expect(successionRuleset("2005-02-28").supported).toBe(false);
-    expect(successionRuleset("2005-03-01").supported).toBe(true);
+  it("classifies the historical succession periods at their exact boundaries", () => {
+    expect(successionRuleset("2005-02-28")).toMatchObject({
+      key: "pre2005",
+      supported: true,
+      complete: false,
+    });
+    expect(successionRuleset("2005-03-01")).toMatchObject({
+      key: "post2005-article815",
+      article815ReviewRequired: true,
+    });
+    expect(successionRuleset("2012-07-23").article815ReviewRequired).toBe(true);
+    expect(successionRuleset("2012-07-24")).toMatchObject({
+      key: "current",
+      complete: true,
+    });
+  });
+  it("gives pre-2005 descendant ownership without a modern spouse ownership share", () => {
+    const result = allocateLegacyDescendantIntestacy([
+      { id: "spouse", relationship: "Surviving spouse", status: "accepted" },
+      { id: "child-a", relationship: "Child", status: "accepted" },
+      { id: "child-b", relationship: "Child", status: "accepted" },
+    ]);
+
+    expect(result.shares.get("spouse")).toBe(0);
+    expect(result.shares.get("child-a")).toBe(50);
+    expect(result.shares.get("child-b")).toBe(50);
+    expect(result.warnings).toEqual([]);
   });
   it("does not select a legal regime from a malformed death date", () => {
     expect(successionRuleset("28-02-2005")).toMatchObject({

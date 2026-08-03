@@ -88,6 +88,62 @@ describe("PersonInspector", () => {
     expect(onBackToTree).toHaveBeenCalledOnce();
   });
 
+  it("creates an editable missing mother for a post-2005 childless intestacy", () => {
+    let latestPeople = [];
+    const initialPeople = [
+      {
+        id: "michael",
+        givenNames: "Michael",
+        surname: "Wadge",
+        fullName: "Michael Wadge",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-04-12",
+        inheritanceBasis: "intestacy",
+        fatherId: "edgar",
+        motherId: "",
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+      {
+        id: "edgar",
+        givenNames: "Edgar",
+        surname: "Wadge",
+        fullName: "Edgar Wadge",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "1990-01-01",
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+    ];
+
+    function Harness() {
+      const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="michael"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    const michael = latestPeople.find((person) => person.id === "michael");
+    const mother = latestPeople.find((person) => person.id === michael.motherId);
+    expect(mother).toMatchObject({
+      fullName: "Mother of Michael",
+      sex: "Female",
+      isPotentialIntestateParent: true,
+      survivalStatusRequired: true,
+      survivalStatusReferencePersonId: "michael",
+    });
+  });
+
   it("adds a father around the selected person without moving the selection", () => {
     const onChange = vi.fn();
     const onSelectPerson = vi.fn();

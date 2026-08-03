@@ -5,8 +5,13 @@ import {
   partnerIdsForPerson,
   partnerRelationshipStatusAt,
 } from "./partnerRelationships.js";
-import { successionRuleset } from "./propertyTax.js";
-import { applyLegacyArticle616ToWill } from "./legacyLegitim.js";
+import { applyLegacyProtectedPortionsToWill } from "./legacyLegitim.js";
+import {
+  article815ReviewWarning,
+  LEGACY_INTESTACY_SOURCE_GAPS,
+  legacySourceGapWarning,
+  successionRuleset,
+} from "./successionRules.js";
 
 const number = (input) => Math.max(0, Number(input) || 0);
 export const INTESTACY_SHARE_EPSILON = 1e-8;
@@ -15,6 +20,10 @@ const SURVIVAL_UNRESOLVED_DESTINATIONS = new Set([
   "spouse-status-unresolved",
   "death-date-unresolved",
   "survival-date-unresolved",
+]);
+const LAW_UNRESOLVED_DESTINATIONS = new Set([
+  "legacy-spouse-law-unresolved",
+  "legacy-relative-law-unresolved",
 ]);
 
 export function isPersonDeceased(person = {}) {
@@ -27,6 +36,7 @@ export function isPersonDeceased(person = {}) {
 }
 
 function wasAliveAt(person, date) {
+  if (person.survivalStatusRequired === true) return false;
   if (!isPersonDeceased(person)) return true;
   if (!date || !person.dateOfDeath) return false;
   return person.dateOfDeath > date;
@@ -202,17 +212,58 @@ function nearestAscendantStatus(person, atDate, peopleById) {
       visited.add(candidate.id);
       return true;
     });
+    const provisional = unique.filter(
+      (candidate) =>
+        candidate.isPotentialIntestateParent === true && candidate.survivalStatusRequired === true,
+    );
     const missing = unique.filter(
-      (candidate) => isPersonDeceased(candidate) && !candidate.dateOfDeath,
+      (candidate) =>
+        !provisional.includes(candidate) &&
+        (candidate.survivalStatusRequired === true ||
+          (isPersonDeceased(candidate) && !candidate.dateOfDeath)),
     );
     if (missing.length) return { living: [], missing };
-    const living = unique.filter((candidate) => wasAliveAt(candidate, atDate));
-    if (living.length) return { living, missing: [] };
+    const living = unique.filter(
+      (candidate) => provisional.includes(candidate) || wasAliveAt(candidate, atDate),
+    );
+    if (living.length) return { living, missing: [], provisional };
     current = unique.flatMap((candidate) =>
       [candidate.fatherId, candidate.motherId].map((id) => peopleById.get(id)).filter(Boolean),
     );
   }
-  return { living: [], missing: [] };
+  return { living: [], missing: [], provisional: [] };
+}
+
+/**
+ * Identifies unrecorded parents whose survival is legally material to a
+ * post-reform intestacy. A created parent record must remain unresolved until
+ * the user establishes whether that parent survived the deceased.
+ */
+export function missingPotentialIntestateParents(people = [], deceasedId) {
+  const index = familyIndex(people);
+  const deceased = index.peopleById.get(deceasedId);
+  const ruleset = successionRuleset(deceased?.dateOfDeath);
+  if (
+    !deceased ||
+    !isPersonDeceased(deceased) ||
+    deceased.inheritanceBasis === "will" ||
+    !["post2005-article815", "current"].includes(ruleset.key)
+  ) {
+    return [];
+  }
+
+  const atDate = deceased.dateOfDeath;
+  const children = index.childrenByParent.get(deceased.id) || [];
+  if (descendantsMissingDeathDates(people, deceased.id).length) return [];
+  if (allocateBranches(children, atDate, 1, index).size) return [];
+
+  if (linkedMarriagesMissingEndDates(people, deceased.id, atDate).length) return [];
+  const spouses = linkedLegalSpousesFor(people, deceased.id, atDate);
+  if (spouses.some((spouse) => spouse.survivalStatusRequired === true)) return [];
+  if (linkedSpousesMissingDeathDates(people, deceased.id, atDate).length) return [];
+  if (spouses.some((spouse) => wasAliveAt(spouse, atDate))) return [];
+
+  return [!deceased.fatherId ? "father" : "", !deceased.motherId ? "mother" : ""].filter(Boolean);
 }
 
 function collateralDegree(deceasedId, candidateId, index, maxDegree = 12) {
@@ -318,17 +369,49 @@ export function intestateAllocations(people = [], deceasedId) {
   }
   const descendantProbe = allocateBranches(children, atDate, 1, index);
   if (descendantProbe.size) {
-    const spouseTotal = livingSpouses.length ? 0.5 : 0;
+    const isLegacy = ruleset.key === "pre2005";
+    const spouseTotal = !isLegacy && livingSpouses.length ? 0.5 : 0;
     const descendantShares = allocateBranches(children, atDate, 1 - spouseTotal, index);
     descendantShares.forEach((share, id) => addShare(shares, id, share));
-    livingSpouses.forEach((spouse) =>
-      addShare(shares, spouse.id, spouseTotal / livingSpouses.length),
-    );
+    if (spouseTotal > 0) {
+      livingSpouses.forEach((spouse) =>
+        addShare(shares, spouse.id, spouseTotal / livingSpouses.length),
+      );
+    }
+    if (ruleset.article815ReviewRequired) warnings.push(article815ReviewWarning());
     return {
       shares,
       warnings,
-      destination: livingSpouses.length ? "spouse-and-descendants" : "descendants",
+      destination: isLegacy
+        ? "legacy-descendants"
+        : livingSpouses.length
+          ? "spouse-and-descendants"
+          : "descendants",
     };
+  }
+
+  if (ruleset.key === "pre2005") {
+    if (livingSpouses.length) {
+      warnings.push(
+        legacySourceGapWarning(
+          LEGACY_INTESTACY_SOURCE_GAPS.survivingSpouse,
+          "a childless surviving spouse and the deceased's relatives",
+        ),
+      );
+      return { shares, warnings, destination: "legacy-spouse-law-unresolved" };
+    }
+    warnings.push(
+      legacySourceGapWarning(
+        [
+          ...LEGACY_INTESTACY_SOURCE_GAPS.ascendants,
+          ...LEGACY_INTESTACY_SOURCE_GAPS.collaterals,
+          ...LEGACY_INTESTACY_SOURCE_GAPS.childrenOutsideMarriage,
+          ...LEGACY_INTESTACY_SOURCE_GAPS.government,
+        ],
+        "a pre-2005 estate without a surviving spouse or descendant",
+      ),
+    );
+    return { shares, warnings, destination: "legacy-relative-law-unresolved" };
   }
 
   if (livingSpouses.length) {
@@ -346,6 +429,13 @@ export function intestateAllocations(people = [], deceasedId) {
     return { shares, warnings, destination: "survival-date-unresolved" };
   }
   const ascendants = ascendantStatus.living;
+  if (ascendantStatus.provisional?.length) {
+    const provisionalNames = ascendantStatus.provisional.map(personName).join(", ");
+    const singular = ascendantStatus.provisional.length === 1;
+    warnings.push(
+      `${provisionalNames} ${singular ? "has" : "have"} been provisionally treated as surviving and allocated an ownership share. Confirm whether ${singular ? "that parent was" : "those parents were"} alive when the succession opened.`,
+    );
+  }
   const siblings = linkedSiblings(deceased, people, index.peopleById);
   const siblingBranchesWithUnknownSurvival = branchesMissingSurvivalDates(siblings, atDate, index);
   if (siblingBranchesWithUnknownSurvival.length) {
@@ -507,6 +597,9 @@ export function intestacyConfirmationReadiness(
   if (SURVIVAL_UNRESOLVED_DESTINATIONS.has(calculated.destination)) {
     issues.push("Complete the missing survival dates before confirming the heirs.");
   }
+  if (LAW_UNRESOLVED_DESTINATIONS.has(calculated.destination) && !rows.length) {
+    issues.push("Enter edited heirs totalling 100% for this historical succession.");
+  }
 
   return {
     valid: issues.length === 0,
@@ -650,11 +743,27 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     const basis = person.inheritanceBasis || "intestacy";
     let result;
     if (basis === "will") {
-      const protectedWill = applyLegacyArticle616ToWill({ people, deceased: person });
+      const legalSpouses = linkedLegalSpousesFor(people, person.id, person.dateOfDeath);
+      const spouseSurvivalUnresolved = legalSpouses.some(
+        (spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath,
+      );
+      const survivingSpouses = legalSpouses.filter((spouse) =>
+        wasAliveAt(spouse, person.dateOfDeath),
+      );
+      const protectedWill = applyLegacyProtectedPortionsToWill({
+        people,
+        deceased: person,
+        hasSurvivingSpouse: survivingSpouses.length > 0,
+        spouseSurvivalUnresolved,
+      });
       result = {
         shares: protectedWill.resolved ? protectedWill.shares : new Map(),
         warnings: protectedWill.warnings,
-        destination: protectedWill.applies ? "will-with-legacy-legitim" : "will",
+        destination: protectedWill.applies
+          ? protectedWill.calculation?.article === "619"
+            ? "will-with-legacy-article-619"
+            : "will-with-legacy-legitim"
+          : "will",
       };
     } else {
       const calculated = intestateAllocations(people, personId);
