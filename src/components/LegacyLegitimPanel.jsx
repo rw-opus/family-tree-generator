@@ -10,7 +10,7 @@ function shareLabel(share = 0, mode = "fraction") {
   const fraction = approximateFraction(value);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
   const percentageText = `${(value * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   })}%`;
   if (mode === "percentage") return percentageText;
   if (mode === "both") return `${fractionText} · ${percentageText}`;

@@ -15,7 +15,7 @@ const blankTransfer = () => ({
   consideration: "",
 });
 const percent = (share) =>
-  `${(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 6 })}%`;
+  `${(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
 const fractionLabel = (share) => {
   const fraction = approximateFraction(share);
   return `${fraction.numerator}/${fraction.denominator}`;

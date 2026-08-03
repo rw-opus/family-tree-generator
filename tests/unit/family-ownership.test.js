@@ -38,7 +38,9 @@ describe("automatic family ownership", () => {
         fullName: "Edgar Wadge",
         isDeceased: true,
         dateOfDeath: "1990-01-01",
+        spouseIds: ["giovanna"],
       }),
+      person("giovanna", { fullName: "Giovanna Wadge", spouseIds: ["edgar"] }),
     ];
 
     expect(missingPotentialIntestateParents(people, "michael")).toEqual(["mother"]);
@@ -58,6 +60,7 @@ describe("automatic family ownership", () => {
 
     expect(allocation.destination).toBe("ascendants");
     expect(allocation.shares.get("mother-placeholder")).toBe(1);
+    expect(allocation.shares.has("giovanna")).toBe(false);
     expect(allocation.warnings.join(" ")).toContain("provisionally treated as surviving");
   });
 

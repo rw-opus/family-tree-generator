@@ -25,7 +25,7 @@ export function InitialOwnershipEditor({
   const owners = property.owners || [];
   const status = propertyStartingOwnershipStatus(property);
   const totalLabel = status.totalPercent.toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   });
   const updateOwners = (nextOwners) => onChange(nextOwners);
   const updateOwner = (ownerId, patch) =>

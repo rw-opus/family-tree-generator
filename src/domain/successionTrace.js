@@ -8,7 +8,7 @@ const money = new Intl.NumberFormat("en-MT", {
 
 const percentage = (share) =>
   `${(Math.max(0, Number(share) || 0) * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   })}%`;
 
 const fraction = (share) => {

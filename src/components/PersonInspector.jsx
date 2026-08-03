@@ -82,7 +82,7 @@ function ownershipLabel(share = 0, shareDisplay = "both") {
   const fraction = approximateFraction(share);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
   const percentageText = `${(share * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   })}%`;
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;

@@ -19,7 +19,7 @@ function ownershipParts(ownership, fields) {
   const fraction = approximateFraction(ownership);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
   const percentageText = `${(ownership * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   })}%`;
 
   return [

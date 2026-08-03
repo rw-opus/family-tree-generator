@@ -26,7 +26,7 @@ function shareLabel(share, shareDisplay) {
   const fraction = approximateFraction(share);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
   const percentageText = `${(share * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   })}%`;
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;
@@ -35,7 +35,7 @@ function shareLabel(share, shareDisplay) {
 
 function totalLabel(totalPercent, shareDisplay) {
   if (intestacyShareTotalIsComplete(totalPercent)) return shareLabel(1, shareDisplay);
-  return `${totalPercent.toLocaleString("en-MT", { maximumFractionDigits: 8 })}%`;
+  return `${totalPercent.toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
 }
 
 export function IntestacyProposal({

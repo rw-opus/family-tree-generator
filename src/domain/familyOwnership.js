@@ -788,7 +788,7 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     if (basis === "will" && Math.abs(allocated - 1) > 1e-10) {
       result.warnings.push(
         `Will beneficiary shares total ${(allocated * 100).toLocaleString("en-MT", {
-          maximumFractionDigits: 4,
+          maximumFractionDigits: 2,
         })}%, not 100%.`,
       );
     }

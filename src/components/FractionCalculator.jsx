@@ -82,7 +82,7 @@ export function FractionCalculator() {
                   </strong>
                   <span>
                     {result.percentage.toLocaleString("en-MT", {
-                      maximumFractionDigits: 4,
+                      maximumFractionDigits: 2,
                     })}
                     %
                   </span>

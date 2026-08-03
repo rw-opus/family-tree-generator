@@ -30,6 +30,7 @@ describe("FractionCalculator", () => {
 
     act(() => launcher.click());
     expect(container.textContent).toContain("5/6");
+    expect(container.querySelector(".fraction-display").textContent).toContain("83.33%");
 
     const multiply = container.querySelector('button[aria-label="Multiply"]');
     act(() => multiply.click());
