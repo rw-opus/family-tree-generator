@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import {
   editedIntestacyAllocations,
@@ -97,6 +97,9 @@ export function IntestateHeirConfirmation({
   const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const rows = deceased.intestateHeirs || [];
   const calculatedEntries = [...(calculated?.shares || new Map()).entries()];
+  const [editingHeirs, setEditingHeirs] = useState(
+    rows.length > 0 || calculatedEntries.length === 0,
+  );
   const calculatedShares = new Map(calculatedEntries);
   const calculatedPersonIds = new Set(calculatedShares.keys());
   const selectedPersonIds = new Set(rows.map((row) => row.personId).filter(Boolean));
@@ -161,7 +164,11 @@ export function IntestateHeirConfirmation({
     onCreateOutsideParty?.(party);
     addPerson(party.id);
   };
-  const applyCalculated = () =>
+  useEffect(() => {
+    setEditingHeirs(rows.length > 0 || calculatedEntries.length === 0);
+  }, [calculatedEntries.length, deceased.id, rows.length]);
+
+  const applyCalculated = () => {
     replaceRows(
       calculatedEntries.map(([personId, share]) => ({
         id: crypto.randomUUID(),
@@ -169,16 +176,17 @@ export function IntestateHeirConfirmation({
         ...shareFromPercentage(share * 100),
       })),
     );
+    setEditingHeirs(true);
+  };
 
   return (
     <div className="intestate-confirmation">
       <div className="intestate-confirmation-heading">
         <div>
-          <strong>Adjust inheritance shares</strong>
+          <strong>Beneficiaries</strong>
           <small>
-            Only relationships marked as married are treated as spouses. An unmarried partnership or
-            a shared child does not create a spouse share. The statutory proposal is applied
-            automatically; edited rows override it once they total 100%.
+            Calculated beneficiaries apply automatically. Choose Edit Beneficiaries only when you
+            need to change the people or fractions.
           </small>
         </div>
       </div>
@@ -220,154 +228,168 @@ export function IntestateHeirConfirmation({
         people={people}
         displayName={displayName}
         shareDisplay={shareDisplay}
-        actionLabel="Use proposed shares"
+        title="Calculated beneficiaries"
+        actionLabel={editingHeirs ? "" : "Edit Beneficiaries"}
         onApply={applyCalculated}
       />
 
-      <div className="confirmed-intestate-heirs">
-        <strong>Edited heirs</strong>
-        {rows.map((row) => {
-          const person = peopleById.get(row.personId) || outsidePartiesById.get(row.personId);
-          const fraction = fractionForShare(row);
-          const numerator = row.shareNumerator ?? fraction.numerator;
-          const denominator = row.shareDenominator ?? fraction.denominator;
-          return (
-            <div className={`confirmed-heir-row ${shareDisplay}`} key={row.id}>
-              <span className="confirmed-heir-name">{displayName(person)}</span>
-              {shareDisplay !== "percentage" && (
-                <span className="confirmed-heir-fraction">
-                  <input
-                    aria-label={`Share numerator for ${displayName(person)}`}
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={numerator}
-                    onChange={(event) => updateRowFraction(row, { numerator: event.target.value })}
-                  />
-                  <b>/</b>
-                  <input
-                    aria-label={`Share denominator for ${displayName(person)}`}
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={denominator}
-                    onChange={(event) =>
-                      updateRowFraction(row, { denominator: event.target.value })
-                    }
-                  />
-                </span>
-              )}
-              {shareDisplay !== "fraction" && (
-                <span className="confirmed-heir-percent">
-                  <input
-                    aria-label={`Share percentage for ${displayName(person)}`}
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="any"
-                    value={row.sharePercentInput ?? row.sharePercent ?? ""}
-                    onChange={(event) => updateRowPercentage(row.id, event.target.value)}
-                  />
-                  <b>%</b>
-                </span>
-              )}
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`Remove ${displayName(person)} from edited heirs`}
-                onClick={() => replaceRows(rows.filter((candidate) => candidate.id !== row.id))}
-              >
-                <Trash2 size={14} />
+      {editingHeirs && (
+        <div className="confirmed-intestate-heirs">
+          <div className="intestate-confirmation-heading">
+            <strong>Edit Beneficiaries</strong>
+            {calculatedEntries.length > 0 && (
+              <button type="button" className="text-button" onClick={() => setEditingHeirs(false)}>
+                Close editor
               </button>
-            </div>
-          );
-        })}
+            )}
+          </div>
+          {rows.map((row) => {
+            const person = peopleById.get(row.personId) || outsidePartiesById.get(row.personId);
+            const fraction = fractionForShare(row);
+            const numerator = row.shareNumerator ?? fraction.numerator;
+            const denominator = row.shareDenominator ?? fraction.denominator;
+            return (
+              <div className={`confirmed-heir-row ${shareDisplay}`} key={row.id}>
+                <span className="confirmed-heir-name">{displayName(person)}</span>
+                {shareDisplay !== "percentage" && (
+                  <span className="confirmed-heir-fraction">
+                    <input
+                      aria-label={`Share numerator for ${displayName(person)}`}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={numerator}
+                      onChange={(event) =>
+                        updateRowFraction(row, { numerator: event.target.value })
+                      }
+                    />
+                    <b>/</b>
+                    <input
+                      aria-label={`Share denominator for ${displayName(person)}`}
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={denominator}
+                      onChange={(event) =>
+                        updateRowFraction(row, { denominator: event.target.value })
+                      }
+                    />
+                  </span>
+                )}
+                {shareDisplay !== "fraction" && (
+                  <span className="confirmed-heir-percent">
+                    <input
+                      aria-label={`Share percentage for ${displayName(person)}`}
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      value={row.sharePercentInput ?? row.sharePercent ?? ""}
+                      onChange={(event) => updateRowPercentage(row.id, event.target.value)}
+                    />
+                    <b>%</b>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Remove ${displayName(person)} from edited heirs`}
+                  onClick={() => replaceRows(rows.filter((candidate) => candidate.id !== row.id))}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );
+          })}
 
-        <select
-          aria-label="Add an heir or override the intestacy proposal"
-          value=""
-          onChange={(event) => {
-            if (event.target.value === CREATE_OUTSIDE_PARTY) {
-              setShowOutsidePartyCreator(true);
-              return;
-            }
-            addPerson(event.target.value);
-          }}
-        >
-          <option value="">Add any heir</option>
-          {availableCalledPeople.length > 0 && (
-            <optgroup label="Statutory proposal">
-              {availableCalledPeople.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {displayName(person)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {availableOtherPeople.length > 0 && (
-            <optgroup label="Other people on the family tree">
-              {availableOtherPeople.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {displayName(person)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {availableOutsideParties.length > 0 && (
-            <optgroup label="Unconnected people and companies">
-              {availableOutsideParties.map((party) => (
-                <option key={party.id} value={party.id}>
-                  {displayName(party)}
-                  {party.type === "company" ? " (company)" : " (unconnected)"}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {onCreateOutsideParty && (
-            <option value={CREATE_OUTSIDE_PARTY}>Create unconnected person or company...</option>
-          )}
-        </select>
+          <select
+            aria-label="Add an heir or override the intestacy proposal"
+            value=""
+            onChange={(event) => {
+              if (event.target.value === CREATE_OUTSIDE_PARTY) {
+                setShowOutsidePartyCreator(true);
+                return;
+              }
+              addPerson(event.target.value);
+            }}
+          >
+            <option value="">Add any heir</option>
+            {availableCalledPeople.length > 0 && (
+              <optgroup label="Statutory proposal">
+                {availableCalledPeople.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {displayName(person)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {availableOtherPeople.length > 0 && (
+              <optgroup label="Other people on the family tree">
+                {availableOtherPeople.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {displayName(person)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {availableOutsideParties.length > 0 && (
+              <optgroup label="Unconnected people and companies">
+                {availableOutsideParties.map((party) => (
+                  <option key={party.id} value={party.id}>
+                    {displayName(party)}
+                    {party.type === "company" ? " (company)" : " (unconnected)"}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {onCreateOutsideParty && (
+              <option value={CREATE_OUTSIDE_PARTY}>Create unconnected person or company...</option>
+            )}
+          </select>
 
-        {showOutsidePartyCreator && (
-          <OutsidePartyCreator
-            onCreate={createOutsideParty}
-            onCancel={() => setShowOutsidePartyCreator(false)}
-          />
-        )}
+          {showOutsidePartyCreator && (
+            <OutsidePartyCreator
+              onCreate={createOutsideParty}
+              onCancel={() => setShowOutsidePartyCreator(false)}
+            />
+          )}
 
-        <div className="intestate-confirmation-footer">
-          <small className={footerIsValid ? "succession-total valid" : "succession-total invalid"}>
-            {rows.length === 0
-              ? "No edited heirs. Automatic proposal applies."
-              : `Total: ${totalLabel(total, shareDisplay)} ${
-                  rowsCanOverride
-                    ? "Override active"
-                    : `- must equal ${
-                        shareDisplay === "fraction"
-                          ? "1/1"
-                          : shareDisplay === "percentage"
-                            ? "100%"
-                            : "1/1 · 100%"
-                      }`
-                }`}
-          </small>
+          <div className="intestate-confirmation-footer">
+            <small
+              className={footerIsValid ? "succession-total valid" : "succession-total invalid"}
+            >
+              {rows.length === 0
+                ? "No edited heirs. Automatic proposal applies."
+                : `Total: ${totalLabel(total, shareDisplay)} ${
+                    rowsCanOverride
+                      ? "Override active"
+                      : `- must equal ${
+                          shareDisplay === "fraction"
+                            ? "1/1"
+                            : shareDisplay === "percentage"
+                              ? "100%"
+                              : "1/1 · 100%"
+                        }`
+                  }`}
+            </small>
+          </div>
+          {rows.length > 0 &&
+            !rowsCanOverride &&
+            totalComplete &&
+            readiness.issues
+              .filter((issue) => issue !== "The heir shares must total 100%.")
+              .map((issue, index) => (
+                <small className="succession-warning" key={`${index}-${issue}`}>
+                  {issue}
+                </small>
+              ))}
+          {rows.length > 0 && !editedAllocation.valid && (
+            <small className="succession-warning">
+              These edited heirs are not yet usable, so the automatic proposal remains in force.
+            </small>
+          )}
         </div>
-        {rows.length > 0 &&
-          !rowsCanOverride &&
-          totalComplete &&
-          readiness.issues
-            .filter((issue) => issue !== "The heir shares must total 100%.")
-            .map((issue, index) => (
-              <small className="succession-warning" key={`${index}-${issue}`}>
-                {issue}
-              </small>
-            ))}
-        {rows.length > 0 && !editedAllocation.valid && (
-          <small className="succession-warning">
-            These edited heirs are not yet usable, so the automatic proposal remains in force.
-          </small>
-        )}
-      </div>
+      )}
     </div>
   );
 }

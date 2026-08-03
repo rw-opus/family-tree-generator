@@ -36,8 +36,8 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
         </button>
       </div>
       <p className="helper-text">
-        This is a read-only calculation from the family tree, ownership transfers, person-card CM
-        declarations and the property selling value.
+        This is a read-only calculation from the family tree, ownership transfers, person-card
+        Declaration Causa Mortis (CM) records and the property selling value.
       </p>
 
       {report.vendors.length ? (
@@ -60,7 +60,9 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
                     <tr>
                       <th>Provenance</th>
                       <th>Fraction</th>
-                      <th>CM value</th>
+                      <th>
+                        <abbr title="Declaration Causa Mortis">CM</abbr> value
+                      </th>
                       <th>Sale price</th>
                       <th>Difference</th>
                       <th>Tax calculation</th>
@@ -78,7 +80,8 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
                           )}
                           {row.declarations.map((declaration) => (
                             <small key={declaration.id}>
-                              CM {isoDateToDisplay(declaration.date) || "undated"}
+                              <abbr title="Declaration Causa Mortis">CM</abbr>{" "}
+                              {isoDateToDisplay(declaration.date) || "undated"}
                               {declaration.notaryName
                                 ? ` · ${displayNotaryName(declaration.notaryName)}`
                                 : ""}
@@ -123,8 +126,9 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
               {vendor.incompleteRowCount > 0 && (
                 <p className="tax-calculation-warning">
                   {vendor.incompleteRowCount} source fraction
-                  {vendor.incompleteRowCount === 1 ? " needs" : "s need"} more acquisition or CM
-                  data before its tax can be finalised.
+                  {vendor.incompleteRowCount === 1 ? " needs" : "s need"} more acquisition or{" "}
+                  <abbr title="Declaration Causa Mortis">CM</abbr> data before its tax can be
+                  finalised.
                 </p>
               )}
             </article>

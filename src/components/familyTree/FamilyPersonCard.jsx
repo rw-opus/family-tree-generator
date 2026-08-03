@@ -218,10 +218,14 @@ export function FamilyPersonCard({
         causaMortisDetails.map((declaration, index) => (
           <div className="family-node-cm-details" key={`${declaration.date}-${index}`}>
             {declaration.date && (
-              <div className="family-node-detail">CM deed {declaration.date}</div>
+              <div className="family-node-detail">
+                <abbr title="Declaration Causa Mortis">CM</abbr> deed {declaration.date}
+              </div>
             )}
             {declaration.notaryName && (
-              <div className="family-node-detail">CM Notary {declaration.notaryName}</div>
+              <div className="family-node-detail">
+                <abbr title="Declaration Causa Mortis">CM</abbr> Notary {declaration.notaryName}
+              </div>
             )}
           </div>
         ))}
@@ -230,7 +234,7 @@ export function FamilyPersonCard({
         fields.causaMortisDetails &&
         causaMortisDetails.length > 0 && (
           <div className="family-node-detail">
-            CM{" "}
+            <abbr title="Declaration Causa Mortis">CM</abbr>{" "}
             {causaMortisDetails
               .map((declaration) =>
                 [declaration.date, declaration.notaryName].filter(Boolean).join(" · "),

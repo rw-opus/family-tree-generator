@@ -132,6 +132,19 @@ describe("FamilyLibrary", () => {
     expect(handlers.onImport).toHaveBeenCalledWith(file);
   });
 
+  it("keeps the family list focused on opening, renaming, and deleting trees", () => {
+    const handlers = renderLibrary(root);
+
+    expect(container.textContent).not.toContain("Property & tax");
+    expect(container.querySelectorAll(".family-row-actions button")).toHaveLength(4);
+
+    const borg = [...container.querySelectorAll(".family-name-button")].find((button) =>
+      button.textContent.includes("Borg family"),
+    );
+    act(() => borg.click());
+    expect(handlers.onOpen).toHaveBeenCalledWith("borg");
+  });
+
   it("shows the five-free pricing state and blocks creation until a paid credit exists", () => {
     const handlers = renderLibrary(root, {
       commercialMode: true,

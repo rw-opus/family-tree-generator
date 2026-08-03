@@ -727,15 +727,24 @@ const applyScreenPageScale = (previewWindow) => {
 export async function openA3PrintPreview(node, title = "Family tree") {
   if (!node) return false;
 
-  const previewWindow = window.open("", "_blank");
+  document.querySelector(".a3-preview-modal")?.remove();
+  const modal = makeElement(document, "div", "a3-preview-modal");
+  const frame = makeElement(document, "iframe", "a3-preview-frame");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "A3 family tree print preview");
+  frame.title = "A3 family tree print preview";
+  modal.append(frame);
+  document.body.append(modal);
+  document.body.classList.add("a3-print-preview-open");
+
+  const previewWindow = frame.contentWindow;
   if (!previewWindow) {
-    window.alert(
-      "The browser blocked the print preview. Allow pop-ups for this site and try again.",
-    );
+    modal.remove();
+    document.body.classList.remove("a3-print-preview-open");
     return false;
   }
 
-  previewWindow.opener = null;
   previewWindow.document.open();
   previewWindow.document.write(
     '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>A3 family tree print preview</title></head><body></body></html>',
@@ -820,7 +829,16 @@ export async function openA3PrintPreview(node, title = "Family tree") {
     previewWindow.focus();
     previewWindow.print();
   });
-  closeButton.addEventListener("click", () => previewWindow.close());
+  const closePreview = () => {
+    modal.remove();
+    document.body.classList.remove("a3-print-preview-open");
+    document.removeEventListener("keydown", closeOnEscape);
+  };
+  const closeOnEscape = (event) => {
+    if (event.key === "Escape") closePreview();
+  };
+  closeButton.addEventListener("click", closePreview);
+  document.addEventListener("keydown", closeOnEscape);
   previewWindow.addEventListener("resize", () => applyScreenPageScale(previewWindow));
   renderPages();
   previewWindow.focus();
