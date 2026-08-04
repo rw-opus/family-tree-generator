@@ -135,6 +135,55 @@ describe("Income Tax Act Article 5A", () => {
     expect(traced.methods[0]).toMatchObject({ key: "whole-10", rule: "5A(5)(f)" });
   });
 
+  it("prices the elected flat rate on the donor's acquisition date beyond five years", () => {
+    const result = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: 300000,
+      marketValue: 300000,
+      acquisitionType: "donation",
+      acquisitionDate: "2010-06-01",
+      previousAcquisitionDate: "2000-01-01",
+      acquisitionValue: 100000,
+    });
+
+    // The donation is post-2004, but the donor acquired pre-2004: the election is 10%, not 8%.
+    expect(result.methods.map((item) => item.key)).toEqual(["increase-12", "elected-whole-10"]);
+    expect(result.methods[1]).toMatchObject({ rate: 0.1, tax: 30000 });
+    // 12% of the 200,000 increase (24,000) beats the 30,000 election, so it stays selected.
+    expect(result.selected).toBe("increase-12");
+  });
+
+  it("defaults to the election when it is the more favourable method", () => {
+    const result = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: 300000,
+      marketValue: 300000,
+      acquisitionType: "donation",
+      acquisitionDate: "2010-06-01",
+      previousAcquisitionDate: "2000-01-01",
+      acquisitionValue: 40000,
+    });
+
+    // 12% of the 260,000 increase is 31,200; the elected 10% flat rate is 30,000 and wins.
+    expect(result.selected).toBe("elected-whole-10");
+    expect(result.methods.find((item) => item.key === result.selected).tax).toBe(30000);
+  });
+
+  it("offers only the increase method when the donor's date is unknown beyond five years", () => {
+    const result = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: 300000,
+      marketValue: 300000,
+      acquisitionType: "donation",
+      acquisitionDate: "2010-06-01",
+      acquisitionValue: 100000,
+    });
+
+    expect(result.methods.map((item) => item.key)).toEqual(["increase-12"]);
+    expect(result.selected).toBe("increase-12");
+    expect(result.warnings.join(" ")).toContain("donor's preceding acquisition date");
+  });
+
   it("requires confirmation before applying a selected exemption", () => {
     const treatment = ARTICLE_5A_SPECIAL_TREATMENTS.find(
       (item) => item.key === "exempt-own-residence",

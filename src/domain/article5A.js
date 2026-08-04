@@ -710,11 +710,17 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
   }
 
   let effectiveAcquisitionDate = acquisitionDate;
+  // The donor's acquisition date governs the flat 8%/10% determination for donated property
+  // whether or not five years have passed: within five years it is the only method, and beyond
+  // five years it prices the elected alternative to the 12% increase method.
+  let donorDateMissingBeyondFiveYears = false;
   const donationWithinFiveYears =
     acquisitionType === "donation" && noLaterThanYears(acquisitionDate, transferDate, 5);
-  if (donationWithinFiveYears) {
-    effectiveAcquisitionDate = String(lot.previousAcquisitionDate || "");
-    if (!validDate(effectiveAcquisitionDate)) {
+  if (acquisitionType === "donation") {
+    const donorAcquisitionDate = String(lot.previousAcquisitionDate || "");
+    if (validDate(donorAcquisitionDate)) {
+      effectiveAcquisitionDate = donorAcquisitionDate;
+    } else if (donationWithinFiveYears) {
       return {
         ...base,
         methods: [],
@@ -727,6 +733,8 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
         warning:
           "For a donation made five years or less before transfer, enter the donor's preceding acquisition date.",
       };
+    } else {
+      donorDateMissingBeyondFiveYears = true;
     }
   }
 
@@ -839,15 +847,26 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
         .filter(Boolean)
         .join(" "),
     };
-    return finish(
-      lot,
-      base,
-      [increaseMethod, electedAlternative],
-      increaseMethod.key,
-      values.marketValueOverrides
-        ? ["Market value is higher than consideration and is therefore the transfer value."]
-        : [],
+    // Without the donor's date the elected flat rate cannot be priced, so only the increase
+    // method is offered rather than pricing the election off the donation date.
+    const offeredMethods = donorDateMissingBeyondFiveYears
+      ? [increaseMethod]
+      : [increaseMethod, electedAlternative];
+    // The transferor may always elect the cheaper method, so the default — and with it the
+    // final withholding tax figure — follows the more favourable of the two.
+    const favouredMethod = offeredMethods.reduce((best, item) =>
+      item.tax < best.tax ? item : best,
     );
+    return finish(lot, base, offeredMethods, favouredMethod.key, [
+      ...(values.marketValueOverrides
+        ? ["Market value is higher than consideration and is therefore the transfer value."]
+        : []),
+      ...(donorDateMissingBeyondFiveYears
+        ? [
+            "Enter the donor's preceding acquisition date to price the elected flat-rate alternative.",
+          ]
+        : []),
+    ]);
   }
 
   return finish(
