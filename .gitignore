@@ -5,4 +5,5 @@ dist/
 playwright-report/
 test-results/
 tmp/
+supabase/.temp/
 .claude/settings.local.json

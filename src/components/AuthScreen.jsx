@@ -116,8 +116,21 @@ export function AuthScreen() {
           </label>
         )}
 
-        {error && <p className="commercial-auth-message error">{error}</p>}
-        {message && <p className="commercial-auth-message success">{message}</p>}
+        {error && (
+          <p className="commercial-auth-message error" role="alert" aria-atomic="true">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p
+            className="commercial-auth-message success"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {message}
+          </p>
+        )}
 
         <button type="submit" className="library-primary-button" disabled={busy}>
           {busy ? "Please wait..." : mode === "reset" ? "Send reset link" : "Sign in"}
@@ -153,8 +166,8 @@ export function PasswordResetScreen({ onDone, onSignOut }) {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (password.length < 8) {
-      setError("Use a password of at least 8 characters.");
+    if (password.length < 10) {
+      setError("Use a password of at least 10 characters.");
       return;
     }
     if (password !== confirm) {
@@ -179,7 +192,9 @@ export function PasswordResetScreen({ onDone, onSignOut }) {
           <input
             type="password"
             required
-            minLength={8}
+            minLength={10}
+            maxLength={1024}
+            autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
@@ -189,12 +204,18 @@ export function PasswordResetScreen({ onDone, onSignOut }) {
           <input
             type="password"
             required
-            minLength={8}
+            minLength={10}
+            maxLength={1024}
+            autoComplete="new-password"
             value={confirm}
             onChange={(event) => setConfirm(event.target.value)}
           />
         </label>
-        {error && <p className="commercial-auth-message error">{error}</p>}
+        {error && (
+          <p className="commercial-auth-message error" role="alert" aria-atomic="true">
+            {error}
+          </p>
+        )}
         <button type="submit" className="library-primary-button" disabled={busy}>
           {busy ? "Please wait..." : "Set new password"}
         </button>

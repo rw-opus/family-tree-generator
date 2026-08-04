@@ -4,6 +4,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
 vi.mock("../../src/App.jsx", () => ({
   App: ({ localOnlyMode }) => (
     <div data-testid="application">{localOnlyMode ? "Local application" : "Cloud application"}</div>

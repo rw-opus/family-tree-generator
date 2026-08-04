@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Family Tree Generator">
+  <rect width="64" height="64" rx="14" fill="#004225"/>
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="4">
+    <path d="M32 47V33M16 33h32M16 33V21M48 33V21"/>
+    <circle cx="16" cy="17" r="6" fill="#dcecf7"/>
+    <circle cx="48" cy="17" r="6" fill="#f8dce8"/>
+    <circle cx="32" cy="49" r="6" fill="#eef7f1"/>
+  </g>
+</svg>

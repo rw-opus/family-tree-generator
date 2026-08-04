@@ -187,7 +187,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  min-height: 2.25rem;
+  min-height: 2.75rem;
   border: 1px solid var(--forest);
   border-radius: 5px;
   padding: 0 0.7rem;
@@ -659,7 +659,7 @@
 
 .commercial-password-field {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr) 44px;
   border: 1px solid #cbd5d1;
   border-radius: 5px;
   background: #fff;
@@ -702,6 +702,10 @@
 }
 
 .commercial-auth-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
   border: 0;
   background: transparent;
   color: var(--forest);
