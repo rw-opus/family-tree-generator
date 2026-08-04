@@ -3274,13 +3274,16 @@ textarea {
 .initial-owner-tree-pick-button {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  min-width: 30px;
+  width: auto;
+  min-width: 40px;
   min-height: 1.8rem;
   border: 1px solid #9fb9aa;
   border-radius: 5px;
   background: #f4f8f5;
   color: var(--forest);
+  padding: 0 0.3rem;
+  font-size: 0.6rem;
+  font-weight: 800;
 }
 
 .initial-owner-tree-pick-button:hover,
@@ -3534,7 +3537,7 @@ textarea {
 
 .tree-stage-toolbar-unified {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto auto minmax(190px, 300px) auto;
+  grid-template-columns: auto auto minmax(180px, 1fr) auto minmax(190px, 300px) auto;
 }
 
 .ownership-tax-button {
@@ -5727,7 +5730,7 @@ body.a3-print-preview-open {
     top: 0;
     right: 0;
     left: 0;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
     width: 100%;
     max-width: 100%;
     min-height: auto;
@@ -5745,13 +5748,13 @@ body.a3-print-preview-open {
   }
 
   .tree-stage-toolbar-unified .person-finder {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 1;
     justify-self: end;
   }
 
   .tree-stage-toolbar-unified .ownership-tax-button {
-    grid-column: 4;
+    grid-column: 2;
     grid-row: 1;
     min-height: 2.25rem;
     padding: 0 0.5rem;
@@ -5858,6 +5861,12 @@ body.a3-print-preview-open {
     overflow: auto;
     border-radius: 12px;
     box-shadow: 0 16px 46px rgba(17, 46, 33, 0.22);
+  }
+
+  .tree-property-panel.expanded.initial-owner-selection-active {
+    top: auto;
+    height: min(46dvh, 420px);
+    max-height: min(46dvh, 420px);
   }
 
   .case-view-tabs {

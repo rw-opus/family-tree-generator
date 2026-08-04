@@ -865,7 +865,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const beginInitialOwnerTreePick = (ownerId) => {
     setInitialOwnerPick({ propertyId: activeProperty.id, ownerId });
     setTraceOwnershipSnapshot(null);
-    setPropertyPanelExpanded(false);
+    setPropertyPanelExpanded(true);
     setSelectedPersonId("");
     setDashboardOpen(false);
     setStatus("Select a person on the family tree to make them an initial owner.");
@@ -1162,14 +1162,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                       <span className="tree-home-label-full">Back to Home</span>
                       <span className="tree-home-label-short">Home</span>
                     </button>
-                    <EditableTreeTitle value={currentTree.title} onChange={updateTreeTitle} />
-                    <PersonFinder
-                      people={currentTree.people}
-                      onSelectPerson={(personId) => {
-                        setPropertyPanelExpanded(false);
-                        focusPersonOnTree(personId);
-                      }}
-                    />
                     <button
                       type="button"
                       className="ownership-tax-button"
@@ -1180,6 +1172,14 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                       <Landmark size={16} />
                       <span>Ownership &amp; Tax</span>
                     </button>
+                    <EditableTreeTitle value={currentTree.title} onChange={updateTreeTitle} />
+                    <PersonFinder
+                      people={currentTree.people}
+                      onSelectPerson={(personId) => {
+                        setPropertyPanelExpanded(false);
+                        focusPersonOnTree(personId);
+                      }}
+                    />
                     <label className="tree-zoom-slider">
                       <span>Zoom</span>
                       <input
@@ -1220,6 +1220,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 }
                 onFocusEvent={showTraceEventOnTree}
                 expanded={propertyPanelExpanded}
+                initialOwnerSelectionActive={Boolean(initialOwnerPick)}
                 hideCollapsedTrigger
                 onOpenProperty={() => {
                   setTraceOwnershipSnapshot(null);

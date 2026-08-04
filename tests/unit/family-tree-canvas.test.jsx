@@ -188,9 +188,9 @@ describe("FamilyTreeCanvas", () => {
     });
 
     expect(container.textContent).toContain("Fit tree");
-    expect(container.textContent).toContain("Top");
-    expect(container.textContent).toContain("Fit branch");
-    expect(container.textContent).toContain("Centre");
+    expect(container.textContent).not.toContain("Top");
+    expect(container.textContent).not.toContain("Fit branch");
+    expect(container.textContent).not.toContain("Centre");
     const cards = [...container.querySelectorAll("[data-person-id]")];
     expect(cards.filter((card) => card.tabIndex === 0)).toHaveLength(1);
     expect(container.querySelector('[data-person-id="fa"]').tabIndex).toBe(0);
@@ -201,14 +201,6 @@ describe("FamilyTreeCanvas", () => {
     );
     act(() => fitTree.click());
     expect(onZoomChange).toHaveBeenCalledOnce();
-
-    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
-    scrollRegion.scrollTop = 240;
-    const top = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Top",
-    );
-    act(() => top.click());
-    expect(scrollRegion.scrollTop).toBe(0);
   });
 
   it("pans from a person card with one finger without opening the card", () => {

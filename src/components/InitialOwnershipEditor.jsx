@@ -1,4 +1,4 @@
-import { MousePointerClick, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import {
   assignInitialOwnerPerson,
@@ -100,7 +100,7 @@ export function InitialOwnershipEditor({
                     aria-label={`Select ${owner.personId ? "a replacement initial owner" : "initial owner"} from tree`}
                     onClick={() => onPickFromTree(owner.id)}
                   >
-                    <MousePointerClick size={14} />
+                    Tree
                   </button>
                 )}
               </span>
@@ -172,7 +172,7 @@ export function InitialOwnershipEditor({
             className="secondary-button initial-owner-tree-add-button"
             onClick={pickNewOwnerFromTree}
           >
-            <MousePointerClick size={15} /> Select from tree
+            Select from tree
           </button>
         )}
       </div>

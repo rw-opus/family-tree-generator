@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpToLine, GitBranch, LocateFixed, Maximize2, Move, Printer } from "lucide-react";
+import { Maximize2, Move, Printer } from "lucide-react";
 import {
   hasAnyDesignation,
   hasDesignation,
@@ -193,65 +193,6 @@ export function FamilyTreeCanvas({
     });
   }, [afterZoom, onZoomChange, zoom]);
 
-  const selectedBranchIds = useMemo(() => {
-    if (!selectedPersonId) return new Set();
-    const ids = new Set([selectedPersonId]);
-    const queue = [selectedPersonId];
-    while (queue.length) {
-      const parentId = queue.shift();
-      cleanPeople.forEach((person) => {
-        if ((person.fatherId === parentId || person.motherId === parentId) && !ids.has(person.id)) {
-          ids.add(person.id);
-          queue.push(person.id);
-        }
-      });
-    }
-    cleanPeople
-      .filter((person) => ids.has(person.id))
-      .flatMap((person) => person.spouseIds || [])
-      .forEach((personId) => ids.add(personId));
-    return ids;
-  }, [cleanPeople, selectedPersonId]);
-
-  const fitSelectedBranch = useCallback(() => {
-    const chart = treeRef.current;
-    if (!chart || !selectedPersonId || !onZoomChange) {
-      fitWholeTree();
-      return;
-    }
-    const nodes = [...chart.querySelectorAll("[data-person-id]")].filter((node) =>
-      selectedBranchIds.has(node.dataset.personId),
-    );
-    if (!nodes.length) {
-      fitWholeTree();
-      return;
-    }
-    const rectangles = nodes.map((node) => node.getBoundingClientRect());
-    const bounds = {
-      left: Math.min(...rectangles.map((rect) => rect.left)),
-      right: Math.max(...rectangles.map((rect) => rect.right)),
-      top: Math.min(...rectangles.map((rect) => rect.top)),
-      bottom: Math.max(...rectangles.map((rect) => rect.bottom)),
-    };
-    const branchWidth = Math.max(1, bounds.right - bounds.left);
-    const branchHeight = Math.max(1, bounds.bottom - bounds.top);
-    const factor = Math.min(
-      Math.max(240, chart.clientWidth - 100) / branchWidth,
-      Math.max(220, chart.clientHeight - 130) / branchHeight,
-    );
-    const nextZoom = Math.max(25, Math.min(160, Math.floor(Number(zoom) * factor)));
-    onZoomChange(nextZoom);
-    afterZoom(() => centerPerson(selectedPersonId));
-  }, [
-    afterZoom,
-    centerPerson,
-    fitWholeTree,
-    onZoomChange,
-    selectedBranchIds,
-    selectedPersonId,
-    zoom,
-  ]);
-
   const updateNavigator = useCallback(() => {
     const chart = treeRef.current;
     if (!chart) return;
@@ -414,16 +355,6 @@ export function FamilyTreeCanvas({
     ? selectedPersonId
     : cleanPeople[0]?.id;
 
-  const scrollToTreeTop = () => {
-    const chart = treeRef.current;
-    if (!chart) return;
-    if (typeof chart.scrollTo === "function") {
-      chart.scrollTo({ left: chart.scrollLeft, top: 0, behavior: "smooth" });
-    } else {
-      chart.scrollTop = 0;
-    }
-  };
-
   const renderCard = (person, variant = "") => (
     <FamilyPersonCard
       key={person.id}
@@ -452,25 +383,6 @@ export function FamilyTreeCanvas({
     <div className="tree-navigation-tools" aria-label="Tree view controls">
       <button type="button" onClick={fitWholeTree} title="Fit the whole tree in view">
         <Maximize2 size={15} /> <span>Fit tree</span>
-      </button>
-      <button type="button" onClick={scrollToTreeTop} title="Move to the top of the tree">
-        <ArrowUpToLine size={15} /> <span>Top</span>
-      </button>
-      <button
-        type="button"
-        onClick={fitSelectedBranch}
-        disabled={!selectedPersonId}
-        title="Fit the selected person and descendants in view"
-      >
-        <GitBranch size={15} /> <span>Fit branch</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => centerPerson()}
-        disabled={!selectedPersonId}
-        title="Centre the selected person"
-      >
-        <LocateFixed size={15} /> <span>Centre</span>
       </button>
       {panHintVisible && (
         <span className="tree-pan-hint">
