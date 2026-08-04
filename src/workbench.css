@@ -3534,7 +3534,28 @@ textarea {
 
 .tree-stage-toolbar-unified {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto minmax(190px, 300px) auto;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto minmax(190px, 300px) auto;
+}
+
+.ownership-tax-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  border: 1px solid #9eb9aa;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--forest);
+  padding: 0 0.68rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ownership-tax-button:hover,
+.ownership-tax-button[aria-expanded="true"] {
+  background: var(--forest-soft);
 }
 
 .tree-required-data-key {
@@ -5706,11 +5727,11 @@ body.a3-print-preview-open {
     top: 0;
     right: 0;
     left: 0;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     width: 100%;
     max-width: 100%;
     min-height: auto;
-    padding: 0.45rem 4.25rem 0.45rem 0.6rem;
+    padding: 0.45rem 0.6rem;
   }
 
   .tree-home-label-full,
@@ -5729,13 +5750,21 @@ body.a3-print-preview-open {
     justify-self: end;
   }
 
+  .tree-stage-toolbar-unified .ownership-tax-button {
+    grid-column: 4;
+    grid-row: 1;
+    min-height: 2.25rem;
+    padding: 0 0.5rem;
+    font-size: 0.64rem;
+  }
+
   .tree-stage-toolbar-unified .tree-zoom-slider {
-    grid-column: 1 / 3;
+    grid-column: 1 / 4;
     grid-row: 2;
   }
 
   .tree-stage-toolbar-unified > .secondary-button {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 2;
   }
 
@@ -5919,6 +5948,20 @@ body.a3-print-preview-open {
 }
 
 @media (max-width: 520px) {
+  .tree-stage-toolbar-unified {
+    gap: 0.35rem;
+    padding: 0.4rem;
+  }
+
+  .tree-stage-toolbar-unified .stage-family-title {
+    min-width: 0;
+  }
+
+  .tree-stage-toolbar-unified .ownership-tax-button {
+    padding: 0 0.35rem;
+    font-size: 0.58rem;
+  }
+
   .context-dashboard {
     padding-bottom: env(safe-area-inset-bottom, 0);
   }

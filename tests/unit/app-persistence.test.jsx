@@ -331,14 +331,15 @@ describe("App local recovery", () => {
     act(() => root.render(<App />));
     openCurrentFamily();
 
-    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    act(() => container.querySelector(".ownership-tax-button").click());
     const pickFromTree = container.querySelector(
       'button[aria-label="Select initial owner from tree"]',
     );
     act(() => pickFromTree.click());
 
     expect(container.querySelector(".initial-owner-tree-picker")).not.toBeNull();
-    expect(container.querySelector(".tree-property-panel").classList).toContain("collapsed");
+    expect(container.querySelector(".tree-property-panel")).toBeNull();
+    expect(container.querySelector(".ownership-tax-button")).not.toBeNull();
     expect(container.querySelector(".context-dashboard")).toBeNull();
 
     act(() => container.querySelector('[data-person-id="person-2"]').click());
@@ -423,8 +424,10 @@ describe("App local recovery", () => {
     act(() => root.render(<App />));
     openCurrentFamily();
 
-    expect(container.querySelector(".tree-property-panel")).not.toBeNull();
-    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    expect(container.querySelector(".ownership-tax-button").textContent).toContain(
+      "Ownership & Tax",
+    );
+    act(() => container.querySelector(".ownership-tax-button").click());
     const openProperty = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Open property setup"),
     );
@@ -442,7 +445,8 @@ describe("App local recovery", () => {
     );
     act(() => backToTree.click());
     expect(container.querySelector(".property-workspace-page")).toBeNull();
-    expect(container.querySelector(".tree-property-panel")).not.toBeNull();
+    expect(container.querySelector(".tree-property-panel")).toBeNull();
+    expect(container.querySelector(".ownership-tax-button")).not.toBeNull();
   });
 
   it("does not create a replacement family after the last family is deleted", async () => {
