@@ -11,6 +11,8 @@ vi.mock("../../src/supabaseClient.js", () => ({ supabase: { from } }));
 import { TERMS_VERSION } from "../../src/components/LegalNotice.jsx";
 import { TermsBoundary } from "../../src/components/TermsBoundary.jsx";
 
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
 const localKey = `family-tree-terms-accepted-${TERMS_VERSION}`;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
