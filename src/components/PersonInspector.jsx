@@ -234,6 +234,7 @@ export function PersonInspector({
         fullName: `${relationship} of ${subjectName}`,
         sex: role === "mother" ? "Female" : "Male",
         isPotentialIntestateParent: true,
+        potentialParentAddedExplicitly: true,
         survivalStatusRequired: true,
         survivalStatusReferencePersonId: selectedPerson.id,
       });
@@ -1095,7 +1096,15 @@ export function PersonInspector({
                   ? "Marriage date (optional)"
                   : "Partnership date (optional)"}
               </span>
-              <DateInput value={partnerRelationshipDate} onChange={setPartnerRelationshipDate} />
+              <DateInput
+                aria-label={
+                  partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+                    ? "New marriage date"
+                    : "New partnership date"
+                }
+                value={partnerRelationshipDate}
+                onChange={setPartnerRelationshipDate}
+              />
             </label>
             <button
               type="button"
@@ -1345,7 +1354,7 @@ export function PersonInspector({
           </section>
         )}
 
-        <fieldset className="person-edit-fields" disabled={!isEditing && !isDeceased}>
+        <div className="person-edit-fields person-record-fields">
           {isDeceased && (
             <div className="person-succession">
               <label className="succession-detail-row">
@@ -2100,7 +2109,7 @@ export function PersonInspector({
             </button>
             <small>{deleteMessage}</small>
           </div>
-        </fieldset>
+        </div>
       </section>
     </div>
   );

@@ -76,6 +76,53 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
+  it("keeps controls outside the pannable tree and centres cards by scrolling only the chart", () => {
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollIntoView",
+    );
+    const scrollTo = vi.fn();
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    try {
+      renderCanvas({
+        people: family(),
+        selectedPersonId: "c1",
+        toolbar: <button type="button">Home</button>,
+      });
+
+      const panel = container.querySelector(".tree-panel");
+      const controls = container.querySelector(".tree-panel-fixed-controls");
+      const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+      expect(controls.parentElement).toBe(panel);
+      expect(scrollRegion.parentElement).toBe(panel);
+      expect(scrollRegion.contains(controls)).toBe(false);
+      expect(scrollTo).toHaveBeenCalledOnce();
+      expect(scrollTo.mock.instances[0]).toBe(scrollRegion);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      if (originalScrollTo) {
+        Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+      } else {
+        delete HTMLElement.prototype.scrollTo;
+      }
+      if (originalScrollIntoView) {
+        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScrollIntoView);
+      } else {
+        delete HTMLElement.prototype.scrollIntoView;
+      }
+    }
+  });
+
   it("renders a card for every linked person", () => {
     renderCanvas({ people: family() });
 

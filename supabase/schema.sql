@@ -66,6 +66,10 @@ create table if not exists public.tree_generations (
 create index if not exists tree_generations_owner_created_idx
   on public.tree_generations (owner_id, created_at desc);
 
+create index if not exists tree_generations_order_idx
+  on public.tree_generations (order_id)
+  where order_id is not null;
+
 -- No anon or authenticated policy is created for this idempotency ledger.
 -- Only the Stripe webhook's secret-key client may read or write it.
 create table if not exists public.stripe_tree_events (

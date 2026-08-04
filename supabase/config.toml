@@ -1,14 +1,25 @@
 
 [auth]
 enabled = true
+site_url = "https://family-tree-generator-production.up.railway.app"
+additional_redirect_urls = ["https://family-tree-generator-production.up.railway.app/**"]
 enable_signup = false
 minimum_password_length = 10
 
 [auth.email]
-enable_signup = false
+# Keep the email provider active for existing invitees. The global
+# auth.enable_signup = false gate above still rejects every new signup.
+enable_signup = true
 enable_confirmations = true
 double_confirm_changes = true
 secure_password_change = true
+max_frequency = "60s"
+otp_length = 8
+otp_expiry = 3600
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
 
 [auth.rate_limit]
 email_sent = 2

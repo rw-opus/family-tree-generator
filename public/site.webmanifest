@@ -1,0 +1,16 @@
+{
+  "name": "Family Tree Generator",
+  "short_name": "Family Tree",
+  "description": "Maltese property succession and tax workspace",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f6",
+  "theme_color": "#004225",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

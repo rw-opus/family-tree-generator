@@ -6,6 +6,13 @@ const migration = readFileSync(
   new URL("../../supabase/migrations/20260731124716_commercial_tree_credits.sql", import.meta.url),
   "utf8",
 );
+const orderIndexMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260804045736_index_tree_generation_orders.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -35,10 +42,21 @@ describe("commercial Supabase schema", () => {
     expect(schema).not.toMatch(/using\s*\(\s*true\s*\)/i);
   });
 
+  it("indexes paid-generation order references", () => {
+    for (const sql of [schema, orderIndexMigration]) {
+      expect(sql).toContain("tree_generations_order_idx");
+      expect(sql).toContain("on public.tree_generations (order_id)");
+    }
+  });
+
   it("keeps account creation invitation-only at both client and Supabase config boundaries", () => {
     expect(authScreen).not.toContain("supabase.auth.signUp");
     expect(authConfig).toMatch(/\[auth\][\s\S]*enable_signup\s*=\s*false/);
-    expect(authConfig).toMatch(/\[auth\.email\][\s\S]*enable_signup\s*=\s*false/);
+    expect(authConfig).toMatch(/\[auth\.email\][\s\S]*enable_signup\s*=\s*true/);
     expect(authConfig).toMatch(/\[auth\.rate_limit\][\s\S]*sign_in_sign_ups\s*=\s*10/);
+    expect(authConfig).toContain(
+      'site_url = "https://family-tree-generator-production.up.railway.app"',
+    );
+    expect(authConfig).toMatch(/\[auth\.mfa\.totp\][\s\S]*verify_enabled\s*=\s*true/);
   });
 });
