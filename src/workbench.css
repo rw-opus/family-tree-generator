@@ -3334,7 +3334,7 @@ textarea {
 
 .tree-stage-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -3599,16 +3599,17 @@ textarea {
 .tree-property-panel {
   position: relative;
   z-index: 7;
+  order: -1;
   width: 360px;
   max-width: 32vw;
   min-height: 0;
   max-height: 100%;
   overflow: auto;
   border: 0;
-  border-left: 1px solid #b8c9c0;
+  border-right: 1px solid #b8c9c0;
   border-radius: 0;
   background: #fff;
-  box-shadow: -8px 0 24px rgba(17, 46, 33, 0.07);
+  box-shadow: 8px 0 24px rgba(17, 46, 33, 0.07);
   scrollbar-width: thin;
 }
 
@@ -5815,9 +5816,9 @@ body.a3-print-preview-open {
   .tree-property-panel.collapsed {
     position: absolute;
     z-index: 70;
-    right: 0.6rem;
+    right: auto;
     bottom: auto;
-    left: auto;
+    left: 0.6rem;
     top: 0.45rem;
     width: 3rem;
     max-width: 3rem;
@@ -5852,10 +5853,10 @@ body.a3-print-preview-open {
   .tree-property-panel.expanded {
     position: fixed;
     top: 0.6rem;
-    right: 0.6rem;
+    right: auto;
     bottom: 0.6rem;
     left: 0.6rem;
-    width: auto;
+    width: min(360px, calc(100vw - 1.2rem));
     max-width: none;
     max-height: calc(100dvh - 1.2rem);
     overflow: auto;
