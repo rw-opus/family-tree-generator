@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TreePropertyPanel } from "../../src/components/TreePropertyPanel.jsx";
+import { propertyStartingOwnershipStatus } from "../../src/domain/propertyVendorTax.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -297,6 +298,51 @@ describe("TreePropertyPanel", () => {
         ownershipSnapshot: { mother: 1 },
       }),
     );
+  });
+
+  it("shows all entered fractions while flagging a share that has no selected owner", () => {
+    const incompleteProperty = {
+      ...property,
+      owners: [
+        {
+          id: "assigned",
+          personId: "deceased",
+          shareNumerator: 11,
+          shareDenominator: 12,
+        },
+        {
+          id: "unassigned",
+          personId: "",
+          shareNumerator: 1,
+          shareDenominator: 12,
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <TreePropertyPanel
+          expanded
+          property={incompleteProperty}
+          people={people}
+          outsideParties={[]}
+          propertyReport={{
+            ...propertyReport,
+            startingOwnership: propertyStartingOwnershipStatus(incompleteProperty),
+          }}
+          cardFields={{}}
+          onCardFieldsChange={vi.fn()}
+          onPropertyChange={vi.fn()}
+          onFocusEvent={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".tree-control-section > summary b").textContent).toBe("100%");
+    expect(container.querySelector(".initial-owner-assignment-warning").textContent).toContain(
+      "1/12 still needs an owner",
+    );
+    expect(container.querySelector(".initial-owner-row.missing-owner")).not.toBeNull();
   });
 
   it("opens and prints the complete succession history", () => {

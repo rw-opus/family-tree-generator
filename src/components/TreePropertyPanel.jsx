@@ -68,6 +68,7 @@ export function TreePropertyPanel({
   const traceEvent = traceIndex >= 0 ? traceEvents[traceIndex] : null;
   const saleValue = Math.max(0, Number(property.saleValue) || 0);
   const startingStatus = propertyReport.startingOwnership;
+  const startingDisplayPercent = startingStatus.enteredTotalPercent ?? startingStatus.totalPercent;
   const currentOwners = propertyReport.ledger?.owners || [];
   const personIds = useMemo(() => new Set(people.map((person) => person.id)), [people]);
   const taxByOwnerId = useMemo(
@@ -185,7 +186,7 @@ export function TreePropertyPanel({
                 <summary>
                   <span>Initial ownership</span>
                   <b className={startingStatus.isComplete ? "valid" : "invalid"}>
-                    {startingStatus.totalPercent.toLocaleString("en-MT", {
+                    {startingDisplayPercent.toLocaleString("en-MT", {
                       maximumFractionDigits: 2,
                     })}
                     %

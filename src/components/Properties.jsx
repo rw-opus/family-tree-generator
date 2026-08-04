@@ -63,9 +63,24 @@ export function Properties({
       {properties.map((property) => {
         const vendorReport = buildPropertyVendorTaxReport(property, people, outsideParties);
         const { startingOwnership, ownership: result } = vendorReport;
-        const ownershipTotalLabel = startingOwnership.totalPercent.toLocaleString("en-MT", {
+        const ownershipTotalLabel = (
+          startingOwnership.enteredTotalPercent ?? startingOwnership.totalPercent
+        ).toLocaleString("en-MT", {
           maximumFractionDigits: 2,
         });
+        const unassignedOwnershipLabel = startingOwnership.unassignedFraction?.denominator
+          ? `${startingOwnership.unassignedFraction.numerator}/${startingOwnership.unassignedFraction.denominator}`
+          : "an entered share";
+        const ownershipNoticeTitle = startingOwnership.hasUnassignedOwners
+          ? `Fractions total ${ownershipTotalLabel}%, but ${unassignedOwnershipLabel} has no owner.`
+          : startingOwnership.isUnset
+            ? "No starting ownership has been set."
+            : `Starting ownership totals ${ownershipTotalLabel}%.`;
+        const ownershipNoticeDetail = startingOwnership.hasUnassignedOwners
+          ? "Choose a person for every positive fraction before calculated shares, transfers or tax figures are shown."
+          : startingOwnership.isUnset
+            ? "Enter who owned this property before any transfers."
+            : "Starting ownership must equal 100% before calculated shares, transfers or tax figures are shown.";
 
         return (
           <section className="editor-panel" key={property.id}>
@@ -118,15 +133,9 @@ export function Properties({
 
             {!startingOwnership.isComplete && (
               <div className="ownership-blocking-notice" role="alert">
-                <strong>
-                  {startingOwnership.isUnset
-                    ? "No starting ownership has been set."
-                    : `Starting ownership totals ${ownershipTotalLabel}%.`}
-                </strong>
+                <strong>{ownershipNoticeTitle}</strong>
                 <span>
-                  {startingOwnership.isUnset
-                    ? "Enter who owned this property before any transfers."
-                    : "Starting ownership must equal 100% before calculated shares, transfers or tax figures are shown."}
+                  {ownershipNoticeDetail}
                   {!showProperty && " Open Setup to complete the initial title."}
                 </span>
               </div>

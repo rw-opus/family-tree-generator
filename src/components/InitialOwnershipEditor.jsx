@@ -29,9 +29,17 @@ export function InitialOwnershipEditor({
 }) {
   const owners = property.owners || [];
   const status = propertyStartingOwnershipStatus(property);
-  const totalLabel = status.totalPercent.toLocaleString("en-MT", {
+  const totalLabel = status.enteredTotalPercent.toLocaleString("en-MT", {
     maximumFractionDigits: 2,
   });
+  const unassignedLabel = status.unassignedFraction?.denominator
+    ? `${status.unassignedFraction.numerator}/${status.unassignedFraction.denominator}`
+    : "an entered share";
+  const statusMessage = status.isComplete
+    ? "valid"
+    : status.hasUnassignedOwners
+      ? "an owner is still required"
+      : "must equal 100%";
   const updateOwners = (nextOwners) => onChange(nextOwners);
   const updateOwner = (ownerId, patch) =>
     updateOwners(owners.map((owner) => (owner.id === ownerId ? { ...owner, ...patch } : owner)));
@@ -60,7 +68,7 @@ export function InitialOwnershipEditor({
       </div>
       {helperText && <p className="helper-text">{helperText}</p>}
       <p className={`share-status ${status.isComplete ? "valid" : "invalid"}`}>
-        Initial title allocated: {totalLabel}% — {status.isComplete ? "valid" : "must equal 100%"}
+        Fractions entered: {totalLabel}% — {statusMessage}
       </p>
       <div className="initial-owner-list">
         {owners.length > 0 && (
@@ -73,10 +81,15 @@ export function InitialOwnershipEditor({
         )}
         {owners.map((owner) => {
           const ownerFraction = fractionForShare(owner);
+          const ownerNeedsSelection =
+            !owner.personId && !ownerFraction.error && Number(ownerFraction.numerator) > 0;
           const ownerNumerator = owner.shareNumerator ?? ownerFraction.numerator;
           const ownerDenominator = owner.shareDenominator ?? ownerFraction.denominator;
           return (
-            <div className="initial-owner-row" key={owner.id}>
+            <div
+              className={`initial-owner-row${ownerNeedsSelection ? " missing-owner" : ""}`}
+              key={owner.id}
+            >
               <span className="initial-owner-person-control">
                 <select
                   aria-label="Initial owner"
@@ -162,6 +175,11 @@ export function InitialOwnershipEditor({
           );
         })}
       </div>
+      {status.hasUnassignedOwners && (
+        <p className="initial-owner-assignment-warning" role="alert">
+          Fractions total {totalLabel}%, but {unassignedLabel} still needs an owner.
+        </p>
+      )}
       <div className="initial-owner-actions">
         <button type="button" className="add-button" onClick={addOwner}>
           <Plus size={16} /> Add initial owner

@@ -84,6 +84,23 @@ describe("property vendor tax reports", () => {
     ).toBe(false);
   });
 
+  it("distinguishes fractions entered from shares assigned to a named owner", () => {
+    const status = propertyStartingOwnershipStatus({
+      owners: [
+        { personId: "a", shareNumerator: 11, shareDenominator: 12 },
+        { personId: "", shareNumerator: 1, shareDenominator: 12 },
+      ],
+    });
+
+    expect(status.totalFraction).toEqual({ numerator: 11, denominator: 12 });
+    expect(status.enteredTotalFraction).toEqual({ numerator: 1, denominator: 1 });
+    expect(status.enteredTotalPercent).toBe(100);
+    expect(status.unassignedFraction).toEqual({ numerator: 1, denominator: 12 });
+    expect(status.missingOwnerCount).toBe(1);
+    expect(status.hasUnassignedOwners).toBe(true);
+    expect(status.isComplete).toBe(false);
+  });
+
   it("builds a read-only vendor row from the person-card CM declaration", () => {
     const people = [
       {
