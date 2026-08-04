@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Calculator, X } from "lucide-react";
-import { calculateFraction } from "../domain/fractions.js";
+import { calculateFraction, MAX_FRACTION_DIGITS } from "../domain/fractions.js";
 
 const operations = [
   { value: "add", symbol: "+", label: "Add" },
@@ -95,6 +95,7 @@ export function FractionCalculator() {
                 <input
                   aria-label="First numerator"
                   inputMode="numeric"
+                  maxLength={MAX_FRACTION_DIGITS + 1}
                   value={left.numerator}
                   onChange={(event) => update("left", "numerator", event.target.value)}
                 />
@@ -102,6 +103,7 @@ export function FractionCalculator() {
                 <input
                   aria-label="First denominator"
                   inputMode="numeric"
+                  maxLength={MAX_FRACTION_DIGITS + 1}
                   value={left.denominator}
                   onChange={(event) => update("left", "denominator", event.target.value)}
                 />
@@ -113,6 +115,7 @@ export function FractionCalculator() {
                 <input
                   aria-label="Second numerator"
                   inputMode="numeric"
+                  maxLength={MAX_FRACTION_DIGITS + 1}
                   value={right.numerator}
                   onChange={(event) => update("right", "numerator", event.target.value)}
                 />
@@ -120,6 +123,7 @@ export function FractionCalculator() {
                 <input
                   aria-label="Second denominator"
                   inputMode="numeric"
+                  maxLength={MAX_FRACTION_DIGITS + 1}
                   value={right.denominator}
                   onChange={(event) => update("right", "denominator", event.target.value)}
                 />

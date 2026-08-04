@@ -24,6 +24,27 @@ describe("inheritance share conversion", () => {
     });
   });
 
+  it("preserves a percentage-derived fraction whose denominator runs into the millions", () => {
+    expect(shareFromPercentage((1 / 3000001) * 100)).toEqual({
+      sharePercent: (1 / 3000001) * 100,
+      shareNumerator: 1,
+      shareDenominator: 3000001,
+    });
+  });
+
+  it("accepts 12-digit components and rejects 13-digit components", () => {
+    expect(shareFromFraction(1, "999999999999")).toEqual({
+      shareNumerator: 1,
+      shareDenominator: 999999999999,
+      sharePercent: 100 / 999999999999,
+    });
+    expect(shareFromFraction(1, "1000000000000")).toEqual({
+      shareNumerator: 1,
+      shareDenominator: 0,
+      sharePercent: 0,
+    });
+  });
+
   it("derives a fraction for older saved heirs", () => {
     expect(fractionForShare({ sharePercent: 25 })).toEqual({
       numerator: 1,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LOCAL_WORKSPACE_KEY,
   loadLocalWorkspace,
+  readLocalWorkspaceRecovery,
   saveLocalWorkspace,
   upsertWorkspaceTree,
 } from "../../src/services/localWorkspace.js";
@@ -55,13 +56,28 @@ describe("local family-tree workspace", () => {
     expect(trees.map((tree) => tree.id)).toEqual(["tree-3", "tree-1"]);
   });
 
-  it("ignores corrupt browser data safely", () => {
+  it("preserves corrupt browser data for recovery instead of silently replacing it", () => {
     const storage = memoryStorage();
     storage.setItem(LOCAL_WORKSPACE_KEY, "{not-json");
-    expect(loadLocalWorkspace(storage)).toEqual({
+    const recovered = loadLocalWorkspace(storage);
+    expect(recovered).toMatchObject({
       trees: [],
       activeTreeId: "",
+      loadError: expect.stringContaining("has not been overwritten"),
     });
+    expect(readLocalWorkspaceRecovery(recovered.recoveryKey, storage)).toBe("{not-json");
+  });
+
+  it("keeps readable families available when another stored family is malformed", () => {
+    const storage = memoryStorage();
+    storage.setItem(
+      LOCAL_WORKSPACE_KEY,
+      JSON.stringify({ trees: [completeTree, { id: "broken" }], activeTreeId: completeTree.id }),
+    );
+    const recovered = loadLocalWorkspace(storage);
+    expect(recovered.trees).toEqual([completeTree]);
+    expect(recovered.activeTreeId).toBe(completeTree.id);
+    expect(recovered.loadError).toContain("not been overwritten");
   });
 });
 

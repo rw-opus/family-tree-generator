@@ -112,6 +112,37 @@ describe("TreePropertyPanel", () => {
     );
   });
 
+  it("makes legacy additional properties explicitly selectable one at a time", () => {
+    const onPropertySelect = vi.fn();
+    const secondProperty = { ...property, id: "property-2", address: "2 Merchant Street" };
+    act(() =>
+      root.render(
+        <TreePropertyPanel
+          property={property}
+          properties={[property, secondProperty]}
+          activePropertyId={property.id}
+          people={people}
+          outsideParties={[]}
+          propertyReport={propertyReport}
+          cardFields={{}}
+          onCardFieldsChange={vi.fn()}
+          onPropertyChange={vi.fn()}
+          onPropertySelect={onPropertySelect}
+          onFocusEvent={vi.fn()}
+          onOpenProperty={vi.fn()}
+        />,
+      ),
+    );
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    const selector = container.querySelector(".tree-property-selector select");
+    expect(selector).not.toBeNull();
+    act(() => {
+      selector.value = "property-2";
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onPropertySelect).toHaveBeenCalledWith("property-2");
+  });
+
   it("steps through succession events and focuses the relevant person", () => {
     const onFocusEvent = vi.fn();
     act(() =>

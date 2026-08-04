@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { displayDateToIso, formatDateDraft, isoDateToDisplay } from "../domain/dateFormat.js";
 
 /**
@@ -9,6 +9,7 @@ import { displayDateToIso, formatDateDraft, isoDateToDisplay } from "../domain/d
 export function DateInput({ value = "", onChange, onBlur, placeholder = "dd-mm-yyyy", ...props }) {
   const [draft, setDraft] = useState(() => isoDateToDisplay(value));
   const [touched, setTouched] = useState(false);
+  const warningId = useId();
 
   useEffect(() => {
     setDraft(isoDateToDisplay(value));
@@ -32,18 +33,26 @@ export function DateInput({ value = "", onChange, onBlur, placeholder = "dd-mm-y
   };
 
   return (
-    <input
-      {...props}
-      type="text"
-      inputMode="numeric"
-      autoComplete="off"
-      maxLength={10}
-      placeholder={placeholder}
-      pattern="\d{2}-\d{2}-\d{4}"
-      value={draft}
-      aria-invalid={isInvalid || undefined}
-      onChange={handleChange}
-      onBlur={handleBlur}
-    />
+    <span className="date-input-field">
+      <input
+        {...props}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        maxLength={10}
+        placeholder={placeholder}
+        pattern="\d{2}-\d{2}-\d{4}"
+        value={draft}
+        aria-invalid={isInvalid || undefined}
+        aria-describedby={isInvalid ? warningId : undefined}
+        onChange={handleChange}
+        onBlur={handleBlur}
+      />
+      {isInvalid && (
+        <small className="date-input-warning" id={warningId} role="alert">
+          Not saved: enter a complete valid date as DD-MM-YYYY.
+        </small>
+      )}
+    </span>
   );
 }

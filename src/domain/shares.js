@@ -1,13 +1,14 @@
 import { approximateFraction } from "./ownership.js";
+import { fractionComponentNumber } from "./fractions.js";
 
 const finiteNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-export function shareFromPercentage(percentage, maxDenominator = 10000) {
+export function shareFromPercentage(percentage) {
   const sharePercent = Math.max(0, finiteNumber(percentage));
-  const fraction = approximateFraction(sharePercent / 100, maxDenominator);
+  const fraction = approximateFraction(sharePercent / 100);
   return {
     sharePercent,
     shareNumerator: fraction.numerator,
@@ -16,8 +17,10 @@ export function shareFromPercentage(percentage, maxDenominator = 10000) {
 }
 
 export function shareFromFraction(numerator, denominator) {
-  const shareNumerator = Math.max(0, finiteNumber(numerator));
-  const shareDenominator = Math.max(0, finiteNumber(denominator));
+  const parsedNumerator = fractionComponentNumber(numerator);
+  const parsedDenominator = fractionComponentNumber(denominator, { allowZero: false });
+  const shareNumerator = Number.isFinite(parsedNumerator) ? parsedNumerator : 0;
+  const shareDenominator = Number.isFinite(parsedDenominator) ? parsedDenominator : 0;
   return {
     shareNumerator,
     shareDenominator,
@@ -45,14 +48,9 @@ export function shareFromPercentageInput(percentage) {
 }
 
 export function fractionForShare(share = {}) {
-  const numerator = Number(share.shareNumerator);
-  const denominator = Number(share.shareDenominator);
-  if (
-    Number.isFinite(numerator) &&
-    numerator >= 0 &&
-    Number.isFinite(denominator) &&
-    denominator > 0
-  ) {
+  const numerator = fractionComponentNumber(share.shareNumerator);
+  const denominator = fractionComponentNumber(share.shareDenominator, { allowZero: false });
+  if (Number.isFinite(numerator) && Number.isFinite(denominator)) {
     return { numerator, denominator };
   }
   const fraction = approximateFraction(finiteNumber(share.sharePercent) / 100);

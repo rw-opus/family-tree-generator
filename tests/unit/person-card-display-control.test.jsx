@@ -41,6 +41,7 @@ describe("PersonCardDisplayControl", () => {
       "Will details",
       "Causa mortis details",
       "Dates of death",
+      "Compact card width (stack legal details)",
     ]);
 
     const willCheckbox = [...container.querySelectorAll('input[type="checkbox"]')].find((input) =>

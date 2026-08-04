@@ -161,7 +161,7 @@ describe("case model migration", () => {
     expect(confirmed.shares.get("child")).toBeCloseTo(0.4);
   });
 
-  it("keeps one canonical global person for duplicate IDs", () => {
+  it("preserves duplicate-ID records under recovery IDs and reports them", () => {
     const result = normalizeCase({
       id: "duplicates",
       people: [
@@ -169,8 +169,12 @@ describe("case model migration", () => {
         { id: "same", fullName: "Duplicate record" },
       ],
     });
-    expect(result.people).toEqual([{ id: "same", fullName: "First Record" }]);
-    expect(result.familyGroups[0].personIds).toEqual(["same"]);
+    expect(result.people).toEqual([
+      { id: "same", fullName: "First Record" },
+      { id: "same:duplicate:2", fullName: "Duplicate Record" },
+    ]);
+    expect(result.familyGroups[0].personIds).toEqual(["same", "same:duplicate:2"]);
+    expect(result.dataWarnings.join(" ")).toContain("Duplicate person identifier");
   });
 
   it("capitalises person names whenever a case is normalised for saving", () => {

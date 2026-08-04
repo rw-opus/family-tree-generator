@@ -21,10 +21,12 @@ const stringCell = (value, styleId = "Text") =>
   `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(value)}</Data></Cell>`;
 
 const numberCell = (value, styleId = "Money") =>
-  `<Cell ss:StyleID="${styleId}"><Data ss:Type="Number">${Math.max(
-    0,
-    Number(value) || 0,
-  )}</Data></Cell>`;
+  value == null || !Number.isFinite(Number(value))
+    ? stringCell("")
+    : `<Cell ss:StyleID="${styleId}"><Data ss:Type="Number">${Math.max(
+        0,
+        Number(value),
+      )}</Data></Cell>`;
 
 const percentageCell = (value) =>
   value == null ? stringCell("") : numberCell(value, "Percentage");
@@ -46,7 +48,8 @@ const workbookRows = (report) =>
         : "";
 
       return methods.map((method) => {
-        const tax = method?.tax || 0;
+        const tax = method?.tax ?? row.tax ?? null;
+        const net = tax == null ? null : row.attributedSaleValue - tax;
         return rowXml([
           stringCell(vendor.name),
           stringCell(fractionLabel(vendor.share), "CenteredText"),
@@ -58,9 +61,9 @@ const workbookRows = (report) =>
           numberCell(row.difference),
           stringCell(method?.label || row.warning || "Incomplete"),
           percentageCell(method?.rate),
-          numberCell(method?.basis || 0),
+          numberCell(method?.basis ?? null),
           numberCell(tax),
-          numberCell(row.attributedSaleValue - tax),
+          numberCell(net),
         ]);
       });
     }),

@@ -9,6 +9,7 @@ import {
   linkedSpousesMissingDeathDates,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
+import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import {
   fractionForShare,
   shareFromFractionInput,
@@ -257,6 +258,7 @@ export function IntestateHeirConfirmation({
                       aria-label={`Share numerator for ${displayName(person)}`}
                       type="number"
                       min="0"
+                      max={MAX_FRACTION_INTEGER}
                       step="1"
                       value={numerator}
                       onChange={(event) =>
@@ -268,6 +270,7 @@ export function IntestateHeirConfirmation({
                       aria-label={`Share denominator for ${displayName(person)}`}
                       type="number"
                       min="1"
+                      max={MAX_FRACTION_INTEGER}
                       step="1"
                       value={denominator}
                       onChange={(event) =>

@@ -1,4 +1,5 @@
 import { assessArticle5ATransfer, article5ATransferValue } from "./article5A.js";
+import { fractionComponentNumber } from "./fractions.js";
 import {
   SUCCESSION_REFORM_START,
   successionRuleset as classifySuccessionRuleset,
@@ -200,8 +201,8 @@ export function saleTaxLot(lot) {
   // fraction again would understate both the taxable basis and the tax.
   const { transferValue } = article5ATransferValue(lot);
   const declaredValue = number(lot.acquisitionValue);
-  const numerator = Math.max(0, number(lot.shareNumerator));
-  const denominator = Math.max(0, number(lot.shareDenominator));
+  const numerator = fractionComponentNumber(lot.shareNumerator);
+  const denominator = fractionComponentNumber(lot.shareDenominator, { allowZero: false });
   const share = denominator > 0 ? numerator / denominator : 0;
   if (lot.taxTreatment === "manual") {
     const tax = number(lot.manualTaxAmount);

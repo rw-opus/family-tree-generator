@@ -150,4 +150,33 @@ describe("GEDCOM import", () => {
       surnameAtBirth: "Vella",
     });
   });
+
+  it("retains the first parent relationship and reports conflicting families and approximate dates", () => {
+    const gedcom = `0 HEAD
+0 @I1@ INDI
+1 NAME First /Father/
+0 @I2@ INDI
+1 NAME Second /Father/
+0 @I3@ INDI
+1 NAME Child /Person/
+1 BIRT
+2 DATE ABT 2000
+0 @F1@ FAM
+1 HUSB @I1@
+1 CHIL @I3@
+0 @F2@ FAM
+1 HUSB @I2@
+1 CHIL @I3@
+0 TRLR`;
+    let id = 0;
+    const result = parseGedcom(gedcom, () => `person-${++id}`);
+    const child = result.people.find((person) => person.gedcomId === "@I3@");
+    const firstFather = result.people.find((person) => person.gedcomId === "@I1@");
+
+    expect(child.fatherId).toBe(firstFather.id);
+    expect(child.dateOfBirth).toBe("");
+    expect(child.gedcomBirthDate).toBe("ABT 2000");
+    expect(result.warnings.join(" ")).toMatch(/more than one father/i);
+    expect(result.warnings.join(" ")).toMatch(/not used as an exact legal date/i);
+  });
 });

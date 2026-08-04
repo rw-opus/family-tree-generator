@@ -1,4 +1,24 @@
 
+[auth]
+enabled = true
+enable_signup = false
+minimum_password_length = 10
+
+[auth.email]
+enable_signup = false
+enable_confirmations = true
+double_confirm_changes = true
+secure_password_change = true
+
+[auth.rate_limit]
+email_sent = 2
+sms_sent = 10
+anonymous_users = 10
+token_refresh = 100
+sign_in_sign_ups = 10
+token_verifications = 10
+web3 = 10
+
 [functions.create-tree-checkout]
 enabled = true
 verify_jwt = true

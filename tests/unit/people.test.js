@@ -42,6 +42,7 @@ describe("family tree people", () => {
     );
     expect(capitalisePersonName("jean-paul o'neill mcpherson")).toBe("Jean-Paul O'Neill McPherson");
     expect(capitalisePersonName("Mary McPherson")).toBe("Mary McPherson");
+    expect(capitalisePersonName("d'Avila deNoto iPhone")).toBe("d'Avila deNoto iPhone");
   });
 
   it("keeps all stored person-name fields capitalised and consistent", () => {

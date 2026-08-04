@@ -22,6 +22,7 @@ import { parseGedcom } from "./domain/gedcom.js";
 import { createPerson } from "./domain/people.js";
 import {
   buildTreeCardOwnershipByPerson,
+  buildTreeCardOwnershipFractionsByPerson,
   normalisePersonCardFields,
 } from "./domain/personCardDisplay.js";
 import {
@@ -37,6 +38,7 @@ import {
 import { createCloudSaveQueue } from "./services/cloudSaveQueue.js";
 import {
   loadLocalWorkspace,
+  readLocalWorkspaceRecovery,
   saveLocalWorkspace,
   upsertWorkspaceTree,
 } from "./services/localWorkspace.js";
@@ -132,13 +134,18 @@ const normaliseTree = (value) => {
     showOwnershipOnTree: true,
     treeZoom: 100,
   };
-  const settings = { ...defaultSettings, ...(caseData.settings || {}) };
+  const properties = migratedProperties(caseData);
+  const requestedActivePropertyId = caseData.settings?.activePropertyId;
+  const activePropertyId = properties.some((property) => property.id === requestedActivePropertyId)
+    ? requestedActivePropertyId
+    : properties[0]?.id || "";
+  const settings = { ...defaultSettings, ...(caseData.settings || {}), activePropertyId };
   return {
     ...caseData,
     createdAt: caseData.createdAt || caseData.created_at || caseData.updated_at || "",
     title: caseData.title || "Untitled family",
     property: { ...defaultProperty, ...(caseData.property || {}) },
-    properties: migratedProperties(caseData),
+    properties,
     succession: { ...defaultSuccession, ...(caseData.succession || {}) },
     declarations: caseData.declarations || [],
     outsideParties: caseData.outsideParties || [],
@@ -199,11 +206,16 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   });
   const [trees, setTrees] = useState(startupWorkspace.trees);
   const [status, setStatus] = useState(
-    startupWorkspace.trees.length
-      ? "Recovered automatically from this device."
-      : cloudMode
-        ? "Connecting to secure storage..."
-        : "Automatically saved on this device.",
+    startupWorkspace.loadError
+      ? startupWorkspace.loadError
+      : startupWorkspace.trees.length
+        ? "Recovered automatically from this device."
+        : cloudMode
+          ? "Connecting to secure storage..."
+          : "Automatically saved on this device.",
+  );
+  const [localRecoveryBlocked, setLocalRecoveryBlocked] = useState(() =>
+    Boolean(startupWorkspace.loadError),
   );
   const [entitlement, setEntitlement] = useState(localOnlyMode ? defaultTreeEntitlement : null);
   const [billingBusy, setBillingBusy] = useState(false);
@@ -280,7 +292,12 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     currentTree.familyGroups[0];
   const activePersonIds = new Set(activeFamilyGroup?.personIds || []);
   const visiblePeople = currentTree.people.filter((person) => activePersonIds.has(person.id));
-  const activeProperty = currentTree.properties[0] || makePrimaryProperty("primary-property");
+  const activeProperty =
+    currentTree.properties.find(
+      (property) => property.id === currentTree.settings.activePropertyId,
+    ) ||
+    currentTree.properties[0] ||
+    makePrimaryProperty("primary-property");
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const propertyReport = useMemo(
     () =>
@@ -290,6 +307,17 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const ownershipByPerson = useMemo(() => {
     if (!propertyReport.startingOwnership.isComplete) return {};
     return buildTreeCardOwnershipByPerson(
+      propertyReport.ledger.owners,
+      propertyReport.ownership.transmissions,
+    );
+  }, [
+    propertyReport.ledger.owners,
+    propertyReport.ownership.transmissions,
+    propertyReport.startingOwnership.isComplete,
+  ]);
+  const ownershipFractionsByPerson = useMemo(() => {
+    if (!propertyReport.startingOwnership.isComplete) return {};
+    return buildTreeCardOwnershipFractionsByPerson(
       propertyReport.ledger.owners,
       propertyReport.ownership.transmissions,
     );
@@ -325,7 +353,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         currentTree.outsideParties,
       );
       report.ledger.owners.forEach((owner) => {
-        if (owner.personId && Number(owner.share) > 1e-10) ids.add(owner.personId);
+        if (owner.personId && Number(owner.share) > 0) ids.add(owner.personId);
       });
     });
     return ids;
@@ -389,13 +417,24 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   useEffect(() => {
     if (cloudMode) return;
+    if (localRecoveryBlocked) {
+      setStatus(startupWorkspace.loadError || "Local recovery is required before saving.");
+      return;
+    }
     const saved = saveLocalWorkspace(trees, activeTreeIsListed ? tree.id : "");
     setStatus(
       saved
         ? "Automatically saved on this device."
         : "This browser could not save the current tree. Keep this page open.",
     );
-  }, [activeTreeIsListed, cloudMode, tree.id, trees]);
+  }, [
+    activeTreeIsListed,
+    cloudMode,
+    localRecoveryBlocked,
+    startupWorkspace.loadError,
+    tree.id,
+    trees,
+  ]);
 
   useEffect(() => {
     if (!cloudMode) return;
@@ -518,7 +557,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   };
 
   const updateZoom = (nextZoom) => {
-    const boundedZoom = Math.min(140, Math.max(25, Math.round(Number(nextZoom) / 5) * 5));
+    const boundedZoom = Math.min(200, Math.max(10, Math.round(Number(nextZoom))));
     setZoom(boundedZoom);
     setTree({
       ...currentTree,
@@ -542,6 +581,16 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   };
 
   const createNewTree = async () => {
+    if (
+      !cloudMode &&
+      localRecoveryBlocked &&
+      !window.confirm(
+        "The previous local workspace is unreadable. A recovery copy has been kept. Create a new workspace and replace the active saved data?",
+      )
+    ) {
+      return;
+    }
+    if (!cloudMode && localRecoveryBlocked) setLocalRecoveryBlocked(false);
     const nextTree = initialTree();
     if (!cloudMode) {
       openCreatedTree(nextTree, { openDashboard: true });
@@ -561,6 +610,16 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   const importNewTree = async (file) => {
     try {
+      if (
+        !cloudMode &&
+        localRecoveryBlocked &&
+        !window.confirm(
+          "The previous local workspace is unreadable. A recovery copy has been kept. Import into a new workspace and replace the active saved data?",
+        )
+      ) {
+        return;
+      }
+      if (!cloudMode && localRecoveryBlocked) setLocalRecoveryBlocked(false);
       const result = parseGedcom(await file.text());
       if (!result.people.length) throw new Error("No individual records were found.");
 
@@ -577,6 +636,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       const nextTree = {
         ...importedTree,
         title: importedTitle,
+        importWarnings: result.warnings || [],
         familyGroups: importedTree.familyGroups.map((group) =>
           group.id === familyGroupId ? { ...group, title: importedTitle } : group,
         ),
@@ -591,7 +651,13 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       } else {
         openCreatedTree(nextTree);
       }
-      setStatus(`Imported ${result.individualCount} people and ${result.familyCount} families.`);
+      setStatus(
+        `Imported ${result.individualCount} people and ${result.familyCount} families.${
+          result.warnings?.length
+            ? ` ${result.warnings.length} item${result.warnings.length === 1 ? "" : "s"} need manual review.`
+            : ""
+        }`,
+      );
     } catch (error) {
       if (isTreePaymentRequiredError(error)) await handleCreationError(error);
       else setStatus(`Could not import GEDCOM: ${error.message}`);
@@ -610,6 +676,22 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       setBillingMessage(`Could not open checkout: ${error.message}`);
       setBillingBusy(false);
     }
+  };
+
+  const downloadLocalRecovery = () => {
+    const payload = readLocalWorkspaceRecovery(startupWorkspace.recoveryKey);
+    if (!payload) {
+      setStatus("The local recovery copy could not be read.");
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "family-tree-workspace-recovery.json";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const openTree = async (treeId, view = "tree") => {
@@ -736,14 +818,18 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   const updateActiveProperty = (patch) =>
     updatePropertyWorkspace({
-      properties: [{ ...activeProperty, ...patch }, ...currentTree.properties.slice(1)],
+      properties: currentTree.properties.map((property) =>
+        property.id === activeProperty.id ? { ...property, ...patch } : property,
+      ),
     });
 
   const updatePrimaryPropertyWorkspace = (patch) =>
     updatePropertyWorkspace({
       ...patch,
       properties: patch.properties
-        ? [patch.properties[0] || activeProperty, ...currentTree.properties.slice(1)]
+        ? currentTree.properties.map((property) =>
+            property.id === activeProperty.id ? patch.properties[0] || property : property,
+          )
         : currentTree.properties,
     });
 
@@ -800,6 +886,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         billingBusy={billingBusy}
         billingMessage={billingMessage}
         storageStatus={status}
+        recoveryAvailable={Boolean(startupWorkspace.recoveryKey)}
+        onDownloadRecovery={downloadLocalRecovery}
         onCreate={createNewTree}
         onImport={importNewTree}
         onOpen={openTree}
@@ -887,6 +975,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 familyPersonIds={activeFamilyGroup?.personIds || []}
                 properties={activeProperties}
                 ownershipByPerson={ownershipByPerson}
+                ownershipFractionsByPerson={ownershipFractionsByPerson}
                 hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
                 selectedPersonId={selectedPersonId}
@@ -923,6 +1012,9 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 treeTitle={currentTree.title}
                 people={visiblePeople}
                 ownershipByPerson={traceOwnershipSnapshot || ownershipByPerson}
+                ownershipFractionsByPerson={
+                  traceOwnershipSnapshot ? {} : ownershipFractionsByPerson
+                }
                 currentOwnershipByPerson={traceOwnershipSnapshot || currentOwnershipByPerson}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}
@@ -961,9 +1053,9 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                       <input
                         aria-label="Tree zoom"
                         type="range"
-                        min="25"
-                        max="140"
-                        step="5"
+                        min="10"
+                        max="200"
+                        step="1"
                         value={zoom}
                         onChange={(event) => updateZoom(event.target.value)}
                       />
@@ -974,6 +1066,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
               />
               <TreePropertyPanel
                 property={activeProperty}
+                properties={currentTree.properties}
+                activePropertyId={activeProperty.id}
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
                 propertyReport={propertyReport}
@@ -985,6 +1079,12 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   })
                 }
                 onPropertyChange={updateActiveProperty}
+                onPropertySelect={(activePropertyId) =>
+                  setTree({
+                    ...currentTree,
+                    settings: { ...currentTree.settings, activePropertyId },
+                  })
+                }
                 onFocusEvent={showTraceEventOnTree}
                 expanded={propertyPanelExpanded}
                 onExpandedChange={setPropertyPanelExpanded}

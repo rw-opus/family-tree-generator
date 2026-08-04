@@ -34,8 +34,7 @@ export function usePinchZoom(chartRef, zoom, onZoomChange, dependency) {
       const distance = touchDistance(event.touches);
       if (!pinchRef.current.distance || !distance) return;
 
-      const nextZoom =
-        Math.round((pinchRef.current.zoom * distance) / pinchRef.current.distance / 5) * 5;
+      const nextZoom = Math.round((pinchRef.current.zoom * distance) / pinchRef.current.distance);
       if (nextZoom === pinchRef.current.lastZoom) return;
 
       pinchRef.current.lastZoom = nextZoom;

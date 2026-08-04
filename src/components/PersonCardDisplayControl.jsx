@@ -8,6 +8,7 @@ const fieldOptions = [
   ["willDetails", "Will details"],
   ["causaMortisDetails", "Causa mortis details"],
   ["dateOfDeath", "Dates of death"],
+  ["stackLegalDetails", "Compact card width (stack legal details)"],
 ];
 
 function FieldChoices({ fields, onChange }) {

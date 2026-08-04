@@ -15,8 +15,8 @@ import {
 } from "../../domain/personCardDisplay.js";
 import { capitalisedName, compactNodeWidth, isDeceasedPerson } from "./treePresentation.js";
 
-function ownershipParts(ownership, fields) {
-  const fraction = approximateFraction(ownership);
+function ownershipParts(ownership, fields, exactFraction) {
+  const fraction = exactFraction?.denominator ? exactFraction : approximateFraction(ownership);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
   const percentageText = `${(ownership * 100).toLocaleString("en-MT", {
     maximumFractionDigits: 2,
@@ -56,6 +56,7 @@ export function FamilyPersonCard({
   people,
   cardName,
   ownershipByPerson,
+  ownershipFractionsByPerson = {},
   currentOwnershipByPerson = {},
   causaMortisCoverageByPerson,
   personCardFields = DEFAULT_PERSON_CARD_FIELDS,
@@ -79,7 +80,9 @@ export function FamilyPersonCard({
   );
   const currentOwnership = hasCurrentOwnership ? currentOwnershipByPerson[person.id] : 0;
   const fields = normalisePersonCardFields({ personCardFields });
-  const shareParts = hasOwnership ? ownershipParts(ownership, fields) : [];
+  const shareParts = hasOwnership
+    ? ownershipParts(ownership, fields, ownershipFractionsByPerson[person.id])
+    : [];
   const currentOwnershipValue = Number(propertyValue) * currentOwnership;
   const causaMortisDetails = availableCausaMortisDetails(person);
   const isTestate = person.inheritanceBasis === "will";

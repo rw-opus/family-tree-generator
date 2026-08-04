@@ -12,7 +12,7 @@ export const LEGACY_SUCCESSION_CUTOFF = "2005-03-01";
  * minimums and leaves the disposable portion to the named heirs.
  */
 
-const EPSILON = 1e-10;
+const EPSILON = 0;
 const REPRESENTED_PARTICIPATION = new Set(["predeceased", "represented"]);
 
 const finiteNonNegative = (value) => {

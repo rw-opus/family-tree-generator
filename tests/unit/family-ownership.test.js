@@ -1158,4 +1158,39 @@ describe("per-property ownership", () => {
       "Owner Person → Heir Person → Owner Person",
     );
   });
+
+  it("preserves an exact tiny property share without pruning it", () => {
+    const property = {
+      id: "tiny-share",
+      owners: [
+        {
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 999999999999,
+        },
+      ],
+    };
+    const result = buildPropertyOwnership([person("owner")], property);
+    expect(result.ownershipFractionsByPerson.owner).toEqual({
+      numerator: 1,
+      denominator: 999999999999,
+    });
+    expect(result.breakdown).toHaveLength(1);
+  });
+
+  it("does not treat a person born after the succession as alive at that succession", () => {
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+      }),
+      person("later-child", {
+        fatherId: "deceased",
+        dateOfBirth: "2021-01-01",
+      }),
+    ];
+    const result = intestateAllocations(people, "deceased");
+    expect(result.shares.has("later-child")).toBe(false);
+  });
 });

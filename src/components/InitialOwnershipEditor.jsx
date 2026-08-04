@@ -1,4 +1,5 @@
 import { Plus, Trash2 } from "lucide-react";
+import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import { propertyStartingOwnershipStatus } from "../domain/propertyVendorTax.js";
 import {
   fractionForShare,
@@ -78,6 +79,7 @@ export function InitialOwnershipEditor({
                   aria-label="Initial ownership numerator"
                   type="number"
                   min="0"
+                  max={MAX_FRACTION_INTEGER}
                   step="1"
                   value={ownerNumerator}
                   onChange={(event) =>
@@ -92,6 +94,7 @@ export function InitialOwnershipEditor({
                   aria-label="Initial ownership denominator"
                   type="number"
                   min="1"
+                  max={MAX_FRACTION_INTEGER}
                   step="1"
                   value={ownerDenominator}
                   onChange={(event) =>

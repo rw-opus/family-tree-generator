@@ -31,12 +31,15 @@ const shareLabel = (share) => {
 
 export function TreePropertyPanel({
   property,
+  properties = [],
+  activePropertyId = "",
   people,
   outsideParties,
   propertyReport,
   cardFields,
   onCardFieldsChange,
   onPropertyChange,
+  onPropertySelect,
   onFocusEvent,
   onOpenProperty,
   expanded: controlledExpanded,
@@ -108,6 +111,25 @@ export function TreePropertyPanel({
 
         {expanded && (
           <div className="tree-property-panel-body">
+            {properties.length > 1 && (
+              <label className="tree-property-selector">
+                <span>Property currently being calculated</span>
+                <select
+                  value={activePropertyId}
+                  onChange={(event) => onPropertySelect?.(event.target.value)}
+                >
+                  {properties.map((item, index) => (
+                    <option value={item.id} key={item.id}>
+                      {item.address || `Property ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  This family contains {properties.length} saved property records. Only the selected
+                  property is shown and calculated at a time.
+                </small>
+              </label>
+            )}
             <section className="tree-property-summary">
               <label>
                 <span>Property address</span>

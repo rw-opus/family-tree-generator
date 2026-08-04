@@ -61,6 +61,7 @@ describe("DateInput", () => {
 
     expect(input.value).toBe("31-04-2026");
     expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(container.textContent).toContain("Not saved");
     expect(onChange).not.toHaveBeenCalled();
   });
 

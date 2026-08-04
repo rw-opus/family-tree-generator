@@ -45,6 +45,7 @@ function givenNamesFromGedcomName(value = "") {
 export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
   const individuals = new Map();
   const families = [];
+  const warnings = [];
   let record = null;
   let event = "";
   String(text || "")
@@ -68,6 +69,8 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
             sex: "",
             birthText: "",
             deathText: "",
+            notes: [],
+            hasAdoptionRecord: false,
             isDeceased: false,
           };
           individuals.set(pointer, record);
@@ -79,6 +82,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
             wife: "",
             children: [],
             marriageText: "",
+            divorceText: "",
           };
           families.push(record);
         } else record = null;
@@ -98,14 +102,19 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
         } else if (level === 2 && tag === "DATE" && event === "BIRT")
           record.birthText = value.trim();
         else if (level === 2 && tag === "DATE" && event === "DEAT") record.deathText = value.trim();
+        else if (level === 1 && tag === "ADOP") record.hasAdoptionRecord = true;
+        else if ((level === 1 || level === 2) && tag === "NOTE" && value.trim())
+          record.notes.push(value.trim());
       } else if (record.type === "FAM") {
         if (level === 1) {
-          event = tag === "MARR" ? "MARR" : "";
+          event = tag === "MARR" || tag === "DIV" ? tag : "";
           if (tag === "HUSB") record.husband = value.trim();
           else if (tag === "WIFE") record.wife = value.trim();
           else if (tag === "CHIL") record.children.push(value.trim());
         } else if (level === 2 && tag === "DATE" && event === "MARR") {
           record.marriageText = value.trim();
+        } else if (level === 2 && tag === "DATE" && event === "DIV") {
+          record.divorceText = value.trim();
         }
       }
     });
@@ -129,7 +138,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     spouseIds: [],
     siblingIds: [],
     designations: [],
-    notes: "",
+    notes: person.notes.join("\n"),
   }));
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const spouseIdsByPerson = new Map(people.map((person) => [person.id, new Set()]));
@@ -140,21 +149,37 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     family.children.forEach((childPointer) => {
       const child = peopleById.get(idMap.get(childPointer));
       if (child) {
-        child.fatherId = fatherId;
-        child.motherId = motherId;
+        if (fatherId && child.fatherId && child.fatherId !== fatherId) {
+          warnings.push(
+            `${child.fullName || childPointer} appears as a child of more than one father; the first relationship was retained.`,
+          );
+        } else if (fatherId) child.fatherId = fatherId;
+        if (motherId && child.motherId && child.motherId !== motherId) {
+          warnings.push(
+            `${child.fullName || childPointer} appears as a child of more than one mother; the first relationship was retained.`,
+          );
+        } else if (motherId) child.motherId = motherId;
+      } else {
+        warnings.push(`Family ${family.pointer || "record"} refers to a child that was not found.`);
       }
     });
     const relationshipKey = partnerRelationshipKey(fatherId, motherId);
     if (relationshipKey) {
-      spouseIdsByPerson.get(fatherId).add(motherId);
-      spouseIdsByPerson.get(motherId).add(fatherId);
+      spouseIdsByPerson.get(fatherId)?.add(motherId);
+      spouseIdsByPerson.get(motherId)?.add(fatherId);
 
       const existing = marriagesByKey.get(relationshipKey);
       const startDate = exactDate(family.marriageText);
+      const endDate = exactDate(family.divorceText);
       marriagesByKey.set(relationshipKey, {
         personIds: relationshipKey.split("::"),
         startDate: existing?.startDate || startDate,
+        endDate: existing?.endDate || endDate,
       });
+    } else if (family.husband || family.wife) {
+      warnings.push(
+        `Family ${family.pointer || "record"} refers to a spouse who was not found; no partner link was created.`,
+      );
     }
   });
 
@@ -162,7 +187,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     peopleById.get(personId).spouseIds = [...spouseIds];
   });
 
-  marriagesByKey.forEach(({ personIds, startDate }) => {
+  marriagesByKey.forEach(({ personIds, startDate, endDate }) => {
     const [ownerId, partnerId] = personIds;
     const owner = peopleById.get(ownerId);
     if (!owner) return;
@@ -172,6 +197,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
         personId: partnerId,
         type: PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
         ...(startDate ? { startDate } : {}),
+        ...(endDate ? { endDate, endReason: "divorce" } : {}),
       },
     ];
   });
@@ -180,9 +206,41 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     if (!person.fatherId) return;
     Object.assign(person, fatherSurnameDefaultPatch(person, peopleById.get(person.fatherId)));
   });
+
+  people.forEach((person) => {
+    if (person.gedcomBirthDate && !person.dateOfBirth) {
+      warnings.push(
+        `${person.fullName || person.gedcomId}: birth date “${person.gedcomBirthDate}” was preserved as source text but not used as an exact legal date.`,
+      );
+    }
+    if (person.gedcomDeathDate && !person.dateOfDeath) {
+      warnings.push(
+        `${person.fullName || person.gedcomId}: death date “${person.gedcomDeathDate}” was preserved as source text but not used as an exact legal date.`,
+      );
+    }
+    const imported = individuals.get(person.gedcomId);
+    if (imported?.hasAdoptionRecord) {
+      warnings.push(
+        `${person.fullName || person.gedcomId}: an adoption record was found and needs manual legal review.`,
+      );
+    }
+  });
+  families.forEach((family) => {
+    if (family.marriageText && !exactDate(family.marriageText)) {
+      warnings.push(
+        `Family ${family.pointer || "record"}: marriage date “${family.marriageText}” was preserved as source text but not used as an exact legal date.`,
+      );
+    }
+    if (family.divorceText && !exactDate(family.divorceText)) {
+      warnings.push(
+        `Family ${family.pointer || "record"}: divorce date “${family.divorceText}” was preserved as source text but not used as an exact legal date.`,
+      );
+    }
+  });
   return {
     people,
     individualCount: people.length,
     familyCount: families.length,
+    warnings: [...new Set(warnings)],
   };
 }

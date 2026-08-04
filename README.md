@@ -20,6 +20,6 @@ Until commercial mode is deliberately enabled, the app retains trees in the brow
 
 ## Deployment readiness
 
-The project is Vite-ready for Railway or another Node host. Railway builds with `npm run build` and serves the generated SPA with `npm start`. Set `VITE_COMMERCIAL_MODE=true` only after the Supabase migration, Edge Functions and browser variables are ready. Commercial mode deliberately stops at a configuration screen if either Supabase browser variable is absent.
+The project is Vite-ready for Railway or another Node host. Railway builds with `npm run build` and serves the generated SPA with `npm start`. Production builds always require the Supabase browser variables and stop at a configuration screen rather than falling back to unencrypted browser-local storage. New accounts are invitation-only; keep public signup disabled in the hosted Supabase Auth settings as well as `supabase/config.toml`.
 
 Stripe secrets and the Supabase secret/service key belong only in Supabase Edge Function secrets. They must never use the `VITE_` prefix or be added to Railway's browser build variables.

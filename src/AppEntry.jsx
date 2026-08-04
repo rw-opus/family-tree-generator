@@ -8,7 +8,10 @@ const LoadingScreen = () => (
 );
 
 export function AppEntry() {
-  const commercialMode = import.meta.env.VITE_COMMERCIAL_MODE === "true";
+  // A production build must never silently fall back to browser-local storage.
+  // Local-only mode remains available in development when explicitly unconfigured.
+  const commercialMode =
+    import.meta.env.PROD || import.meta.env.VITE_COMMERCIAL_MODE === "true" || supabaseConfigured;
   const localOnlyMode = !commercialMode;
   const missingProductionConfig = commercialMode && !supabaseConfigured;
   const [session, setSession] = useState(localOnlyMode ? null : undefined);

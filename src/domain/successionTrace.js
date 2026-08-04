@@ -1,4 +1,14 @@
 import { approximateFraction } from "./ownership.js";
+import {
+  addFractions,
+  compareFractions,
+  fractionComponentNumber,
+  fractionToNumber,
+  multiplyFractions,
+  normaliseFraction,
+  subtractFractions,
+  ZERO_FRACTION,
+} from "./fractions.js";
 
 const money = new Intl.NumberFormat("en-MT", {
   style: "currency",
@@ -19,17 +29,17 @@ const fraction = (share) => {
 const shareLabel = (share) => `${fraction(share)} (${percentage(share)})`;
 
 const initialOwnerShare = (owner) => {
-  const numerator = Number(owner.shareNumerator);
-  const denominator = Number(owner.shareDenominator);
-  if (
-    Number.isFinite(numerator) &&
-    numerator >= 0 &&
-    Number.isFinite(denominator) &&
-    denominator > 0
-  ) {
+  const numerator = fractionComponentNumber(owner.shareNumerator);
+  const denominator = fractionComponentNumber(owner.shareDenominator, { allowZero: false });
+  if (Number.isFinite(numerator) && Number.isFinite(denominator)) {
     return numerator / denominator;
   }
   return Math.max(0, Number(owner.sharePercent) || 0) / 100;
+};
+
+const initialOwnerFraction = (owner) => {
+  const exact = normaliseFraction(owner.shareNumerator, owner.shareDenominator);
+  return exact.error ? approximateFraction(initialOwnerShare(owner)) : exact;
 };
 
 const allocationEntries = (allocations) =>
@@ -38,41 +48,50 @@ const allocationEntries = (allocations) =>
 const eventDateSort = (event) => event.date || "9999-12-30";
 
 const ownershipSnapshot = (holdings) =>
-  Object.fromEntries([...holdings.entries()].filter(([, share]) => Number(share) > 1e-10));
+  Object.fromEntries(
+    [...holdings.entries()]
+      .filter(([, share]) => compareFractions(share, ZERO_FRACTION) > 0)
+      .map(([ownerId, share]) => [ownerId, fractionToNumber(share)]),
+  );
 
 const addHolding = (holdings, ownerId, share) => {
-  if (!ownerId || !(Number(share) > 0)) return;
-  holdings.set(ownerId, (holdings.get(ownerId) || 0) + Number(share));
+  if (!ownerId || share?.error || compareFractions(share, ZERO_FRACTION) <= 0) return;
+  const next = addFractions(holdings.get(ownerId) || ZERO_FRACTION, share);
+  if (!next.error) holdings.set(ownerId, next);
 };
 
 const applySuccession = (holdings, change) => {
-  const allocations = allocationEntries(change.allocations).filter(
-    ([recipientId, share]) => recipientId && Number(share) > 0,
-  );
-  const allocatedRatio = Math.min(
-    1,
-    allocations.reduce((total, [, share]) => total + Number(share), 0),
-  );
-  if (!(allocatedRatio > 0)) return;
-
-  const estateShare = Math.max(0, Number(change.amount) || 0);
-  const allocatedEstateShare = estateShare * allocatedRatio;
-  holdings.set(
-    change.deceasedId,
-    Math.max(0, (holdings.get(change.deceasedId) || 0) - allocatedEstateShare),
-  );
-  allocations.forEach(([recipientId, share]) =>
-    addHolding(holdings, recipientId, estateShare * Number(share)),
-  );
+  const exactAllocations = change.exactAllocations || new Map();
+  const allocations = allocationEntries(change.allocations)
+    .map(([recipientId, share]) => [
+      recipientId,
+      exactAllocations.get?.(recipientId) || approximateFraction(Number(share) || 0),
+    ])
+    .filter(([recipientId, share]) =>
+      Boolean(recipientId && !share.error && compareFractions(share, ZERO_FRACTION) > 0),
+    );
+  const estateShare = change.amountFraction || approximateFraction(Number(change.amount) || 0);
+  if (estateShare.error) return;
+  let allocatedEstateShare = ZERO_FRACTION;
+  allocations.forEach(([recipientId, allocation]) => {
+    const inherited = multiplyFractions(estateShare, allocation);
+    if (inherited.error) return;
+    addHolding(holdings, recipientId, inherited);
+    allocatedEstateShare = addFractions(allocatedEstateShare, inherited);
+  });
+  const deceasedHolding = holdings.get(change.deceasedId) || ZERO_FRACTION;
+  const remaining = subtractFractions(deceasedHolding, allocatedEstateShare);
+  if (!remaining.error) holdings.set(change.deceasedId, remaining);
 };
 
 const applyTransfer = (holdings, change) => {
-  const transferredShare = Math.max(0, Number(change.amount) || 0);
-  if (!(transferredShare > 0)) return;
-  holdings.set(
-    change.sellerId,
-    Math.max(0, (holdings.get(change.sellerId) || 0) - transferredShare),
+  const transferredShare = change.amountFraction || approximateFraction(Number(change.amount) || 0);
+  if (transferredShare.error || compareFractions(transferredShare, ZERO_FRACTION) <= 0) return;
+  const sellerAfter = subtractFractions(
+    holdings.get(change.sellerId) || ZERO_FRACTION,
+    transferredShare,
   );
+  if (!sellerAfter.error) holdings.set(change.sellerId, sellerAfter);
   addHolding(holdings, change.buyerId, transferredShare);
 };
 
@@ -92,7 +111,7 @@ export function buildSuccessionTrace({
   const saleValue = Math.max(0, Number(property.saleValue) || 0);
   const initialHoldings = new Map();
   (property.owners || []).forEach((owner) =>
-    addHolding(initialHoldings, owner.personId, initialOwnerShare(owner)),
+    addHolding(initialHoldings, owner.personId, initialOwnerFraction(owner)),
   );
   const initialOwnershipSnapshot = ownershipSnapshot(initialHoldings);
 
@@ -132,7 +151,9 @@ export function buildSuccessionTrace({
           kind: "succession",
           deceasedId: transmission.deceasedId,
           amount: estateShare,
+          amountFraction: transmission.amountFraction,
           allocations: transmission.allocations,
+          exactAllocations: transmission.exactAllocations,
         },
         date: deceased?.dateOfDeath || "",
         title: `Succession of ${partyName(transmission.deceasedId)}`,
@@ -156,6 +177,7 @@ export function buildSuccessionTrace({
         sellerId: entry.sellerId,
         buyerId: entry.buyerId,
         amount: entry.amount,
+        amountFraction: entry.amountFraction,
       },
       date: entry.date || "",
       title: Number(entry.consideration) > 0 ? "Property share sale" : "Ownership transfer",
