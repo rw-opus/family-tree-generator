@@ -1713,6 +1713,16 @@ textarea {
   text-align: center;
 }
 
+.partner-eligibility-note {
+  margin: 0;
+  border-left: 3px solid #8fab9c;
+  background: #eef5f1;
+  color: #4f6258;
+  padding: 0.42rem 0.5rem;
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
 .spouse-chooser > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3218,7 +3228,7 @@ textarea {
   padding: 0.3rem;
 }
 
-.single-property-case .initial-owner-row > select,
+.single-property-case .initial-owner-person-control select,
 .single-property-case .initial-owner-row input {
   min-width: 0;
   min-height: 1.8rem;
@@ -3246,6 +3256,51 @@ textarea {
 .initial-owner-row .icon-button {
   width: 28px;
   min-height: 1.8rem;
+}
+
+.initial-owner-person-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.initial-owner-person-control select {
+  width: 100%;
+  min-width: 0;
+}
+
+.initial-owner-tree-pick-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  min-width: 30px;
+  min-height: 1.8rem;
+  border: 1px solid #9fb9aa;
+  border-radius: 5px;
+  background: #f4f8f5;
+  color: var(--forest);
+}
+
+.initial-owner-tree-pick-button:hover,
+.initial-owner-tree-pick-button:focus-visible {
+  border-color: var(--forest);
+  background: var(--forest-soft);
+}
+
+.initial-owner-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.initial-owner-actions > button {
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
 }
 
 .single-property-case .ownership-grid,
@@ -3480,6 +3535,41 @@ textarea {
 .tree-stage-toolbar-unified {
   display: grid;
   grid-template-columns: auto minmax(180px, 1fr) auto minmax(190px, 300px) auto;
+}
+
+.tree-required-data-key {
+  position: absolute;
+  z-index: 13;
+  top: calc(100% + 0.45rem);
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: min(330px, calc(100vw - 1.5rem));
+  margin: 0;
+  border: 1px solid #e0b4b0;
+  border-radius: 7px;
+  background: rgba(255, 250, 249, 0.96);
+  box-shadow: 0 3px 10px rgba(73, 31, 27, 0.08);
+  color: #78241d;
+  padding: 0.32rem 0.48rem;
+  font-size: 0.61rem;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.tree-required-data-key > span {
+  flex: 0 0 auto;
+  width: 0.62rem;
+  height: 0.62rem;
+  border: 2px solid #b42318;
+  border-radius: 3px;
+  background: #fee4e2;
+}
+
+.tree-required-data-key strong {
+  color: #78241d;
+  white-space: nowrap;
 }
 
 .tree-property-panel {
@@ -3786,6 +3876,73 @@ textarea {
   min-height: 2rem;
   margin-top: 0.45rem;
   font-size: 0.66rem;
+}
+
+.initial-ownership-editor.compact .initial-owner-actions .add-button,
+.initial-ownership-editor.compact .initial-owner-tree-add-button {
+  min-height: 2rem;
+  margin-top: 0;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.62rem;
+}
+
+.initial-owner-tree-picker {
+  position: absolute;
+  z-index: 75;
+  top: 4.75rem;
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  width: min(430px, calc(100% - 1.5rem));
+  border: 1px solid #8eada0;
+  border-radius: 9px;
+  background: rgba(247, 252, 249, 0.98);
+  box-shadow: 0 10px 28px rgba(17, 46, 33, 0.16);
+  padding: 0.55rem 0.65rem;
+  color: var(--forest);
+  transform: translateX(-50%);
+}
+
+.initial-owner-tree-picker > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.initial-owner-tree-picker strong {
+  font-size: 0.72rem;
+}
+
+.initial-owner-tree-picker small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.initial-owner-tree-picker button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 1.9rem;
+  border: 1px solid #b8c9c0;
+  border-radius: 5px;
+  background: #fff;
+  color: #4b5a52;
+  padding: 0 0.45rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.initial-owner-pick-active .family-node {
+  cursor: crosshair;
+}
+
+.initial-owner-pick-active .family-node:hover,
+.initial-owner-pick-active .family-node:focus-visible {
+  outline: 3px solid rgba(30, 102, 72, 0.28);
+  outline-offset: 3px;
 }
 
 .tree-current-owners {
@@ -4716,7 +4873,8 @@ body.a3-print-preview-open {
     0 4px 14px rgba(28, 52, 40, 0.11);
 }
 
-.tree-stage .family-node.survival-status-required {
+.tree-stage .family-node.survival-status-required,
+.tree-stage .family-node.surname-at-birth-review-required {
   border-color: #b42318;
   border-top-color: #7a1610;
   box-shadow:
@@ -4857,7 +5015,8 @@ body.a3-print-preview-open {
   overflow-wrap: anywhere;
 }
 
-.tree-stage .family-node-survival-alert {
+.tree-stage .family-node-survival-alert,
+.tree-stage .family-node-surname-alert {
   margin-top: 0.32rem;
   border-radius: 5px;
   background: #fee4e2;
@@ -4867,6 +5026,21 @@ body.a3-print-preview-open {
   font-weight: 750;
   line-height: 1.2;
   overflow-wrap: anywhere;
+}
+
+.surname-at-birth-review-field > input {
+  border-color: #b42318 !important;
+  background: #fff1f0 !important;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.12);
+}
+
+.surname-at-birth-review-note {
+  grid-column: 2;
+  margin: -0.1rem 0 0.35rem;
+  color: #8a1c13;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .potential-parent-survival-alert {
@@ -5536,7 +5710,7 @@ body.a3-print-preview-open {
     width: 100%;
     max-width: 100%;
     min-height: auto;
-    padding: 0.45rem 0.6rem;
+    padding: 0.45rem 4.25rem 0.45rem 0.6rem;
   }
 
   .tree-home-label-full,
@@ -5552,6 +5726,7 @@ body.a3-print-preview-open {
   .tree-stage-toolbar-unified .person-finder {
     grid-column: 3;
     grid-row: 1;
+    justify-self: end;
   }
 
   .tree-stage-toolbar-unified .tree-zoom-slider {
@@ -5564,9 +5739,25 @@ body.a3-print-preview-open {
     grid-row: 2;
   }
 
+  .tree-required-data-key {
+    right: 0.55rem;
+    max-width: calc(50% - 0.75rem);
+    padding: 0.28rem 0.4rem;
+    font-size: 0.56rem;
+  }
+
+  .tree-required-data-key strong {
+    white-space: normal;
+  }
+
   .tree-navigation-tools {
     top: 6.55rem;
     left: 0.55rem;
+  }
+
+  .initial-owner-tree-picker {
+    top: 9.45rem;
+    width: calc(100% - 1.1rem);
   }
 
   .tree-navigation-tools button {
@@ -5590,26 +5781,28 @@ body.a3-print-preview-open {
 
   .tree-property-panel,
   .tree-property-panel.collapsed {
-    position: fixed;
+    position: absolute;
     z-index: 70;
     right: 0.6rem;
-    bottom: 0.6rem;
+    bottom: auto;
     left: auto;
-    width: min(350px, calc(100vw - 1.2rem));
-    max-width: none;
+    top: 0.45rem;
+    width: 3rem;
+    max-width: 3rem;
     min-height: auto;
-    max-height: calc(100dvh - 1.2rem);
+    max-height: 3.2rem;
+    overflow: hidden;
     border: 1px solid #b8c9c0;
-    border-radius: 12px;
-    box-shadow: 0 16px 46px rgba(17, 46, 33, 0.22);
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(17, 46, 33, 0.12);
   }
 
   .tree-property-panel.collapsed .tree-property-panel-toggle {
-    flex-direction: row;
-    justify-content: space-between;
+    justify-content: center;
+    gap: 0;
     height: auto;
     min-height: 3rem;
-    padding: 0.65rem 0.75rem;
+    padding: 0;
   }
 
   .tree-property-panel.collapsed .tree-property-panel-toggle > span:first-child {
@@ -5617,21 +5810,25 @@ body.a3-print-preview-open {
   }
 
   .tree-property-panel.collapsed .tree-property-panel-toggle strong {
-    writing-mode: initial;
-    transform: none;
-    white-space: normal;
+    display: none;
   }
 
   .tree-property-panel.collapsed .tree-property-panel-price {
-    display: flex;
+    display: none;
   }
 
   .tree-property-panel.expanded {
+    position: fixed;
     top: 0.6rem;
     right: 0.6rem;
     bottom: 0.6rem;
     left: 0.6rem;
     width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 1.2rem);
+    overflow: auto;
+    border-radius: 12px;
+    box-shadow: 0 16px 46px rgba(17, 46, 33, 0.22);
   }
 
   .case-view-tabs {
@@ -5713,6 +5910,12 @@ body.a3-print-preview-open {
   .family-row-actions {
     flex-wrap: wrap;
   }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 @media (max-width: 520px) {
@@ -5737,7 +5940,14 @@ body.a3-print-preview-open {
   .context-dashboard select,
   .context-dashboard textarea {
     min-width: 0;
-    font-size: 16px;
+  }
+
+  .inspector-fields > label {
+    grid-template-columns: minmax(96px, 38%) minmax(0, 1fr);
+  }
+
+  .inspector-fields > label > span:first-child {
+    overflow-wrap: anywhere;
   }
 
   .context-dashboard .eyebrow,

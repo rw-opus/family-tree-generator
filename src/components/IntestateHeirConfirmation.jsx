@@ -10,6 +10,7 @@ import {
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
+import { personChoiceLabel, sortPeopleForChoice } from "../domain/people.js";
 import {
   fractionForShare,
   shareFromFractionInput,
@@ -110,18 +111,29 @@ export function IntestateHeirConfirmation({
     deceased.id,
     deceased.dateOfDeath,
   );
-  const availableCalledPeople = people.filter(
-    (person) => calculatedPersonIds.has(person.id) && !selectedPersonIds.has(person.id),
+  const availableCalledPeople = sortPeopleForChoice(
+    people.filter(
+      (person) => calculatedPersonIds.has(person.id) && !selectedPersonIds.has(person.id),
+    ),
+    people,
   );
-  const availableOtherPeople = people.filter(
-    (person) =>
-      person.id !== deceased.id &&
-      !calculatedPersonIds.has(person.id) &&
-      !selectedPersonIds.has(person.id),
+  const availableOtherPeople = sortPeopleForChoice(
+    people.filter(
+      (person) =>
+        person.id !== deceased.id &&
+        !calculatedPersonIds.has(person.id) &&
+        !selectedPersonIds.has(person.id),
+    ),
+    people,
   );
-  const availableOutsideParties = outsideParties.filter(
-    (party) => !selectedPersonIds.has(party.id),
-  );
+  const availableOutsideParties = outsideParties
+    .filter((party) => !selectedPersonIds.has(party.id))
+    .sort((first, second) =>
+      displayName(first).localeCompare(displayName(second), "en-MT", {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    );
   const total = totalPercentage(rows);
   const editedAllocation = editedIntestacyAllocations(
     people,
@@ -321,7 +333,7 @@ export function IntestateHeirConfirmation({
               <optgroup label="Statutory proposal">
                 {availableCalledPeople.map((person) => (
                   <option key={person.id} value={person.id}>
-                    {displayName(person)}
+                    {personChoiceLabel(person, people)}
                   </option>
                 ))}
               </optgroup>
@@ -330,7 +342,7 @@ export function IntestateHeirConfirmation({
               <optgroup label="Other people on the family tree">
                 {availableOtherPeople.map((person) => (
                   <option key={person.id} value={person.id}>
-                    {displayName(person)}
+                    {personChoiceLabel(person, people)}
                   </option>
                 ))}
               </optgroup>

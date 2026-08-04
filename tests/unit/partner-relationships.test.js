@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   findPartnerRelationship,
   legalSpouseIdsForPerson,
+  linkPartnerRelationship,
   normalizePartnerRelationships,
   partnerIdsForPerson,
   partnerRelationshipAnnotation,
   partnerRelationshipKey,
+  partnerLinkEligibility,
   partnerRelationshipStatusAt,
   removePartnerRelationship,
   upsertPartnerRelationship,
@@ -207,5 +209,50 @@ describe("partner relationship metadata", () => {
       startDate: "",
       startYear: "",
     });
+  });
+
+  it("allows opposite-sex cousins but blocks closer blood relations and the direct line", () => {
+    const people = [
+      { id: "grandfather", sex: "Male" },
+      { id: "grandmother", sex: "Female" },
+      {
+        id: "mother",
+        sex: "Female",
+        fatherId: "grandfather",
+        motherId: "grandmother",
+      },
+      {
+        id: "uncle",
+        sex: "Male",
+        fatherId: "grandfather",
+        motherId: "grandmother",
+      },
+      { id: "father", sex: "Male" },
+      { id: "person", sex: "Female", fatherId: "father", motherId: "mother" },
+      { id: "brother", sex: "Male", fatherId: "father", motherId: "mother" },
+      { id: "recorded-brother", sex: "Male", siblingIds: ["person"] },
+      { id: "cousin", sex: "Male", fatherId: "uncle" },
+      { id: "unrelated", sex: "Male" },
+      { id: "same-sex", sex: "Female" },
+      { id: "unknown-sex", sex: "" },
+    ];
+
+    expect(partnerLinkEligibility(people, "person", "father").code).toBe("direct-blood-relative");
+    expect(partnerLinkEligibility(people, "person", "brother").code).toBe("close-blood-relative");
+    expect(partnerLinkEligibility(people, "person", "recorded-brother").code).toBe(
+      "close-blood-relative",
+    );
+    expect(partnerLinkEligibility(people, "person", "uncle").code).toBe("close-blood-relative");
+    expect(partnerLinkEligibility(people, "person", "same-sex").code).toBe("same-sex");
+    expect(partnerLinkEligibility(people, "person", "unknown-sex").code).toBe("sex-required");
+    expect(partnerLinkEligibility(people, "person", "cousin").allowed).toBe(true);
+    expect(partnerLinkEligibility(people, "person", "unrelated").allowed).toBe(true);
+
+    expect(linkPartnerRelationship(people, "person", "brother")).toBe(people);
+    const linked = linkPartnerRelationship(people, "person", "cousin", {
+      type: "marriage",
+    });
+    expect(partnerIdsForPerson(linked, "person")).toEqual(["cousin"]);
+    expect(partnerIdsForPerson(linked, "cousin")).toEqual(["person"]);
   });
 });

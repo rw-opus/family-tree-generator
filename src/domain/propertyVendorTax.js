@@ -375,6 +375,41 @@ export function propertyStartingOwnershipStatus(property = {}) {
   };
 }
 
+export function remainingInitialOwnershipShare(owners = [], excludedOwnerId = "") {
+  const allocated = owners
+    .filter((owner) => owner?.personId && owner.id !== excludedOwnerId)
+    .reduce((total, owner) => addFractions(total, exactShareFromRecord(owner)), ZERO_FRACTION);
+  const remaining = subtractFractions(WHOLE_FRACTION, allocated);
+  if (remaining.error || compareFractions(remaining, ZERO_FRACTION) <= 0) {
+    return {
+      shareNumerator: 0,
+      shareDenominator: 1,
+      sharePercent: 0,
+      sharePercentInput: undefined,
+    };
+  }
+  return {
+    shareNumerator: remaining.numerator,
+    shareDenominator: remaining.denominator,
+    sharePercent: fractionToNumber(remaining) * 100,
+    sharePercentInput: undefined,
+  };
+}
+
+export function assignInitialOwnerPerson(owners = [], ownerId = "", personId = "") {
+  return owners.map((owner) => {
+    if (owner.id !== ownerId) return owner;
+    if (!personId) return { ...owner, personId };
+
+    const currentShare = exactShareFromRecord(owner);
+    const sharePatch =
+      !currentShare.error && compareFractions(currentShare, ZERO_FRACTION) > 0
+        ? {}
+        : remainingInitialOwnershipShare(owners, ownerId);
+    return { ...owner, ...sharePatch, personId };
+  });
+}
+
 export function buildPropertyVendorTaxReport(property = {}, people = [], outsideParties = []) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));

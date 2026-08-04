@@ -70,6 +70,7 @@ describe("TreePropertyPanel", () => {
     const onCardFieldsChange = vi.fn();
     const onOpenTax = vi.fn();
     const onSelectPerson = vi.fn();
+    const onPickInitialOwner = vi.fn();
     const taxReport = {
       vendors: [
         {
@@ -98,6 +99,7 @@ describe("TreePropertyPanel", () => {
           onOpenProperty={vi.fn()}
           onOpenTax={onOpenTax}
           onSelectPerson={onSelectPerson}
+          onPickInitialOwner={onPickInitialOwner}
         />,
       ),
     );
@@ -109,6 +111,11 @@ describe("TreePropertyPanel", () => {
       "1 Republic Street",
     );
     expect(container.textContent).toContain("Initial ownership");
+    const selectOwnerFromTree = container.querySelector(
+      'button[aria-label="Select a replacement initial owner from tree"]',
+    );
+    act(() => selectOwnerFromTree.click());
+    expect(onPickInitialOwner).toHaveBeenCalledWith("initial-owner");
 
     const currentTitle = [...container.querySelectorAll("summary")].find((summary) =>
       summary.textContent.includes("Current owners & values"),

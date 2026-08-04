@@ -5,9 +5,8 @@ import {
   createPerson,
   fatherSurnameDefaultPatch,
   hasDesignation,
-  personDescendants,
+  personChoiceLabel,
   personDisplayName,
-  personAncestors,
   personGivenNames,
   personIdentityIssues,
   parentageDescription,
@@ -15,6 +14,7 @@ import {
   personSurname,
   personDesignations,
   removalWouldSeverFamily,
+  sortPeopleForChoice,
 } from "../domain/people.js";
 import {
   applyParentSuggestions,
@@ -47,7 +47,9 @@ import { isValidIsoDate, isoDateToDisplay } from "../domain/dateFormat.js";
 import { operativeWillFromRecords, personWills, personWithWills } from "../domain/wills.js";
 import {
   findPartnerRelationship,
+  linkPartnerRelationship,
   PARTNER_RELATIONSHIP_TYPES,
+  partnerLinkEligibility,
   removePartnerRelationship,
   upsertPartnerRelationship,
 } from "../domain/partnerRelationships.js";
@@ -181,6 +183,13 @@ export function PersonInspector({
         : partyDisplayName(partyOrPerson),
     [displayName, partyDisplayName, peopleById],
   );
+  const personSelectionLabel = useCallback(
+    (partyOrPerson) =>
+      partyOrPerson && peopleById.has(partyOrPerson.id)
+        ? personChoiceLabel(partyOrPerson, people)
+        : partyDisplayName(partyOrPerson),
+    [partyDisplayName, people, peopleById],
+  );
   const parentSuggestions = useMemo(() => solePartnerParentSuggestions(people), [people]);
   const relevantParentSuggestions = useMemo(
     () =>
@@ -311,6 +320,7 @@ export function PersonInspector({
     };
     if (
       selectedPerson.sex === "Male" &&
+      !selectedPerson.surnameAtBirthReviewRequired &&
       (!selectedPerson.surnameAtBirth || selectedPerson.surnameAtBirth === previousSurname)
     ) {
       patch.surnameAtBirth = surname;
@@ -320,10 +330,23 @@ export function PersonInspector({
 
   const updateSex = (sex) => {
     const patch = { sex };
-    if (sex === "Male" && !selectedPerson.surnameAtBirth) {
+    if (
+      sex === "Male" &&
+      !selectedPerson.surnameAtBirthReviewRequired &&
+      !selectedPerson.surnameAtBirth
+    ) {
       patch.surnameAtBirth = personSurname(selectedPerson);
     }
     updateSelected(patch);
+  };
+
+  const updateSurnameAtBirth = (surnameAtBirth) => {
+    updateSelected({
+      surnameAtBirth,
+      ...(selectedPerson.surnameAtBirthReviewRequired
+        ? { surnameAtBirthReviewRequired: !surnameAtBirth.trim() }
+        : {}),
+    });
   };
 
   const changeOwnershipDisplay = (mode) => {
@@ -583,6 +606,7 @@ export function PersonInspector({
           ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
           : PARTNER_RELATIONSHIP_TYPES.MARRIAGE;
       Object.assign(relative, {
+        sex: String(selectedPerson.sex).toLowerCase() === "male" ? "Female" : "Male",
         designations: [
           relationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
             ? hasDesignation(selectedPerson, "Deceased")
@@ -629,7 +653,7 @@ export function PersonInspector({
     const nextPeople = [...updatedPeople, relative];
     if (kind === "marriage" || kind === "partnership") {
       onChange(
-        upsertPartnerRelationship(nextPeople, selectedPerson.id, relative.id, {
+        linkPartnerRelationship(nextPeople, selectedPerson.id, relative.id, {
           type:
             kind === "partnership"
               ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
@@ -669,7 +693,7 @@ export function PersonInspector({
     const existingPerson = people.find((person) => person.id === existingSpouseId);
     if (!existingPerson) return;
     onChange(
-      upsertPartnerRelationship(people, selectedPerson.id, existingPerson.id, {
+      linkPartnerRelationship(people, selectedPerson.id, existingPerson.id, {
         type: partnerRelationshipType,
         startDate: partnerRelationshipDate,
       }),
@@ -824,15 +848,15 @@ export function PersonInspector({
   const allSuccessionHeirsDeceased =
     successionHeirs.length > 0 &&
     successionHeirs.every((person) => peopleById.has(person.id) && isPersonDeceased(person));
-  const descendants = personDescendants(people, selectedPerson.id);
-  const descendantIds = new Set(descendants.map((person) => person.id));
-  const ancestorIds = new Set(
-    personAncestors(people, selectedPerson.id).map((person) => person.id),
-  );
   const declarationCandidateIds = new Set(successionHeirIds);
-  const declarationCandidates = [...people, ...outsideParties].filter((party) =>
-    declarationCandidateIds.has(party.id),
-  );
+  const declarationCandidates = [...people, ...outsideParties]
+    .filter((party) => declarationCandidateIds.has(party.id))
+    .sort((first, second) =>
+      personSelectionLabel(first).localeCompare(personSelectionLabel(second), "en-MT", {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    );
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
   const hasDraftCausaMortisDeclaration = causaMortisDeclarations.some(
     (declaration) => !isCompletedCausaMortisDeclaration(declaration),
@@ -877,8 +901,10 @@ export function PersonInspector({
     hasUnknownCausaMortisDeathDate ||
     (Boolean(selectedPerson.dateOfDeath) && !isPreCausaMortisCutoff);
   const displayedSurnameAtBirth =
-    selectedPerson.surnameAtBirth ||
-    (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
+    selectedPerson.surnameAtBirthReviewRequired === true
+      ? selectedPerson.surnameAtBirth || ""
+      : selectedPerson.surnameAtBirth ||
+        (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
   const displayedGivenNames = personGivenNames(selectedPerson);
   const displayedSurname = personSurname(selectedPerson);
   const propertySaleValue = Number(properties[0]?.saleValue) || 0;
@@ -980,12 +1006,14 @@ export function PersonInspector({
     }
     addRelative("child", linkedPartners[0]?.id);
   };
-  const existingSpouseCandidates = people.filter(
-    (person) =>
-      person.id !== selectedPerson.id &&
-      !linkedSpouseIds.has(person.id) &&
-      !descendantIds.has(person.id) &&
-      !ancestorIds.has(person.id),
+  const existingSpouseCandidates = sortPeopleForChoice(
+    people.filter(
+      (person) =>
+        person.id !== selectedPerson.id &&
+        !linkedSpouseIds.has(person.id) &&
+        partnerLinkEligibility(people, selectedPerson.id, person.id).allowed,
+    ),
+    people,
   );
   const parentage = parentageDescription(selectedPerson, people);
   // Having descendants is not itself a reason to keep somebody: a person at the
@@ -1174,6 +1202,11 @@ export function PersonInspector({
                 : "partner"}
             </button>
             <span>or link an existing person</span>
+            <p className="partner-eligibility-note">
+              Only an opposite-sex person may be linked as a wife, husband or unmarried partner.
+              Direct relatives, siblings, uncles, aunts, nephews and nieces are excluded; cousins
+              and more distant relatives remain available.
+            </p>
             <div>
               <select
                 aria-label="Existing partner"
@@ -1184,11 +1217,11 @@ export function PersonInspector({
                 <option value="">
                   {existingSpouseCandidates.length
                     ? "Choose from family list"
-                    : "No unlinked people available"}
+                    : "No eligible unlinked people available"}
                 </option>
                 {existingSpouseCandidates.map((person) => (
                   <option key={person.id} value={person.id}>
-                    {displayName(person)}
+                    {personChoiceLabel(person, people)}
                   </option>
                 ))}
               </select>
@@ -1217,9 +1250,9 @@ export function PersonInspector({
                 onChange={(event) => setChildPartnerId(event.target.value)}
               >
                 <option value="">No other parent assigned yet</option>
-                {linkedPartners.map((person) => (
+                {sortPeopleForChoice(linkedPartners, people).map((person) => (
                   <option key={person.id} value={person.id}>
-                    {displayName(person)}
+                    {personChoiceLabel(person, people)}
                   </option>
                 ))}
               </select>
@@ -1300,13 +1333,24 @@ export function PersonInspector({
                 placeholder="Current surname"
               />
             </label>
-            <label>
+            <label
+              className={
+                selectedPerson.surnameAtBirthReviewRequired
+                  ? "surname-at-birth-review-field"
+                  : undefined
+              }
+            >
               <span>Surname at birth</span>
               <input
                 value={displayedSurnameAtBirth}
-                onChange={(event) => updateSelected({ surnameAtBirth: event.target.value })}
+                onChange={(event) => updateSurnameAtBirth(event.target.value)}
                 placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
               />
+              {selectedPerson.surnameAtBirthReviewRequired && (
+                <small className="surname-at-birth-review-note">
+                  The imported parents are recorded as unmarried. Confirm this surname.
+                </small>
+              )}
             </label>
           </div>
         </fieldset>
@@ -1571,22 +1615,31 @@ export function PersonInspector({
                           >
                             <option value="">Choose person or company</option>
                             <optgroup label="People on the family tree">
-                              {people
-                                .filter((person) => person.id !== selectedPerson.id)
-                                .map((person) => (
-                                  <option key={person.id} value={person.id}>
-                                    {displayName(person)}
-                                  </option>
-                                ))}
+                              {sortPeopleForChoice(
+                                people.filter((person) => person.id !== selectedPerson.id),
+                                people,
+                              ).map((person) => (
+                                <option key={person.id} value={person.id}>
+                                  {personChoiceLabel(person, people)}
+                                </option>
+                              ))}
                             </optgroup>
                             {outsideParties.length > 0 && (
                               <optgroup label="Unconnected people and companies">
-                                {outsideParties.map((party) => (
-                                  <option key={party.id} value={party.id}>
-                                    {partyDisplayName(party)}
-                                    {party.type === "company" ? " (company)" : " (unconnected)"}
-                                  </option>
-                                ))}
+                                {[...outsideParties]
+                                  .sort((first, second) =>
+                                    partyDisplayName(first).localeCompare(
+                                      partyDisplayName(second),
+                                      "en-MT",
+                                      { sensitivity: "base", numeric: true },
+                                    ),
+                                  )
+                                  .map((party) => (
+                                    <option key={party.id} value={party.id}>
+                                      {partyDisplayName(party)}
+                                      {party.type === "company" ? " (company)" : " (unconnected)"}
+                                    </option>
+                                  ))}
                               </optgroup>
                             )}
                           </select>
@@ -1931,7 +1984,7 @@ export function PersonInspector({
                                   )}
                                   onChange={() => toggleCausaMortisDeclarant(declaration, party.id)}
                                 />
-                                {displayParty(party)}
+                                {personSelectionLabel(party)}
                               </label>
                             ))}
                           </div>

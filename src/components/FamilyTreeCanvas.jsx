@@ -49,6 +49,11 @@ function TreePanel({
         <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
           <Printer size={16} /> Print preview
         </button>
+        <p className="tree-required-data-key">
+          <span aria-hidden="true" />
+          <strong>Red means action required:</strong> open that person&apos;s card and update the
+          missing detail.
+        </p>
       </header>
       {navigation}
       <div className="family-chart tree-canvas-scroll-region" ref={treeRef}>
@@ -80,7 +85,6 @@ export function FamilyTreeCanvas({
 }) {
   const treeRef = useRef(null);
   const dragRef = useRef(null);
-  const touchPanRef = useRef(null);
   const [panHintVisible, setPanHintVisible] = useState(true);
   const [navigatorState, setNavigatorState] = useState({
     visible: false,
@@ -280,15 +284,30 @@ export function FamilyTreeCanvas({
   useEffect(() => {
     const chart = treeRef.current;
     if (!chart) return undefined;
+    const activeTouchPointers = new Set();
+    let suppressClickUntil = 0;
     const startDrag = (event) => {
-      if (event.pointerType !== "mouse" || event.button !== 0) return;
-      if (event.target.closest("button, input, select, textarea, a, label")) return;
+      const mousePointer = event.pointerType === "mouse";
+      if (mousePointer && event.button !== 0) return;
+      if (mousePointer && event.target.closest("button, input, select, textarea, a, label")) return;
+      if (!mousePointer) {
+        activeTouchPointers.add(event.pointerId);
+        if (activeTouchPointers.size > 1) {
+          const activeDrag = dragRef.current;
+          if (activeDrag) chart.releasePointerCapture?.(activeDrag.pointerId);
+          dragRef.current = null;
+          chart.classList.remove("is-panning");
+          return;
+        }
+      }
       dragRef.current = {
         pointerId: event.pointerId,
+        pointerType: event.pointerType,
         x: event.clientX,
         y: event.clientY,
         left: chart.scrollLeft,
         top: chart.scrollTop,
+        moved: false,
       };
       chart.setPointerCapture?.(event.pointerId);
       chart.classList.add("is-panning");
@@ -297,67 +316,43 @@ export function FamilyTreeCanvas({
     const drag = (event) => {
       const state = dragRef.current;
       if (!state || state.pointerId !== event.pointerId) return;
-      chart.scrollLeft = state.left - (event.clientX - state.x);
-      chart.scrollTop = state.top - (event.clientY - state.y);
-    };
-    const stopDrag = (event) => {
-      if (dragRef.current?.pointerId !== event.pointerId) return;
-      dragRef.current = null;
-      chart.classList.remove("is-panning");
-      chart.releasePointerCapture?.(event.pointerId);
-    };
-    const startTouchPan = (event) => {
-      if (event.touches.length !== 1) {
-        touchPanRef.current = null;
-        return;
-      }
-      const touch = event.touches[0];
-      touchPanRef.current = {
-        identifier: touch.identifier,
-        x: touch.clientX,
-        y: touch.clientY,
-        left: chart.scrollLeft,
-        top: chart.scrollTop,
-        moved: false,
-      };
-    };
-    const touchPan = (event) => {
-      const state = touchPanRef.current;
-      if (!state || event.touches.length !== 1) {
-        if (event.touches.length > 1) touchPanRef.current = null;
-        return;
-      }
-      const touch = Array.from(event.touches).find((item) => item.identifier === state.identifier);
-      if (!touch) return;
-      const deltaX = touch.clientX - state.x;
-      const deltaY = touch.clientY - state.y;
-      if (!state.moved && Math.hypot(deltaX, deltaY) < 4) return;
+      if (state.pointerType !== "mouse" && activeTouchPointers.size > 1) return;
+      const deltaX = event.clientX - state.x;
+      const deltaY = event.clientY - state.y;
+      if (state.pointerType !== "mouse" && !state.moved && Math.hypot(deltaX, deltaY) < 4) return;
       state.moved = true;
       event.preventDefault();
       chart.scrollLeft = state.left - deltaX;
       chart.scrollTop = state.top - deltaY;
       setPanHintVisible(false);
     };
-    const stopTouchPan = () => {
-      touchPanRef.current = null;
+    const stopDrag = (event) => {
+      if (event.pointerType !== "mouse") activeTouchPointers.delete(event.pointerId);
+      if (dragRef.current?.pointerId !== event.pointerId) return;
+      const movedByTouch =
+        dragRef.current.pointerType !== "mouse" && dragRef.current.moved === true;
+      dragRef.current = null;
+      chart.classList.remove("is-panning");
+      chart.releasePointerCapture?.(event.pointerId);
+      if (movedByTouch) suppressClickUntil = Date.now() + 500;
+    };
+    const suppressClickAfterPan = (event) => {
+      if (Date.now() > suppressClickUntil) return;
+      suppressClickUntil = 0;
+      event.preventDefault();
+      event.stopPropagation();
     };
     chart.addEventListener("pointerdown", startDrag);
     chart.addEventListener("pointermove", drag);
     chart.addEventListener("pointerup", stopDrag);
     chart.addEventListener("pointercancel", stopDrag);
-    chart.addEventListener("touchstart", startTouchPan, { passive: true });
-    chart.addEventListener("touchmove", touchPan, { passive: false });
-    chart.addEventListener("touchend", stopTouchPan, { passive: true });
-    chart.addEventListener("touchcancel", stopTouchPan, { passive: true });
+    chart.addEventListener("click", suppressClickAfterPan, true);
     return () => {
       chart.removeEventListener("pointerdown", startDrag);
       chart.removeEventListener("pointermove", drag);
       chart.removeEventListener("pointerup", stopDrag);
       chart.removeEventListener("pointercancel", stopDrag);
-      chart.removeEventListener("touchstart", startTouchPan);
-      chart.removeEventListener("touchmove", touchPan);
-      chart.removeEventListener("touchend", stopTouchPan);
-      chart.removeEventListener("touchcancel", stopTouchPan);
+      chart.removeEventListener("click", suppressClickAfterPan, true);
     };
   }, []);
 

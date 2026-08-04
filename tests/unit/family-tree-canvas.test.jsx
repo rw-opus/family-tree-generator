@@ -76,6 +76,43 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
+  it("explains red fields and directs the user to the person card", () => {
+    renderCanvas({
+      people: [person("a", "Joseph Borg")],
+      causaMortisCoverageByPerson: { a: [{ status: "missing" }] },
+    });
+
+    expect(container.querySelector(".tree-required-data-key").textContent).toContain(
+      "Red means action required",
+    );
+    expect(container.querySelector(".tree-required-data-key").textContent).toContain(
+      "open that person's card",
+    );
+    const card = container.querySelector('[data-person-id="a"]');
+    expect(card.classList.contains("cm-share-incomplete")).toBe(true);
+    expect(card.getAttribute("aria-label")).toContain(
+      "open this person's card and update the missing detail",
+    );
+  });
+
+  it("highlights a GEDCOM birth surname that needs confirmation", () => {
+    renderCanvas({
+      people: [
+        person("a", "Anna Borg", {
+          surnameAtBirth: "",
+          surnameAtBirthReviewRequired: true,
+        }),
+      ],
+    });
+
+    const card = container.querySelector('[data-person-id="a"]');
+    expect(card.classList.contains("surname-at-birth-review-required")).toBe(true);
+    expect(card.textContent).toContain("Confirm surname at birth");
+    expect(card.getAttribute("aria-label")).toContain(
+      "open this person's card and update the missing detail",
+    );
+  });
+
   it("gives a zoomed relational tree an explicit full scroll footprint", () => {
     renderCanvas({ people: family(), zoom: 175 });
 
@@ -174,30 +211,54 @@ describe("FamilyTreeCanvas", () => {
     expect(scrollRegion.scrollTop).toBe(0);
   });
 
-  it("pans the tree vertically with one finger on mobile", () => {
-    renderCanvas({ people: family() });
+  it("pans from a person card with one finger without opening the card", () => {
+    const onSelectPerson = vi.fn();
+    renderCanvas({ people: family(), onSelectPerson });
     const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    const card = container.querySelector('[data-person-id="fa"]');
     scrollRegion.scrollLeft = 80;
     scrollRegion.scrollTop = 120;
 
-    const touchEvent = (type, touches) => {
+    const pointerEvent = (type, properties) => {
       const event = new Event(type, { bubbles: true, cancelable: true });
-      Object.defineProperty(event, "touches", { value: touches });
+      Object.entries(properties).forEach(([key, value]) =>
+        Object.defineProperty(event, key, { configurable: true, value }),
+      );
       return event;
     };
 
     act(() => {
-      scrollRegion.dispatchEvent(
-        touchEvent("touchstart", [{ identifier: 1, clientX: 100, clientY: 100 }]),
+      card.dispatchEvent(
+        pointerEvent("pointerdown", {
+          pointerId: 1,
+          pointerType: "touch",
+          button: 0,
+          clientX: 100,
+          clientY: 100,
+        }),
       );
       scrollRegion.dispatchEvent(
-        touchEvent("touchmove", [{ identifier: 1, clientX: 80, clientY: 35 }]),
+        pointerEvent("pointermove", {
+          pointerId: 1,
+          pointerType: "touch",
+          clientX: 80,
+          clientY: 35,
+        }),
       );
-      scrollRegion.dispatchEvent(touchEvent("touchend", []));
+      scrollRegion.dispatchEvent(
+        pointerEvent("pointerup", {
+          pointerId: 1,
+          pointerType: "touch",
+          clientX: 80,
+          clientY: 35,
+        }),
+      );
+      card.click();
     });
 
     expect(scrollRegion.scrollLeft).toBe(100);
     expect(scrollRegion.scrollTop).toBe(185);
+    expect(onSelectPerson).not.toHaveBeenCalled();
   });
 
   it("shows a person's surname even when it matches the father's", () => {

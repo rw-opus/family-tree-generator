@@ -1,6 +1,9 @@
 import {
+  composeFullName,
   fatherSurnameDefaultPatch,
   givenNamesFromFullName,
+  personGivenNames,
+  personSurname,
   surnameFromFullName,
 } from "./people.js";
 import { PARTNER_RELATIONSHIP_TYPES, partnerRelationshipKey } from "./partnerRelationships.js";
@@ -42,6 +45,34 @@ function givenNamesFromGedcomName(value = "") {
   return gedcomGivenNames || givenNamesFromFullName(cleanName(value));
 }
 
+function normalizedRelationshipDescriptor(value = "") {
+  return String(value).trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
+
+function isExplicitlyUnmarriedDescriptor(value = "") {
+  const descriptor = normalizedRelationshipDescriptor(value);
+  return (
+    descriptor === "childbirth unmarried" ||
+    descriptor === "unmarried" ||
+    descriptor === "not married" ||
+    descriptor === "never married" ||
+    descriptor === "partnership" ||
+    descriptor === "partner" ||
+    descriptor === "cohabitation" ||
+    descriptor === "cohabiting"
+  );
+}
+
+function isNegativeGedcomBoolean(value = "") {
+  return ["n", "no", "false"].includes(String(value).trim().toLowerCase());
+}
+
+function importedRelationshipType(relationship = {}) {
+  return relationship.hasExplicitMarriage || !relationship.hasExplicitPartnership
+    ? PARTNER_RELATIONSHIP_TYPES.MARRIAGE
+    : PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP;
+}
+
 export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
   const individuals = new Map();
   const families = [];
@@ -65,7 +96,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
             pointer,
             name: "",
             givenNames: "",
-            surnameAtBirth: "",
+            surname: "",
             sex: "",
             birthText: "",
             deathText: "",
@@ -83,6 +114,9 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
             children: [],
             marriageText: "",
             divorceText: "",
+            marriageRecorded: false,
+            divorceRecorded: false,
+            explicitlyUnmarried: false,
           };
           families.push(record);
         } else record = null;
@@ -93,7 +127,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
         if (level === 1 && tag === "NAME") {
           record.name = cleanName(value);
           record.givenNames = givenNamesFromGedcomName(value);
-          record.surnameAtBirth = surnameFromGedcomName(value);
+          record.surname = surnameFromGedcomName(value);
         } else if (level === 1 && tag === "SEX")
           record.sex = value === "M" ? "Male" : value === "F" ? "Female" : value || "Other";
         else if (level === 1 && ["BIRT", "DEAT"].includes(tag)) {
@@ -107,14 +141,35 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
           record.notes.push(value.trim());
       } else if (record.type === "FAM") {
         if (level === 1) {
-          event = tag === "MARR" || tag === "DIV" ? tag : "";
+          event = ["MARR", "DIV", "EVEN"].includes(tag) ? tag : "";
           if (tag === "HUSB") record.husband = value.trim();
           else if (tag === "WIFE") record.wife = value.trim();
           else if (tag === "CHIL") record.children.push(value.trim());
+          else if (tag === "NO" && normalizedRelationshipDescriptor(value) === "marr") {
+            record.explicitlyUnmarried = true;
+          } else if (tag === "MARR") {
+            if (isNegativeGedcomBoolean(value)) record.explicitlyUnmarried = true;
+            else record.marriageRecorded = true;
+          } else if (tag === "DIV") {
+            record.divorceRecorded = !isNegativeGedcomBoolean(value);
+          } else if (
+            tag.startsWith("_") &&
+            isExplicitlyUnmarriedDescriptor(value || tag.slice(1))
+          ) {
+            record.explicitlyUnmarried = true;
+          }
         } else if (level === 2 && tag === "DATE" && event === "MARR") {
           record.marriageText = value.trim();
         } else if (level === 2 && tag === "DATE" && event === "DIV") {
           record.divorceText = value.trim();
+          record.divorceRecorded = true;
+        } else if (
+          level === 2 &&
+          tag === "TYPE" &&
+          ["MARR", "EVEN"].includes(event) &&
+          isExplicitlyUnmarriedDescriptor(value)
+        ) {
+          record.explicitlyUnmarried = true;
         }
       }
     });
@@ -124,10 +179,9 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     gedcomId: person.pointer,
     fullName: person.name,
     givenNames: person.givenNames || givenNamesFromFullName(person.name),
-    surname: person.surnameAtBirth || surnameFromFullName(person.name),
+    surname: person.surname || surnameFromFullName(person.name),
     sex: person.sex,
-    surnameAtBirth:
-      person.surnameAtBirth || (person.sex === "Male" ? surnameFromFullName(person.name) : ""),
+    surnameAtBirth: "",
     dateOfBirth: exactDate(person.birthText),
     dateOfDeath: exactDate(person.deathText),
     gedcomBirthDate: person.birthText,
@@ -142,8 +196,8 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
   }));
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const spouseIdsByPerson = new Map(people.map((person) => [person.id, new Set()]));
-  const marriagesByKey = new Map();
-  families.forEach((family) => {
+  const relationshipsByKey = new Map();
+  families.forEach((family, familyIndex) => {
     const fatherId = idMap.get(family.husband) || "";
     const motherId = idMap.get(family.wife) || "";
     family.children.forEach((childPointer) => {
@@ -159,6 +213,10 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
             `${child.fullName || childPointer} appears as a child of more than one mother; the first relationship was retained.`,
           );
         } else if (motherId) child.motherId = motherId;
+        if (family.explicitlyUnmarried) {
+          child.surnameAtBirthReviewRequired = true;
+          child.gedcomUnmarriedParents = true;
+        }
       } else {
         warnings.push(`Family ${family.pointer || "record"} refers to a child that was not found.`);
       }
@@ -168,13 +226,30 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
       spouseIdsByPerson.get(fatherId)?.add(motherId);
       spouseIdsByPerson.get(motherId)?.add(fatherId);
 
-      const existing = marriagesByKey.get(relationshipKey);
+      const existing = relationshipsByKey.get(relationshipKey);
       const startDate = exactDate(family.marriageText);
       const endDate = exactDate(family.divorceText);
-      marriagesByKey.set(relationshipKey, {
+      const hasExplicitMarriage =
+        Boolean(existing?.hasExplicitMarriage) ||
+        (family.marriageRecorded && !family.explicitlyUnmarried);
+      const hasExplicitPartnership =
+        Boolean(existing?.hasExplicitPartnership) || family.explicitlyUnmarried;
+      if (hasExplicitMarriage && hasExplicitPartnership && !existing?.relationshipConflictWarned) {
+        warnings.push(
+          `Family ${family.pointer || "record"} contains conflicting married and unmarried relationship records; the marriage record was retained for the couple link.`,
+        );
+      }
+      relationshipsByKey.set(relationshipKey, {
         personIds: relationshipKey.split("::"),
         startDate: existing?.startDate || startDate,
         endDate: existing?.endDate || endDate,
+        divorceRecorded: existing?.divorceRecorded || family.divorceRecorded,
+        hasExplicitMarriage,
+        hasExplicitPartnership,
+        relationshipConflictWarned: hasExplicitMarriage && hasExplicitPartnership,
+        husbandId: existing?.husbandId || fatherId,
+        wifeId: existing?.wifeId || motherId,
+        familyIndex: Math.max(existing?.familyIndex ?? -1, familyIndex),
       });
     } else if (family.husband || family.wife) {
       warnings.push(
@@ -187,24 +262,76 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     peopleById.get(personId).spouseIds = [...spouseIds];
   });
 
-  marriagesByKey.forEach(({ personIds, startDate, endDate }) => {
-    const [ownerId, partnerId] = personIds;
-    const owner = peopleById.get(ownerId);
-    if (!owner) return;
-    owner.partnerRelationships = [
-      ...(owner.partnerRelationships || []),
-      {
-        personId: partnerId,
-        type: PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
-        ...(startDate ? { startDate } : {}),
-        ...(endDate ? { endDate, endReason: "divorce" } : {}),
-      },
-    ];
-  });
+  relationshipsByKey.forEach(
+    ({
+      personIds,
+      startDate,
+      endDate,
+      divorceRecorded,
+      hasExplicitMarriage,
+      hasExplicitPartnership,
+    }) => {
+      const [ownerId, partnerId] = personIds;
+      const owner = peopleById.get(ownerId);
+      if (!owner) return;
+      const type = importedRelationshipType({ hasExplicitMarriage, hasExplicitPartnership });
+      owner.partnerRelationships = [
+        ...(owner.partnerRelationships || []),
+        {
+          personId: partnerId,
+          type,
+          ...(startDate ? { startDate } : {}),
+          ...(endDate ? { endDate } : {}),
+          ...(divorceRecorded ? { endReason: "divorce" } : {}),
+        },
+      ];
+    },
+  );
 
   people.forEach((person) => {
     if (!person.fatherId) return;
-    Object.assign(person, fatherSurnameDefaultPatch(person, peopleById.get(person.fatherId)));
+    const father = peopleById.get(person.fatherId);
+    Object.assign(person, fatherSurnameDefaultPatch(person, father));
+    const paternalSurname = personSurname(father).trim();
+    if (person.surnameAtBirthReviewRequired) {
+      person.surnameAtBirth = "";
+      warnings.push(
+        `${person.fullName || person.gedcomId}: the parents are explicitly recorded as unmarried; confirm the surname at birth in the person card.`,
+      );
+    } else if (paternalSurname) {
+      person.surnameAtBirth = paternalSurname;
+    }
+  });
+
+  const activeMarriageByWife = new Map();
+  relationshipsByKey.forEach((relationship) => {
+    if (
+      importedRelationshipType(relationship) !== PARTNER_RELATIONSHIP_TYPES.MARRIAGE ||
+      relationship.divorceRecorded ||
+      !relationship.husbandId ||
+      !relationship.wifeId
+    ) {
+      return;
+    }
+    const current = activeMarriageByWife.get(relationship.wifeId);
+    const currentDate = current?.startDate || "";
+    const relationshipDate = relationship.startDate || "";
+    if (
+      !current ||
+      relationshipDate > currentDate ||
+      (relationshipDate === currentDate && relationship.familyIndex > current.familyIndex)
+    ) {
+      activeMarriageByWife.set(relationship.wifeId, relationship);
+    }
+  });
+
+  activeMarriageByWife.forEach((relationship, wifeId) => {
+    const wife = peopleById.get(wifeId);
+    const husband = peopleById.get(relationship.husbandId);
+    const marriedSurname = personSurname(husband).trim();
+    if (!wife || wife.sex !== "Female" || !marriedSurname) return;
+    wife.surname = marriedSurname;
+    wife.fullName = composeFullName(personGivenNames(wife), marriedSurname);
   });
 
   people.forEach((person) => {

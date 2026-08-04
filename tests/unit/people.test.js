@@ -7,6 +7,7 @@ import {
   givenNamesFromFullName,
   hasDesignation,
   personAncestors,
+  personChoiceLabel,
   personDesignations,
   personDescendants,
   personDisplayName,
@@ -14,6 +15,7 @@ import {
   personIdentityIssues,
   personRelationshipCounts,
   personSurname,
+  sortPeopleForChoice,
   normalisePersonNameFields,
   parentageDescription,
   surnameFromFullName,
@@ -82,6 +84,24 @@ describe("family tree people", () => {
     );
     expect(parentageDescription({ ...people[0], sex: "Female" }, people)).toMatch(/^daughter of /);
     expect(parentageDescription({ ...people[0], sex: "Other" }, people)).toMatch(/^child of /);
+  });
+
+  it("labels and sorts person choices by name and recorded parentage", () => {
+    const people = [
+      { id: "mary-z", fullName: "mary agius", sex: "Female", fatherId: "zachary" },
+      { id: "zachary", fullName: "zachary borg", sex: "Male" },
+      { id: "mary-j", fullName: "mary agius", sex: "Female", fatherId: "john" },
+      { id: "john", fullName: "john borg", sex: "Male" },
+      { id: "andrew", fullName: "andrew vella", sex: "Male", motherId: "anna" },
+      { id: "anna", fullName: "anna vella", sex: "Female" },
+    ];
+
+    expect(personChoiceLabel(people[2], people)).toBe("Mary Agius d/o John Borg");
+    expect(personChoiceLabel(people[4], people)).toBe("Andrew Vella s/o Anna Vella");
+    expect(sortPeopleForChoice([people[0], people[2]], people).map((person) => person.id)).toEqual([
+      "mary-j",
+      "mary-z",
+    ]);
   });
 
   it("defaults empty descendant surnames from the father without overwriting edits", () => {

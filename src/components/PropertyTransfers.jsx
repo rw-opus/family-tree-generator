@@ -3,6 +3,7 @@ import { ArrowRight, Building2, Plus, Trash2, UserRound } from "lucide-react";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
+import { personChoiceLabel } from "../domain/people.js";
 import { DateInput } from "./DateInput.jsx";
 
 const blankParty = () => ({ name: "", type: "individual", registrationNumber: "" });
@@ -35,6 +36,16 @@ export function PropertyTransfers({
     () => buildPropertyLedger(people, outsideParties, transfers, startingOwnership),
     [outsideParties, people, startingOwnership, transfers],
   );
+  const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
+  const choiceLabel = (party) => {
+    const person = peopleById.get(party?.personId || party?.id);
+    return person ? personChoiceLabel(person, people) : party?.name || "Unknown party";
+  };
+  const compareChoices = (first, second) =>
+    choiceLabel(first).localeCompare(choiceLabel(second), "en-MT", {
+      sensitivity: "base",
+      numeric: true,
+    });
   const partyName = (id) =>
     ledger.parties.find((party) => party.id === id)?.name || "Unknown party";
   const addParty = (event) => {
@@ -118,9 +129,9 @@ export function PropertyTransfers({
               }
             >
               <option value="">Select current owner</option>
-              {ledger.owners.map((owner) => (
+              {[...ledger.owners].sort(compareChoices).map((owner) => (
                 <option key={owner.id} value={owner.id}>
-                  {owner.name} — {fractionLabel(owner.share)}
+                  {choiceLabel(owner)} — {fractionLabel(owner.share)}
                 </option>
               ))}
             </select>
@@ -136,9 +147,10 @@ export function PropertyTransfers({
               <option value="">Select person or company</option>
               {ledger.parties
                 .filter((party) => party.id !== transferDraft.sellerId)
+                .sort(compareChoices)
                 .map((party) => (
                   <option key={party.id} value={party.id}>
-                    {party.name}
+                    {choiceLabel(party)}
                     {party.type === "company" ? " (company)" : ""}
                   </option>
                 ))}

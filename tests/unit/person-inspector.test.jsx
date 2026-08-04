@@ -456,6 +456,57 @@ describe("PersonInspector", () => {
     expect(latestPerson.surnameAtBirth).toBe("Camilleri");
   });
 
+  it("clears the GEDCOM surname review warning after the birth surname is confirmed", () => {
+    let latestPerson;
+
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "child",
+          givenNames: "Anna",
+          surname: "Borg",
+          fullName: "Anna Borg",
+          surnameAtBirth: "",
+          surnameAtBirthReviewRequired: true,
+          gedcomUnmarriedParents: true,
+          sex: "Female",
+          spouseIds: [],
+        },
+      ]);
+      latestPerson = people[0];
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="child"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    expect(container.textContent).toContain("The imported parents are recorded as unmarried");
+    beginEditing();
+
+    const birthSurnameInput = [...container.querySelectorAll(".person-edit-fields label")]
+      .find((element) => element.querySelector(":scope > span")?.textContent === "Surname at birth")
+      .querySelector("input");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        birthSurnameInput,
+        "Vella",
+      );
+      birthSurnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(latestPerson).toMatchObject({
+      surnameAtBirth: "Vella",
+      surnameAtBirthReviewRequired: false,
+      gedcomUnmarriedParents: true,
+    });
+    expect(container.textContent).not.toContain("The imported parents are recorded as unmarried");
+  });
+
   it("asks which partnership applies when a person has several partners", () => {
     const onChange = vi.fn();
     const people = [
@@ -1142,6 +1193,7 @@ describe("PersonInspector", () => {
       {
         id: "person-b",
         fullName: "Joseph Vella",
+        sex: "Male",
         designations: [],
         spouseIds: [],
       },
@@ -1191,7 +1243,7 @@ describe("PersonInspector", () => {
         surnameAtBirth: "Borg",
         spouseIds: [],
       },
-      { id: "person-b", fullName: "Joseph Vella", spouseIds: [] },
+      { id: "person-b", fullName: "Joseph Vella", sex: "Male", spouseIds: [] },
       { id: "child", fullName: "Child Borg", motherId: "person-a", fatherId: "" },
     ];
 
@@ -1227,6 +1279,99 @@ describe("PersonInspector", () => {
       motherId: "person-a",
       fatherId: "",
     });
+  });
+
+  it("offers only opposite-sex cousins or more distant people as existing partners", () => {
+    const people = [
+      {
+        id: "grandfather",
+        fullName: "Anthony Borg",
+        sex: "Male",
+        spouseIds: [],
+      },
+      { id: "grandmother", fullName: "Carmela Borg", sex: "Female", spouseIds: [] },
+      {
+        id: "mother",
+        fullName: "Rita Borg",
+        sex: "Female",
+        fatherId: "grandfather",
+        motherId: "grandmother",
+        spouseIds: [],
+      },
+      {
+        id: "uncle",
+        fullName: "Paul Borg",
+        sex: "Male",
+        fatherId: "grandfather",
+        motherId: "grandmother",
+        spouseIds: [],
+      },
+      { id: "father", fullName: "Joseph Vella", sex: "Male", spouseIds: [] },
+      {
+        id: "person",
+        fullName: "Maria Vella",
+        givenNames: "Maria",
+        surname: "Vella",
+        surnameAtBirth: "Vella",
+        sex: "Female",
+        fatherId: "father",
+        motherId: "mother",
+        spouseIds: [],
+      },
+      {
+        id: "brother",
+        fullName: "John Vella",
+        sex: "Male",
+        fatherId: "father",
+        motherId: "mother",
+        spouseIds: [],
+      },
+      { id: "cousin", fullName: "Mark Borg", sex: "Male", fatherId: "uncle", spouseIds: [] },
+      { id: "unrelated", fullName: "Luke Galea", sex: "Male", spouseIds: [] },
+      { id: "same-sex", fullName: "Anna Mifsud", sex: "Female", spouseIds: [] },
+      { id: "unknown-sex", fullName: "Alex Camilleri", sex: "", spouseIds: [] },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    act(() =>
+      [...container.querySelectorAll(".relationship-actions button")]
+        .find((button) => button.textContent.includes("Partner"))
+        .click(),
+    );
+
+    const candidateIds = [
+      ...container.querySelector('select[aria-label="Existing partner"]').options,
+    ]
+      .map((option) => option.value)
+      .filter(Boolean);
+    expect(candidateIds).toEqual(["unrelated", "cousin"]);
+    expect(
+      container.querySelector('select[aria-label="Existing partner"] option[value="cousin"]')
+        .textContent,
+    ).toBe("Mark Borg s/o Paul Borg");
+    expect(container.textContent).toContain("cousins and more distant relatives remain available");
+
+    act(() =>
+      [...container.querySelectorAll(".relationship-actions button")]
+        .find((button) => button.textContent.includes("Wife / husband"))
+        .click(),
+    );
+    const marriageCandidateIds = [
+      ...container.querySelector('select[aria-label="Existing partner"]').options,
+    ]
+      .map((option) => option.value)
+      .filter(Boolean);
+    expect(marriageCandidateIds).toEqual(["unrelated", "cousin"]);
+    expect(container.textContent).toContain("Add a wife or husband");
   });
 
   it("keeps parent creation buttons but omits father and mother detail selectors", () => {
@@ -2727,6 +2872,7 @@ describe("PersonInspector", () => {
         .click(),
     );
     const spouseId = latestPeople.find((person) => person.id !== "roland").id;
+    expect(latestPeople.find((person) => person.id === spouseId).sex).toBe("Female");
     expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
       type: "marriage",
       startDate: "2015-06-15",

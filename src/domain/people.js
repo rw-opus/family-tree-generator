@@ -231,6 +231,49 @@ export function personDisplayName(person = {}, people = []) {
   return relationship ? `Unnamed ${relationship.toLowerCase()}` : "New person";
 }
 
+/**
+ * A compact, unambiguous label for controls which ask the user to choose a
+ * person. Prefer the recorded father, as requested for the family lists, and
+ * fall back to the mother when no father is available.
+ */
+export function personChoiceLabel(person = {}, people = []) {
+  const name = capitalisePersonName(personDisplayName(person, people));
+  const recordedName =
+    String(person.fullName || "").trim() ||
+    composeFullName(personGivenNames(person), personSurname(person));
+  if (!recordedName) return name;
+
+  const peopleById = new Map(
+    people.filter((candidate) => candidate?.id).map((candidate) => [candidate.id, candidate]),
+  );
+  const father = peopleById.get(person.fatherId);
+  const mother = peopleById.get(person.motherId);
+  const recordedParentName = (parent) =>
+    String(parent?.fullName || "").trim() ||
+    composeFullName(personGivenNames(parent), personSurname(parent));
+  const parent =
+    (father && recordedParentName(father) && father) ||
+    (mother && recordedParentName(mother) && mother);
+  if (!parent) return name;
+
+  const parentName = capitalisePersonName(personDisplayName(parent, people));
+  const sex = String(person.sex || "").toLowerCase();
+  const relationship = sex === "male" ? "s/o" : sex === "female" ? "d/o" : "child of";
+  return `${name} ${relationship} ${parentName}`;
+}
+
+export function sortPeopleForChoice(people = [], contextPeople = people) {
+  return people
+    .map((person) => ({ person, label: personChoiceLabel(person, contextPeople) }))
+    .sort((first, second) =>
+      first.label.localeCompare(second.label, "en-MT", {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    )
+    .map(({ person }) => person);
+}
+
 export function parentageDescription(person = {}, people = []) {
   const peopleById = new Map(
     people.filter((candidate) => candidate?.id).map((candidate) => [candidate.id, candidate]),

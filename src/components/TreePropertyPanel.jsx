@@ -50,6 +50,7 @@ export function TreePropertyPanel({
   onOpenProperty,
   onOpenTax,
   onSelectPerson,
+  onPickInitialOwner,
   expanded: controlledExpanded,
   onExpandedChange,
 }) {
@@ -113,6 +114,8 @@ export function TreePropertyPanel({
           type="button"
           className="tree-property-panel-toggle"
           aria-expanded={expanded}
+          aria-label={expanded ? "Close Ownership and Tax Panel" : "Open Ownership and Tax Panel"}
+          title={expanded ? "Close Ownership and Tax Panel" : "Open Ownership and Tax Panel"}
           onClick={toggleExpanded}
         >
           <span>
@@ -189,6 +192,7 @@ export function TreePropertyPanel({
                 heading="Initial shares"
                 helperText="Choose the original owner or owners. Their fractions must total 100%."
                 onChange={(owners) => onPropertyChange({ owners })}
+                onPickFromTree={onPickInitialOwner}
               />
             </details>
 

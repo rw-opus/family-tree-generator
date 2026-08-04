@@ -33,6 +33,95 @@ function uniqueIds(values = []) {
   return [...new Set(values.map((value) => text(value)).filter(Boolean))];
 }
 
+function binarySex(person = {}) {
+  const value = text(person.sex).toLowerCase();
+  if (value === "male") return "male";
+  if (value === "female") return "female";
+  return "";
+}
+
+function ancestorDepths(peopleById, personId) {
+  const depths = new Map();
+  const person = peopleById.get(personId);
+  const queue = [person?.fatherId, person?.motherId]
+    .filter(Boolean)
+    .map((ancestorId) => ({ ancestorId, depth: 1 }));
+
+  while (queue.length) {
+    const { ancestorId, depth } = queue.shift();
+    if (!ancestorId || depth >= (depths.get(ancestorId) ?? Number.POSITIVE_INFINITY)) continue;
+    depths.set(ancestorId, depth);
+    const ancestor = peopleById.get(ancestorId);
+    [ancestor?.fatherId, ancestor?.motherId]
+      .filter(Boolean)
+      .forEach((parentId) => queue.push({ ancestorId: parentId, depth: depth + 1 }));
+  }
+
+  return depths;
+}
+
+/**
+ * New partner links are restricted to opposite-sex people who are not in the
+ * direct line and are not closer collateral relatives than first cousins.
+ * Existing/imported links are assessed elsewhere and are never removed here.
+ */
+export function partnerLinkEligibility(people = [], personId, otherPersonId) {
+  const peopleById = new Map(
+    people.filter((person) => text(person?.id)).map((person) => [text(person.id), person]),
+  );
+  const person = peopleById.get(text(personId));
+  const otherPerson = peopleById.get(text(otherPersonId));
+  if (!person || !otherPerson || person.id === otherPerson.id) {
+    return { allowed: false, code: "invalid-person", reason: "Choose another person." };
+  }
+
+  const personSex = binarySex(person);
+  const otherSex = binarySex(otherPerson);
+  if (!personSex || !otherSex) {
+    return {
+      allowed: false,
+      code: "sex-required",
+      reason: "Both people must have Male or Female recorded before they can be linked.",
+    };
+  }
+  if (personSex === otherSex) {
+    return {
+      allowed: false,
+      code: "same-sex",
+      reason: "A partner must be recorded as the opposite sex.",
+    };
+  }
+
+  const personAncestors = ancestorDepths(peopleById, person.id);
+  const otherAncestors = ancestorDepths(peopleById, otherPerson.id);
+  if (personAncestors.has(otherPerson.id) || otherAncestors.has(person.id)) {
+    return {
+      allowed: false,
+      code: "direct-blood-relative",
+      reason: "A direct ancestor or descendant cannot be linked as a partner.",
+    };
+  }
+
+  const explicitlySiblings =
+    uniqueIds(person.siblingIds).includes(otherPerson.id) ||
+    uniqueIds(otherPerson.siblingIds).includes(person.id);
+  let closestCollateralDegree = Number.POSITIVE_INFINITY;
+  personAncestors.forEach((personDepth, ancestorId) => {
+    const otherDepth = otherAncestors.get(ancestorId);
+    if (otherDepth)
+      closestCollateralDegree = Math.min(closestCollateralDegree, personDepth + otherDepth);
+  });
+  if (explicitlySiblings || closestCollateralDegree < 4) {
+    return {
+      allowed: false,
+      code: "close-blood-relative",
+      reason: "Parents, children, siblings, uncles, aunts, nephews and nieces cannot be partners.",
+    };
+  }
+
+  return { allowed: true, code: "eligible", reason: "" };
+}
+
 function validStartYear(value) {
   const year = String(value ?? "").trim();
   return /^(?:1|2)\d{3}$/.test(year) ? year : "";
@@ -337,6 +426,19 @@ export function upsertPartnerRelationship(people, personId, otherPersonId, patch
       };
     }),
   );
+}
+
+/**
+ * Creates a partner link only when it satisfies the product eligibility rules.
+ * Editing an already recorded relationship remains possible so imported data
+ * can be corrected without the application silently deleting it.
+ */
+export function linkPartnerRelationship(people, personId, otherPersonId, patch = {}) {
+  if (findPartnerRelationship(people, personId, otherPersonId)) {
+    return upsertPartnerRelationship(people, personId, otherPersonId, patch);
+  }
+  if (!partnerLinkEligibility(people, personId, otherPersonId).allowed) return people;
+  return upsertPartnerRelationship(people, personId, otherPersonId, patch);
 }
 
 export function removePartnerRelationship(people, personId, otherPersonId) {
