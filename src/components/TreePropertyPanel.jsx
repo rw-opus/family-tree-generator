@@ -113,6 +113,8 @@ export function TreePropertyPanel({
           type="button"
           className="tree-property-panel-toggle"
           aria-expanded={expanded}
+          aria-label={expanded ? "Close Ownership and Tax Panel" : "Open Ownership and Tax Panel"}
+          title={expanded ? "Close Ownership and Tax Panel" : "Open Ownership and Tax Panel"}
           onClick={toggleExpanded}
         >
           <span>

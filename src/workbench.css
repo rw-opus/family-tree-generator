@@ -5546,7 +5546,7 @@ body.a3-print-preview-open {
     width: 100%;
     max-width: 100%;
     min-height: auto;
-    padding: 0.45rem 0.6rem;
+    padding: 0.45rem 4.25rem 0.45rem 0.6rem;
   }
 
   .tree-home-label-full,
@@ -5562,6 +5562,7 @@ body.a3-print-preview-open {
   .tree-stage-toolbar-unified .person-finder {
     grid-column: 3;
     grid-row: 1;
+    justify-self: end;
   }
 
   .tree-stage-toolbar-unified .tree-zoom-slider {
@@ -5600,26 +5601,28 @@ body.a3-print-preview-open {
 
   .tree-property-panel,
   .tree-property-panel.collapsed {
-    position: fixed;
+    position: absolute;
     z-index: 70;
     right: 0.6rem;
-    bottom: 0.6rem;
+    bottom: auto;
     left: auto;
-    width: min(350px, calc(100vw - 1.2rem));
-    max-width: none;
+    top: 0.45rem;
+    width: 3rem;
+    max-width: 3rem;
     min-height: auto;
-    max-height: calc(100dvh - 1.2rem);
+    max-height: 3.2rem;
+    overflow: hidden;
     border: 1px solid #b8c9c0;
-    border-radius: 12px;
-    box-shadow: 0 16px 46px rgba(17, 46, 33, 0.22);
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(17, 46, 33, 0.12);
   }
 
   .tree-property-panel.collapsed .tree-property-panel-toggle {
-    flex-direction: row;
-    justify-content: space-between;
+    justify-content: center;
+    gap: 0;
     height: auto;
     min-height: 3rem;
-    padding: 0.65rem 0.75rem;
+    padding: 0;
   }
 
   .tree-property-panel.collapsed .tree-property-panel-toggle > span:first-child {
@@ -5627,21 +5630,25 @@ body.a3-print-preview-open {
   }
 
   .tree-property-panel.collapsed .tree-property-panel-toggle strong {
-    writing-mode: initial;
-    transform: none;
-    white-space: normal;
+    display: none;
   }
 
   .tree-property-panel.collapsed .tree-property-panel-price {
-    display: flex;
+    display: none;
   }
 
   .tree-property-panel.expanded {
+    position: fixed;
     top: 0.6rem;
     right: 0.6rem;
     bottom: 0.6rem;
     left: 0.6rem;
     width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 1.2rem);
+    overflow: auto;
+    border-radius: 12px;
+    box-shadow: 0 16px 46px rgba(17, 46, 33, 0.22);
   }
 
   .case-view-tabs {
