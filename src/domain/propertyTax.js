@@ -196,7 +196,7 @@ export function inheritanceDuty(property, heir, options = {}) {
   return { inheritedValue: value, duty, rebate };
 }
 
-export function saleTaxLot(lot) {
+export function saleTaxLot(lot, context = {}) {
   // Values in a lot already relate to that lot's fraction. Multiplying by the
   // fraction again would understate both the taxable basis and the tax.
   const { transferValue } = article5ATransferValue(lot);
@@ -225,7 +225,19 @@ export function saleTaxLot(lot) {
       warnings: [],
     };
   }
-  return assessArticle5ATransfer(lot);
+  return assessArticle5ATransfer(lot, context);
+}
+
+// Article 5A is assessed on the transferor, so a value-banded relief belongs to that vendor's
+// transfer as a whole rather than to each separately assessed acquisition. Totals are keyed by
+// owner: co-vendors on the same deed are separate transferors with separate assessments.
+export function deedTransferTotals(lots = []) {
+  const totals = new Map();
+  lots.forEach((lot) => {
+    const { transferValue } = article5ATransferValue(lot);
+    totals.set(lot.ownerId, (totals.get(lot.ownerId) || 0) + transferValue);
+  });
+  return totals;
 }
 
 export function selectedSaleTax(result = {}) {
@@ -233,7 +245,13 @@ export function selectedSaleTax(result = {}) {
 }
 
 export function saleTaxLotsTotal(lots = []) {
-  return lots.reduce((total, lot) => total + selectedSaleTax(saleTaxLot(lot)), 0);
+  const deedTotals = deedTransferTotals(lots);
+  return lots.reduce(
+    (total, lot) =>
+      total +
+      selectedSaleTax(saleTaxLot(lot, { deedTransferValue: deedTotals.get(lot.ownerId) || 0 })),
+    0,
+  );
 }
 
 export function vendorTaxSummary(vendors = [], saleRows = [], excludedVendorIds = []) {

@@ -1,4 +1,47 @@
 import { describe, expect, it } from "vitest";
+import { chronologicalTransfers } from "../../src/domain/ownership.js";
+
+describe("chronologicalTransfers", () => {
+  it("leaves fully undated transfers in array order", () => {
+    const transfers = [{ id: "b" }, { id: "a" }];
+    expect(chronologicalTransfers(transfers)).toBe(transfers);
+  });
+
+  it("applies dated transfers in date order regardless of entry order", () => {
+    const transfers = [
+      { id: "later", date: "2020-05-01" },
+      { id: "earlier", date: "2010-01-15" },
+    ];
+    expect(chronologicalTransfers(transfers).map((transfer) => transfer.id)).toEqual([
+      "earlier",
+      "later",
+    ]);
+  });
+
+  it("breaks same-day ties by entry order and sorts undated after dated", () => {
+    const transfers = [
+      { id: "undated" },
+      { id: "same-day-second", date: "2020-05-01" },
+      { id: "same-day-first", date: "2020-05-01" },
+    ];
+    expect(chronologicalTransfers(transfers).map((transfer) => transfer.id)).toEqual([
+      "same-day-second",
+      "same-day-first",
+      "undated",
+    ]);
+  });
+
+  it("ignores malformed dates rather than sorting on them", () => {
+    const transfers = [
+      { id: "bad-date", date: "01/05/2020" },
+      { id: "dated", date: "2019-03-03" },
+    ];
+    expect(chronologicalTransfers(transfers).map((transfer) => transfer.id)).toEqual([
+      "dated",
+      "bad-date",
+    ]);
+  });
+});
 import {
   approximateFraction,
   buildOwnershipLedger,

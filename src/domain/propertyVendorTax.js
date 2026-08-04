@@ -3,7 +3,7 @@ import { causaMortisDeclaredShare, validateCausaMortisDeclaration } from "./caus
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "./article5A.js";
 import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
 import { approximateFraction, buildPropertyLedger } from "./ownership.js";
-import { saleTaxLot, vendorTaxSummary } from "./propertyTax.js";
+import { deedTransferTotals, saleTaxLot, vendorTaxSummary } from "./propertyTax.js";
 import {
   addFractions,
   compareFractions,
@@ -138,6 +138,7 @@ const displayRowFromLot = ({
   peopleById,
   inheritanceSourcesByOwner,
   fallbackShare = 0,
+  deedTransferValue = 0,
 }) => {
   const storedShare = Number(row.result?.share) || 0;
   const lotShare = storedShare > 0 ? storedShare : Number(fallbackShare) || 0;
@@ -176,7 +177,7 @@ const displayRowFromLot = ({
     cmValueEligibilityConfirmed:
       declarations.length > 0 || Boolean(row.effectiveLot?.cmValueEligibilityConfirmed),
   };
-  const result = saleTaxLot(effectiveLot);
+  const result = saleTaxLot(effectiveLot, { deedTransferValue });
   const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
   const tax = selectedMethod?.tax || 0;
   return {
@@ -205,6 +206,7 @@ const syntheticInheritedRow = ({
   index,
   peopleById,
   inheritanceSourcesByOwner,
+  deedTransferValue = 0,
 }) => {
   const declarations = declarationRowsForSource(
     source,
@@ -218,20 +220,23 @@ const syntheticInheritedRow = ({
   );
   const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * source.share;
   const fraction = source.shareFraction || approximateFraction(source.share);
-  const result = saleTaxLot({
-    id: `${vendor.id}-${source.deceasedId}-${index}`,
-    ownerId: vendor.id,
-    acquisitionType: "inheritance",
-    inheritanceDate: source.inheritanceDate,
-    transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
-    shareNumerator: fraction.numerator,
-    shareDenominator: fraction.denominator,
-    acquisitionValue: declarations.length ? declaredValue : "",
-    acquisitionValueBasis: declarations.length ? "cm-declared" : "",
-    cmValueEligibilityConfirmed: declarations.length > 0,
-    transferValue: attributedSaleValue,
-    consideration: attributedSaleValue,
-  });
+  const result = saleTaxLot(
+    {
+      id: `${vendor.id}-${source.deceasedId}-${index}`,
+      ownerId: vendor.id,
+      acquisitionType: "inheritance",
+      inheritanceDate: source.inheritanceDate,
+      transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
+      shareNumerator: fraction.numerator,
+      shareDenominator: fraction.denominator,
+      acquisitionValue: declarations.length ? declaredValue : "",
+      acquisitionValueBasis: declarations.length ? "cm-declared" : "",
+      cmValueEligibilityConfirmed: declarations.length > 0,
+      transferValue: attributedSaleValue,
+      consideration: attributedSaleValue,
+    },
+    { deedTransferValue },
+  );
   const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
   const tax = selectedMethod?.tax || 0;
   return {
@@ -265,6 +270,9 @@ export function buildTaxCalculationReport(
   const vendors = report.livingVendors.map((vendor) => {
     const storedRows = report.saleRows.filter((row) => row.lot.ownerId === vendor.id);
     const inheritanceSources = report.inheritanceSourcesByOwner.get(vendor.id) || [];
+    // The vendor's whole transfer value on this deed. Value-banded reliefs draw on the band in
+    // proportion to each row, so every row of one vendor must share this figure.
+    const deedTransferValue = Math.max(0, Number(property.saleValue) || 0) * vendor.share;
     const rows = storedRows.length
       ? storedRows.map((row) => {
           const source =
@@ -281,6 +289,7 @@ export function buildTaxCalculationReport(
             peopleById,
             inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
             fallbackShare: storedRows.length === 1 ? vendor.share : 0,
+            deedTransferValue,
           });
         })
       : inheritanceSources.map((source, index) =>
@@ -291,6 +300,7 @@ export function buildTaxCalculationReport(
             index,
             peopleById,
             inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
+            deedTransferValue,
           }),
         );
     const coveredFraction = rows.reduce(
@@ -473,7 +483,7 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     );
   });
   const coverage = declarationCoverage(causaMortisDeclarationOwners, property.declarations || []);
-  const saleRows = (property.saleLots || []).map((storedLot) => {
+  const saleRowsWithoutTax = (property.saleLots || []).map((storedLot) => {
     const lot = storedLot;
     const inheritanceSources = inheritanceSourcesByOwner.get(lot.ownerId) || [];
     const selectedInheritanceSource = lot.inheritanceSourceDeceasedId
@@ -527,9 +537,22 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       selectedInheritanceSource,
       inheritanceDateInferred: Boolean(sourceDate),
       preCausaMortisCutoff,
-      result: saleTaxLot(effectiveLot),
     };
   });
+  // Assessed in a second pass: a value-banded relief needs the vendor's whole transfer value,
+  // which is only known once every effective lot has been resolved.
+  const deedTotals = deedTransferTotals(
+    saleRowsWithoutTax.map((row) => ({
+      ...row.effectiveLot,
+      ownerId: row.lot.ownerId,
+    })),
+  );
+  const saleRows = saleRowsWithoutTax.map((row) => ({
+    ...row,
+    result: saleTaxLot(row.effectiveLot, {
+      deedTransferValue: deedTotals.get(row.lot.ownerId) || 0,
+    }),
+  }));
   const deceasedVendorIds = new Set(
     ledger.parties
       .filter((party) => {

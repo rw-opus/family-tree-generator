@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocateCurrentIntestacy,
   allocateLegacyDescendantIntestacy,
+  deedTransferTotals,
   inheritanceDuty,
   saleTaxLot,
   saleTaxLotsTotal,
@@ -9,6 +10,45 @@ import {
   suggestedIntestacyShares,
   vendorTaxSummary,
 } from "../../src/domain/propertyTax.js";
+
+describe("banded relief across one vendor's acquisitions", () => {
+  const housingLot = (ownerId, value) => ({
+    ownerId,
+    acquisitionType: "purchase",
+    acquisitionDate: "2020-01-01",
+    transferDate: "2026-07-31",
+    shareNumerator: 1,
+    shareDenominator: 1,
+    consideration: value,
+    marketValue: value,
+    qualifyingRate: "housing-other-10",
+    housingCertificateConfirmed: true,
+  });
+
+  it("totals a vendor's transfer value across their lots", () => {
+    const totals = deedTransferTotals([housingLot("v1", 150000), housingLot("v1", 150000)]);
+    expect(totals.get("v1")).toBe(300000);
+  });
+
+  it("keeps co-vendors as separate transferors", () => {
+    const totals = deedTransferTotals([housingLot("v1", 150000), housingLot("v2", 150000)]);
+    expect(totals.get("v1")).toBe(150000);
+    expect(totals.get("v2")).toBe(150000);
+  });
+
+  it("apportions the band once the vendor total is supplied", () => {
+    const lot = housingLot("v1", 150000);
+    const withDeed = saleTaxLot(lot, { deedTransferValue: 300000 }).methods.find(
+      (method) => method.key === "housing-other-10",
+    );
+    const withoutDeed = saleTaxLot(lot).methods.find((method) => method.key === "housing-other-10");
+
+    // Half the deed, so half the €200,000 band: €100,000 at 4% plus €50,000 at 8%.
+    expect(withDeed.tax).toBe(8000);
+    // Assessed alone the lot would claim a full band, understating the tax.
+    expect(withoutDeed.tax).toBe(6000);
+  });
+});
 
 describe("Maltese inherited property estimates", () => {
   it("splits intestacy equally between spouse and descendants", () => {

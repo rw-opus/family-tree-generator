@@ -203,8 +203,32 @@ function resolveTransfers(parties, startingHoldings, transfers) {
   return { holdings, entries };
 }
 
+// Transfers carrying a date are applied in date order; the array position breaks same-day
+// ties. Undated transfers keep their array position relative to each other and sort after
+// dated ones, so trees saved before dates existed resolve exactly as they always did.
+export function chronologicalTransfers(transfers = []) {
+  const indexed = transfers.map((transfer, index) => ({ transfer, index }));
+  const hasDate = (entry) => /^\d{4}-\d{2}-\d{2}$/.test(String(entry.transfer.date || ""));
+  if (!indexed.some(hasDate)) return transfers;
+  return indexed
+    .sort((left, right) => {
+      const leftDated = hasDate(left);
+      const rightDated = hasDate(right);
+      if (leftDated !== rightDated) return leftDated ? -1 : 1;
+      if (leftDated && left.transfer.date !== right.transfer.date) {
+        return left.transfer.date < right.transfer.date ? -1 : 1;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.transfer);
+}
+
 function ledgerFromParties(parties, startingHoldings, transfers) {
-  const { holdings, entries } = resolveTransfers(parties, startingHoldings, transfers);
+  const { holdings, entries } = resolveTransfers(
+    parties,
+    startingHoldings,
+    chronologicalTransfers(transfers),
+  );
   const owners = parties
     .map((party) => {
       const shareFraction = holdings.get(party.id) || ZERO_FRACTION;

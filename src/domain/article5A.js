@@ -349,7 +349,14 @@ function fiveYearMethod(lot, acquisitionDate, transferDate, transferValue) {
   };
 }
 
-function qualifyingRateMethod(lot, acquisitionDate, transferDate, transferValue, normalMethod) {
+function qualifyingRateMethod(
+  lot,
+  acquisitionDate,
+  transferDate,
+  transferValue,
+  normalMethod,
+  deedTransferValue = 0,
+) {
   const key = lot.qualifyingRate || "";
   if (!key) return { method: null, warning: "" };
   if (key === "sole-residence-2") {
@@ -445,7 +452,12 @@ function qualifyingRateMethod(lot, acquisitionDate, transferDate, transferValue,
           "This Housing Authority relief needs a manual assessment because the underlying normal rate is not a flat transfer-value rate.",
       };
     }
-    const firstBand = Math.min(200000, transferValue);
+    // The €200,000 band belongs to the deed, not to each separately assessed part. Where the
+    // caller supplies the deed total, every lot draws on the band in proportion to its own
+    // value; without it a lot is treated as the whole deed and the figure is unchanged.
+    const deedValue = number(deedTransferValue) > 0 ? number(deedTransferValue) : transferValue;
+    const bandShare = deedValue > 0 ? Math.min(1, transferValue / deedValue) : 1;
+    const firstBand = Math.min(200000, deedValue) * bandShare;
     const excess = Math.max(0, transferValue - firstBand);
     const tenantExemption = key === "housing-tenant-10";
     const firstBandRate = tenantExemption ? 0 : normalMethod.rate / 2;
@@ -460,7 +472,10 @@ function qualifyingRateMethod(lot, acquisitionDate, transferDate, transferValue,
         rate: null,
         basis: transferValue,
         tax,
-        note: `Underlying normal rate: ${normalMethod.rate * 100}%.`,
+        note:
+          bandShare < 1
+            ? `Underlying normal rate: ${normalMethod.rate * 100}%. This part draws ${Math.round(bandShare * 100)}% of the deed's €200,000 band.`
+            : `Underlying normal rate: ${normalMethod.rate * 100}%.`,
       }),
       warning: "",
     };
@@ -558,7 +573,9 @@ function finish(lot, base, methods, defaultKey, warnings = []) {
   };
 }
 
-export function assessArticle5ATransfer(lot = {}) {
+// `deedTransferValue` is the combined transfer value of every lot on the same deed. It only
+// affects reliefs that band by value; omit it and each lot is assessed as its own deed.
+export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}) {
   const values = article5ATransferValue(lot);
   const numerator = fractionComponentNumber(lot.shareNumerator);
   const denominator = fractionComponentNumber(lot.shareDenominator, { allowZero: false });
@@ -725,6 +742,7 @@ export function assessArticle5ATransfer(lot = {}) {
     transferDate,
     values.transferValue,
     normalMethod,
+    deedTransferValue,
   );
   if (lot.qualifyingRate && !qualifying.method)
     return finish(lot, base, [], "", [qualifying.warning]);

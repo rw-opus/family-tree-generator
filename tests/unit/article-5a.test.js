@@ -199,6 +199,48 @@ describe("Income Tax Act Article 5A", () => {
     });
   });
 
+  const housingLot = (transferValue) => ({
+    ...baseLot,
+    consideration: transferValue,
+    marketValue: transferValue,
+    qualifyingRate: "housing-other-10",
+    housingCertificateConfirmed: true,
+  });
+
+  it("apportions the €200,000 band across lots on the same deed", () => {
+    const split = [150000, 150000]
+      .map((value) => assessArticle5ATransfer(housingLot(value), { deedTransferValue: 300000 }))
+      .reduce((total, result) => total + result.methods[0].tax, 0);
+    const single = assessArticle5ATransfer(housingLot(300000)).methods[0].tax;
+
+    // Splitting one deed by acquisition must not change what the transferor pays.
+    expect(split).toBe(single);
+    expect(split).toBe(16000);
+  });
+
+  it("treats a lot as its own deed when no deed total is given", () => {
+    const split = [150000, 150000]
+      .map((value) => assessArticle5ATransfer(housingLot(value)))
+      .reduce((total, result) => total + result.methods[0].tax, 0);
+
+    // Each lot claims a full band, which is why callers assessing a split deed must pass the total.
+    expect(split).toBe(12000);
+  });
+
+  it("leaves an unsplit assessment unchanged when the deed total is supplied", () => {
+    const result = assessArticle5ATransfer(
+      {
+        ...baseLot,
+        consideration: 250000,
+        marketValue: 250000,
+        qualifyingRate: "housing-tenant-10",
+        housingCertificateConfirmed: true,
+      },
+      { deedTransferValue: 250000 },
+    );
+    expect(result.methods[0].tax).toBe(4000);
+  });
+
   it("covers Article 31C and deemed group-exit rates", () => {
     const article31C = assessArticle5ATransfer({
       ...baseLot,

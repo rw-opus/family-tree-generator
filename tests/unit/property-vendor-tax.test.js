@@ -866,4 +866,43 @@ describe("property vendor tax reports", () => {
     });
     expect(report.saleRows[0].result.methods[0].tax).toBeCloseTo(2.4);
   });
+
+  it("shares one vendor's €200,000 band across split acquisitions", () => {
+    const lot = (id) => ({
+      id,
+      ownerId: "seller",
+      acquisitionType: "purchase",
+      acquisitionDate: "2020-01-01",
+      transferDate: "2026-07-31",
+      shareNumerator: 1,
+      shareDenominator: 2,
+      acquisitionValue: 50000,
+      consideration: 150000,
+      marketValue: 150000,
+      transferValue: 150000,
+      qualifyingRate: "housing-other-10",
+      housingCertificateConfirmed: true,
+    });
+    const property = {
+      id: "property",
+      saleValue: 300000,
+      owners: [{ personId: "seller", sharePercent: 100 }],
+      declarations: [],
+      transfers: [],
+      saleLots: [lot("first-half"), lot("second-half")],
+    };
+
+    const report = buildPropertyVendorTaxReport(
+      property,
+      [{ id: "seller", fullName: "Joseph Borg", spouseIds: [] }],
+      [],
+    );
+    const taxes = report.saleRows.map(
+      (row) => row.result.methods.find((method) => method.key === "housing-other-10").tax,
+    );
+
+    // Each half draws half of the band: €100,000 at 4% plus €50,000 at 8%. Assessed alone,
+    // each half would claim a full €200,000 band and pay €6,000.
+    expect(taxes).toEqual([8000, 8000]);
+  });
 });
