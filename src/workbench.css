@@ -559,6 +559,10 @@
 }
 
 .library-legal-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0 0.25rem;
   color: var(--forest);
   font-weight: 750;
   text-decoration: none;
@@ -745,6 +749,10 @@
 }
 
 .commercial-legal-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0 0.25rem;
   color: var(--forest);
   font-weight: 750;
   text-decoration: none;
@@ -753,6 +761,14 @@
 .commercial-legal-links a:hover,
 .commercial-auth-link:hover {
   text-decoration: underline;
+}
+
+.commercial-legal-links a:focus-visible,
+.library-legal-links a:focus-visible,
+.tree-current-owner-tax-actions button:focus-visible,
+.tax-calculation-history > summary:focus-visible {
+  outline: 3px solid rgba(75, 17, 111, 0.35);
+  outline-offset: 2px;
 }
 
 .legal-page {
@@ -1687,6 +1703,38 @@ textarea {
   font-size: 0.59rem;
   line-height: 1.3;
   text-align: right;
+}
+
+.person-final-withholding-tax {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  border-top: 1px solid #dce5e0;
+  padding-top: 0.45rem;
+  color: #526158;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.person-final-withholding-tax > span:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 0.12rem;
+  max-width: 65%;
+  text-align: right;
+}
+
+.person-final-withholding-tax strong {
+  color: var(--forest);
+  font-size: 0.76rem;
+}
+
+.person-final-withholding-tax small {
+  color: var(--muted);
+  font-size: 0.59rem;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .person-succession {
@@ -3256,7 +3304,8 @@ textarea {
 
 .tree-property-panel-toggle strong {
   font-size: 0.76rem;
-  white-space: nowrap;
+  line-height: 1.15;
+  white-space: normal;
 }
 
 .tree-property-panel-price {
@@ -3519,8 +3568,45 @@ textarea {
   font-size: 0.6rem;
 }
 
+.tree-current-owners small.calculated {
+  color: var(--forest);
+  font-weight: 800;
+}
+
+.tree-current-owners small.pending {
+  color: #95520d;
+  font-weight: 800;
+}
+
 .tree-current-owners p {
   margin: 0;
+}
+
+.tree-current-owner-tax-actions {
+  display: grid;
+  gap: 0.35rem;
+  border-top: 1px solid #e3e9e5;
+  padding-top: 0.5rem;
+}
+
+.tree-current-owner-tax-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  border: 1px solid #b9cbc1;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--forest);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.tree-current-owner-tax-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .person-card-display-fields {
@@ -4159,6 +4245,7 @@ body.succession-history-open {
     linear-gradient(90deg, rgba(42, 74, 58, 0.045) 1px, transparent 1px);
   background-size: 28px 28px;
   overscroll-behavior: contain;
+  scroll-padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
   touch-action: pan-x pan-y;
 }
 
@@ -4167,6 +4254,9 @@ body.succession-history-open {
   min-height: 100%;
   background: transparent;
   padding: 2.5rem 4rem 6rem;
+}
+
+.tree-stage .family-canvas:not(.relational-canvas) {
   zoom: var(--tree-zoom);
 }
 
@@ -4816,18 +4906,22 @@ body.a3-print-preview-open {
 }
 
 .tree-stage .family-node.deceased {
-  color: #434947;
+  color: #3f4543;
   box-shadow:
-    inset 0 0 0 999px rgba(82, 88, 86, 0.045),
+    inset 0 0 0 999px rgba(82, 88, 86, 0.02),
     0 7px 17px rgba(15, 23, 42, 0.18);
 }
 
 .tree-stage .family-node.deceased.male {
-  background: #e3ebef;
+  border-color: #769db9;
+  border-top-color: #527f9f;
+  background: #e5f0f7;
 }
 
 .tree-stage .family-node.deceased.female {
-  background: #eee7e9;
+  border-color: #c58fa4;
+  border-top-color: #a5637d;
+  background: #faedf1;
 }
 
 .tree-stage .family-node.deceased:not(.male):not(.female) {
@@ -5153,7 +5247,11 @@ body.a3-print-preview-open {
 
   .tree-stage .family-canvas {
     min-width: 940px;
-    padding: 2.5rem 2.5rem 5rem;
+    padding: 2.5rem 2.5rem calc(10rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tree-stage .family-chart {
+    scroll-padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px));
   }
 
   .case-workspace-view {
@@ -5598,6 +5696,68 @@ body.a3-print-preview-open {
   line-height: 1.5;
 }
 
+.tax-calculation-history {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.tax-calculation-history > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  background: #f5f8f6;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tax-calculation-history > summary b {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tax-calculation-history > ol {
+  display: grid;
+  gap: 0;
+  max-height: min(52dvh, 560px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tax-calculation-history li {
+  display: grid;
+  grid-template-columns: 90px minmax(150px, 0.45fr) minmax(260px, 1.55fr);
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 9px 12px;
+  font-size: 12px;
+}
+
+.tax-calculation-history li > span {
+  color: var(--muted);
+}
+
+.tax-calculation-history li > p,
+.tax-calculation-history > p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.tax-calculation-history > p {
+  border-top: 1px solid var(--line);
+  padding: 12px;
+  font-size: 12px;
+}
+
 .tax-calculation-heading {
   align-items: center;
 }
@@ -5681,6 +5841,26 @@ body.a3-print-preview-open {
   font-weight: 800;
 }
 
+.tax-choice-badge {
+  display: inline-flex;
+  margin: 0 0.35rem 0.2rem 0;
+  border: 1px solid #cbd9d1;
+  border-radius: 999px;
+  background: #f5f8f6;
+  color: var(--muted);
+  padding: 0.08rem 0.35rem;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tax-calculation-table small.selected .tax-choice-badge {
+  border-color: #9fc2ad;
+  background: #e8f4ec;
+  color: var(--forest);
+}
+
 .tax-calculation-table small.attention,
 .tax-calculation-warning {
   color: #95520d;
@@ -5713,5 +5893,72 @@ body.a3-print-preview-open {
 
   .tax-calculation-vendor > header span:last-child {
     text-align: left;
+  }
+
+  .tax-calculation-history li {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .tax-calculation-table-wrap {
+    overflow: visible;
+  }
+
+  .tax-calculation-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .tax-calculation-table thead {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .tax-calculation-table tbody {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .tax-calculation-table tr {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .tax-calculation-table td,
+  .tax-calculation-table td:not(:first-child) {
+    display: grid;
+    grid-template-columns: minmax(92px, 0.7fr) minmax(0, 1.3fr);
+    gap: 8px;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+    white-space: normal;
+    text-align: left;
+  }
+
+  .tax-calculation-table td::before {
+    color: var(--muted);
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .tax-calculation-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .tree-current-owner-tax-actions button {
+    min-height: 2.75rem;
+    font-size: 0.7rem;
   }
 }

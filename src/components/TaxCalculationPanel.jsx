@@ -4,6 +4,7 @@ import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { displayNotaryName } from "../domain/notary.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { buildTaxCalculationReport } from "../domain/propertyVendorTax.js";
+import { buildSuccessionTrace } from "../domain/successionTrace.js";
 import { downloadVendorTaxSpreadsheet } from "../domain/vendorTaxExport.js";
 
 const money = new Intl.NumberFormat("en-MT", {
@@ -19,6 +20,12 @@ const fractionLabel = (share, exactFraction) => {
 
 export function TaxCalculationPanel({ property, people, outsideParties, vendorReport }) {
   const report = buildTaxCalculationReport(property, people, outsideParties, vendorReport);
+  const historyEvents = buildSuccessionTrace({
+    property,
+    people,
+    outsideParties,
+    propertyReport: vendorReport,
+  });
 
   return (
     <section className="tax-calculation-panel" aria-label="Tax Calculation">
@@ -31,9 +38,9 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
           type="button"
           className="secondary-button"
           disabled={!report.vendors.length}
-          onClick={() => downloadVendorTaxSpreadsheet(report, property)}
+          onClick={() => downloadVendorTaxSpreadsheet(report, property, historyEvents)}
         >
-          <FileSpreadsheet size={16} /> Download Excel
+          <FileSpreadsheet size={16} /> Download one-sheet Excel
         </button>
       </div>
       <p className="helper-text">
@@ -43,6 +50,26 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
       <p className="tax-calculation-disclaimer">
         <strong>Important:</strong> {TAX_CALCULATION_DISCLAIMER}
       </p>
+
+      <details className="tax-calculation-history">
+        <summary>
+          <span>Full succession and transfer history</span>
+          <b>{historyEvents.length} events</b>
+        </summary>
+        {historyEvents.length ? (
+          <ol>
+            {historyEvents.map((event) => (
+              <li key={event.id}>
+                <span>{event.date ? isoDateToDisplay(event.date) : "Undated"}</span>
+                <strong>{event.title}</strong>
+                <p>{event.description}</p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p>Complete the initial ownership to generate the succession history.</p>
+        )}
+      </details>
 
       {report.vendors.length ? (
         <div className="tax-calculation-vendors">
@@ -60,6 +87,9 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
               </header>
               <div className="tax-calculation-table-wrap">
                 <table className="tax-calculation-table">
+                  <caption className="sr-only">
+                    Tax sources and available calculations for {vendor.name}
+                  </caption>
                   <thead>
                     <tr>
                       <th>Provenance</th>
@@ -77,7 +107,7 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
                   <tbody>
                     {vendor.rows.map((row) => (
                       <tr key={row.id}>
-                        <td>
+                        <td data-label="Provenance">
                           <strong>{row.provenance}</strong>
                           {row.inheritanceDate && (
                             <small>d. {isoDateToDisplay(row.inheritanceDate)}</small>
@@ -93,27 +123,34 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
                             </small>
                           ))}
                         </td>
-                        <td>{fractionLabel(row.share, row.shareFraction)}</td>
-                        <td>{money.format(row.declaredValue)}</td>
-                        <td>{money.format(row.attributedSaleValue)}</td>
-                        <td>{money.format(row.difference)}</td>
-                        <td>
+                        <td data-label="Fraction">{fractionLabel(row.share, row.shareFraction)}</td>
+                        <td data-label="CM value">{money.format(row.declaredValue)}</td>
+                        <td data-label="Sale price">{money.format(row.attributedSaleValue)}</td>
+                        <td data-label="Difference">{money.format(row.difference)}</td>
+                        <td data-label="Tax choices">
                           {row.methods.length ? (
-                            row.methods.map((method) => (
-                              <small
-                                className={method.key === row.selectedMethod?.key ? "selected" : ""}
-                                key={method.key}
-                              >
-                                {method.label}: {money.format(method.tax)}
-                                {method.requiresElection ? " · election" : ""}
-                              </small>
-                            ))
+                            row.methods.map((method) => {
+                              const selected = method.key === row.selectedMethod?.key;
+                              return (
+                                <small className={selected ? "selected" : ""} key={method.key}>
+                                  <span className="tax-choice-badge">
+                                    {selected ? "Applied" : "Alternative"}
+                                  </span>
+                                  {method.label}: {money.format(method.tax)}
+                                  {method.requiresElection ? " · election" : ""}
+                                </small>
+                              );
+                            })
                           ) : (
                             <small className="attention">{row.warning || "Incomplete"}</small>
                           )}
                         </td>
-                        <td>{row.selectedMethod ? money.format(row.tax) : "—"}</td>
-                        <td>{row.selectedMethod ? money.format(row.net) : "—"}</td>
+                        <td data-label="Applied tax">
+                          {row.selectedMethod ? money.format(row.tax) : "—"}
+                        </td>
+                        <td data-label="Net balance">
+                          {row.selectedMethod ? money.format(row.net) : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

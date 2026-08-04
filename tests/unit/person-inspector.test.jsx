@@ -1522,6 +1522,65 @@ describe("PersonInspector", () => {
     expect(onShareDisplayChange).toHaveBeenCalledWith("both");
   });
 
+  it("shows the selected living vendor's calculated Final Withholding Tax", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "share", personId: "child", sharePercent: 100 }],
+        spouseIds: [],
+        causaMortisDeclarations: [
+          {
+            id: "cm",
+            propertyId: "property",
+            status: "complete",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            immovablePropertyValue: "100000",
+            date: "2020-04-01",
+            notaryName: "Maria Notary",
+            declarantPersonIds: ["child"],
+          },
+        ],
+      },
+      {
+        id: "child",
+        fullName: "Maria Borg",
+        fatherId: "deceased",
+        spouseIds: [],
+      },
+    ];
+    const property = {
+      id: "property",
+      saleValue: "120000",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          ownershipByPerson={{ child: 1 }}
+          selectedPersonId="child"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const tax = container.querySelector(".person-final-withholding-tax");
+    expect(tax.textContent).toContain("Final Withholding Tax");
+    expect(tax.querySelector("strong").textContent).toBe("€2,400.00");
+    expect(tax.querySelector("small").textContent).toContain("Tax Calculation panel");
+  });
+
   it("shows succession fields only for a deceased person", () => {
     const person = {
       id: "person",

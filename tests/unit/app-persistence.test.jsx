@@ -334,7 +334,7 @@ describe("App local recovery", () => {
     expect(container.querySelector(".tree-property-panel")).not.toBeNull();
     act(() => container.querySelector(".tree-property-panel-toggle").click());
     const openProperty = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Open property workspace"),
+      button.textContent.includes("Open property setup"),
     );
     expect(openProperty).not.toBeUndefined();
     act(() => openProperty.click());

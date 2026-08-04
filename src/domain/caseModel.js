@@ -84,42 +84,6 @@ function normalizePeople(people = []) {
   return { people: normalizePartnerRelationships(normalized), warnings };
 }
 
-const LEGACY_POTENTIAL_PARENT_KEYS = new Set([
-  "id",
-  "givenNames",
-  "surname",
-  "fullName",
-  "surnameAtBirth",
-  "designations",
-  "designation",
-  "sex",
-  "fatherId",
-  "motherId",
-  "spouseIds",
-  "siblingIds",
-  "partnerRelationships",
-  "dateOfBirth",
-  "dateOfDeath",
-  "unmarriedOrWidowedAtDeath",
-  "wills",
-  "willDate",
-  "willNotaryName",
-  "willDescription",
-  "notes",
-  "isPotentialIntestateParent",
-  "survivalStatusRequired",
-  "survivalStatusReferencePersonId",
-]);
-
-function hasSavedValue(value) {
-  if (typeof value === "string") return Boolean(value.trim());
-  if (Array.isArray(value)) return value.length > 0;
-  if (isRecord(value)) return Object.keys(value).length > 0;
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value !== 0;
-  return value != null;
-}
-
 function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {
   if (
     person?.isPotentialIntestateParent !== true ||
@@ -164,17 +128,28 @@ function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {
     text(person.dateOfBirth) ||
     text(person.dateOfDeath) ||
     text(person.notes) ||
+    person.isDeceased === true ||
+    person.unmarriedOrWidowedAtDeath === true ||
+    text(person.survivalStatusConfirmed) ||
+    (text(person.inheritanceBasis) &&
+      text(person.inheritanceBasis).toLowerCase() !== "intestacy") ||
     uniqueIds(person.spouseIds).length ||
     uniqueIds(person.siblingIds).length ||
     records(person.partnerRelationships).length ||
-    records(person.wills).length
+    records(person.wills).length ||
+    records(person.willHeirs).length ||
+    records(person.intestateHeirs).length ||
+    records(person.causaMortisDeclarations).length
   ) {
     return false;
   }
 
-  return !Object.entries(person).some(
-    ([key, value]) => !LEGACY_POTENTIAL_PARENT_KEYS.has(key) && hasSavedValue(value),
-  );
+  // Old Person defaults grew over time. Harmless defaults such as
+  // `inheritanceBasis: "intestacy"`, empty arrays and display flags must not
+  // turn a silently generated placeholder into a permanent ancestor. The
+  // explicit marker and the user-entered identity/legal fields above are the
+  // durable preservation boundary.
+  return true;
 }
 
 /**

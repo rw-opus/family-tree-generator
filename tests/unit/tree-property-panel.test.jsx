@@ -68,6 +68,20 @@ describe("TreePropertyPanel", () => {
 
   it("combines selling price, initial shares, current values, and card controls", () => {
     const onCardFieldsChange = vi.fn();
+    const onOpenTax = vi.fn();
+    const taxReport = {
+      vendors: [
+        {
+          id: "owner",
+          name: "Maria Borg",
+          share: 1,
+          attributedSaleValue: 300000,
+          tax: 2400,
+          net: 297600,
+          rows: [],
+        },
+      ],
+    };
     act(() =>
       root.render(
         <TreePropertyPanel
@@ -75,16 +89,18 @@ describe("TreePropertyPanel", () => {
           people={people}
           outsideParties={[]}
           propertyReport={propertyReport}
+          taxReport={taxReport}
           cardFields={{ ownershipFraction: true, ownershipValue: false }}
           onCardFieldsChange={onCardFieldsChange}
           onPropertyChange={vi.fn()}
           onFocusEvent={vi.fn()}
           onOpenProperty={vi.fn()}
+          onOpenTax={onOpenTax}
         />,
       ),
     );
 
-    expect(container.textContent).toContain("Property & Ownership");
+    expect(container.textContent).toContain("Ownership and Tax Panel");
     expect(container.textContent).toContain("€300,000.00");
     act(() => container.querySelector(".tree-property-panel-toggle").click());
     expect(container.querySelector('input[aria-label="Property address on tree"]').value).toBe(
@@ -98,6 +114,13 @@ describe("TreePropertyPanel", () => {
     act(() => currentTitle.click());
     expect(container.textContent).toContain("Maria Borg");
     expect(container.textContent).toContain("1/1");
+    expect(container.textContent).toContain("Tax €2,400.00");
+    expect(container.textContent).toContain("Download one-sheet Excel");
+    const taxWorkingsButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("View full tax workings"),
+    );
+    act(() => taxWorkingsButton.click());
+    expect(onOpenTax).toHaveBeenCalledOnce();
 
     const cardView = [...container.querySelectorAll("summary")].find((summary) =>
       summary.textContent.includes("Person card details"),

@@ -165,7 +165,7 @@ export function FamilyTreeCanvas({
         helperText="Select a person in the index to locate and highlight them in this tree."
         toolbar={toolbar}
       >
-        <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} />
+        <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} zoom={zoom} />
       </TreePanel>
     );
   }

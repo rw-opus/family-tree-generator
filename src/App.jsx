@@ -27,6 +27,7 @@ import {
 } from "./domain/personCardDisplay.js";
 import {
   buildPropertyVendorTaxReport,
+  buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
 } from "./domain/propertyVendorTax.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
@@ -304,6 +305,16 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     () =>
       buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties),
     [activeProperty, currentTree.outsideParties, currentTree.people],
+  );
+  const taxCalculationReport = useMemo(
+    () =>
+      buildTaxCalculationReport(
+        activeProperty,
+        currentTree.people,
+        currentTree.outsideParties,
+        propertyReport,
+      ),
+    [activeProperty, currentTree.outsideParties, currentTree.people, propertyReport],
   );
   const ownershipByPerson = useMemo(() => {
     if (!propertyReport.startingOwnership.isComplete) return {};
@@ -997,6 +1008,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 outsideParties={currentTree.outsideParties}
                 familyPersonIds={activeFamilyGroup?.personIds || []}
                 properties={activeProperties}
+                vendorReport={propertyReport}
+                taxCalculationReport={taxCalculationReport}
                 ownershipByPerson={ownershipByPerson}
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
                 hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
@@ -1094,6 +1107,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
                 propertyReport={propertyReport}
+                taxReport={taxCalculationReport}
                 cardFields={currentTree.settings.personCardFields}
                 onCardFieldsChange={(personCardFields) =>
                   setTree({
@@ -1115,6 +1129,11 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   setTraceOwnershipSnapshot(null);
                   setPropertyPanelExpanded(false);
                   setWorkspaceView("property");
+                }}
+                onOpenTax={() => {
+                  setTraceOwnershipSnapshot(null);
+                  setPropertyPanelExpanded(false);
+                  setWorkspaceView("tax");
                 }}
               />
             </div>

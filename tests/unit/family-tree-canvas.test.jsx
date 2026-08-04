@@ -76,6 +76,19 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
+  it("gives a zoomed relational tree an explicit full scroll footprint", () => {
+    renderCanvas({ people: family(), zoom: 175 });
+
+    const footprint = container.querySelector(".layered-family-tree-viewport");
+    const tree = container.querySelector(".layered-family-tree");
+    const unscaledWidth = parseFloat(tree.style.width);
+    const unscaledHeight = parseFloat(tree.style.height);
+
+    expect(tree.style.transform).toBe("scale(1.75)");
+    expect(parseFloat(footprint.style.width)).toBe(Math.ceil(unscaledWidth * 1.75));
+    expect(parseFloat(footprint.style.height)).toBe(Math.ceil(unscaledHeight * 1.75));
+  });
+
   it("keeps controls outside the pannable tree and centres cards by scrolling only the chart", () => {
     const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
     const originalScrollIntoView = Object.getOwnPropertyDescriptor(
