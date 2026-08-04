@@ -151,6 +151,7 @@ describe("FamilyTreeCanvas", () => {
     });
 
     expect(container.textContent).toContain("Fit tree");
+    expect(container.textContent).toContain("Top");
     expect(container.textContent).toContain("Fit branch");
     expect(container.textContent).toContain("Centre");
     const cards = [...container.querySelectorAll("[data-person-id]")];
@@ -163,6 +164,40 @@ describe("FamilyTreeCanvas", () => {
     );
     act(() => fitTree.click());
     expect(onZoomChange).toHaveBeenCalledOnce();
+
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    scrollRegion.scrollTop = 240;
+    const top = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Top",
+    );
+    act(() => top.click());
+    expect(scrollRegion.scrollTop).toBe(0);
+  });
+
+  it("pans the tree vertically with one finger on mobile", () => {
+    renderCanvas({ people: family() });
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    scrollRegion.scrollLeft = 80;
+    scrollRegion.scrollTop = 120;
+
+    const touchEvent = (type, touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", { value: touches });
+      return event;
+    };
+
+    act(() => {
+      scrollRegion.dispatchEvent(
+        touchEvent("touchstart", [{ identifier: 1, clientX: 100, clientY: 100 }]),
+      );
+      scrollRegion.dispatchEvent(
+        touchEvent("touchmove", [{ identifier: 1, clientX: 80, clientY: 35 }]),
+      );
+      scrollRegion.dispatchEvent(touchEvent("touchend", []));
+    });
+
+    expect(scrollRegion.scrollLeft).toBe(100);
+    expect(scrollRegion.scrollTop).toBe(185);
   });
 
   it("shows a person's surname even when it matches the father's", () => {

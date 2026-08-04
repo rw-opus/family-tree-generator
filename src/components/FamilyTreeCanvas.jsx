@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitBranch, LocateFixed, Maximize2, Move, Printer } from "lucide-react";
+import { ArrowUpToLine, GitBranch, LocateFixed, Maximize2, Move, Printer } from "lucide-react";
 import {
   hasAnyDesignation,
   hasDesignation,
@@ -80,6 +80,7 @@ export function FamilyTreeCanvas({
 }) {
   const treeRef = useRef(null);
   const dragRef = useRef(null);
+  const touchPanRef = useRef(null);
   const [panHintVisible, setPanHintVisible] = useState(true);
   const [navigatorState, setNavigatorState] = useState({
     visible: false,
@@ -305,15 +306,58 @@ export function FamilyTreeCanvas({
       chart.classList.remove("is-panning");
       chart.releasePointerCapture?.(event.pointerId);
     };
+    const startTouchPan = (event) => {
+      if (event.touches.length !== 1) {
+        touchPanRef.current = null;
+        return;
+      }
+      const touch = event.touches[0];
+      touchPanRef.current = {
+        identifier: touch.identifier,
+        x: touch.clientX,
+        y: touch.clientY,
+        left: chart.scrollLeft,
+        top: chart.scrollTop,
+        moved: false,
+      };
+    };
+    const touchPan = (event) => {
+      const state = touchPanRef.current;
+      if (!state || event.touches.length !== 1) {
+        if (event.touches.length > 1) touchPanRef.current = null;
+        return;
+      }
+      const touch = Array.from(event.touches).find((item) => item.identifier === state.identifier);
+      if (!touch) return;
+      const deltaX = touch.clientX - state.x;
+      const deltaY = touch.clientY - state.y;
+      if (!state.moved && Math.hypot(deltaX, deltaY) < 4) return;
+      state.moved = true;
+      event.preventDefault();
+      chart.scrollLeft = state.left - deltaX;
+      chart.scrollTop = state.top - deltaY;
+      setPanHintVisible(false);
+    };
+    const stopTouchPan = () => {
+      touchPanRef.current = null;
+    };
     chart.addEventListener("pointerdown", startDrag);
     chart.addEventListener("pointermove", drag);
     chart.addEventListener("pointerup", stopDrag);
     chart.addEventListener("pointercancel", stopDrag);
+    chart.addEventListener("touchstart", startTouchPan, { passive: true });
+    chart.addEventListener("touchmove", touchPan, { passive: false });
+    chart.addEventListener("touchend", stopTouchPan, { passive: true });
+    chart.addEventListener("touchcancel", stopTouchPan, { passive: true });
     return () => {
       chart.removeEventListener("pointerdown", startDrag);
       chart.removeEventListener("pointermove", drag);
       chart.removeEventListener("pointerup", stopDrag);
       chart.removeEventListener("pointercancel", stopDrag);
+      chart.removeEventListener("touchstart", startTouchPan);
+      chart.removeEventListener("touchmove", touchPan);
+      chart.removeEventListener("touchend", stopTouchPan);
+      chart.removeEventListener("touchcancel", stopTouchPan);
     };
   }, []);
 
@@ -375,6 +419,16 @@ export function FamilyTreeCanvas({
     ? selectedPersonId
     : cleanPeople[0]?.id;
 
+  const scrollToTreeTop = () => {
+    const chart = treeRef.current;
+    if (!chart) return;
+    if (typeof chart.scrollTo === "function") {
+      chart.scrollTo({ left: chart.scrollLeft, top: 0, behavior: "smooth" });
+    } else {
+      chart.scrollTop = 0;
+    }
+  };
+
   const renderCard = (person, variant = "") => (
     <FamilyPersonCard
       key={person.id}
@@ -403,6 +457,9 @@ export function FamilyTreeCanvas({
     <div className="tree-navigation-tools" aria-label="Tree view controls">
       <button type="button" onClick={fitWholeTree} title="Fit the whole tree in view">
         <Maximize2 size={15} /> <span>Fit tree</span>
+      </button>
+      <button type="button" onClick={scrollToTreeTop} title="Move to the top of the tree">
+        <ArrowUpToLine size={15} /> <span>Top</span>
       </button>
       <button
         type="button"
