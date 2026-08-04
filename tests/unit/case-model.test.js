@@ -259,6 +259,40 @@ describe("case model migration", () => {
     expect(result.familyGroups[0].personIds).toEqual(["edgar"]);
   });
 
+  it("ignores harmless person defaults when removing silent legacy parents", () => {
+    const result = normalizeCase({
+      id: "legacy-generated-parent-with-defaults",
+      people: [
+        {
+          id: "edgar",
+          givenNames: "Edgar",
+          surname: "Wadge",
+          fullName: "Edgar Wadge",
+          fatherId: "generated-father",
+        },
+        {
+          id: "generated-father",
+          givenNames: "Father of Edgar",
+          fullName: "Father of Edgar",
+          sex: "Male",
+          designations: ["Parent"],
+          isPotentialIntestateParent: true,
+          survivalStatusRequired: true,
+          survivalStatusReferencePersonId: "edgar",
+          inheritanceBasis: "intestacy",
+          intestateHeirs: [],
+          causaMortisDeclarations: [],
+          isDeceased: false,
+          showOwnership: false,
+        },
+      ],
+    });
+
+    expect(result.people).toEqual([
+      expect.objectContaining({ id: "edgar", fatherId: "", fullName: "Edgar Wadge" }),
+    ]);
+  });
+
   it("preserves a potential parent that the user added explicitly", () => {
     const result = normalizeCase({
       id: "explicit-parent",

@@ -613,38 +613,10 @@ function centreRows(rows, unions, widthByPerson = new Map()) {
     return groups;
   };
 
-  /**
-   * Spaces the members of a block so every marriage sits over the middle of its
-   * own children. Propagating the far spouse from the near one lands each
-   * marriage exactly on its target; the minimum separation only binds where the
-   * targets are closer together than two cards.
-   */
-  const spaceMembers = (block, targetByUnionId, fallbackCentre = null) => {
-    const unionBetween = (index) => {
-      const first = block.memberIds[index];
-      const second = block.memberIds[index + 1];
-      return unions.find(
-        (union) =>
-          union.parentIds.length === 2 &&
-          union.parentIds.includes(first) &&
-          union.parentIds.includes(second),
-      );
-    };
-
-    const targets = block.memberIds.slice(1).map((_, index) => {
-      const union = unionBetween(index);
-      return union ? (targetByUnionId.get(union.id) ?? null) : null;
-    });
-
+  /** Spaces spouses evenly, then centres the complete block on its target. */
+  const spaceMembers = (block, targetCentre = null) => {
     const centres = [0];
-    const hasTarget = false;
-
-    // Spouses are spaced evenly. Widening the gap to centre each marriage over
-    // its own children spent the room unevenly - one wife shoved out to her
-    // children while the next fell back to the minimum - so a row of wives read
-    // as huddled rather than as a series of marriages. Each marriage's stem
-    // reaches its bar instead.
-    targets.forEach((_, index) => {
+    block.memberIds.slice(1).forEach((_, index) => {
       const firstWidth = widthOf(block.memberIds[index]);
       const secondWidth = widthOf(block.memberIds[index + 1]);
       centres.push(centres[index] + firstWidth / 2 + PARTNER_GAP + secondWidth / 2);
@@ -658,11 +630,8 @@ function centreRows(rows, unions, widthByPerson = new Map()) {
       widthOf(block.memberIds[0]) / 2 +
       widthOf(block.memberIds.at(-1)) / 2;
 
-    // A lone parent, or a couple whose children are recorded against only one
-    // of them, has no marriage to sit over. Centre the block on its children
-    // instead, or it stays at the origin while they sit somewhere else.
-    if (!hasTarget && fallbackCentre !== null) {
-      return fallbackCentre - block.width / 2;
+    if (targetCentre !== null) {
+      return targetCentre - block.width / 2;
     }
 
     return origin;
@@ -696,12 +665,24 @@ function centreRows(rows, unions, widthByPerson = new Map()) {
       group.children.forEach((child) => shiftSubtree(child, shift));
       mergeContour(childrenContour, groupContour, shift);
 
-      const extents = [...groupContour.values()];
-      group.centre =
-        (Math.min(...extents.map((extent) => extent.min)) +
-          Math.max(...extents.map((extent) => extent.max))) /
-          2 +
-        shift;
+      const immediateChildCentres = (group.union?.childIds || [])
+        .map((childId) => {
+          const childBlock = blockOfPerson.get(childId);
+          const childIndex = childBlock?.memberIds.indexOf(childId) ?? -1;
+          if (!childBlock || childIndex < 0) return null;
+          return childBlock.left + childBlock.memberOffsets[childIndex];
+        })
+        .filter(Number.isFinite);
+      if (immediateChildCentres.length) {
+        group.centre = mean(immediateChildCentres);
+      } else {
+        const extents = [...groupContour.values()];
+        group.centre =
+          (Math.min(...extents.map((extent) => extent.min)) +
+            Math.max(...extents.map((extent) => extent.max))) /
+            2 +
+          shift;
+      }
     });
 
     const targetByUnionId = new Map(
@@ -713,7 +694,14 @@ function centreRows(rows, unions, widthByPerson = new Map()) {
           Math.max(...spanExtents.map((extent) => extent.max))) /
         2
       : null;
-    block.left = spaceMembers(block, targetByUnionId, childrenCentre);
+    // A lone parent or one couple with one child union can sit directly over
+    // that union's immediate children. This keeps an only child's stem vertical
+    // even when that child has a spouse and a much wider descendant subtree.
+    const soleUnionTarget =
+      targetByUnionId.size === 1 && block.memberIds.length <= 2
+        ? [...targetByUnionId.values()][0]
+        : null;
+    block.left = spaceMembers(block, soleUnionTarget ?? childrenCentre);
 
     // Keep the block clear of anything its own descendants occupy on its row.
     const ownRow = childrenContour.get(block.rowIndex);

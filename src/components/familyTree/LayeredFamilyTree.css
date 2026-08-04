@@ -1,6 +1,13 @@
+.layered-family-tree-viewport {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 auto;
+}
+
 .layered-family-tree {
   position: relative;
-  margin: 0 auto;
+  margin: 0;
+  transform-origin: top left;
 }
 
 .tree-edge-layer {

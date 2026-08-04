@@ -80,7 +80,7 @@ export function LegacyLegitimPanel({
       <div className="legacy-legitim-heading">
         <div>
           <strong>Children&apos;s legitim</strong>
-          <small>Automatically applied for a death before 01-03-2005</small>
+          <small>Automatically applied for a death before 01/03/2005</small>
         </div>
         {calculation && !calculation.unresolved && (
           <b>{shareLabel(calculation.collectiveFraction.decimal, shareDisplay)} collectively</b>

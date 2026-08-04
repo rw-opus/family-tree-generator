@@ -51,6 +51,7 @@ import {
   removePartnerRelationship,
   upsertPartnerRelationship,
 } from "../domain/partnerRelationships.js";
+import { buildTaxCalculationReport } from "../domain/propertyVendorTax.js";
 import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
@@ -119,6 +120,8 @@ function legacyProtectedWillForPerson(people, deceased) {
 export function PersonInspector({
   people,
   properties = [],
+  vendorReport = null,
+  taxCalculationReport = null,
   ownershipByPerson = {},
   ownershipFractionsByPerson = {},
   hasAnyPropertyOwnership = false,
@@ -195,6 +198,13 @@ export function PersonInspector({
     () => (selectedPerson ? missingPotentialIntestateParents(people, selectedPerson.id) : []),
     [people, selectedPerson],
   );
+  const selectedVendorTax = useMemo(() => {
+    if (!selectedPerson || !properties[0]) return null;
+    const report =
+      taxCalculationReport ||
+      buildTaxCalculationReport(properties[0], people, outsideParties, vendorReport);
+    return report.vendors.find((vendor) => vendor.id === selectedPerson.id) || null;
+  }, [outsideParties, people, properties, selectedPerson, taxCalculationReport, vendorReport]);
 
   useEffect(() => {
     const nextPersonId = selectedPerson?.id || "";
@@ -873,6 +883,22 @@ export function PersonInspector({
   const displayedSurname = personSurname(selectedPerson);
   const propertySaleValue = Number(properties[0]?.saleValue) || 0;
   const estimatedPropertyValue = propertySaleValue * ownership;
+  const finalWithholdingTaxLabel = selectedVendorTax
+    ? selectedVendorTax.tax == null
+      ? "Pending"
+      : money.format(selectedVendorTax.tax)
+    : isDeceased
+      ? "Not applicable"
+      : "Not yet calculated";
+  const finalWithholdingTaxNote = selectedVendorTax
+    ? selectedVendorTax.tax == null
+      ? `${selectedVendorTax.incompleteRowCount} source fraction${
+          selectedVendorTax.incompleteRowCount === 1 ? " needs" : "s need"
+        } acquisition or CM details.`
+      : "Calculated from this vendor's share; review the Tax Calculation panel for the workings."
+    : isDeceased
+      ? "Only living current vendors are included in the sale calculation."
+      : "Complete the initial ownership, selling price and acquisition details.";
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
   const partnerRelationshipsById = new Map(
@@ -998,6 +1024,11 @@ export function PersonInspector({
               ? "This removes the person from this family only; the shared record remains elsewhere."
               : "No partner or descendant dependencies. Confirmation is required.";
 
+  const goToPersonSection = (section) => {
+    const target = document.querySelector(`[data-person-section="${section}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="person-inspector">
       <section className="inspector-profile">
@@ -1020,7 +1051,24 @@ export function PersonInspector({
         </div>
       </section>
 
-      <section className="inspector-section">
+      <nav className="person-section-nav" aria-label="Person detail sections">
+        <button type="button" onClick={() => goToPersonSection("identity")}>
+          Identity
+        </button>
+        <button type="button" onClick={() => goToPersonSection("relationships")}>
+          Relationships
+        </button>
+        {isDeceased && (
+          <button type="button" onClick={() => goToPersonSection("succession")}>
+            Succession
+          </button>
+        )}
+        <button type="button" onClick={() => goToPersonSection("property")}>
+          Property
+        </button>
+      </nav>
+
+      <section className="inspector-section" data-person-section="relationships">
         <div className="inspector-section-heading">
           <div>
             <p className="eyebrow">Relationships</p>
@@ -1231,7 +1279,7 @@ export function PersonInspector({
         )}
       </section>
 
-      <section className="inspector-section">
+      <section className="inspector-section" data-person-section="identity">
         <p className="eyebrow">Personal details</p>
         <fieldset className="person-edit-fields" disabled={!isEditing}>
           <div className="inspector-fields">
@@ -1356,7 +1404,7 @@ export function PersonInspector({
 
         <div className="person-edit-fields person-record-fields">
           {isDeceased && (
-            <div className="person-succession">
+            <div className="person-succession" data-person-section="succession">
               <label className="succession-detail-row">
                 <span>Date of death</span>
                 <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
@@ -1926,7 +1974,7 @@ export function PersonInspector({
               )}
             </div>
           )}
-          <div className="person-share-summary">
+          <div className="person-share-summary" data-person-section="property">
             <div className="person-share-heading">
               <span>
                 Estimated property share
@@ -1974,6 +2022,13 @@ export function PersonInspector({
                   ? `Estimated value ${money.format(estimatedPropertyValue)}`
                   : "Enter the initial owner and property selling price to calculate a value."}
               </small>
+            </div>
+            <div className="person-final-withholding-tax">
+              <span>Final Withholding Tax</span>
+              <span>
+                <strong>{finalWithholdingTaxLabel}</strong>
+                <small>{finalWithholdingTaxNote}</small>
+              </span>
             </div>
           </div>
           {linkedPartners.length > 0 && (

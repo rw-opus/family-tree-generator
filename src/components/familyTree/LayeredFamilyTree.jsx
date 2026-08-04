@@ -92,7 +92,7 @@ function PartnerLink({ edge }) {
  * Draws the whole family graph on absolute generation rows. Geometry comes from
  * treeLayout; this component only paints it and keeps the cards interactive.
  */
-export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }) {
+export function LayeredFamilyTree({ people = [], renderCard, emptyState = null, zoom = 100 }) {
   const treeRef = useRef(null);
   const [nodeSizes, setNodeSizes] = useState({});
   const layout = useMemo(
@@ -151,42 +151,69 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
 
   if (!layout.nodes.length) return emptyState;
 
+  const scale = Math.min(2, Math.max(0.1, Number(zoom) / 100 || 1));
+
   return (
     <div
-      className="layered-family-tree"
-      ref={treeRef}
-      style={{ width: `${layout.width}px`, height: `${layout.height}px` }}
-      data-generation-count={layout.generationCount}
+      className="layered-family-tree-viewport"
+      style={{
+        width: `${Math.ceil(layout.width * scale)}px`,
+        height: `${Math.ceil(layout.height * scale)}px`,
+      }}
     >
-      <svg
-        className="tree-edge-layer"
-        width={layout.width}
-        height={layout.height}
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        aria-hidden="true"
+      <div
+        className="layered-family-tree"
+        ref={treeRef}
+        style={{
+          width: `${layout.width}px`,
+          height: `${layout.height}px`,
+          transform: `scale(${scale})`,
+        }}
+        data-generation-count={layout.generationCount}
       >
-        {layout.edges
-          .filter((edge) => edge.kind === "partner")
-          .map((edge) => (
-            <PartnerLink edge={edge} key={edge.id} />
-          ))}
+        <svg
+          className="tree-edge-layer"
+          width={layout.width}
+          height={layout.height}
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          aria-hidden="true"
+        >
+          {layout.edges
+            .filter((edge) => edge.kind === "partner")
+            .map((edge) => (
+              <PartnerLink edge={edge} key={edge.id} />
+            ))}
 
-        {layout.edges
-          .filter((edge) => edge.kind === "stem")
-          .map((edge) => (
-            <path className={edgeClassName(edge)} key={edge.id} d={stemPath(edge)} />
-          ))}
+          {layout.edges
+            .filter((edge) => edge.kind === "stem")
+            .map((edge) => (
+              <path className={edgeClassName(edge)} key={edge.id} d={stemPath(edge)} />
+            ))}
 
-        {layout.edges
-          .filter((edge) => edge.kind === "sibling-bar")
-          .map((edge) => {
-            if (edge.segments?.length > 1) {
-              const path = edge.segments
-                .map((segment) => `M ${segment.from.x} ${segment.from.y} H ${segment.to.x}`)
-                .join(" ");
-              return <path className={edgeClassName(edge)} key={edge.id} d={path} />;
-            }
-            return (
+          {layout.edges
+            .filter((edge) => edge.kind === "sibling-bar")
+            .map((edge) => {
+              if (edge.segments?.length > 1) {
+                const path = edge.segments
+                  .map((segment) => `M ${segment.from.x} ${segment.from.y} H ${segment.to.x}`)
+                  .join(" ");
+                return <path className={edgeClassName(edge)} key={edge.id} d={path} />;
+              }
+              return (
+                <line
+                  className={edgeClassName(edge)}
+                  key={edge.id}
+                  x1={edge.from.x}
+                  y1={edge.from.y}
+                  x2={edge.to.x}
+                  y2={edge.to.y}
+                />
+              );
+            })}
+
+          {layout.edges
+            .filter((edge) => edge.kind === "descent")
+            .map((edge) => (
               <line
                 className={edgeClassName(edge)}
                 key={edge.id}
@@ -195,44 +222,31 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null }
                 x2={edge.to.x}
                 y2={edge.to.y}
               />
-            );
-          })}
+            ))}
+        </svg>
 
-        {layout.edges
-          .filter((edge) => edge.kind === "descent")
-          .map((edge) => (
-            <line
-              className={edgeClassName(edge)}
-              key={edge.id}
-              x1={edge.from.x}
-              y1={edge.from.y}
-              x2={edge.to.x}
-              y2={edge.to.y}
-            />
-          ))}
-      </svg>
-
-      {layout.nodes.map((node) => (
-        <div
-          className={`tree-node ${node.bornOutsideMarriage ? "born-outside-marriage" : ""}`}
-          key={node.id}
-          data-family-generation={node.generation}
-          data-tree-person-id={node.id}
-          style={{
-            left: `${node.x}px`,
-            top: `${node.y}px`,
-            width: `${node.width}px`,
-            minHeight: `${node.height}px`,
-          }}
-        >
-          {node.bornOutsideMarriage && (
-            <span className="outside-marriage-badge" title="Born outside marriage">
-              nm
-            </span>
-          )}
-          {renderCard(node.person)}
-        </div>
-      ))}
+        {layout.nodes.map((node) => (
+          <div
+            className={`tree-node ${node.bornOutsideMarriage ? "born-outside-marriage" : ""}`}
+            key={node.id}
+            data-family-generation={node.generation}
+            data-tree-person-id={node.id}
+            style={{
+              left: `${node.x}px`,
+              top: `${node.y}px`,
+              width: `${node.width}px`,
+              minHeight: `${node.height}px`,
+            }}
+          >
+            {node.bornOutsideMarriage && (
+              <span className="outside-marriage-badge" title="Born outside marriage">
+                nm
+              </span>
+            )}
+            {renderCard(node.person)}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

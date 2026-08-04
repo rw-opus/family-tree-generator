@@ -27,6 +27,7 @@ import {
 } from "./domain/personCardDisplay.js";
 import {
   buildPropertyVendorTaxReport,
+  buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
 } from "./domain/propertyVendorTax.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
@@ -159,18 +160,24 @@ const normaliseTree = (value) => {
   };
 };
 
-const initialTree = () => {
+const initialTree = (seed = {}) => {
   const caseId = crypto.randomUUID();
-  const rootPerson = createPerson();
+  const title = String(seed.title || "").trim() || "New family";
+  const rootPerson = {
+    ...createPerson(),
+    givenNames: String(seed.givenNames || "").trim(),
+    surname: String(seed.surname || "").trim(),
+    sex: String(seed.sex || "").trim(),
+  };
   return normaliseTree({
     id: caseId,
     createdAt: new Date().toISOString(),
-    title: "New family",
+    title,
     people: [rootPerson],
     familyGroups: [
       {
         id: `${caseId}:family-group:1`,
-        title: "New family",
+        title,
         rootPersonId: rootPerson.id,
         personIds: [rootPerson.id],
       },
@@ -304,6 +311,16 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     () =>
       buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties),
     [activeProperty, currentTree.outsideParties, currentTree.people],
+  );
+  const taxCalculationReport = useMemo(
+    () =>
+      buildTaxCalculationReport(
+        activeProperty,
+        currentTree.people,
+        currentTree.outsideParties,
+        propertyReport,
+      ),
+    [activeProperty, currentTree.outsideParties, currentTree.people, propertyReport],
   );
   const ownershipByPerson = useMemo(() => {
     if (!propertyReport.startingOwnership.isComplete) return {};
@@ -581,7 +598,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setStatus(`Could not create family: ${error.message}`);
   };
 
-  const createNewTree = async () => {
+  const createNewTree = async (seed = {}) => {
     if (
       !cloudMode &&
       localRecoveryBlocked &&
@@ -589,13 +606,13 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         "The previous local workspace is unreadable. A recovery copy has been kept. Create a new workspace and replace the active saved data?",
       )
     ) {
-      return;
+      return false;
     }
     if (!cloudMode && localRecoveryBlocked) setLocalRecoveryBlocked(false);
-    const nextTree = initialTree();
+    const nextTree = initialTree(seed);
     if (!cloudMode) {
       openCreatedTree(nextTree, { openDashboard: true });
-      return;
+      return true;
     }
     setStatus("Creating secure family tree...");
     try {
@@ -604,8 +621,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       openCreatedTree(saved, { openDashboard: true });
       await refreshTreeEntitlement();
       setStatus("New family created and saved securely.");
+      return true;
     } catch (error) {
       await handleCreationError(error);
+      return false;
     }
   };
 
@@ -770,12 +789,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   const removeTree = async (treeId) => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
-    if (
-      !selectedTree ||
-      !window.confirm(`Remove ${selectedTree.title || "this family"}? This cannot be undone.`)
-    ) {
-      return;
-    }
+    if (!selectedTree) return false;
 
     const remainingTrees = treeOptions.filter((item) => item.id !== treeId);
     const removedCurrentTree = treeId === currentTree.id;
@@ -789,12 +803,13 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         activateCase(initialTree());
       }
     }
-    if (!cloudMode) return;
+    if (!cloudMode) return true;
 
     setStatus("Removing family...");
     try {
       await removeFamilyTree(treeId, session.user.id);
       setStatus("Family removed. Its free or paid generation credit is not restored.");
+      return true;
     } catch (error) {
       setTrees((items) => upsertWorkspaceTree(items, selectedTree));
       if (removedCurrentTree) {
@@ -802,6 +817,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         activateCase(selectedTree);
       }
       setStatus(`Could not remove family: ${error.message}`);
+      return false;
     }
   };
 
@@ -971,6 +987,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
             outsideParties={currentTree.outsideParties}
             singleProperty
             section={workspaceView}
+            onSelectPerson={(personId) => {
+              setWorkspaceView("tree");
+              selectPerson(personId);
+            }}
             onChange={updatePrimaryPropertyWorkspace}
           />
         </section>
@@ -997,6 +1017,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 outsideParties={currentTree.outsideParties}
                 familyPersonIds={activeFamilyGroup?.personIds || []}
                 properties={activeProperties}
+                vendorReport={propertyReport}
+                taxCalculationReport={taxCalculationReport}
                 ownershipByPerson={ownershipByPerson}
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
                 hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
@@ -1042,6 +1064,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}
                 onSelectPerson={selectPerson}
+                onFocusPerson={focusPersonOnTree}
                 zoom={zoom}
                 onZoomChange={updateZoom}
                 personCardFields={
@@ -1094,6 +1117,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
                 propertyReport={propertyReport}
+                taxReport={taxCalculationReport}
                 cardFields={currentTree.settings.personCardFields}
                 onCardFieldsChange={(personCardFields) =>
                   setTree({
@@ -1116,6 +1140,12 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   setPropertyPanelExpanded(false);
                   setWorkspaceView("property");
                 }}
+                onOpenTax={() => {
+                  setTraceOwnershipSnapshot(null);
+                  setPropertyPanelExpanded(false);
+                  setWorkspaceView("tax");
+                }}
+                onSelectPerson={selectPerson}
               />
             </div>
           )}

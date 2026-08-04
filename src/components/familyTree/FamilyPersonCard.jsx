@@ -67,6 +67,8 @@ export function FamilyPersonCard({
   stackedLegalDetails = false,
   generation = 0,
   isWidestGeneration = false,
+  tabIndex = -1,
+  onKeyDown,
 }) {
   const isDeceased = isDeceasedPerson(person, variant);
   const incompleteCausaMortis = (causaMortisCoverageByPerson[person.id] || []).filter(
@@ -136,6 +138,8 @@ export function FamilyPersonCard({
       data-widest-generation={isWidestGeneration ? "true" : undefined}
       aria-label={`Open ${accessibleName}`}
       onClick={() => onSelectPerson?.(person.id)}
+      onKeyDown={onKeyDown}
+      tabIndex={tabIndex}
       className={classNames}
       style={{
         "--family-node-width": `${stackedLegalDetails ? 112 : compactNodeWidth(name)}px`,

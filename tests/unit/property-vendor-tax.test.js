@@ -75,6 +75,7 @@ describe("property vendor tax reports", () => {
     });
     expect(report.vendors[0].rows[0]).toMatchObject({
       provenance: "Inherited from Joseph Borg",
+      provenancePersonId: "deceased",
       declaredValue: 100000,
       difference: 20000,
       selectedMethod: { key: "increase-12" },

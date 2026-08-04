@@ -3,15 +3,18 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FileSpreadsheet,
   GitBranch,
   Landmark,
   Play,
+  ReceiptText,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { buildSuccessionTrace } from "../domain/successionTrace.js";
+import { downloadVendorTaxSpreadsheet } from "../domain/vendorTaxExport.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PersonCardDisplayControl } from "./PersonCardDisplayControl.jsx";
 import { SuccessionHistoryDialog } from "./SuccessionHistoryDialog.jsx";
@@ -22,8 +25,10 @@ const money = new Intl.NumberFormat("en-MT", {
   maximumFractionDigits: 2,
 });
 
-const shareLabel = (share) => {
-  const fraction = approximateFraction(Number(share) || 0);
+const shareLabel = (share, exactFraction = null) => {
+  const fraction = exactFraction?.denominator
+    ? exactFraction
+    : approximateFraction(Number(share) || 0);
   return `${fraction.numerator}/${fraction.denominator} · ${(
     (Number(share) || 0) * 100
   ).toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
@@ -36,12 +41,15 @@ export function TreePropertyPanel({
   people,
   outsideParties,
   propertyReport,
+  taxReport = null,
   cardFields,
   onCardFieldsChange,
   onPropertyChange,
   onPropertySelect,
   onFocusEvent,
   onOpenProperty,
+  onOpenTax,
+  onSelectPerson,
   expanded: controlledExpanded,
   onExpandedChange,
 }) {
@@ -58,6 +66,11 @@ export function TreePropertyPanel({
   const saleValue = Math.max(0, Number(property.saleValue) || 0);
   const startingStatus = propertyReport.startingOwnership;
   const currentOwners = propertyReport.ledger?.owners || [];
+  const personIds = useMemo(() => new Set(people.map((person) => person.id)), [people]);
+  const taxByOwnerId = useMemo(
+    () => new Map((taxReport?.vendors || []).map((vendor) => [vendor.id, vendor])),
+    [taxReport],
+  );
 
   useEffect(() => {
     if (traceIndex >= traceEvents.length) setTraceIndex(traceEvents.length ? 0 : -1);
@@ -92,7 +105,10 @@ export function TreePropertyPanel({
 
   return (
     <>
-      <aside className={`tree-property-panel ${expanded ? "expanded" : "collapsed"}`}>
+      <aside
+        className={`tree-property-panel ${expanded ? "expanded" : "collapsed"}`}
+        aria-label="Ownership and Tax Panel"
+      >
         <button
           type="button"
           className="tree-property-panel-toggle"
@@ -101,7 +117,7 @@ export function TreePropertyPanel({
         >
           <span>
             <Landmark size={17} />
-            <strong>Property &amp; Ownership</strong>
+            <strong>Ownership and Tax Panel</strong>
           </span>
           <span className="tree-property-panel-price">
             {saleValue ? money.format(saleValue) : "Set selling price"}
@@ -183,19 +199,51 @@ export function TreePropertyPanel({
               </summary>
               <div className="tree-current-owners">
                 {currentOwners.length ? (
-                  currentOwners.map((owner) => (
-                    <div key={owner.id}>
-                      <span>{owner.name}</span>
-                      <span>
-                        <b>{shareLabel(owner.share)}</b>
-                        <small>
-                          {saleValue ? money.format(saleValue * owner.share) : "No value"}
-                        </small>
-                      </span>
-                    </div>
-                  ))
+                  currentOwners.map((owner) => {
+                    const vendorTax = taxByOwnerId.get(owner.id);
+                    const ownerPersonId = owner.personId || owner.id;
+                    return (
+                      <div key={owner.id}>
+                        {personIds.has(ownerPersonId) && onSelectPerson ? (
+                          <button
+                            type="button"
+                            className="tree-person-link"
+                            aria-label={`Open ${owner.name} person details`}
+                            onClick={() => onSelectPerson(ownerPersonId)}
+                          >
+                            {owner.name}
+                          </button>
+                        ) : (
+                          <span>{owner.name}</span>
+                        )}
+                        <span>
+                          <b>{shareLabel(owner.share, owner.shareFraction)}</b>
+                          <small>
+                            Value {saleValue ? money.format(saleValue * owner.share) : "not set"}
+                          </small>
+                          <small className={vendorTax?.tax == null ? "pending" : "calculated"}>
+                            Tax {vendorTax?.tax == null ? "pending" : money.format(vendorTax.tax)}
+                          </small>
+                        </span>
+                      </div>
+                    );
+                  })
                 ) : (
                   <p>Complete the initial shares to calculate the current title.</p>
+                )}
+                {currentOwners.length > 0 && (
+                  <footer className="tree-current-owner-tax-actions">
+                    <button type="button" onClick={onOpenTax || onOpenProperty}>
+                      <ReceiptText size={14} /> View full tax workings
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!taxReport?.vendors?.length}
+                      onClick={() => downloadVendorTaxSpreadsheet(taxReport, property, traceEvents)}
+                    >
+                      <FileSpreadsheet size={14} /> Download one-sheet Excel
+                    </button>
+                  </footer>
                 )}
               </div>
             </details>
@@ -263,7 +311,17 @@ export function TreePropertyPanel({
                     <span>
                       {traceEvent.date ? isoDateToDisplay(traceEvent.date) : "Undated event"}
                     </span>
-                    <strong>{traceEvent.title}</strong>
+                    {traceEvent.personId && personIds.has(traceEvent.personId) && onSelectPerson ? (
+                      <button
+                        type="button"
+                        className="tree-person-link trace-person-link"
+                        onClick={() => onSelectPerson(traceEvent.personId)}
+                      >
+                        {traceEvent.title}
+                      </button>
+                    ) : (
+                      <strong>{traceEvent.title}</strong>
+                    )}
                     <p>{traceEvent.description}</p>
                   </div>
                 </div>
@@ -285,7 +343,7 @@ export function TreePropertyPanel({
             </section>
 
             <button type="button" className="tree-property-open-button" onClick={onOpenProperty}>
-              <GitBranch size={15} /> Open property workspace
+              <GitBranch size={15} /> Open property setup
             </button>
           </div>
         )}
@@ -294,6 +352,7 @@ export function TreePropertyPanel({
         <SuccessionHistoryDialog
           property={property}
           events={traceEvents}
+          onSelectPerson={onSelectPerson}
           onClose={() => setHistoryOpen(false)}
         />
       )}

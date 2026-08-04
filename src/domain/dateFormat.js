@@ -1,5 +1,5 @@
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const DISPLAY_DATE_PATTERN = /^(\d{2})-(\d{2})-(\d{4})$/;
+const DISPLAY_DATE_PATTERN = /^(\d{2})[\/-](\d{2})[\/-](\d{4})$/;
 
 const isLeapYear = (year) => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 
@@ -25,19 +25,20 @@ export function isValidIsoDate(value) {
 
 /**
  * Converts an ISO storage date (YYYY-MM-DD) to its UI representation
- * (DD-MM-YYYY). Invalid or empty values are displayed as an empty field.
+ * (DD/MM/YYYY). Invalid or empty values are displayed as an empty field.
  */
 export function isoDateToDisplay(value) {
   const text = String(value || "");
   if (!isValidIsoDate(text)) return "";
 
   const [, year, month, day] = ISO_DATE_PATTERN.exec(text);
-  return `${day}-${month}-${year}`;
+  return `${day}/${month}/${year}`;
 }
 
 /**
- * Converts a DD-MM-YYYY display date to ISO storage format. An empty field
- * returns an empty string; an incomplete or invalid date returns null.
+ * Converts a DD/MM/YYYY display date to ISO storage format. Older saved
+ * DD-MM-YYYY values remain accepted for backwards compatibility. An empty
+ * field returns an empty string; an incomplete or invalid date returns null.
  */
 export function displayDateToIso(value) {
   const text = String(value || "").trim();
@@ -57,7 +58,7 @@ export function displayDateToIso(value) {
 
 /**
  * Keeps date entry mobile-friendly by accepting digits, slashes, dots or
- * hyphens and presenting up to eight digits as DD-MM-YYYY.
+ * hyphens and presenting up to eight digits as DD/MM/YYYY.
  */
 export function formatDateDraft(value) {
   const text = String(value || "").trim();
@@ -65,6 +66,6 @@ export function formatDateDraft(value) {
 
   const digits = text.replace(/\D/g, "").slice(0, 8);
   if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }

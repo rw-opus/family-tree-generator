@@ -76,6 +76,19 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
+  it("gives a zoomed relational tree an explicit full scroll footprint", () => {
+    renderCanvas({ people: family(), zoom: 175 });
+
+    const footprint = container.querySelector(".layered-family-tree-viewport");
+    const tree = container.querySelector(".layered-family-tree");
+    const unscaledWidth = parseFloat(tree.style.width);
+    const unscaledHeight = parseFloat(tree.style.height);
+
+    expect(tree.style.transform).toBe("scale(1.75)");
+    expect(parseFloat(footprint.style.width)).toBe(Math.ceil(unscaledWidth * 1.75));
+    expect(parseFloat(footprint.style.height)).toBe(Math.ceil(unscaledHeight * 1.75));
+  });
+
   it("keeps controls outside the pannable tree and centres cards by scrolling only the chart", () => {
     const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
     const originalScrollIntoView = Object.getOwnPropertyDescriptor(
@@ -129,6 +142,64 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll("[data-person-id]")).toHaveLength(7);
   });
 
+  it("provides tree navigation controls with one keyboard tab stop", () => {
+    const onZoomChange = vi.fn();
+    renderCanvas({
+      people: family(),
+      selectedPersonId: "fa",
+      onZoomChange,
+    });
+
+    expect(container.textContent).toContain("Fit tree");
+    expect(container.textContent).toContain("Top");
+    expect(container.textContent).toContain("Fit branch");
+    expect(container.textContent).toContain("Centre");
+    const cards = [...container.querySelectorAll("[data-person-id]")];
+    expect(cards.filter((card) => card.tabIndex === 0)).toHaveLength(1);
+    expect(container.querySelector('[data-person-id="fa"]').tabIndex).toBe(0);
+    expect(cards.filter((card) => card.tabIndex === -1)).toHaveLength(cards.length - 1);
+
+    const fitTree = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Fit tree",
+    );
+    act(() => fitTree.click());
+    expect(onZoomChange).toHaveBeenCalledOnce();
+
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    scrollRegion.scrollTop = 240;
+    const top = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Top",
+    );
+    act(() => top.click());
+    expect(scrollRegion.scrollTop).toBe(0);
+  });
+
+  it("pans the tree vertically with one finger on mobile", () => {
+    renderCanvas({ people: family() });
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    scrollRegion.scrollLeft = 80;
+    scrollRegion.scrollTop = 120;
+
+    const touchEvent = (type, touches) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "touches", { value: touches });
+      return event;
+    };
+
+    act(() => {
+      scrollRegion.dispatchEvent(
+        touchEvent("touchstart", [{ identifier: 1, clientX: 100, clientY: 100 }]),
+      );
+      scrollRegion.dispatchEvent(
+        touchEvent("touchmove", [{ identifier: 1, clientX: 80, clientY: 35 }]),
+      );
+      scrollRegion.dispatchEvent(touchEvent("touchend", []));
+    });
+
+    expect(scrollRegion.scrollLeft).toBe(100);
+    expect(scrollRegion.scrollTop).toBe(185);
+  });
+
   it("shows a person's surname even when it matches the father's", () => {
     renderCanvas({ people: family() });
 
@@ -162,7 +233,7 @@ describe("FamilyTreeCanvas", () => {
     let details = [
       ...container.querySelectorAll('[data-person-id="testator"] .family-node-detail'),
     ].map((element) => element.textContent.trim());
-    expect(details).toContain("Will 18.07.2012");
+    expect(details).toContain("Will 18/07/2012");
     expect(details).toContain("Not. Ivan Barbara");
     expect(container.textContent).not.toContain("Publishing Notary");
 
@@ -176,7 +247,7 @@ describe("FamilyTreeCanvas", () => {
     details = [
       ...container.querySelectorAll('[data-person-id="testator"] .family-node-detail'),
     ].map((element) => element.textContent.trim());
-    expect(details).toContain("Will 15.10.1981");
+    expect(details).toContain("Will 15/10/1981");
     expect(details).toContain("UK will");
   });
 
@@ -217,10 +288,10 @@ describe("FamilyTreeCanvas", () => {
     const card = container.querySelector('[data-person-id="testator"]');
     expect(card.textContent).toContain("1/2");
     expect(card.textContent).not.toContain("50%");
-    expect(card.textContent).toContain("d. 18-07-2020");
-    expect(card.textContent).toContain("Will 18.07.2012");
+    expect(card.textContent).toContain("d. 18/07/2020");
+    expect(card.textContent).toContain("Will 18/07/2012");
     expect(card.textContent).toContain("Not. Ivan Barbara");
-    expect(card.textContent).toContain("CM 20-08-2020");
+    expect(card.textContent).toContain("CM 20/08/2020");
     expect(card.textContent).toContain("Not. Maria Vella");
 
     act(() =>
@@ -326,7 +397,7 @@ describe("FamilyTreeCanvas", () => {
     });
 
     const card = container.querySelector('[data-person-id="person-0"]');
-    expect(card.textContent).not.toContain("d. 18-07-2020");
+    expect(card.textContent).not.toContain("d. 18/07/2020");
     expect(card.textContent).not.toContain("Will");
     expect(card.textContent).not.toContain("CM");
   });

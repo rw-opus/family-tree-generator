@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App, caseActivationState } from "../../src/App.jsx";
 import { saveLocalWorkspace } from "../../src/services/localWorkspace.js";
 
@@ -103,6 +103,32 @@ describe("App local recovery", () => {
     const openButton = container.querySelector(".family-name-button");
     expect(openButton).not.toBeNull();
     act(() => openButton.click());
+  };
+
+  const createFamily = async () => {
+    const create = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Create new family"),
+    );
+    act(() => create.click());
+    const dialog = container.querySelector('[role="dialog"]');
+    const write = (labelText, value) => {
+      const label = [...dialog.querySelectorAll("label")].find((entry) =>
+        entry.textContent.includes(labelText),
+      );
+      const input = label.querySelector("input");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => {
+      write("Family name", "New family");
+      write("Given name", "First");
+      write("Surname", "Person");
+      dialog.querySelector('input[value="Other"]').click();
+    });
+    await act(async () => {
+      dialog.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
   };
 
   beforeEach(() => {
@@ -258,12 +284,9 @@ describe("App local recovery", () => {
     expect(container.textContent).not.toContain("Owners & transfers");
   });
 
-  it("lets the tree zoom out to a 25% overview", () => {
+  it("lets the tree zoom out to a 25% overview", async () => {
     act(() => root.render(<App />));
-    const create = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Create new family"),
-    );
-    act(() => create.click());
+    await createFamily();
     const slider = container.querySelector('input[aria-label="Tree zoom"]');
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(slider, "25");
@@ -334,7 +357,7 @@ describe("App local recovery", () => {
     expect(container.querySelector(".tree-property-panel")).not.toBeNull();
     act(() => container.querySelector(".tree-property-panel-toggle").click());
     const openProperty = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Open property workspace"),
+      button.textContent.includes("Open property setup"),
     );
     expect(openProperty).not.toBeUndefined();
     act(() => openProperty.click());
@@ -353,27 +376,25 @@ describe("App local recovery", () => {
     expect(container.querySelector(".tree-property-panel")).not.toBeNull();
   });
 
-  it("does not create a replacement family after the last family is deleted", () => {
+  it("does not create a replacement family after the last family is deleted", async () => {
     act(() => root.render(<App />));
     expect(container.querySelectorAll(".family-name-button")).toHaveLength(0);
 
-    const create = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Create new family"),
-    );
-    act(() => create.click());
+    await createFamily();
     const home = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Back to Home"),
     );
     act(() => home.click());
     expect(container.querySelectorAll(".family-name-button")).toHaveLength(1);
 
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const remove = container.querySelector('button[aria-label="Delete New family"]');
     act(() => remove.click());
+    const confirm = [...container.querySelectorAll('[role="alertdialog"] button')].find((button) =>
+      button.textContent.includes("Delete family"),
+    );
+    await act(async () => confirm.click());
 
-    expect(confirm).toHaveBeenCalledOnce();
     expect(container.querySelectorAll(".family-name-button")).toHaveLength(0);
     expect(container.textContent).toContain("No families yet");
-    confirm.mockRestore();
   });
 });

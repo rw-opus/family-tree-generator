@@ -36,7 +36,7 @@ describe("multiple wills", () => {
   });
 
   it("formats will dates with dots for family-tree cards", () => {
-    expect(displayWillDate("2012-07-18")).toBe("18.07.2012");
+    expect(displayWillDate("2012-07-18")).toBe("18/07/2012");
   });
 
   it("mirrors the operative will into the legacy compatibility fields", () => {

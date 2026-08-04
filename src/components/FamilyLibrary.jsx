@@ -51,6 +51,16 @@ export function FamilyLibrary({
   onDownloadBackup,
 }) {
   const [query, setQuery] = useState("");
+  const [creationOpen, setCreationOpen] = useState(false);
+  const [creationBusy, setCreationBusy] = useState(false);
+  const [creationDraft, setCreationDraft] = useState({
+    title: "",
+    givenNames: "",
+    surname: "",
+    sex: "",
+  });
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
   const [importStatus, setImportStatus] = useState("");
@@ -61,6 +71,43 @@ export function FamilyLibrary({
   );
   const signedIn = Boolean(session);
   const allowanceLoading = commercialMode && !entitlement;
+
+  const closeCreation = () => {
+    if (creationBusy) return;
+    setCreationOpen(false);
+    setCreationDraft({ title: "", givenNames: "", surname: "", sex: "" });
+  };
+
+  const submitCreation = async (event) => {
+    event.preventDefault();
+    if (creationBusy) return;
+    setCreationBusy(true);
+    try {
+      const created = await onCreate({
+        title: creationDraft.title.trim(),
+        givenNames: creationDraft.givenNames.trim(),
+        surname: creationDraft.surname.trim(),
+        sex: creationDraft.sex,
+      });
+      if (created !== false) {
+        setCreationOpen(false);
+        setCreationDraft({ title: "", givenNames: "", surname: "", sex: "" });
+      }
+    } finally {
+      setCreationBusy(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete || deleteBusy) return;
+    setDeleteBusy(true);
+    try {
+      const removed = await onRemove(pendingDelete.id);
+      if (removed !== false) setPendingDelete(null);
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   const startRename = (tree) => {
     setRenamingId(tree.id);
@@ -152,14 +199,16 @@ export function FamilyLibrary({
               </>
             )}
           </dl>
-          {signedIn && (
-            <button type="button" className="library-account-action" onClick={onSignOut}>
-              <LogOut size={15} /> Sign out
+          <div className="library-account-actions">
+            {signedIn && (
+              <button type="button" className="library-account-action" onClick={onSignOut}>
+                <LogOut size={15} /> Sign out
+              </button>
+            )}
+            <button type="button" className="library-account-action" onClick={onDownloadBackup}>
+              <Download size={15} /> Download workspace backup
             </button>
-          )}
-          <button type="button" className="library-account-action" onClick={onDownloadBackup}>
-            <Download size={15} /> Download workspace backup
-          </button>
+          </div>
           {commercialMode && (
             <div
               className={`tree-pricing-card ${
@@ -226,7 +275,7 @@ export function FamilyLibrary({
               <button
                 type="button"
                 className="library-primary-button"
-                onClick={onCreate}
+                onClick={() => setCreationOpen(true)}
                 disabled={!canCreate}
                 title={canCreate ? "Create new family" : "Buy a tree credit to continue"}
               >
@@ -332,7 +381,7 @@ export function FamilyLibrary({
                   <button
                     type="button"
                     className="library-row-action danger"
-                    onClick={() => onRemove(tree.id)}
+                    onClick={() => setPendingDelete(tree)}
                     title={`Delete ${tree.title || "family"}`}
                     aria-label={`Delete ${tree.title || "family"}`}
                   >
@@ -358,6 +407,166 @@ export function FamilyLibrary({
           )}
         </section>
       </div>
+
+      {creationOpen && (
+        <div className="library-dialog-backdrop" role="presentation">
+          <form
+            className="library-dialog family-creation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-family-title"
+            onSubmit={submitCreation}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeCreation();
+            }}
+          >
+            <div className="library-dialog-heading">
+              <div>
+                <p className="library-kicker">New family</p>
+                <h2 id="create-family-title">Set up the first person</h2>
+              </div>
+              <button
+                type="button"
+                className="library-icon-button"
+                onClick={closeCreation}
+                aria-label="Cancel creating family"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="library-dialog-intro">
+              Name the family and add its first person. You can add parents, partners, children and
+              other details after creation.
+            </p>
+            <label className="library-dialog-field full-width">
+              <span>Family name</span>
+              <input
+                autoFocus
+                required
+                value={creationDraft.title}
+                onChange={(event) =>
+                  setCreationDraft((current) => ({ ...current, title: event.target.value }))
+                }
+                placeholder="e.g. Borg family"
+              />
+            </label>
+            <div className="library-dialog-fields">
+              <label className="library-dialog-field">
+                <span>Given name(s)</span>
+                <input
+                  required
+                  value={creationDraft.givenNames}
+                  onChange={(event) =>
+                    setCreationDraft((current) => ({
+                      ...current,
+                      givenNames: event.target.value,
+                    }))
+                  }
+                  autoComplete="off"
+                />
+              </label>
+              <label className="library-dialog-field">
+                <span>Surname</span>
+                <input
+                  required
+                  value={creationDraft.surname}
+                  onChange={(event) =>
+                    setCreationDraft((current) => ({ ...current, surname: event.target.value }))
+                  }
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+            <fieldset className="library-sex-options">
+              <legend>Sex</legend>
+              {["Female", "Male", "Other"].map((sex) => (
+                <label key={sex}>
+                  <input
+                    type="radio"
+                    name="new-family-sex"
+                    value={sex}
+                    checked={creationDraft.sex === sex}
+                    onChange={(event) =>
+                      setCreationDraft((current) => ({ ...current, sex: event.target.value }))
+                    }
+                    required
+                  />
+                  <span>{sex}</span>
+                </label>
+              ))}
+            </fieldset>
+            {commercialMode && (
+              <p className="library-credit-notice">
+                {entitlement?.freeTreesRemaining > 0
+                  ? "Creating this family uses one of your remaining free trees."
+                  : "Creating this family uses one paid tree credit."}{" "}
+                Deleting it later will not restore that credit.
+              </p>
+            )}
+            <div className="library-dialog-actions">
+              <button type="button" className="library-secondary-button" onClick={closeCreation}>
+                Cancel
+              </button>
+              <button type="submit" className="library-primary-button" disabled={creationBusy}>
+                <FolderPlus size={16} /> {creationBusy ? "Creating..." : "Create family"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {pendingDelete && (
+        <div className="library-dialog-backdrop" role="presentation">
+          <section
+            className="library-dialog library-delete-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-family-title"
+            aria-describedby="delete-family-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !deleteBusy) setPendingDelete(null);
+            }}
+          >
+            <div className="library-dialog-heading">
+              <div>
+                <p className="library-kicker">Delete family</p>
+                <h2 id="delete-family-title">Delete {pendingDelete.title || "this family"}?</h2>
+              </div>
+              <button
+                type="button"
+                className="library-icon-button"
+                onClick={() => setPendingDelete(null)}
+                aria-label="Cancel deleting family"
+                disabled={deleteBusy}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p id="delete-family-description" className="library-dialog-intro">
+              This permanently removes the family and cannot be undone.
+              {commercialMode ? " Its free or paid tree credit will not be restored." : ""}
+            </p>
+            <div className="library-dialog-actions">
+              <button
+                type="button"
+                className="library-secondary-button"
+                onClick={() => setPendingDelete(null)}
+                disabled={deleteBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="library-danger-button"
+                onClick={confirmDelete}
+                disabled={deleteBusy}
+              >
+                <Trash2 size={16} /> {deleteBusy ? "Deleting..." : "Delete family"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

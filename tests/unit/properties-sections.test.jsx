@@ -144,6 +144,43 @@ describe("Properties section views", () => {
     });
   });
 
+  it("opens a linked person's details from ownership and tax labels", () => {
+    const onSelectPerson = vi.fn();
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          section="ownership"
+          onSelectPerson={onSelectPerson}
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector(".ownership-person-link").click());
+    expect(onSelectPerson).toHaveBeenLastCalledWith("owner");
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          section="tax"
+          onSelectPerson={onSelectPerson}
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector(".tax-person-link").click());
+    expect(onSelectPerson).toHaveBeenLastCalledWith("owner");
+  });
+
   it("shows a manually assessed company vendor as read-only information", () => {
     act(() =>
       root.render(
@@ -251,7 +288,7 @@ describe("Properties section views", () => {
     expect(container.textContent).not.toContain("Causa mortis value for this fraction");
     expect(container.textContent).not.toContain("Legal basis of acquisition value");
     expect(container.textContent).not.toContain("Use the accumulated value");
-    expect(container.textContent).toContain("d. 24-11-1992");
+    expect(container.textContent).toContain("d. 24/11/1992");
     expect(container.querySelector("select")).toBeNull();
   });
 

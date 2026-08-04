@@ -464,6 +464,39 @@ describe("buildFamilyTreeLayout", () => {
       first.nodes.map((node) => [node.id, node.x, node.y]),
     );
   });
+
+  it("centres parents over their only child's card instead of the child's descendants", () => {
+    const people = [
+      person("father", { spouseIds: ["mother"] }),
+      person("mother", { spouseIds: ["father"] }),
+      person("edgar", {
+        fatherId: "father",
+        motherId: "mother",
+        spouseIds: ["giovanna"],
+      }),
+      person("giovanna", { spouseIds: ["edgar"] }),
+      person("child", { fatherId: "edgar", motherId: "giovanna" }),
+    ];
+    const layout = buildFamilyTreeLayout(people);
+    const cards = nodesById(layout);
+    const parentUnion = layout.unions.find((union) => union.childIds.includes("edgar"));
+    const edgarCentre = cards.get("edgar").x + cards.get("edgar").width / 2;
+    const stem = layout.edges.find(
+      (edge) => edge.kind === "stem" && edge.unionId === parentUnion.id,
+    );
+    const descent = layout.edges.find(
+      (edge) =>
+        edge.kind === "descent" && edge.unionId === parentUnion.id && edge.childId === "edgar",
+    );
+
+    expect(parentUnion.markerX).toBe(edgarCentre);
+    expect(parentUnion.barLeft).toBe(edgarCentre);
+    expect(parentUnion.barRight).toBe(edgarCentre);
+    expect(stem.from.x).toBe(edgarCentre);
+    expect(stem.to.x).toBe(edgarCentre);
+    expect(descent.from.x).toBe(edgarCentre);
+    expect(descent.to.x).toBe(edgarCentre);
+  });
 });
 
 describe("a person married more than once", () => {

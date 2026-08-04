@@ -29,12 +29,12 @@ describe("DateInput", () => {
     });
   };
 
-  it("displays an ISO value as DD-MM-YYYY", () => {
+  it("displays an ISO value as DD/MM/YYYY", () => {
     act(() => root.render(<DateInput value="2026-07-31" onChange={vi.fn()} />));
 
     const input = container.querySelector("input");
-    expect(input.value).toBe("31-07-2026");
-    expect(input.placeholder).toBe("dd-mm-yyyy");
+    expect(input.value).toBe("31/07/2026");
+    expect(input.placeholder).toBe("dd/mm/yyyy");
     expect(input.inputMode).toBe("numeric");
   });
 
@@ -44,11 +44,11 @@ describe("DateInput", () => {
     const input = container.querySelector("input");
 
     changeInput(input, "3107");
-    expect(input.value).toBe("31-07");
+    expect(input.value).toBe("31/07");
     expect(onChange).not.toHaveBeenCalled();
 
     changeInput(input, "31072026");
-    expect(input.value).toBe("31-07-2026");
+    expect(input.value).toBe("31/07/2026");
     expect(onChange).toHaveBeenLastCalledWith("2026-07-31");
   });
 
@@ -59,7 +59,7 @@ describe("DateInput", () => {
 
     changeInput(input, "31042026");
 
-    expect(input.value).toBe("31-04-2026");
+    expect(input.value).toBe("31/04/2026");
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(container.textContent).toContain("Not saved");
     expect(onChange).not.toHaveBeenCalled();

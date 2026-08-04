@@ -471,6 +471,13 @@ const previewCss = `
 
   .a3-print-tree .layered-family-tree {
     margin: 0 !important;
+    transform: none !important;
+  }
+
+  .a3-print-tree .layered-family-tree-viewport {
+    width: max-content !important;
+    height: max-content !important;
+    margin: 0 !important;
   }
 
   .a3-print-tree .family-chart-title {

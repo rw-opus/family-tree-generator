@@ -117,7 +117,7 @@ describe("partner relationship metadata", () => {
         type: "partnership",
         startDate: "2015-06-12",
       }),
-    ).toBe("12-06-2015");
+    ).toBe("12/06/2015");
     expect(partnerRelationshipAnnotation({ type: "partnership" })).toBe("");
   });
 

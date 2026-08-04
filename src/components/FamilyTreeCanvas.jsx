@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Printer } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpToLine, GitBranch, LocateFixed, Maximize2, Move, Printer } from "lucide-react";
 import {
   hasAnyDesignation,
   hasDesignation,
@@ -32,7 +32,16 @@ function hasRelationalLinks(person) {
   );
 }
 
-function TreePanel({ treeRef, onPrint, relational, helperText, toolbar, children }) {
+function TreePanel({
+  treeRef,
+  onPrint,
+  relational,
+  helperText,
+  toolbar,
+  navigation,
+  navigator,
+  children,
+}) {
   return (
     <section className="tree-panel">
       <header className="tree-stage-toolbar tree-stage-toolbar-unified tree-panel-fixed-controls">
@@ -41,9 +50,11 @@ function TreePanel({ treeRef, onPrint, relational, helperText, toolbar, children
           <Printer size={16} /> Print preview
         </button>
       </header>
+      {navigation}
       <div className="family-chart tree-canvas-scroll-region" ref={treeRef}>
         <div className={`family-canvas ${relational ? "relational-canvas" : ""}`}>{children}</div>
       </div>
+      {navigator}
       <p className="helper-text">{helperText}</p>
     </section>
   );
@@ -59,6 +70,7 @@ export function FamilyTreeCanvas({
   onPrint,
   selectedPersonId,
   onSelectPerson,
+  onFocusPerson,
   personCardFields,
   propertyValue = 0,
   ownershipSnapshotActive = false,
@@ -67,6 +79,16 @@ export function FamilyTreeCanvas({
   toolbar,
 }) {
   const treeRef = useRef(null);
+  const dragRef = useRef(null);
+  const touchPanRef = useRef(null);
+  const [panHintVisible, setPanHintVisible] = useState(true);
+  const [navigatorState, setNavigatorState] = useState({
+    visible: false,
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100,
+  });
   const cleanPeople = useMemo(
     () =>
       people.filter((person) => person.id || person.fullName || personDesignations(person).length),
@@ -98,41 +120,314 @@ export function FamilyTreeCanvas({
     [generationByPerson],
   );
 
-  useEffect(() => {
-    if (!selectedPersonId || !treeRef.current) return;
+  const centerPerson = useCallback(
+    (personId = selectedPersonId, behavior = "smooth") => {
+      const chart = treeRef.current;
+      if (!chart || !personId) return false;
+      const selectedNode = [...chart.querySelectorAll("[data-person-id]")].find(
+        (element) => element.dataset.personId === personId,
+      );
+      if (!selectedNode) return false;
 
-    const chart = treeRef.current;
-    const selectedNode = [...chart.querySelectorAll("[data-person-id]")].find(
-      (element) => element.dataset.personId === selectedPersonId,
-    );
-    if (!selectedNode) return;
-
-    const chartRect = chart.getBoundingClientRect();
-    const nodeRect = selectedNode.getBoundingClientRect();
-    const options = {
-      behavior: "smooth",
-      left: Math.max(
+      const chartRect = chart.getBoundingClientRect();
+      const nodeRect = selectedNode.getBoundingClientRect();
+      const left = Math.max(
         0,
         chart.scrollLeft +
           nodeRect.left -
           chartRect.left -
           (chart.clientWidth - nodeRect.width) / 2,
-      ),
-      top: Math.max(
+      );
+      const top = Math.max(
         0,
         chart.scrollTop + nodeRect.top - chartRect.top - (chart.clientHeight - nodeRect.height) / 2,
-      ),
-    };
+      );
+      if (typeof chart.scrollTo === "function") chart.scrollTo({ left, top, behavior });
+      else {
+        chart.scrollLeft = left;
+        chart.scrollTop = top;
+      }
+      return true;
+    },
+    [selectedPersonId],
+  );
 
-    if (typeof chart.scrollTo === "function") {
-      chart.scrollTo(options);
+  const afterZoom = useCallback((callback) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+  }, []);
+
+  const fitWholeTree = useCallback(() => {
+    const chart = treeRef.current;
+    if (!chart || !onZoomChange) return;
+    const renderedTree = chart.querySelector(".layered-family-tree");
+    const canvas = chart.querySelector(".family-canvas");
+    const currentScale = Math.max(0.1, Number(zoom) / 100 || 1);
+    const rawWidth = renderedTree
+      ? Number.parseFloat(renderedTree.style.width) || renderedTree.scrollWidth
+      : Math.max(1, canvas?.scrollWidth || chart.scrollWidth) / currentScale;
+    const rawHeight = renderedTree
+      ? Number.parseFloat(renderedTree.style.height) || renderedTree.scrollHeight
+      : Math.max(1, canvas?.scrollHeight || chart.scrollHeight) / currentScale;
+    const availableWidth = Math.max(240, chart.clientWidth - 96);
+    const availableHeight = Math.max(220, chart.clientHeight - 120);
+    const nextZoom = Math.max(
+      20,
+      Math.min(
+        140,
+        Math.floor(Math.min(availableWidth / rawWidth, availableHeight / rawHeight) * 100),
+      ),
+    );
+    onZoomChange(nextZoom);
+    afterZoom(() => {
+      const left = Math.max(0, (chart.scrollWidth - chart.clientWidth) / 2);
+      if (typeof chart.scrollTo === "function")
+        chart.scrollTo({ left, top: 0, behavior: "smooth" });
+      else {
+        chart.scrollLeft = left;
+        chart.scrollTop = 0;
+      }
+    });
+  }, [afterZoom, onZoomChange, zoom]);
+
+  const selectedBranchIds = useMemo(() => {
+    if (!selectedPersonId) return new Set();
+    const ids = new Set([selectedPersonId]);
+    const queue = [selectedPersonId];
+    while (queue.length) {
+      const parentId = queue.shift();
+      cleanPeople.forEach((person) => {
+        if ((person.fatherId === parentId || person.motherId === parentId) && !ids.has(person.id)) {
+          ids.add(person.id);
+          queue.push(person.id);
+        }
+      });
+    }
+    cleanPeople
+      .filter((person) => ids.has(person.id))
+      .flatMap((person) => person.spouseIds || [])
+      .forEach((personId) => ids.add(personId));
+    return ids;
+  }, [cleanPeople, selectedPersonId]);
+
+  const fitSelectedBranch = useCallback(() => {
+    const chart = treeRef.current;
+    if (!chart || !selectedPersonId || !onZoomChange) {
+      fitWholeTree();
       return;
     }
-    chart.scrollLeft = options.left;
-    chart.scrollTop = options.top;
-  }, [people, selectedPersonId]);
+    const nodes = [...chart.querySelectorAll("[data-person-id]")].filter((node) =>
+      selectedBranchIds.has(node.dataset.personId),
+    );
+    if (!nodes.length) {
+      fitWholeTree();
+      return;
+    }
+    const rectangles = nodes.map((node) => node.getBoundingClientRect());
+    const bounds = {
+      left: Math.min(...rectangles.map((rect) => rect.left)),
+      right: Math.max(...rectangles.map((rect) => rect.right)),
+      top: Math.min(...rectangles.map((rect) => rect.top)),
+      bottom: Math.max(...rectangles.map((rect) => rect.bottom)),
+    };
+    const branchWidth = Math.max(1, bounds.right - bounds.left);
+    const branchHeight = Math.max(1, bounds.bottom - bounds.top);
+    const factor = Math.min(
+      Math.max(240, chart.clientWidth - 100) / branchWidth,
+      Math.max(220, chart.clientHeight - 130) / branchHeight,
+    );
+    const nextZoom = Math.max(25, Math.min(160, Math.floor(Number(zoom) * factor)));
+    onZoomChange(nextZoom);
+    afterZoom(() => centerPerson(selectedPersonId));
+  }, [
+    afterZoom,
+    centerPerson,
+    fitWholeTree,
+    onZoomChange,
+    selectedBranchIds,
+    selectedPersonId,
+    zoom,
+  ]);
+
+  const updateNavigator = useCallback(() => {
+    const chart = treeRef.current;
+    if (!chart) return;
+    const scrollWidth = Math.max(1, chart.scrollWidth);
+    const scrollHeight = Math.max(1, chart.scrollHeight);
+    setNavigatorState({
+      visible: scrollWidth > chart.clientWidth + 2 || scrollHeight > chart.clientHeight + 2,
+      left: (chart.scrollLeft / scrollWidth) * 100,
+      top: (chart.scrollTop / scrollHeight) * 100,
+      width: Math.min(100, (chart.clientWidth / scrollWidth) * 100),
+      height: Math.min(100, (chart.clientHeight / scrollHeight) * 100),
+    });
+  }, []);
+
+  useEffect(() => {
+    const chart = treeRef.current;
+    if (!chart) return undefined;
+    const frame = window.requestAnimationFrame(updateNavigator);
+    chart.addEventListener("scroll", updateNavigator, { passive: true });
+    const observer =
+      typeof ResizeObserver === "function" ? new ResizeObserver(updateNavigator) : null;
+    observer?.observe(chart);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      chart.removeEventListener("scroll", updateNavigator);
+      observer?.disconnect();
+    };
+  }, [people, updateNavigator, zoom]);
+
+  useEffect(() => {
+    const chart = treeRef.current;
+    if (!chart) return undefined;
+    const startDrag = (event) => {
+      if (event.pointerType !== "mouse" || event.button !== 0) return;
+      if (event.target.closest("button, input, select, textarea, a, label")) return;
+      dragRef.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        left: chart.scrollLeft,
+        top: chart.scrollTop,
+      };
+      chart.setPointerCapture?.(event.pointerId);
+      chart.classList.add("is-panning");
+      setPanHintVisible(false);
+    };
+    const drag = (event) => {
+      const state = dragRef.current;
+      if (!state || state.pointerId !== event.pointerId) return;
+      chart.scrollLeft = state.left - (event.clientX - state.x);
+      chart.scrollTop = state.top - (event.clientY - state.y);
+    };
+    const stopDrag = (event) => {
+      if (dragRef.current?.pointerId !== event.pointerId) return;
+      dragRef.current = null;
+      chart.classList.remove("is-panning");
+      chart.releasePointerCapture?.(event.pointerId);
+    };
+    const startTouchPan = (event) => {
+      if (event.touches.length !== 1) {
+        touchPanRef.current = null;
+        return;
+      }
+      const touch = event.touches[0];
+      touchPanRef.current = {
+        identifier: touch.identifier,
+        x: touch.clientX,
+        y: touch.clientY,
+        left: chart.scrollLeft,
+        top: chart.scrollTop,
+        moved: false,
+      };
+    };
+    const touchPan = (event) => {
+      const state = touchPanRef.current;
+      if (!state || event.touches.length !== 1) {
+        if (event.touches.length > 1) touchPanRef.current = null;
+        return;
+      }
+      const touch = Array.from(event.touches).find((item) => item.identifier === state.identifier);
+      if (!touch) return;
+      const deltaX = touch.clientX - state.x;
+      const deltaY = touch.clientY - state.y;
+      if (!state.moved && Math.hypot(deltaX, deltaY) < 4) return;
+      state.moved = true;
+      event.preventDefault();
+      chart.scrollLeft = state.left - deltaX;
+      chart.scrollTop = state.top - deltaY;
+      setPanHintVisible(false);
+    };
+    const stopTouchPan = () => {
+      touchPanRef.current = null;
+    };
+    chart.addEventListener("pointerdown", startDrag);
+    chart.addEventListener("pointermove", drag);
+    chart.addEventListener("pointerup", stopDrag);
+    chart.addEventListener("pointercancel", stopDrag);
+    chart.addEventListener("touchstart", startTouchPan, { passive: true });
+    chart.addEventListener("touchmove", touchPan, { passive: false });
+    chart.addEventListener("touchend", stopTouchPan, { passive: true });
+    chart.addEventListener("touchcancel", stopTouchPan, { passive: true });
+    return () => {
+      chart.removeEventListener("pointerdown", startDrag);
+      chart.removeEventListener("pointermove", drag);
+      chart.removeEventListener("pointerup", stopDrag);
+      chart.removeEventListener("pointercancel", stopDrag);
+      chart.removeEventListener("touchstart", startTouchPan);
+      chart.removeEventListener("touchmove", touchPan);
+      chart.removeEventListener("touchend", stopTouchPan);
+      chart.removeEventListener("touchcancel", stopTouchPan);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPersonId || !treeRef.current) return;
+
+    centerPerson(selectedPersonId);
+  }, [centerPerson, people, selectedPersonId]);
 
   usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);
+
+  const handleCardKeyDown = (event, personId) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    const chart = treeRef.current;
+    if (!chart) return;
+    const current = [...chart.querySelectorAll("[data-person-id]")].find(
+      (node) => node.dataset.personId === personId,
+    );
+    if (!current) return;
+    const currentRect = current.getBoundingClientRect();
+    const currentCentre = {
+      x: currentRect.left + currentRect.width / 2,
+      y: currentRect.top + currentRect.height / 2,
+    };
+    const candidates = [...chart.querySelectorAll("[data-person-id]")]
+      .filter((node) => node !== current)
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        const dx = rect.left + rect.width / 2 - currentCentre.x;
+        const dy = rect.top + rect.height / 2 - currentCentre.y;
+        const eligible =
+          (event.key === "ArrowLeft" && dx < -2) ||
+          (event.key === "ArrowRight" && dx > 2) ||
+          (event.key === "ArrowUp" && dy < -2) ||
+          (event.key === "ArrowDown" && dy > 2);
+        if (!eligible) return null;
+        const primary =
+          event.key === "ArrowLeft" || event.key === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
+        const secondary =
+          event.key === "ArrowLeft" || event.key === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
+        return { node, score: primary + secondary * 0.45 };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.score - right.score);
+    const target = candidates[0]?.node;
+    if (!target) return;
+    event.preventDefault();
+    const targetId = target.dataset.personId;
+    (onFocusPerson || onSelectPerson)?.(targetId);
+    window.requestAnimationFrame(() => {
+      const next = [...(treeRef.current?.querySelectorAll("[data-person-id]") || [])].find(
+        (node) => node.dataset.personId === targetId,
+      );
+      next?.focus({ preventScroll: true });
+    });
+  };
+
+  const keyboardFocusId = cleanPeople.some((person) => person.id === selectedPersonId)
+    ? selectedPersonId
+    : cleanPeople[0]?.id;
+
+  const scrollToTreeTop = () => {
+    const chart = treeRef.current;
+    if (!chart) return;
+    if (typeof chart.scrollTo === "function") {
+      chart.scrollTo({ left: chart.scrollLeft, top: 0, behavior: "smooth" });
+    } else {
+      chart.scrollTop = 0;
+    }
+  };
 
   const renderCard = (person, variant = "") => (
     <FamilyPersonCard
@@ -150,11 +445,76 @@ export function FamilyTreeCanvas({
       ownershipSnapshotActive={ownershipSnapshotActive}
       selectedPersonId={selectedPersonId}
       onSelectPerson={onSelectPerson}
+      tabIndex={person.id === keyboardFocusId ? 0 : -1}
+      onKeyDown={(event) => handleCardKeyDown(event, person.id)}
       stackedLegalDetails={usesStackedLegalCards}
       generation={generationByPerson.get(person.id) || 0}
       isWidestGeneration={generationByPerson.get(person.id) === widestGeneration}
     />
   );
+
+  const navigation = (
+    <div className="tree-navigation-tools" aria-label="Tree view controls">
+      <button type="button" onClick={fitWholeTree} title="Fit the whole tree in view">
+        <Maximize2 size={15} /> <span>Fit tree</span>
+      </button>
+      <button type="button" onClick={scrollToTreeTop} title="Move to the top of the tree">
+        <ArrowUpToLine size={15} /> <span>Top</span>
+      </button>
+      <button
+        type="button"
+        onClick={fitSelectedBranch}
+        disabled={!selectedPersonId}
+        title="Fit the selected person and descendants in view"
+      >
+        <GitBranch size={15} /> <span>Fit branch</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => centerPerson()}
+        disabled={!selectedPersonId}
+        title="Centre the selected person"
+      >
+        <LocateFixed size={15} /> <span>Centre</span>
+      </button>
+      {panHintVisible && (
+        <span className="tree-pan-hint">
+          <Move size={14} /> Drag or swipe to move
+        </span>
+      )}
+    </div>
+  );
+
+  const navigator = navigatorState.visible ? (
+    <button
+      type="button"
+      className="tree-mini-map"
+      aria-label="Tree overview. Select a point to move there."
+      title="Tree overview"
+      onClick={(event) => {
+        const chart = treeRef.current;
+        if (!chart) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / rect.width;
+        const y = (event.clientY - rect.top) / rect.height;
+        chart.scrollTo({
+          left: Math.max(0, x * chart.scrollWidth - chart.clientWidth / 2),
+          top: Math.max(0, y * chart.scrollHeight - chart.clientHeight / 2),
+          behavior: "smooth",
+        });
+      }}
+    >
+      <span
+        className="tree-mini-map-viewport"
+        style={{
+          left: `${navigatorState.left}%`,
+          top: `${navigatorState.top}%`,
+          width: `${navigatorState.width}%`,
+          height: `${navigatorState.height}%`,
+        }}
+      />
+    </button>
+  ) : null;
 
   if (usesRelationalLayout) {
     return (
@@ -164,8 +524,10 @@ export function FamilyTreeCanvas({
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
         toolbar={toolbar}
+        navigation={navigation}
+        navigator={navigator}
       >
-        <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} />
+        <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} zoom={zoom} />
       </TreePanel>
     );
   }
@@ -184,6 +546,8 @@ export function FamilyTreeCanvas({
       onPrint={printHandler}
       helperText="The diagram is a working visual aid. Dashed entries are connectors added only when a relative is needed to make another branch intelligible."
       toolbar={toolbar}
+      navigation={navigation}
+      navigator={navigator}
     >
       <DesignationFamilyTree
         deceased={deceased}
