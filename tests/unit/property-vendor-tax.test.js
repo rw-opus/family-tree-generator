@@ -4,12 +4,67 @@ import {
   intestateAllocations,
 } from "../../src/domain/familyOwnership.js";
 import {
+  assignInitialOwnerPerson,
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
+  remainingInitialOwnershipShare,
 } from "../../src/domain/propertyVendorTax.js";
 
 describe("property vendor tax reports", () => {
+  it("defaults a selected initial owner to the exact unallocated title", () => {
+    const owners = [
+      {
+        id: "first",
+        personId: "person-a",
+        shareNumerator: 1,
+        shareDenominator: 3,
+        sharePercent: 100 / 3,
+      },
+      {
+        id: "second",
+        personId: "",
+        shareNumerator: 0,
+        shareDenominator: 1,
+        sharePercent: 0,
+      },
+    ];
+
+    expect(remainingInitialOwnershipShare(owners, "second")).toMatchObject({
+      shareNumerator: 2,
+      shareDenominator: 3,
+    });
+    expect(assignInitialOwnerPerson(owners, "second", "person-b")[1]).toMatchObject({
+      personId: "person-b",
+      shareNumerator: 2,
+      shareDenominator: 3,
+    });
+    expect(remainingInitialOwnershipShare([])).toMatchObject({
+      shareNumerator: 1,
+      shareDenominator: 1,
+      sharePercent: 100,
+    });
+  });
+
+  it("preserves an explicitly entered initial share when choosing its owner", () => {
+    const owners = [
+      {
+        id: "owner",
+        personId: "",
+        shareNumerator: 1,
+        shareDenominator: 4,
+        sharePercent: 25,
+      },
+    ];
+
+    expect(assignInitialOwnerPerson(owners, "owner", "person-a")[0]).toMatchObject({
+      personId: "person-a",
+      shareNumerator: 1,
+      shareDenominator: 4,
+      sharePercent: 25,
+    });
+  });
+
   it("requires exact full ownership rather than accepting a rounded near-total", () => {
     expect(
       propertyStartingOwnershipStatus({

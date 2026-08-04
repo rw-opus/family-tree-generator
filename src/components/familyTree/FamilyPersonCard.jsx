@@ -114,6 +114,10 @@ export function FamilyPersonCard({
       : ""
   }`;
   const survivalStatusRequired = person.survivalStatusRequired === true;
+  const actionRequired = incompleteCausaMortis.length > 0 || survivalStatusRequired;
+  const actionRequiredGuidance = actionRequired
+    ? "Action required: open this person's card and update the missing detail."
+    : "";
   const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
   const classNames = [
     "family-node",
@@ -136,7 +140,8 @@ export function FamilyPersonCard({
       data-person-id={person.id}
       data-family-generation={generation}
       data-widest-generation={isWidestGeneration ? "true" : undefined}
-      aria-label={`Open ${accessibleName}`}
+      aria-label={`Open ${accessibleName}${actionRequiredGuidance ? `. ${actionRequiredGuidance}` : ""}`}
+      title={actionRequiredGuidance || undefined}
       onClick={() => onSelectPerson?.(person.id)}
       onKeyDown={onKeyDown}
       tabIndex={tabIndex}

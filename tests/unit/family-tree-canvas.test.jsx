@@ -76,6 +76,25 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
+  it("explains red fields and directs the user to the person card", () => {
+    renderCanvas({
+      people: [person("a", "Joseph Borg")],
+      causaMortisCoverageByPerson: { a: [{ status: "missing" }] },
+    });
+
+    expect(container.querySelector(".tree-required-data-key").textContent).toContain(
+      "Red means action required",
+    );
+    expect(container.querySelector(".tree-required-data-key").textContent).toContain(
+      "open that person's card",
+    );
+    const card = container.querySelector('[data-person-id="a"]');
+    expect(card.classList.contains("cm-share-incomplete")).toBe(true);
+    expect(card.getAttribute("aria-label")).toContain(
+      "open this person's card and update the missing detail",
+    );
+  });
+
   it("gives a zoomed relational tree an explicit full scroll footprint", () => {
     renderCanvas({ people: family(), zoom: 175 });
 

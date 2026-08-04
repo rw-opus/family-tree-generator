@@ -1,6 +1,10 @@
 import { MousePointerClick, Plus, Trash2 } from "lucide-react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
-import { propertyStartingOwnershipStatus } from "../domain/propertyVendorTax.js";
+import {
+  assignInitialOwnerPerson,
+  propertyStartingOwnershipStatus,
+  remainingInitialOwnershipShare,
+} from "../domain/propertyVendorTax.js";
 import { personChoiceLabel, sortPeopleForChoice } from "../domain/people.js";
 import {
   fractionForShare,
@@ -8,12 +12,10 @@ import {
   shareFromPercentageInput,
 } from "../domain/shares.js";
 
-const makeOwner = () => ({
+const makeOwner = (owners = []) => ({
   id: crypto.randomUUID(),
   personId: "",
-  sharePercent: 0,
-  shareNumerator: 0,
-  shareDenominator: 1,
+  ...remainingInitialOwnershipShare(owners),
 });
 
 export function InitialOwnershipEditor({
@@ -33,14 +35,14 @@ export function InitialOwnershipEditor({
   const updateOwners = (nextOwners) => onChange(nextOwners);
   const updateOwner = (ownerId, patch) =>
     updateOwners(owners.map((owner) => (owner.id === ownerId ? { ...owner, ...patch } : owner)));
-  const addOwner = () => updateOwners([...owners, makeOwner()]);
+  const addOwner = () => updateOwners([...owners, makeOwner(owners)]);
   const pickNewOwnerFromTree = () => {
     const availableOwner = owners.find((owner) => !owner.personId);
     if (availableOwner) {
       onPickFromTree?.(availableOwner.id);
       return;
     }
-    const owner = makeOwner();
+    const owner = makeOwner(owners);
     updateOwners([...owners, owner]);
     onPickFromTree?.(owner.id);
   };
@@ -79,7 +81,9 @@ export function InitialOwnershipEditor({
                 <select
                   aria-label="Initial owner"
                   value={owner.personId}
-                  onChange={(event) => updateOwner(owner.id, { personId: event.target.value })}
+                  onChange={(event) =>
+                    updateOwners(assignInitialOwnerPerson(owners, owner.id, event.target.value))
+                  }
                 >
                   <option value="">Choose person</option>
                   {sortPeopleForChoice(people).map((person) => (

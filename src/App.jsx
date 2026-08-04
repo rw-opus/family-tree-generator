@@ -34,6 +34,7 @@ import {
   normalisePersonCardFields,
 } from "./domain/personCardDisplay.js";
 import {
+  assignInitialOwnerPerson,
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
@@ -333,27 +334,17 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     [activeProperty, currentTree.outsideParties, currentTree.people, propertyReport],
   );
   const ownershipByPerson = useMemo(() => {
-    if (!propertyReport.startingOwnership.isComplete) return {};
     return buildTreeCardOwnershipByPerson(
       propertyReport.ledger.owners,
       propertyReport.ownership.transmissions,
     );
-  }, [
-    propertyReport.ledger.owners,
-    propertyReport.ownership.transmissions,
-    propertyReport.startingOwnership.isComplete,
-  ]);
+  }, [propertyReport.ledger.owners, propertyReport.ownership.transmissions]);
   const ownershipFractionsByPerson = useMemo(() => {
-    if (!propertyReport.startingOwnership.isComplete) return {};
     return buildTreeCardOwnershipFractionsByPerson(
       propertyReport.ledger.owners,
       propertyReport.ownership.transmissions,
     );
-  }, [
-    propertyReport.ledger.owners,
-    propertyReport.ownership.transmissions,
-    propertyReport.startingOwnership.isComplete,
-  ]);
+  }, [propertyReport.ledger.owners, propertyReport.ownership.transmissions]);
   const currentOwnershipByPerson = useMemo(
     () =>
       Object.fromEntries(
@@ -910,8 +901,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         property.id === initialOwnerPick.propertyId
           ? {
               ...property,
-              owners: (property.owners || []).map((owner) =>
-                owner.id === initialOwnerPick.ownerId ? { ...owner, personId } : owner,
+              owners: assignInitialOwnerPerson(
+                property.owners || [],
+                initialOwnerPick.ownerId,
+                personId,
               ),
             }
           : property,

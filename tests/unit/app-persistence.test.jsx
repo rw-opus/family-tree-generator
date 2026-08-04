@@ -284,7 +284,7 @@ describe("App local recovery", () => {
     expect(container.textContent).not.toContain("Owners & transfers");
   });
 
-  it("assigns an initial owner by selecting a person on the tree", () => {
+  it("shows a selected initial owner's share on the tree before title reaches 100%", () => {
     saveLocalWorkspace(
       [
         {
@@ -316,8 +316,8 @@ describe("App local recovery", () => {
                   id: "initial-owner",
                   personId: "",
                   shareNumerator: 1,
-                  shareDenominator: 1,
-                  sharePercent: 100,
+                  shareDenominator: 2,
+                  sharePercent: 50,
                 },
               ],
             },
@@ -346,6 +346,10 @@ describe("App local recovery", () => {
     expect(container.querySelector(".initial-owner-tree-picker")).toBeNull();
     expect(container.querySelector(".tree-property-panel").classList).toContain("expanded");
     expect(container.querySelector('select[aria-label="Initial owner"]').value).toBe("person-2");
+    expect(
+      container.querySelector('[data-person-id="person-2"] .family-node-ownership').textContent,
+    ).toContain("1/2");
+    expect(container.querySelector(".share-status").textContent).toContain("must equal 100%");
     expect(container.querySelector(".context-dashboard")).toBeNull();
   });
 

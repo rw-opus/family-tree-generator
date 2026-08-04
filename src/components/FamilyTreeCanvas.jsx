@@ -49,6 +49,11 @@ function TreePanel({
         <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
           <Printer size={16} /> Print preview
         </button>
+        <p className="tree-required-data-key">
+          <span aria-hidden="true" />
+          <strong>Red means action required:</strong> open that person&apos;s card and update the
+          missing detail.
+        </p>
       </header>
       {navigation}
       <div className="family-chart tree-canvas-scroll-region" ref={treeRef}>
