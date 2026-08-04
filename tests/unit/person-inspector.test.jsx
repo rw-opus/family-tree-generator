@@ -456,6 +456,57 @@ describe("PersonInspector", () => {
     expect(latestPerson.surnameAtBirth).toBe("Camilleri");
   });
 
+  it("clears the GEDCOM surname review warning after the birth surname is confirmed", () => {
+    let latestPerson;
+
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "child",
+          givenNames: "Anna",
+          surname: "Borg",
+          fullName: "Anna Borg",
+          surnameAtBirth: "",
+          surnameAtBirthReviewRequired: true,
+          gedcomUnmarriedParents: true,
+          sex: "Female",
+          spouseIds: [],
+        },
+      ]);
+      latestPerson = people[0];
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="child"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    expect(container.textContent).toContain("The imported parents are recorded as unmarried");
+    beginEditing();
+
+    const birthSurnameInput = [...container.querySelectorAll(".person-edit-fields label")]
+      .find((element) => element.querySelector(":scope > span")?.textContent === "Surname at birth")
+      .querySelector("input");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        birthSurnameInput,
+        "Vella",
+      );
+      birthSurnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(latestPerson).toMatchObject({
+      surnameAtBirth: "Vella",
+      surnameAtBirthReviewRequired: false,
+      gedcomUnmarriedParents: true,
+    });
+    expect(container.textContent).not.toContain("The imported parents are recorded as unmarried");
+  });
+
   it("asks which partnership applies when a person has several partners", () => {
     const onChange = vi.fn();
     const people = [

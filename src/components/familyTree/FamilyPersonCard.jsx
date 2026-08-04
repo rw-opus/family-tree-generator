@@ -114,7 +114,9 @@ export function FamilyPersonCard({
       : ""
   }`;
   const survivalStatusRequired = person.survivalStatusRequired === true;
-  const actionRequired = incompleteCausaMortis.length > 0 || survivalStatusRequired;
+  const surnameAtBirthReviewRequired = person.surnameAtBirthReviewRequired === true;
+  const actionRequired =
+    incompleteCausaMortis.length > 0 || survivalStatusRequired || surnameAtBirthReviewRequired;
   const actionRequiredGuidance = actionRequired
     ? "Action required: open this person's card and update the missing detail."
     : "";
@@ -126,6 +128,7 @@ export function FamilyPersonCard({
     incompleteCausaMortis.length && "cm-share-incomplete",
     spousesMissingDeathDates.length && "succession-date-incomplete",
     survivalStatusRequired && "survival-status-required",
+    surnameAtBirthReviewRequired && "surname-at-birth-review-required",
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
     ownershipSnapshotActive && hasOwnership && "trace-ownership-snapshot",
@@ -171,6 +174,9 @@ export function FamilyPersonCard({
       )}
       {!person.isPlaceholder && survivalStatusRequired && (
         <div className="family-node-survival-alert">Confirm whether alive or dead</div>
+      )}
+      {!person.isPlaceholder && surnameAtBirthReviewRequired && (
+        <div className="family-node-surname-alert">Confirm surname at birth</div>
       )}
       {!person.isPlaceholder && shareParts.length > 0 && (
         <div className="family-node-ownership">{shareParts.join(" · ")}</div>

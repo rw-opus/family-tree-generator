@@ -4873,7 +4873,8 @@ body.a3-print-preview-open {
     0 4px 14px rgba(28, 52, 40, 0.11);
 }
 
-.tree-stage .family-node.survival-status-required {
+.tree-stage .family-node.survival-status-required,
+.tree-stage .family-node.surname-at-birth-review-required {
   border-color: #b42318;
   border-top-color: #7a1610;
   box-shadow:
@@ -5014,7 +5015,8 @@ body.a3-print-preview-open {
   overflow-wrap: anywhere;
 }
 
-.tree-stage .family-node-survival-alert {
+.tree-stage .family-node-survival-alert,
+.tree-stage .family-node-surname-alert {
   margin-top: 0.32rem;
   border-radius: 5px;
   background: #fee4e2;
@@ -5024,6 +5026,21 @@ body.a3-print-preview-open {
   font-weight: 750;
   line-height: 1.2;
   overflow-wrap: anywhere;
+}
+
+.surname-at-birth-review-field > input {
+  border-color: #b42318 !important;
+  background: #fff1f0 !important;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.12);
+}
+
+.surname-at-birth-review-note {
+  grid-column: 2;
+  margin: -0.1rem 0 0.35rem;
+  color: #8a1c13;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .potential-parent-survival-alert {

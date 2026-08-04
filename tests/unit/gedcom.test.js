@@ -153,6 +153,134 @@ describe("GEDCOM import", () => {
     });
   });
 
+  it("uses the paternal birth surname and an active husband's current surname", () => {
+    const gedcom = `0 HEAD
+0 @I1@ INDI
+1 NAME Anthony /Vella/
+1 SEX M
+0 @I2@ INDI
+1 NAME Maria /Vella/
+1 SEX F
+0 @I3@ INDI
+1 NAME Joseph /Borg/
+1 SEX M
+0 @F1@ FAM
+1 HUSB @I1@
+1 CHIL @I2@
+0 @F2@ FAM
+1 HUSB @I3@
+1 WIFE @I2@
+1 MARR
+2 DATE 3 FEB 2014
+0 TRLR`;
+    let id = 0;
+
+    const result = parseGedcom(gedcom, () => `person-${++id}`);
+    const maria = result.people.find((person) => person.gedcomId === "@I2@");
+
+    expect(maria).toMatchObject({
+      givenNames: "Maria",
+      fullName: "Maria Borg",
+      surname: "Borg",
+      surnameAtBirth: "Vella",
+    });
+  });
+
+  it("flags a child of explicitly unmarried parents instead of guessing the birth surname", () => {
+    const gedcom = `0 HEAD
+0 @I1@ INDI
+1 NAME Joseph /Borg/
+1 SEX M
+0 @I2@ INDI
+1 NAME Maria /Vella/
+1 SEX F
+0 @I3@ INDI
+1 NAME Anna /Borg/
+1 SEX F
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 NO MARR
+1 CHIL @I3@
+0 TRLR`;
+    let id = 0;
+
+    const result = parseGedcom(gedcom, () => `person-${++id}`);
+    const joseph = result.people.find((person) => person.gedcomId === "@I1@");
+    const maria = result.people.find((person) => person.gedcomId === "@I2@");
+    const anna = result.people.find((person) => person.gedcomId === "@I3@");
+
+    expect(anna).toMatchObject({
+      surname: "Borg",
+      surnameAtBirth: "",
+      surnameAtBirthReviewRequired: true,
+      gedcomUnmarriedParents: true,
+    });
+    expect(maria).toMatchObject({ surname: "Vella" });
+    expect(findPartnerRelationship(result.people, joseph.id, maria.id)).toMatchObject({
+      type: "partnership",
+    });
+    expect(result.warnings.join(" ")).toMatch(/confirm the surname at birth/i);
+  });
+
+  it("recognises a structured legacy unmarried-childbirth event", () => {
+    const gedcom = `0 HEAD
+0 @I1@ INDI
+1 NAME Joseph /Borg/
+1 SEX M
+0 @I2@ INDI
+1 NAME Maria /Vella/
+1 SEX F
+0 @I3@ INDI
+1 NAME Anna /Borg/
+1 SEX F
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 EVEN
+2 TYPE Childbirth_unmarried
+1 CHIL @I3@
+0 TRLR`;
+    let id = 0;
+
+    const result = parseGedcom(gedcom, () => `person-${++id}`);
+    const anna = result.people.find((person) => person.gedcomId === "@I3@");
+
+    expect(anna).toMatchObject({
+      surnameAtBirth: "",
+      surnameAtBirthReviewRequired: true,
+    });
+  });
+
+  it("does not treat a missing marriage event as proof that parents were unmarried", () => {
+    const result = parseGedcom(SAMPLE, () => crypto.randomUUID());
+    const anna = result.people.find((person) => person.gedcomId === "@I3@");
+
+    expect(anna.surnameAtBirth).toBe("Borg");
+    expect(anna.surnameAtBirthReviewRequired).not.toBe(true);
+  });
+
+  it("does not apply a partner's surname to an unmarried woman", () => {
+    const gedcom = `0 HEAD
+0 @I1@ INDI
+1 NAME Joseph /Borg/
+1 SEX M
+0 @I2@ INDI
+1 NAME Maria /Vella/
+1 SEX F
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR N
+0 TRLR`;
+    let id = 0;
+
+    const result = parseGedcom(gedcom, () => `person-${++id}`);
+    const maria = result.people.find((person) => person.gedcomId === "@I2@");
+
+    expect(maria).toMatchObject({ surname: "Vella", fullName: "Maria Vella" });
+  });
+
   it("retains the first parent relationship and reports conflicting families and approximate dates", () => {
     const gedcom = `0 HEAD
 0 @I1@ INDI

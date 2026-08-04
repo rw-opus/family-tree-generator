@@ -95,6 +95,24 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
+  it("highlights a GEDCOM birth surname that needs confirmation", () => {
+    renderCanvas({
+      people: [
+        person("a", "Anna Borg", {
+          surnameAtBirth: "",
+          surnameAtBirthReviewRequired: true,
+        }),
+      ],
+    });
+
+    const card = container.querySelector('[data-person-id="a"]');
+    expect(card.classList.contains("surname-at-birth-review-required")).toBe(true);
+    expect(card.textContent).toContain("Confirm surname at birth");
+    expect(card.getAttribute("aria-label")).toContain(
+      "open this person's card and update the missing detail",
+    );
+  });
+
   it("gives a zoomed relational tree an explicit full scroll footprint", () => {
     renderCanvas({ people: family(), zoom: 175 });
 

@@ -320,6 +320,7 @@ export function PersonInspector({
     };
     if (
       selectedPerson.sex === "Male" &&
+      !selectedPerson.surnameAtBirthReviewRequired &&
       (!selectedPerson.surnameAtBirth || selectedPerson.surnameAtBirth === previousSurname)
     ) {
       patch.surnameAtBirth = surname;
@@ -329,10 +330,23 @@ export function PersonInspector({
 
   const updateSex = (sex) => {
     const patch = { sex };
-    if (sex === "Male" && !selectedPerson.surnameAtBirth) {
+    if (
+      sex === "Male" &&
+      !selectedPerson.surnameAtBirthReviewRequired &&
+      !selectedPerson.surnameAtBirth
+    ) {
       patch.surnameAtBirth = personSurname(selectedPerson);
     }
     updateSelected(patch);
+  };
+
+  const updateSurnameAtBirth = (surnameAtBirth) => {
+    updateSelected({
+      surnameAtBirth,
+      ...(selectedPerson.surnameAtBirthReviewRequired
+        ? { surnameAtBirthReviewRequired: !surnameAtBirth.trim() }
+        : {}),
+    });
   };
 
   const changeOwnershipDisplay = (mode) => {
@@ -887,8 +901,10 @@ export function PersonInspector({
     hasUnknownCausaMortisDeathDate ||
     (Boolean(selectedPerson.dateOfDeath) && !isPreCausaMortisCutoff);
   const displayedSurnameAtBirth =
-    selectedPerson.surnameAtBirth ||
-    (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
+    selectedPerson.surnameAtBirthReviewRequired === true
+      ? selectedPerson.surnameAtBirth || ""
+      : selectedPerson.surnameAtBirth ||
+        (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
   const displayedGivenNames = personGivenNames(selectedPerson);
   const displayedSurname = personSurname(selectedPerson);
   const propertySaleValue = Number(properties[0]?.saleValue) || 0;
@@ -1317,13 +1333,24 @@ export function PersonInspector({
                 placeholder="Current surname"
               />
             </label>
-            <label>
+            <label
+              className={
+                selectedPerson.surnameAtBirthReviewRequired
+                  ? "surname-at-birth-review-field"
+                  : undefined
+              }
+            >
               <span>Surname at birth</span>
               <input
                 value={displayedSurnameAtBirth}
-                onChange={(event) => updateSelected({ surnameAtBirth: event.target.value })}
+                onChange={(event) => updateSurnameAtBirth(event.target.value)}
                 placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
               />
+              {selectedPerson.surnameAtBirthReviewRequired && (
+                <small className="surname-at-birth-review-note">
+                  The imported parents are recorded as unmarried. Confirm this surname.
+                </small>
+              )}
             </label>
           </div>
         </fieldset>
