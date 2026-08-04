@@ -5,9 +5,7 @@ import {
   createPerson,
   fatherSurnameDefaultPatch,
   hasDesignation,
-  personDescendants,
   personDisplayName,
-  personAncestors,
   personGivenNames,
   personIdentityIssues,
   parentageDescription,
@@ -47,7 +45,9 @@ import { isValidIsoDate, isoDateToDisplay } from "../domain/dateFormat.js";
 import { operativeWillFromRecords, personWills, personWithWills } from "../domain/wills.js";
 import {
   findPartnerRelationship,
+  linkPartnerRelationship,
   PARTNER_RELATIONSHIP_TYPES,
+  partnerLinkEligibility,
   removePartnerRelationship,
   upsertPartnerRelationship,
 } from "../domain/partnerRelationships.js";
@@ -583,6 +583,7 @@ export function PersonInspector({
           ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
           : PARTNER_RELATIONSHIP_TYPES.MARRIAGE;
       Object.assign(relative, {
+        sex: String(selectedPerson.sex).toLowerCase() === "male" ? "Female" : "Male",
         designations: [
           relationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
             ? hasDesignation(selectedPerson, "Deceased")
@@ -629,7 +630,7 @@ export function PersonInspector({
     const nextPeople = [...updatedPeople, relative];
     if (kind === "marriage" || kind === "partnership") {
       onChange(
-        upsertPartnerRelationship(nextPeople, selectedPerson.id, relative.id, {
+        linkPartnerRelationship(nextPeople, selectedPerson.id, relative.id, {
           type:
             kind === "partnership"
               ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
@@ -669,7 +670,7 @@ export function PersonInspector({
     const existingPerson = people.find((person) => person.id === existingSpouseId);
     if (!existingPerson) return;
     onChange(
-      upsertPartnerRelationship(people, selectedPerson.id, existingPerson.id, {
+      linkPartnerRelationship(people, selectedPerson.id, existingPerson.id, {
         type: partnerRelationshipType,
         startDate: partnerRelationshipDate,
       }),
@@ -824,11 +825,6 @@ export function PersonInspector({
   const allSuccessionHeirsDeceased =
     successionHeirs.length > 0 &&
     successionHeirs.every((person) => peopleById.has(person.id) && isPersonDeceased(person));
-  const descendants = personDescendants(people, selectedPerson.id);
-  const descendantIds = new Set(descendants.map((person) => person.id));
-  const ancestorIds = new Set(
-    personAncestors(people, selectedPerson.id).map((person) => person.id),
-  );
   const declarationCandidateIds = new Set(successionHeirIds);
   const declarationCandidates = [...people, ...outsideParties].filter((party) =>
     declarationCandidateIds.has(party.id),
@@ -984,8 +980,7 @@ export function PersonInspector({
     (person) =>
       person.id !== selectedPerson.id &&
       !linkedSpouseIds.has(person.id) &&
-      !descendantIds.has(person.id) &&
-      !ancestorIds.has(person.id),
+      partnerLinkEligibility(people, selectedPerson.id, person.id).allowed,
   );
   const parentage = parentageDescription(selectedPerson, people);
   // Having descendants is not itself a reason to keep somebody: a person at the
@@ -1174,6 +1169,11 @@ export function PersonInspector({
                 : "partner"}
             </button>
             <span>or link an existing person</span>
+            <p className="partner-eligibility-note">
+              Only an opposite-sex person may be linked as a wife, husband or unmarried partner.
+              Direct relatives, siblings, uncles, aunts, nephews and nieces are excluded; cousins
+              and more distant relatives remain available.
+            </p>
             <div>
               <select
                 aria-label="Existing partner"
@@ -1184,7 +1184,7 @@ export function PersonInspector({
                 <option value="">
                   {existingSpouseCandidates.length
                     ? "Choose from family list"
-                    : "No unlinked people available"}
+                    : "No eligible unlinked people available"}
                 </option>
                 {existingSpouseCandidates.map((person) => (
                   <option key={person.id} value={person.id}>

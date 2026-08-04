@@ -1142,6 +1142,7 @@ describe("PersonInspector", () => {
       {
         id: "person-b",
         fullName: "Joseph Vella",
+        sex: "Male",
         designations: [],
         spouseIds: [],
       },
@@ -1191,7 +1192,7 @@ describe("PersonInspector", () => {
         surnameAtBirth: "Borg",
         spouseIds: [],
       },
-      { id: "person-b", fullName: "Joseph Vella", spouseIds: [] },
+      { id: "person-b", fullName: "Joseph Vella", sex: "Male", spouseIds: [] },
       { id: "child", fullName: "Child Borg", motherId: "person-a", fatherId: "" },
     ];
 
@@ -1227,6 +1228,95 @@ describe("PersonInspector", () => {
       motherId: "person-a",
       fatherId: "",
     });
+  });
+
+  it("offers only opposite-sex cousins or more distant people as existing partners", () => {
+    const people = [
+      {
+        id: "grandfather",
+        fullName: "Anthony Borg",
+        sex: "Male",
+        spouseIds: [],
+      },
+      { id: "grandmother", fullName: "Carmela Borg", sex: "Female", spouseIds: [] },
+      {
+        id: "mother",
+        fullName: "Rita Borg",
+        sex: "Female",
+        fatherId: "grandfather",
+        motherId: "grandmother",
+        spouseIds: [],
+      },
+      {
+        id: "uncle",
+        fullName: "Paul Borg",
+        sex: "Male",
+        fatherId: "grandfather",
+        motherId: "grandmother",
+        spouseIds: [],
+      },
+      { id: "father", fullName: "Joseph Vella", sex: "Male", spouseIds: [] },
+      {
+        id: "person",
+        fullName: "Maria Vella",
+        givenNames: "Maria",
+        surname: "Vella",
+        surnameAtBirth: "Vella",
+        sex: "Female",
+        fatherId: "father",
+        motherId: "mother",
+        spouseIds: [],
+      },
+      {
+        id: "brother",
+        fullName: "John Vella",
+        sex: "Male",
+        fatherId: "father",
+        motherId: "mother",
+        spouseIds: [],
+      },
+      { id: "cousin", fullName: "Mark Borg", sex: "Male", fatherId: "uncle", spouseIds: [] },
+      { id: "unrelated", fullName: "Luke Galea", sex: "Male", spouseIds: [] },
+      { id: "same-sex", fullName: "Anna Mifsud", sex: "Female", spouseIds: [] },
+      { id: "unknown-sex", fullName: "Alex Camilleri", sex: "", spouseIds: [] },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    act(() =>
+      [...container.querySelectorAll(".relationship-actions button")]
+        .find((button) => button.textContent.includes("Partner"))
+        .click(),
+    );
+
+    const candidateIds = [
+      ...container.querySelector('select[aria-label="Existing partner"]').options,
+    ]
+      .map((option) => option.value)
+      .filter(Boolean);
+    expect(candidateIds).toEqual(["cousin", "unrelated"]);
+    expect(container.textContent).toContain("cousins and more distant relatives remain available");
+
+    act(() =>
+      [...container.querySelectorAll(".relationship-actions button")]
+        .find((button) => button.textContent.includes("Wife / husband"))
+        .click(),
+    );
+    const marriageCandidateIds = [
+      ...container.querySelector('select[aria-label="Existing partner"]').options,
+    ]
+      .map((option) => option.value)
+      .filter(Boolean);
+    expect(marriageCandidateIds).toEqual(["cousin", "unrelated"]);
+    expect(container.textContent).toContain("Add a wife or husband");
   });
 
   it("keeps parent creation buttons but omits father and mother detail selectors", () => {
@@ -2727,6 +2817,7 @@ describe("PersonInspector", () => {
         .click(),
     );
     const spouseId = latestPeople.find((person) => person.id !== "roland").id;
+    expect(latestPeople.find((person) => person.id === spouseId).sex).toBe("Female");
     expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
       type: "marriage",
       startDate: "2015-06-15",
