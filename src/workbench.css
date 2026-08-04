@@ -148,6 +148,7 @@
   border: 0;
   background: transparent;
   color: var(--forest);
+  cursor: pointer;
   padding: 0;
   font-size: 0.73rem;
   font-weight: 800;
@@ -3562,6 +3563,51 @@ textarea {
   justify-items: end;
 }
 
+.tree-person-link,
+.ownership-person-link,
+.tax-person-link,
+.tax-provenance-link,
+.tax-history-person-link,
+.history-person-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 1.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--forest);
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 84, 50, 0.35);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.tree-person-link:hover,
+.ownership-person-link:hover,
+.tax-person-link:hover,
+.tax-provenance-link:hover,
+.tax-history-person-link:hover,
+.history-person-link:hover {
+  color: var(--plum);
+  text-decoration-color: currentColor;
+}
+
+.tree-person-link:focus-visible,
+.ownership-person-link:focus-visible,
+.tax-person-link:focus-visible,
+.tax-provenance-link:focus-visible,
+.tax-history-person-link:focus-visible,
+.history-person-link:focus-visible {
+  border-radius: 3px;
+  outline: 3px solid rgba(75, 17, 111, 0.35);
+  outline-offset: 2px;
+}
+
 .tree-current-owners small,
 .tree-current-owners p {
   color: var(--muted);
@@ -3758,6 +3804,11 @@ textarea {
 
 .succession-trace-description strong {
   color: var(--ink);
+  font-size: 0.7rem;
+}
+
+.succession-trace-description .trace-person-link {
+  min-height: 1.5rem;
   font-size: 0.7rem;
 }
 

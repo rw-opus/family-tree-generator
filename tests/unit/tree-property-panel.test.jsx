@@ -69,6 +69,7 @@ describe("TreePropertyPanel", () => {
   it("combines selling price, initial shares, current values, and card controls", () => {
     const onCardFieldsChange = vi.fn();
     const onOpenTax = vi.fn();
+    const onSelectPerson = vi.fn();
     const taxReport = {
       vendors: [
         {
@@ -96,6 +97,7 @@ describe("TreePropertyPanel", () => {
           onFocusEvent={vi.fn()}
           onOpenProperty={vi.fn()}
           onOpenTax={onOpenTax}
+          onSelectPerson={onSelectPerson}
         />,
       ),
     );
@@ -113,6 +115,11 @@ describe("TreePropertyPanel", () => {
     );
     act(() => currentTitle.click());
     expect(container.textContent).toContain("Maria Borg");
+    const ownerLink = container.querySelector(
+      'button[aria-label="Open Maria Borg person details"]',
+    );
+    act(() => ownerLink.click());
+    expect(onSelectPerson).toHaveBeenCalledWith("owner");
     expect(container.textContent).toContain("1/1");
     expect(container.textContent).toContain("Tax €2,400.00");
     expect(container.textContent).toContain("Download one-sheet Excel");

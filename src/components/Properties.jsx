@@ -34,6 +34,7 @@ export function Properties({
   outsideParties,
   singleProperty = false,
   section = "all",
+  onSelectPerson,
   onChange,
 }) {
   const showSaleValue = section === "all" || section === "property";
@@ -171,7 +172,17 @@ export function Properties({
                     return (
                       <div key={`${row.ownerId}-${row.via}`}>
                         <span>
-                          {person?.fullName || "Unnamed person"}
+                          {person && onSelectPerson ? (
+                            <button
+                              type="button"
+                              className="ownership-person-link"
+                              onClick={() => onSelectPerson(person.id)}
+                            >
+                              {person.fullName || "Unnamed person"}
+                            </button>
+                          ) : (
+                            person?.fullName || "Unnamed person"
+                          )}
                           <small> · {viaLabel(row.via)}</small>
                         </span>
                         <b>
@@ -206,6 +217,7 @@ export function Properties({
                 people={people}
                 outsideParties={outsideParties}
                 vendorReport={vendorReport}
+                onSelectPerson={onSelectPerson}
               />
             )}
           </section>

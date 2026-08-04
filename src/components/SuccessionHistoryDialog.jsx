@@ -15,7 +15,7 @@ const eventTypeLabel = (type) => {
   return "Sale or transfer";
 };
 
-export function SuccessionHistoryDialog({ property, events, onClose }) {
+export function SuccessionHistoryDialog({ property, events, onSelectPerson, onClose }) {
   useEffect(() => {
     document.body.classList.add("succession-history-open");
     const closeOnEscape = (event) => {
@@ -77,7 +77,22 @@ export function SuccessionHistoryDialog({ property, events, onClose }) {
                     <span>{eventTypeLabel(event.type)}</span>
                     <time>{event.date ? isoDateToDisplay(event.date) : "Undated event"}</time>
                   </p>
-                  <h3>{event.title}</h3>
+                  {event.personId && onSelectPerson ? (
+                    <h3>
+                      <button
+                        type="button"
+                        className="history-person-link"
+                        onClick={() => {
+                          onClose();
+                          onSelectPerson(event.personId);
+                        }}
+                      >
+                        {event.title}
+                      </button>
+                    </h3>
+                  ) : (
+                    <h3>{event.title}</h3>
+                  )}
                   <p>{event.description}</p>
                 </div>
               </li>

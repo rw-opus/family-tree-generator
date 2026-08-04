@@ -18,7 +18,13 @@ const fractionLabel = (share, exactFraction) => {
   return `${fraction.numerator}/${fraction.denominator}`;
 };
 
-export function TaxCalculationPanel({ property, people, outsideParties, vendorReport }) {
+export function TaxCalculationPanel({
+  property,
+  people,
+  outsideParties,
+  vendorReport,
+  onSelectPerson,
+}) {
   const report = buildTaxCalculationReport(property, people, outsideParties, vendorReport);
   const historyEvents = buildSuccessionTrace({
     property,
@@ -26,6 +32,7 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
     outsideParties,
     propertyReport: vendorReport,
   });
+  const peopleById = new Map(people.map((person) => [person.id, person]));
 
   return (
     <section className="tax-calculation-panel" aria-label="Tax Calculation">
@@ -61,7 +68,17 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
             {historyEvents.map((event) => (
               <li key={event.id}>
                 <span>{event.date ? isoDateToDisplay(event.date) : "Undated"}</span>
-                <strong>{event.title}</strong>
+                {event.personId && peopleById.has(event.personId) && onSelectPerson ? (
+                  <button
+                    type="button"
+                    className="tax-history-person-link"
+                    onClick={() => onSelectPerson(event.personId)}
+                  >
+                    {event.title}
+                  </button>
+                ) : (
+                  <strong>{event.title}</strong>
+                )}
                 <p>{event.description}</p>
               </li>
             ))}
@@ -77,7 +94,17 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
             <article className="tax-calculation-vendor" key={vendor.id}>
               <header>
                 <span>
-                  <strong>{vendor.name}</strong>
+                  {peopleById.has(vendor.id) && onSelectPerson ? (
+                    <button
+                      type="button"
+                      className="tax-person-link"
+                      onClick={() => onSelectPerson(vendor.id)}
+                    >
+                      {vendor.name}
+                    </button>
+                  ) : (
+                    <strong>{vendor.name}</strong>
+                  )}
                   <small>Total ownership {fractionLabel(vendor.share, vendor.shareFraction)}</small>
                 </span>
                 <span>
@@ -108,7 +135,17 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
                     {vendor.rows.map((row) => (
                       <tr key={row.id}>
                         <td data-label="Provenance">
-                          <strong>{row.provenance}</strong>
+                          {row.provenancePersonId && onSelectPerson ? (
+                            <button
+                              type="button"
+                              className="tax-provenance-link"
+                              onClick={() => onSelectPerson(row.provenancePersonId)}
+                            >
+                              {row.provenance}
+                            </button>
+                          ) : (
+                            <strong>{row.provenance}</strong>
+                          )}
                           {row.inheritanceDate && (
                             <small>d. {isoDateToDisplay(row.inheritanceDate)}</small>
                           )}

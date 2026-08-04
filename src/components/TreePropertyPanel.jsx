@@ -49,6 +49,7 @@ export function TreePropertyPanel({
   onFocusEvent,
   onOpenProperty,
   onOpenTax,
+  onSelectPerson,
   expanded: controlledExpanded,
   onExpandedChange,
 }) {
@@ -65,6 +66,7 @@ export function TreePropertyPanel({
   const saleValue = Math.max(0, Number(property.saleValue) || 0);
   const startingStatus = propertyReport.startingOwnership;
   const currentOwners = propertyReport.ledger?.owners || [];
+  const personIds = useMemo(() => new Set(people.map((person) => person.id)), [people]);
   const taxByOwnerId = useMemo(
     () => new Map((taxReport?.vendors || []).map((vendor) => [vendor.id, vendor])),
     [taxReport],
@@ -199,9 +201,21 @@ export function TreePropertyPanel({
                 {currentOwners.length ? (
                   currentOwners.map((owner) => {
                     const vendorTax = taxByOwnerId.get(owner.id);
+                    const ownerPersonId = owner.personId || owner.id;
                     return (
                       <div key={owner.id}>
-                        <span>{owner.name}</span>
+                        {personIds.has(ownerPersonId) && onSelectPerson ? (
+                          <button
+                            type="button"
+                            className="tree-person-link"
+                            aria-label={`Open ${owner.name} person details`}
+                            onClick={() => onSelectPerson(ownerPersonId)}
+                          >
+                            {owner.name}
+                          </button>
+                        ) : (
+                          <span>{owner.name}</span>
+                        )}
                         <span>
                           <b>{shareLabel(owner.share, owner.shareFraction)}</b>
                           <small>
@@ -297,7 +311,17 @@ export function TreePropertyPanel({
                     <span>
                       {traceEvent.date ? isoDateToDisplay(traceEvent.date) : "Undated event"}
                     </span>
-                    <strong>{traceEvent.title}</strong>
+                    {traceEvent.personId && personIds.has(traceEvent.personId) && onSelectPerson ? (
+                      <button
+                        type="button"
+                        className="tree-person-link trace-person-link"
+                        onClick={() => onSelectPerson(traceEvent.personId)}
+                      >
+                        {traceEvent.title}
+                      </button>
+                    ) : (
+                      <strong>{traceEvent.title}</strong>
+                    )}
                     <p>{traceEvent.description}</p>
                   </div>
                 </div>
@@ -328,6 +352,7 @@ export function TreePropertyPanel({
         <SuccessionHistoryDialog
           property={property}
           events={traceEvents}
+          onSelectPerson={onSelectPerson}
           onClose={() => setHistoryOpen(false)}
         />
       )}

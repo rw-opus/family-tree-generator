@@ -982,6 +982,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
             outsideParties={currentTree.outsideParties}
             singleProperty
             section={workspaceView}
+            onSelectPerson={(personId) => {
+              setWorkspaceView("tree");
+              selectPerson(personId);
+            }}
             onChange={updatePrimaryPropertyWorkspace}
           />
         </section>
@@ -1135,6 +1139,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   setPropertyPanelExpanded(false);
                   setWorkspaceView("tax");
                 }}
+                onSelectPerson={selectPerson}
               />
             </div>
           )}

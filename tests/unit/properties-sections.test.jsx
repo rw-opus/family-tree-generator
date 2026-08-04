@@ -144,6 +144,43 @@ describe("Properties section views", () => {
     });
   });
 
+  it("opens a linked person's details from ownership and tax labels", () => {
+    const onSelectPerson = vi.fn();
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          section="ownership"
+          onSelectPerson={onSelectPerson}
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector(".ownership-person-link").click());
+    expect(onSelectPerson).toHaveBeenLastCalledWith("owner");
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          section="tax"
+          onSelectPerson={onSelectPerson}
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector(".tax-person-link").click());
+    expect(onSelectPerson).toHaveBeenLastCalledWith("owner");
+  });
+
   it("shows a manually assessed company vendor as read-only information", () => {
     act(() =>
       root.render(
