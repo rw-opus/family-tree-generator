@@ -3874,7 +3874,9 @@ textarea {
 }
 
 .initial-ownership-editor.compact .initial-owner-row {
-  grid-template-columns: minmax(0, 1fr) minmax(76px, 0.75fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 88px 28px;
+  gap: 0.22rem;
+  padding: 0.22rem;
 }
 
 .initial-ownership-editor.compact .initial-owner-percentage {
@@ -3889,10 +3891,29 @@ textarea {
   font-size: 0.64rem;
 }
 
+.initial-ownership-editor.compact .initial-owner-person-control {
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 0.2rem;
+}
+
+.initial-ownership-editor.compact .initial-owner-person-control select {
+  overflow: hidden;
+  padding-right: 1.45rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.initial-ownership-editor.compact .initial-owner-fraction {
+  width: 88px;
+  gap: 0;
+}
+
 .initial-ownership-editor.compact .initial-owner-fraction input {
+  width: 100%;
   border: 0;
   border-radius: 0;
   background: transparent;
+  padding: 0.2rem 0.08rem;
   text-align: center;
 }
 
