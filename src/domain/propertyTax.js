@@ -177,24 +177,9 @@ export function suggestedIntestacyShares(heirs = [], dateOfDeath = "") {
   return heirs.map((heir) => ({ ...heir, sharePercent: allocation.shares.get(heir.id) || 0 }));
 }
 
-export function inheritedValue(property, heir) {
-  return (
-    number(property.marketValueAtDeath) *
-    (number(property.deceasedOwnershipPercent) / 100) *
-    (number(property.rightPercent) / 100) *
-    (number(heir.sharePercent) / 100)
-  );
-}
-
-export function inheritanceDuty(property, heir, options = {}) {
-  const value = inheritedValue(property, heir);
-  if (heir.exemption === "full") return { inheritedValue: value, duty: 0, rebate: 0 };
-  const reducedBand = heir.soleResidence ? Math.min(value, 200000) : 0;
-  let duty = reducedBand * 0.035 + (value - reducedBand) * 0.05;
-  const rebate = options.deedWithinSixMonths && duty > 0 && duty < 2300 ? Math.min(250, duty) : 0;
-  duty -= rebate;
-  return { inheritedValue: value, duty, rebate };
-}
+// Stamp duty (duty on documents) is deliberately outside this generator's scope: only
+// Article 5A transfer taxes are computed. The former inheritedValue/inheritanceDuty
+// helpers were removed with that decision so a duty figure cannot creep back in.
 
 export function saleTaxLot(lot, context = {}) {
   // Values in a lot already relate to that lot's fraction. Multiplying by the

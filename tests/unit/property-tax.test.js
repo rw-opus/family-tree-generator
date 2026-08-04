@@ -3,7 +3,6 @@ import {
   allocateCurrentIntestacy,
   allocateLegacyDescendantIntestacy,
   deedTransferTotals,
-  inheritanceDuty,
   saleTaxLot,
   saleTaxLotsTotal,
   successionRuleset,
@@ -170,35 +169,6 @@ describe("Maltese inherited property estimates", () => {
 
     expect(result.warnings.join(" ")).toContain("Carlo");
     expect(result.warnings.join(" ")).toContain("no valid parent branch");
-  });
-  it("calculates inherited value and standard duty", () => {
-    const result = inheritanceDuty(
-      { marketValueAtDeath: 600000, deceasedOwnershipPercent: 50, rightPercent: 100 },
-      { sharePercent: 100 / 3, soleResidence: false },
-    );
-    expect(result.inheritedValue).toBeCloseTo(100000);
-    expect(result.duty).toBeCloseTo(5000);
-  });
-  it("applies the €250 rebate only when duty is strictly below €2,300", () => {
-    const propertyForValue = (marketValueAtDeath) => ({
-      marketValueAtDeath,
-      deceasedOwnershipPercent: 100,
-      rightPercent: 100,
-    });
-    const heir = { sharePercent: 100, soleResidence: false };
-
-    expect(
-      inheritanceDuty(propertyForValue(45980), heir, { deedWithinSixMonths: true }),
-    ).toMatchObject({
-      duty: 2049,
-      rebate: 250,
-    });
-    expect(
-      inheritanceDuty(propertyForValue(46000), heir, { deedWithinSixMonths: true }),
-    ).toMatchObject({
-      duty: 2300,
-      rebate: 0,
-    });
   });
   it("compares post-2003 sale methods", () => {
     const result = saleTaxLot({
