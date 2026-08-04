@@ -59,7 +59,8 @@ import {
   removePartnerRelationship,
   upsertPartnerRelationship,
 } from "../domain/partnerRelationships.js";
-import { buildTaxCalculationReport } from "../domain/propertyVendorTax.js";
+import { buildTaxCalculationReport, ownerProvenanceTranches } from "../domain/propertyVendorTax.js";
+import { selectTranchePortions } from "../domain/trancheOwnership.js";
 import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
@@ -87,7 +88,7 @@ const blankDonationDraft = () => ({
   denominator: "2",
   amountType: "seller-holding",
   date: "",
-  consideration: "",
+  designation: {},
   error: "",
 });
 
@@ -697,9 +698,78 @@ export function PersonInspector({
     Boolean(activeProperty && onRecordDonation && donorLedgerHolding) &&
     compareFractions(donorLedgerHolding, ZERO_FRACTION) > 0;
   const isDonation = donationDraft.kind !== "sale";
+  const provenanceTranches = useMemo(
+    () =>
+      canDonate
+        ? ownerProvenanceTranches(vendorReport || {}, activeProperty || {}, selectedPerson.id)
+        : [],
+    [activeProperty, canDonate, selectedPerson.id, vendorReport],
+  );
+  // The transferred share as a fraction of the whole property, from the current draft.
+  const draftTransferAmount = () => {
+    const fraction = normaliseFraction(donationDraft.numerator, donationDraft.denominator);
+    if (fraction.error) return fraction;
+    return donationDraft.amountType === "whole-property"
+      ? fraction
+      : multiplyFractions(donorLedgerHolding, fraction);
+  };
+  const previewAmount = canDonate ? draftTransferAmount() : null;
+  // The provenance question is exceptional: it only arises when part of the holding is
+  // transferred while the holder acquired on more than one occasion. A whole-holding
+  // transfer moves every provenance, and a single provenance answers itself.
+  const needsProvenanceDesignation =
+    Boolean(canDonate && previewAmount && !previewAmount.error) &&
+    provenanceTranches.length > 1 &&
+    compareFractions(previewAmount, ZERO_FRACTION) > 0 &&
+    compareFractions(previewAmount, donorLedgerHolding) < 0;
+  const designationCheckedCount = provenanceTranches.filter(
+    (tranche) => donationDraft.designation[tranche.trancheId]?.checked,
+  ).length;
 
   const setDonationField = (patch) =>
     setDonationDraft((current) => ({ ...current, ...patch, error: "" }));
+
+  const transferProvenance = (amount) => {
+    if (!provenanceTranches.length) return { provenance: [] };
+    const asRecord = (portion) => ({
+      trancheId: portion.tranche.trancheId,
+      label: portion.tranche.provenance,
+      cause: portion.tranche.cause,
+      acquiredOn: portion.tranche.acquiredOn,
+      numerator: portion.fraction.numerator,
+      denominator: portion.fraction.denominator,
+    });
+    if (needsProvenanceDesignation) {
+      const chosen = provenanceTranches.filter(
+        (tranche) => donationDraft.designation[tranche.trancheId]?.checked,
+      );
+      if (!chosen.length) {
+        return { error: "Choose which provenance is being transferred." };
+      }
+      const designation = chosen.map((tranche) => {
+        if (chosen.length === 1) return { trancheId: tranche.trancheId, fraction: amount };
+        const entry = donationDraft.designation[tranche.trancheId] || {};
+        return {
+          trancheId: tranche.trancheId,
+          fraction: normaliseFraction(entry.numerator, entry.denominator),
+        };
+      });
+      const invalid = designation.find((entry) => entry.fraction.error);
+      if (invalid) return { error: invalid.fraction.error };
+      const selection = selectTranchePortions(provenanceTranches, amount, {
+        strategy: "designated",
+        designation,
+      });
+      if (selection.error) return { error: selection.error };
+      return { provenance: selection.portions.map(asRecord) };
+    }
+    // No question needed: attribute automatically, and silently skip when the recorded
+    // acquisitions cannot account for the amount (legacy transfers without provenance).
+    const selection = selectTranchePortions(provenanceTranches, amount, {
+      strategy: "pro-rata",
+    });
+    return { provenance: selection.error ? [] : selection.portions.map(asRecord) };
+  };
 
   const submitDonation = (event) => {
     event.preventDefault();
@@ -722,6 +792,10 @@ export function PersonInspector({
         ...d,
         error: "This person does not own enough to complete this transfer.",
       }));
+    }
+    const provenanceResult = transferProvenance(amount);
+    if (provenanceResult.error) {
+      return setDonationDraft((d) => ({ ...d, error: provenanceResult.error }));
     }
 
     let acquirer = null;
@@ -767,7 +841,10 @@ export function PersonInspector({
         denominator: String(fraction.denominator),
         amountType: donationDraft.amountType,
         date: donationDraft.date,
-        consideration: isDonation ? "" : donationDraft.consideration,
+        consideration: "",
+        // Which acquisitions the transferred share comes from — designated by the notary
+        // when the question arises, attributed automatically when it answers itself.
+        provenance: provenanceResult.provenance,
       },
     });
     setDonationDraft(blankDonationDraft());
@@ -1156,6 +1233,246 @@ export function PersonInspector({
               ? "This removes the person from this family only; the shared record remains elsewhere."
               : "No partner or descendant dependencies. Confirmation is required.";
 
+  // The transfer section renders standalone for living holders, and inside the Estate
+  // area when a deceased person's share was sold or donated during their lifetime.
+  const shareTransferSection = canDonate ? (
+    <div className="person-donation" data-person-section="donation">
+      <div className="inspector-section-heading">
+        <h3>Donate or transfer a share</h3>
+        <button
+          type="button"
+          className="secondary-button"
+          aria-expanded={donationOpen}
+          onClick={() => setDonationOpen((open) => !open)}
+        >
+          {donationOpen ? "Close" : "Record…"}
+        </button>
+      </div>
+      {donationOpen && (
+        <form className="person-donation-form" onSubmit={submitDonation}>
+          <label>
+            Type of contract
+            <select
+              aria-label="Type of contract"
+              value={donationDraft.kind}
+              onChange={(event) => setDonationField({ kind: event.target.value })}
+            >
+              <option value="donation">Donation</option>
+              <option value="sale">Sale</option>
+            </select>
+          </label>
+          <p className="helper-text">
+            {isDonation
+              ? "On a later resale by the donee, the donor's acquisition date sets the applicable rate."
+              : "On a later resale, the acquirer's own purchase date governs the tax."}
+          </p>
+          <label>
+            {isDonation ? "Who receives the donation?" : "Who acquires the share?"}
+            <select
+              aria-label="Acquirer source"
+              value={donationDraft.doneeMode}
+              onChange={(event) => setDonationField({ doneeMode: event.target.value })}
+            >
+              <option value="existing">Someone on this family tree</option>
+              <option value="new">Someone not on the tree — add them</option>
+            </select>
+          </label>
+          {donationDraft.doneeMode === "existing" ? (
+            <label>
+              {isDonation ? "Donee" : "Buyer"}
+              <select
+                aria-label="Existing acquirer"
+                value={donationDraft.doneeId}
+                onChange={(event) => setDonationField({ doneeId: event.target.value })}
+              >
+                <option value="">Select a person</option>
+                {people
+                  .filter((person) => person.id !== selectedPerson.id)
+                  .map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {displayName(person)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : (
+            <>
+              <label>
+                {isDonation ? "Donee's full name" : "Buyer's full name"}
+                <input
+                  aria-label="New acquirer full name"
+                  value={donationDraft.doneeName}
+                  onChange={(event) => setDonationField({ doneeName: event.target.value })}
+                  placeholder="Full name"
+                />
+              </label>
+              <label>
+                Sex (optional)
+                <select
+                  aria-label="New acquirer sex"
+                  value={donationDraft.doneeSex}
+                  onChange={(event) => setDonationField({ doneeSex: event.target.value })}
+                >
+                  <option value="">Not recorded</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </label>
+              <p className="helper-text">
+                This person starts their own small tree beside the family and can be given a spouse,
+                children and details from their card afterwards.
+              </p>
+            </>
+          )}
+          <label>
+            Transfer measurement
+            <select
+              aria-label="Transfer measurement"
+              value={donationDraft.amountType}
+              onChange={(event) => setDonationField({ amountType: event.target.value })}
+            >
+              <option value="seller-holding">Fraction of this person's holding</option>
+              <option value="whole-property">Fraction of the whole property</option>
+            </select>
+          </label>
+          <div className="transfer-fraction">
+            <label>
+              Numerator
+              <input
+                type="number"
+                min="0"
+                max={MAX_FRACTION_INTEGER}
+                step="1"
+                value={donationDraft.numerator}
+                onChange={(event) => setDonationField({ numerator: event.target.value })}
+              />
+            </label>
+            <span>/</span>
+            <label>
+              Denominator
+              <input
+                type="number"
+                min="1"
+                max={MAX_FRACTION_INTEGER}
+                step="1"
+                value={donationDraft.denominator}
+                onChange={(event) => setDonationField({ denominator: event.target.value })}
+              />
+            </label>
+          </div>
+          {needsProvenanceDesignation && (
+            <div
+              className="provenance-designation"
+              role="group"
+              aria-label="Provenance designation"
+            >
+              <span className="provenance-heading">Which provenance is being transferred?</span>
+              <p className="helper-text">
+                Only part of the holding is being transferred and it was acquired on more than one
+                occasion, so the deed must say which acquisition the share comes from.
+              </p>
+              {provenanceTranches.map((tranche) => {
+                const entry = donationDraft.designation[tranche.trancheId] || {};
+                return (
+                  <div className="provenance-row" key={tranche.trancheId}>
+                    <label className="provenance-pick">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(entry.checked)}
+                        onChange={(event) =>
+                          setDonationField({
+                            designation: {
+                              ...donationDraft.designation,
+                              [tranche.trancheId]: {
+                                ...entry,
+                                checked: event.target.checked,
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <span>
+                        <strong>{tranche.provenance}</strong>
+                        <small>
+                          {`${tranche.fraction.numerator}/${tranche.fraction.denominator} of the property`}
+                          {tranche.acquiredOn ? ` — ${isoDateToDisplay(tranche.acquiredOn)}` : ""}
+                        </small>
+                      </span>
+                    </label>
+                    {entry.checked && designationCheckedCount > 1 && (
+                      <span className="provenance-fraction">
+                        <input
+                          type="number"
+                          min="0"
+                          max={MAX_FRACTION_INTEGER}
+                          step="1"
+                          aria-label={`Numerator from ${tranche.provenance}`}
+                          value={entry.numerator || ""}
+                          onChange={(event) =>
+                            setDonationField({
+                              designation: {
+                                ...donationDraft.designation,
+                                [tranche.trancheId]: {
+                                  ...entry,
+                                  numerator: event.target.value,
+                                },
+                              },
+                            })
+                          }
+                        />
+                        <span>/</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={MAX_FRACTION_INTEGER}
+                          step="1"
+                          aria-label={`Denominator from ${tranche.provenance}`}
+                          value={entry.denominator || ""}
+                          onChange={(event) =>
+                            setDonationField({
+                              designation: {
+                                ...donationDraft.designation,
+                                [tranche.trancheId]: {
+                                  ...entry,
+                                  denominator: event.target.value,
+                                },
+                              },
+                            })
+                          }
+                        />
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+              <p className="helper-text">
+                {designationCheckedCount <= 1
+                  ? "With one acquisition selected, the whole transferred share comes from it."
+                  : "Enter each part as a fraction of the whole property; together they must equal the transferred share."}
+              </p>
+            </div>
+          )}
+          <label>
+            {isDonation ? "Donation date" : "Sale date"}
+            <DateInput
+              value={donationDraft.date}
+              onChange={(value) => setDonationField({ date: value })}
+            />
+          </label>
+          {donationDraft.error && (
+            <p className="transfer-error" role="alert">
+              {donationDraft.error}
+            </p>
+          )}
+          <button type="submit" className="primary-button">
+            {isDonation ? "Record donation" : "Record sale"}
+          </button>
+        </form>
+      )}
+    </div>
+  ) : null;
+  const showStandaloneShareTransfer = !(isDeceased && inheritanceBasis === "lifetime-disposal");
+
   return (
     <div className="person-inspector">
       <section className="inspector-profile">
@@ -1449,7 +1766,7 @@ export function PersonInspector({
           </label>
         </div>
 
-        {missingIntestateParentRoles.length > 0 && (
+        {missingIntestateParentRoles.length > 0 && inheritanceBasis !== "lifetime-disposal" && (
           <section className="potential-parent-survival-alert" role="alert">
             <strong>Possible parent inheritance needs confirmation</strong>
             <p>
@@ -1547,10 +1864,25 @@ export function PersonInspector({
                 >
                   <option value="intestacy">Intestate</option>
                   <option value="will">Testate</option>
+                  <option value="lifetime-disposal">Sold / donated during lifetime</option>
                 </select>
               </label>
 
-              {inheritanceBasis === "intestacy" ? (
+              {inheritanceBasis === "lifetime-disposal" ? (
+                <div className="lifetime-disposal-details">
+                  <p className="helper-text">
+                    This person disposed of their share during their lifetime, so no succession
+                    arises for it: the acquirer takes under the deed, not as an heir. Record the
+                    donation or sale below.
+                  </p>
+                  {shareTransferSection || (
+                    <p className="helper-text">
+                      No remaining holding is recorded for this person on the active property, so
+                      there is nothing left to transfer.
+                    </p>
+                  )}
+                </div>
+              ) : inheritanceBasis === "intestacy" ? (
                 <IntestateHeirConfirmation
                   deceased={selectedPerson}
                   people={people}
@@ -2149,164 +2481,7 @@ export function PersonInspector({
               </span>
             </div>
           </div>
-          {canDonate && (
-            <div className="person-donation" data-person-section="donation">
-              <div className="inspector-section-heading">
-                <h3>Donate or transfer a share</h3>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  aria-expanded={donationOpen}
-                  onClick={() => setDonationOpen((open) => !open)}
-                >
-                  {donationOpen ? "Close" : "Record…"}
-                </button>
-              </div>
-              {donationOpen && (
-                <form className="person-donation-form" onSubmit={submitDonation}>
-                  <label>
-                    Type of contract
-                    <select
-                      aria-label="Type of contract"
-                      value={donationDraft.kind}
-                      onChange={(event) => setDonationField({ kind: event.target.value })}
-                    >
-                      <option value="donation">Donation</option>
-                      <option value="sale">Sale</option>
-                    </select>
-                  </label>
-                  <p className="helper-text">
-                    {isDonation
-                      ? "On a later resale by the donee, the donor's acquisition date sets the applicable rate."
-                      : "On a later resale, the acquirer's own purchase date and price govern the tax."}
-                  </p>
-                  <label>
-                    {isDonation ? "Who receives the donation?" : "Who acquires the share?"}
-                    <select
-                      aria-label="Acquirer source"
-                      value={donationDraft.doneeMode}
-                      onChange={(event) => setDonationField({ doneeMode: event.target.value })}
-                    >
-                      <option value="existing">Someone on this family tree</option>
-                      <option value="new">Someone not on the tree — add them</option>
-                    </select>
-                  </label>
-                  {donationDraft.doneeMode === "existing" ? (
-                    <label>
-                      {isDonation ? "Donee" : "Buyer"}
-                      <select
-                        aria-label="Existing acquirer"
-                        value={donationDraft.doneeId}
-                        onChange={(event) => setDonationField({ doneeId: event.target.value })}
-                      >
-                        <option value="">Select a person</option>
-                        {people
-                          .filter((person) => person.id !== selectedPerson.id)
-                          .map((person) => (
-                            <option key={person.id} value={person.id}>
-                              {displayName(person)}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <>
-                      <label>
-                        {isDonation ? "Donee's full name" : "Buyer's full name"}
-                        <input
-                          aria-label="New acquirer full name"
-                          value={donationDraft.doneeName}
-                          onChange={(event) => setDonationField({ doneeName: event.target.value })}
-                          placeholder="Full name"
-                        />
-                      </label>
-                      <label>
-                        Sex (optional)
-                        <select
-                          aria-label="New acquirer sex"
-                          value={donationDraft.doneeSex}
-                          onChange={(event) => setDonationField({ doneeSex: event.target.value })}
-                        >
-                          <option value="">Not recorded</option>
-                          <option value="Male">Male</option>
-                          <option value="Female">Female</option>
-                        </select>
-                      </label>
-                      <p className="helper-text">
-                        This person starts their own small tree beside the family and can be given a
-                        spouse, children and details from their card afterwards.
-                      </p>
-                    </>
-                  )}
-                  <label>
-                    Transfer measurement
-                    <select
-                      aria-label="Transfer measurement"
-                      value={donationDraft.amountType}
-                      onChange={(event) => setDonationField({ amountType: event.target.value })}
-                    >
-                      <option value="seller-holding">Fraction of this person's holding</option>
-                      <option value="whole-property">Fraction of the whole property</option>
-                    </select>
-                  </label>
-                  <div className="transfer-fraction">
-                    <label>
-                      Numerator
-                      <input
-                        type="number"
-                        min="0"
-                        max={MAX_FRACTION_INTEGER}
-                        step="1"
-                        value={donationDraft.numerator}
-                        onChange={(event) => setDonationField({ numerator: event.target.value })}
-                      />
-                    </label>
-                    <span>/</span>
-                    <label>
-                      Denominator
-                      <input
-                        type="number"
-                        min="1"
-                        max={MAX_FRACTION_INTEGER}
-                        step="1"
-                        value={donationDraft.denominator}
-                        onChange={(event) => setDonationField({ denominator: event.target.value })}
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    {isDonation ? "Donation date" : "Sale date"}
-                    <DateInput
-                      value={donationDraft.date}
-                      onChange={(value) => setDonationField({ date: value })}
-                    />
-                  </label>
-                  {!isDonation && (
-                    <label>
-                      Consideration (€)
-                      <input
-                        aria-label="Sale consideration"
-                        type="number"
-                        min="0"
-                        value={donationDraft.consideration}
-                        onChange={(event) =>
-                          setDonationField({ consideration: event.target.value })
-                        }
-                      />
-                    </label>
-                  )}
-                  {donationDraft.error && (
-                    <p className="transfer-error" role="alert">
-                      {donationDraft.error}
-                    </p>
-                  )}
-                  <button type="submit" className="primary-button">
-                    {isDonation ? "Record donation" : "Record sale"}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
+          {showStandaloneShareTransfer && shareTransferSection}
           {linkedPartners.length > 0 && (
             <div className="person-partner-links">
               <span>Marriage / partner links</span>

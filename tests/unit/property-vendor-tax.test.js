@@ -7,10 +7,76 @@ import {
   assignInitialOwnerPerson,
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
+  ownerProvenanceTranches,
   propertyStartingOwnershipStatus,
   provenanceLabel,
   remainingInitialOwnershipShare,
 } from "../../src/domain/propertyVendorTax.js";
+
+describe("owner provenance tranches", () => {
+  const report = {
+    inheritanceSourcesByOwner: new Map([
+      [
+        "heir",
+        [
+          {
+            deceasedId: "father",
+            deceasedName: "Joseph Borg",
+            inheritanceDate: "2015-03-01",
+            shareFraction: { numerator: 1, denominator: 4 },
+          },
+        ],
+      ],
+    ]),
+    ledger: {
+      parties: [{ id: "aunt", name: "Carmen Vella" }],
+      entries: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "aunt",
+          buyerId: "heir",
+          date: "2020-06-01",
+          amountFraction: { numerator: 1, denominator: 8 },
+        },
+      ],
+    },
+  };
+  const property = {
+    owners: [{ id: "row-1", personId: "heir", sharePercent: 50 }],
+    transfers: [],
+  };
+
+  it("lists initial ownership, inheritances and incoming transfers as acquisitions", () => {
+    const tranches = ownerProvenanceTranches(report, property, "heir");
+    expect(tranches.map((tranche) => tranche.provenance)).toEqual([
+      "Initial ownership",
+      "Inherited from Joseph Borg",
+      "Donated by Carmen Vella",
+    ]);
+    expect(tranches.map((tranche) => tranche.acquiredOn)).toEqual(["", "2015-03-01", "2020-06-01"]);
+  });
+
+  it("consumes acquisitions already sold with a recorded provenance", () => {
+    const soldFirstInheritance = {
+      ...property,
+      transfers: [
+        {
+          id: "first-sale",
+          sellerId: "heir",
+          buyerId: "someone",
+          provenance: [{ trancheId: "inheritance-father", numerator: 1, denominator: 4 }],
+        },
+      ],
+    };
+    const tranches = ownerProvenanceTranches(report, soldFirstInheritance, "heir");
+    // The first sale exhausted the inheritance, so it is no longer offered.
+    expect(tranches.map((tranche) => tranche.provenance)).toEqual([
+      "Initial ownership",
+      "Donated by Carmen Vella",
+    ]);
+  });
+});
 
 describe("provenance labels", () => {
   const ledger = {

@@ -368,6 +368,79 @@ export function buildTaxCalculationReport(
   };
 }
 
+/**
+ * Lists one owner's acquisitions of the property — initial ownership, each inheritance and
+ * each incoming transfer — as tranches. When a partial transfer is recorded while more than
+ * one of these exists, the deed must designate which provenance is being sold; the tranche
+ * list is what that designation chooses from.
+ */
+export function ownerProvenanceTranches(report = {}, property = {}, ownerId = "") {
+  if (!ownerId) return [];
+  const tranches = [];
+  (property.owners || []).forEach((owner) => {
+    if (owner?.personId !== ownerId) return;
+    const share = exactShareFromRecord(owner);
+    if (share.error || compareFractions(share, ZERO_FRACTION) <= 0) return;
+    tranches.push({
+      trancheId: `initial-${owner.id || ownerId}`,
+      personId: ownerId,
+      fraction: share,
+      acquiredOn: "",
+      cause: "initial",
+      provenance: "Initial ownership",
+    });
+  });
+  (report.inheritanceSourcesByOwner?.get?.(ownerId) || []).forEach((source) => {
+    if (!source.shareFraction || source.shareFraction.error) return;
+    tranches.push({
+      trancheId: `inheritance-${source.deceasedId}`,
+      personId: ownerId,
+      fraction: source.shareFraction,
+      acquiredOn: source.inheritanceDate || "",
+      cause: "inheritance",
+      provenance: `Inherited from ${source.deceasedName}`,
+    });
+  });
+  (report.ledger?.entries || []).forEach((entry) => {
+    if (entry.error || entry.buyerId !== ownerId || !entry.amountFraction) return;
+    const seller = (report.ledger.parties || []).find((party) => party.id === entry.sellerId);
+    const sellerName = seller?.name || "another owner";
+    tranches.push({
+      trancheId: `transfer-${entry.id}`,
+      personId: ownerId,
+      fraction: entry.amountFraction,
+      acquiredOn: entry.date || "",
+      cause: entry.kind === "donation" ? "donation" : "purchase",
+      provenance:
+        entry.kind === "donation" ? `Donated by ${sellerName}` : `Acquired from ${sellerName}`,
+    });
+  });
+
+  // Earlier outgoing transfers that recorded their provenance consume it here, so once a
+  // first sale exhausts an acquisition, a later transfer no longer offers it — and with one
+  // acquisition left the provenance question answers itself. Legacy transfers recorded
+  // without provenance leave the list untouched.
+  const consumed = new Map();
+  (property.transfers || []).forEach((transfer) => {
+    if (transfer.sellerId !== ownerId) return;
+    (transfer.provenance || []).forEach((portion) => {
+      const fraction = normaliseFraction(portion.numerator, portion.denominator);
+      if (fraction.error) return;
+      const running = addFractions(consumed.get(portion.trancheId) || ZERO_FRACTION, fraction);
+      if (!running.error) consumed.set(portion.trancheId, running);
+    });
+  });
+  return tranches
+    .map((tranche) => {
+      const taken = consumed.get(tranche.trancheId);
+      if (!taken) return tranche;
+      const left = subtractFractions(tranche.fraction, taken);
+      if (left.error || compareFractions(left, ZERO_FRACTION) <= 0) return null;
+      return { ...tranche, fraction: left };
+    })
+    .filter(Boolean);
+}
+
 export function propertyStartingOwnershipStatus(property = {}) {
   const ownerRows = property.owners || [];
   const owners = ownerRows.filter((owner) => owner?.personId);

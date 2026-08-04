@@ -1933,6 +1933,57 @@ textarea {
   font-weight: 800;
 }
 
+.provenance-designation {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid #cbd9d1;
+  border-radius: 0.55rem;
+  background: #fff;
+  padding: 0.45rem;
+}
+
+.provenance-heading {
+  color: #35443b;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.provenance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.provenance-pick {
+  display: flex !important;
+  grid-template-columns: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.provenance-pick input[type="checkbox"] {
+  min-height: 0;
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.provenance-pick span {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.provenance-fraction {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.provenance-fraction input {
+  width: 3.4rem;
+}
+
 .person-donation-form .transfer-error {
   margin: 0;
   color: #a33a2c;

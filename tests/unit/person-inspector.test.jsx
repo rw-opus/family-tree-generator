@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonInspector } from "../../src/components/PersonInspector.jsx";
 import { findPartnerRelationship } from "../../src/domain/partnerRelationships.js";
+import { buildPropertyVendorTaxReport } from "../../src/domain/propertyVendorTax.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -3093,5 +3094,214 @@ describe("PersonInspector pre-1992 succession note", () => {
     // rate says nothing about a later sale.
     expect(container.textContent).toContain("succession opened before 25");
     expect(container.textContent).not.toContain("Article 5A(5)(c)(i)");
+  });
+});
+
+describe("PersonInspector provenance designation", () => {
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  const people = [
+    { id: "seller", fullName: "Joseph Borg", spouseIds: [], designations: [] },
+    { id: "other", fullName: "Maria Vella", spouseIds: [], designations: [] },
+  ];
+  const property = {
+    id: "prop",
+    owners: [
+      { id: "o1", personId: "seller", sharePercent: 50 },
+      { id: "o2", personId: "other", sharePercent: 50 },
+    ],
+    declarations: [],
+    transfers: [
+      {
+        id: "t1",
+        sellerId: "other",
+        buyerId: "seller",
+        numerator: 1,
+        denominator: 4,
+        amountType: "whole-property",
+        date: "2020-01-01",
+      },
+    ],
+    saleLots: [],
+  };
+
+  it("asks which provenance a partial transfer comes from and records the answer", () => {
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    const onRecordDonation = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    const toggle = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Record…"),
+    );
+    expect(toggle).toBeTruthy();
+    act(() => toggle.click());
+
+    // Selling 1/2 of a 3/4 holding is partial, and the holding has two provenances.
+    expect(container.textContent).toContain("Which provenance is being transferred?");
+    expect(container.textContent).toContain("Initial ownership");
+    expect(container.textContent).toContain("Acquired from Maria Vella");
+
+    const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirer,
+        "other",
+      );
+      acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const firstProvenance = container.querySelector('.provenance-pick input[type="checkbox"]');
+    act(() => firstProvenance.click());
+
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    act(() => submit.click());
+
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    const { transfer } = onRecordDonation.mock.calls[0][0];
+    expect(transfer.kind).toBe("donation");
+    // Half of the 3/4 holding is 3/8 of the property, all designated from initial ownership.
+    expect(transfer.provenance).toEqual([
+      {
+        trancheId: "initial-o1",
+        label: "Initial ownership",
+        cause: "initial",
+        acquiredOn: "",
+        numerator: 3,
+        denominator: 8,
+      },
+    ]);
+  });
+
+  it("attributes a whole-holding transfer automatically without asking", () => {
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    const onRecordDonation = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    const toggle = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Record…"),
+    );
+    act(() => toggle.click());
+
+    const numerator = container.querySelector(".transfer-fraction input");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "1");
+      numerator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const denominator = container.querySelectorAll(".transfer-fraction input")[1];
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        denominator,
+        "1",
+      );
+      denominator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(container.textContent).not.toContain("Which provenance is being transferred?");
+
+    const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirer,
+        "other",
+      );
+      acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    act(() => submit.click());
+
+    const { transfer } = onRecordDonation.mock.calls[0][0];
+    // The whole 3/4 holding moves, carrying both provenances with their own fractions.
+    expect(transfer.provenance.map((portion) => portion.trancheId).sort()).toEqual([
+      "initial-o1",
+      "transfer-t1",
+    ]);
+  });
+});
+
+describe("PersonInspector lifetime disposal estate", () => {
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it("replaces succession content with the transfer flow when the share left during lifetime", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "d",
+              fullName: "Joseph Borg",
+              isDeceased: true,
+              dateOfDeath: "2020-01-01",
+              inheritanceBasis: "lifetime-disposal",
+              spouseIds: [],
+              designations: ["Deceased"],
+            },
+          ]}
+          selectedPersonId="d"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Sold / donated during lifetime");
+    expect(container.textContent).toContain("disposed of their share during their lifetime");
+    // No holding is recorded here, so the flow explains itself instead of showing a form.
+    expect(container.textContent).toContain("nothing left to transfer");
+    // Heir confirmation and wills stay hidden.
+    expect(container.textContent).not.toContain("Add will");
   });
 });
