@@ -356,7 +356,13 @@ export function buildTaxCalculationReport(
 }
 
 export function propertyStartingOwnershipStatus(property = {}) {
-  const owners = (property.owners || []).filter((owner) => owner?.personId);
+  const ownerRows = property.owners || [];
+  const owners = ownerRows.filter((owner) => owner?.personId);
+  const unassignedOwners = ownerRows.filter((owner) => {
+    if (owner?.personId) return false;
+    const share = exactShareFromRecord(owner);
+    return !share.error && compareFractions(share, ZERO_FRACTION) > 0;
+  });
   const isUnset = !owners.some((owner) => {
     const share = exactShareFromRecord(owner);
     return !share.error && compareFractions(share, ZERO_FRACTION) > 0;
@@ -365,13 +371,29 @@ export function propertyStartingOwnershipStatus(property = {}) {
     (total, owner) => addFractions(total, exactShareFromRecord(owner)),
     ZERO_FRACTION,
   );
+  const enteredTotalFraction = ownerRows.reduce(
+    (total, owner) => addFractions(total, exactShareFromRecord(owner)),
+    ZERO_FRACTION,
+  );
+  const unassignedFraction = unassignedOwners.reduce(
+    (total, owner) => addFractions(total, exactShareFromRecord(owner)),
+    ZERO_FRACTION,
+  );
   const totalPercent = fractionToNumber(totalFraction) * 100;
   return {
     isUnset,
     totalPercent,
     totalFraction,
+    enteredTotalPercent: fractionToNumber(enteredTotalFraction) * 100,
+    enteredTotalFraction,
+    unassignedFraction,
+    missingOwnerCount: unassignedOwners.length,
+    hasUnassignedOwners: unassignedOwners.length > 0,
     isComplete:
-      !isUnset && !totalFraction.error && compareFractions(totalFraction, WHOLE_FRACTION) === 0,
+      !isUnset &&
+      !unassignedOwners.length &&
+      !totalFraction.error &&
+      compareFractions(totalFraction, WHOLE_FRACTION) === 0,
   };
 }
 
