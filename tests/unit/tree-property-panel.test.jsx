@@ -104,7 +104,7 @@ describe("TreePropertyPanel", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Ownership and Tax Panel");
+    expect(container.textContent).toContain("Ownership & Tax");
     expect(container.textContent).toContain("€300,000.00");
     act(() => container.querySelector(".tree-property-panel-toggle").click());
     expect(container.querySelector('input[aria-label="Property address on tree"]').value).toBe(

@@ -1170,6 +1170,16 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                         focusPersonOnTree(personId);
                       }}
                     />
+                    <button
+                      type="button"
+                      className="ownership-tax-button"
+                      aria-controls="ownership-tax-details"
+                      aria-expanded={propertyPanelExpanded}
+                      onClick={() => setPropertyPanelExpanded((expanded) => !expanded)}
+                    >
+                      <Landmark size={16} />
+                      <span>Ownership &amp; Tax</span>
+                    </button>
                     <label className="tree-zoom-slider">
                       <span>Zoom</span>
                       <input
@@ -1210,6 +1220,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 }
                 onFocusEvent={showTraceEventOnTree}
                 expanded={propertyPanelExpanded}
+                hideCollapsedTrigger
                 onOpenProperty={() => {
                   setTraceOwnershipSnapshot(null);
                   setPropertyPanelExpanded(false);
