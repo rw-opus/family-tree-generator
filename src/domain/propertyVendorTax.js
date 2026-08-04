@@ -118,12 +118,15 @@ const transferSourceForLot = (ledger, lot) =>
     .reverse()
     .find((entry) => !entry.error && entry.buyerId === lot.ownerId);
 
-const provenanceLabel = (source, lot, ledger) => {
+export const provenanceLabel = (source, lot, ledger) => {
   if (source) return `Inherited from ${source.deceasedName}`;
   const transfer = transferSourceForLot(ledger, lot);
   if (transfer) {
     const seller = ledger.parties.find((party) => party.id === transfer.sellerId);
-    return `Acquired from ${seller?.name || "another owner"}`;
+    const sellerName = seller?.name || "another owner";
+    return transfer.kind === "donation"
+      ? `Donated by ${sellerName}`
+      : `Acquired from ${sellerName}`;
   }
   if ((lot.acquisitionType || "inheritance") === "inheritance") return "Inherited share";
   if (lot.acquisitionType === "donation") return "Share acquired by donation";

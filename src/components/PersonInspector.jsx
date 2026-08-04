@@ -35,7 +35,13 @@ import {
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
-import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
+import {
+  MAX_FRACTION_INTEGER,
+  ZERO_FRACTION,
+  compareFractions,
+  multiplyFractions,
+  normaliseFraction,
+} from "../domain/fractions.js";
 import { applyLegacyProtectedPortionsToWill } from "../domain/legacyLegitim.js";
 import {
   fractionForShare,
@@ -70,6 +76,18 @@ const relationshipActions = [
 
 const shareDisplayMode = (value) =>
   ["fraction", "percentage", "both"].includes(value) ? value : "both";
+
+const blankDonationDraft = () => ({
+  doneeMode: "existing",
+  doneeId: "",
+  doneeName: "",
+  doneeSex: "",
+  numerator: "1",
+  denominator: "2",
+  amountType: "seller-holding",
+  date: "",
+  error: "",
+});
 
 function initials(name) {
   const value = String(name || "").trim();
@@ -138,6 +156,7 @@ export function PersonInspector({
   outsideParties = [],
   onChange,
   onOutsidePartiesChange,
+  onRecordDonation,
   onSelectPerson,
   onDeletePerson,
 }) {
@@ -154,6 +173,8 @@ export function PersonInspector({
   const [causaMortisDraftOpen, setCausaMortisDraftOpen] = useState(true);
   const [willOutsidePartyOpen, setWillOutsidePartyOpen] = useState(false);
   const [ownershipDisplay, setOwnershipDisplay] = useState(shareDisplayMode(shareDisplay));
+  const [donationOpen, setDonationOpen] = useState(false);
+  const [donationDraft, setDonationDraft] = useState(blankDonationDraft);
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
@@ -664,6 +685,87 @@ export function PersonInspector({
       return;
     }
     onChange(nextPeople);
+  };
+
+  const activeProperty = properties[0] || null;
+  const donorLedgerHolding = useMemo(() => {
+    const owner = (vendorReport?.ledger?.owners || []).find(
+      (candidate) => candidate.id === selectedPerson?.id,
+    );
+    return owner?.shareFraction || null;
+  }, [selectedPerson?.id, vendorReport]);
+  const canDonate =
+    Boolean(activeProperty && onRecordDonation && donorLedgerHolding) &&
+    compareFractions(donorLedgerHolding, ZERO_FRACTION) > 0;
+
+  const setDonationField = (patch) =>
+    setDonationDraft((current) => ({ ...current, ...patch, error: "" }));
+
+  const submitDonation = (event) => {
+    event.preventDefault();
+    if (!canDonate) return;
+    const fraction = normaliseFraction(donationDraft.numerator, donationDraft.denominator);
+    if (fraction.error) return setDonationDraft((d) => ({ ...d, error: fraction.error }));
+    const amount =
+      donationDraft.amountType === "whole-property"
+        ? fraction
+        : multiplyFractions(donorLedgerHolding, fraction);
+    if (amount.error) return setDonationDraft((d) => ({ ...d, error: amount.error }));
+    if (compareFractions(amount, ZERO_FRACTION) <= 0) {
+      return setDonationDraft((d) => ({
+        ...d,
+        error: "The donated fraction must be greater than zero.",
+      }));
+    }
+    if (compareFractions(amount, donorLedgerHolding) > 0) {
+      return setDonationDraft((d) => ({
+        ...d,
+        error: "The donor does not own enough to complete this donation.",
+      }));
+    }
+
+    let donee = null;
+    let nextPeople = people;
+    if (donationDraft.doneeMode === "new") {
+      const name = donationDraft.doneeName.trim();
+      if (!name) {
+        return setDonationDraft((d) => ({ ...d, error: "Enter the donee's full name." }));
+      }
+      // An unrelated donee joins the tree with no family links: the layout places every
+      // disconnected group side by side, so this person starts a mini tree next to the
+      // family and can gain a spouse and children from their own card later.
+      donee = {
+        ...createPerson("Donee"),
+        fullName: name,
+        sex: donationDraft.doneeSex,
+      };
+      nextPeople = [...people, donee];
+    } else {
+      if (!donationDraft.doneeId) {
+        return setDonationDraft((d) => ({ ...d, error: "Select who receives the donation." }));
+      }
+      if (donationDraft.doneeId === selectedPerson.id) {
+        return setDonationDraft((d) => ({ ...d, error: "Donor and donee must be different." }));
+      }
+    }
+
+    onRecordDonation({
+      people: nextPeople,
+      propertyId: activeProperty.id,
+      transfer: {
+        id: crypto.randomUUID(),
+        kind: "donation",
+        sellerId: selectedPerson.id,
+        buyerId: donee ? donee.id : donationDraft.doneeId,
+        numerator: String(fraction.numerator),
+        denominator: String(fraction.denominator),
+        amountType: donationDraft.amountType,
+        date: donationDraft.date,
+        consideration: "",
+      },
+    });
+    setDonationDraft(blankDonationDraft());
+    setDonationOpen(false);
   };
 
   const createOutsideParty = (party) => {
@@ -2084,6 +2186,134 @@ export function PersonInspector({
               </span>
             </div>
           </div>
+          {canDonate && (
+            <div className="person-donation" data-person-section="donation">
+              <div className="inspector-section-heading">
+                <h3>Donate a share</h3>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  aria-expanded={donationOpen}
+                  onClick={() => setDonationOpen((open) => !open)}
+                >
+                  {donationOpen ? "Close" : "Donate…"}
+                </button>
+              </div>
+              {donationOpen && (
+                <form className="person-donation-form" onSubmit={submitDonation}>
+                  <label>
+                    Who receives the donation?
+                    <select
+                      aria-label="Donee source"
+                      value={donationDraft.doneeMode}
+                      onChange={(event) => setDonationField({ doneeMode: event.target.value })}
+                    >
+                      <option value="existing">Someone on this family tree</option>
+                      <option value="new">Someone not on the tree — add them</option>
+                    </select>
+                  </label>
+                  {donationDraft.doneeMode === "existing" ? (
+                    <label>
+                      Donee
+                      <select
+                        aria-label="Existing donee"
+                        value={donationDraft.doneeId}
+                        onChange={(event) => setDonationField({ doneeId: event.target.value })}
+                      >
+                        <option value="">Select a person</option>
+                        {people
+                          .filter((person) => person.id !== selectedPerson.id)
+                          .map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {displayName(person)}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <>
+                      <label>
+                        Donee's full name
+                        <input
+                          aria-label="New donee full name"
+                          value={donationDraft.doneeName}
+                          onChange={(event) => setDonationField({ doneeName: event.target.value })}
+                          placeholder="Full name"
+                        />
+                      </label>
+                      <label>
+                        Sex (optional)
+                        <select
+                          aria-label="New donee sex"
+                          value={donationDraft.doneeSex}
+                          onChange={(event) => setDonationField({ doneeSex: event.target.value })}
+                        >
+                          <option value="">Not recorded</option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                        </select>
+                      </label>
+                      <p className="helper-text">
+                        This person starts their own small tree beside the family and can be given a
+                        spouse, children and details from their card afterwards.
+                      </p>
+                    </>
+                  )}
+                  <label>
+                    Donation measurement
+                    <select
+                      aria-label="Donation measurement"
+                      value={donationDraft.amountType}
+                      onChange={(event) => setDonationField({ amountType: event.target.value })}
+                    >
+                      <option value="seller-holding">Fraction of this person's holding</option>
+                      <option value="whole-property">Fraction of the whole property</option>
+                    </select>
+                  </label>
+                  <div className="transfer-fraction">
+                    <label>
+                      Numerator
+                      <input
+                        type="number"
+                        min="0"
+                        max={MAX_FRACTION_INTEGER}
+                        step="1"
+                        value={donationDraft.numerator}
+                        onChange={(event) => setDonationField({ numerator: event.target.value })}
+                      />
+                    </label>
+                    <span>/</span>
+                    <label>
+                      Denominator
+                      <input
+                        type="number"
+                        min="1"
+                        max={MAX_FRACTION_INTEGER}
+                        step="1"
+                        value={donationDraft.denominator}
+                        onChange={(event) => setDonationField({ denominator: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Donation date
+                    <DateInput
+                      value={donationDraft.date}
+                      onChange={(value) => setDonationField({ date: value })}
+                    />
+                  </label>
+                  {donationDraft.error && (
+                    <p className="transfer-error" role="alert">
+                      {donationDraft.error}
+                    </p>
+                  )}
+                  <button type="submit" className="primary-button">
+                    Record donation
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
           {linkedPartners.length > 0 && (
             <div className="person-partner-links">
               <span>Marriage / partner links</span>

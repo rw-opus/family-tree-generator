@@ -847,6 +847,23 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     });
   };
 
+  // A donation from the person card may create the donee and record the transfer at once.
+  // Both changes go through one functional update so neither overwrites the other.
+  const recordDonation = ({ people, propertyId, transfer }) => {
+    setTree((current) => {
+      const base = reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people);
+      return {
+        ...base,
+        properties: (base.properties || []).map((property) =>
+          property.id === propertyId
+            ? { ...property, transfers: [...(property.transfers || []), transfer] }
+            : property,
+        ),
+      };
+    });
+    setStatus("Donation recorded.");
+  };
+
   const updatePropertyWorkspace = (patch) => {
     setTree({
       ...currentTree,
@@ -1096,6 +1113,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 onSelectPerson={selectPerson}
                 onDeletePerson={removePerson}
                 onChange={updatePeople}
+                onRecordDonation={recordDonation}
                 onOutsidePartiesChange={(outsideParties) =>
                   setTree((current) => ({ ...normaliseTree(current), outsideParties }))
                 }

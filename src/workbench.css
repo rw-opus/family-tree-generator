@@ -1885,6 +1885,61 @@ textarea {
   padding: 0.5rem;
 }
 
+.person-donation {
+  display: grid;
+  gap: 0.42rem;
+  margin-top: 0.45rem;
+  border: 1px solid #d8e2dc;
+  border-radius: 0.65rem;
+  background: #f7faf8;
+  padding: 0.5rem;
+}
+
+.person-donation-form {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.person-donation-form label {
+  display: grid;
+  gap: 0.2rem;
+  color: #526158;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.person-donation-form input,
+.person-donation-form select {
+  min-height: 1.9rem;
+  border: 1px solid #cbd9d1;
+  border-radius: 0.48rem;
+  background: #fff;
+  padding: 0.2rem 0.42rem;
+  font-size: 0.7rem;
+}
+
+.person-donation-form .transfer-fraction {
+  display: flex;
+  align-items: end;
+  gap: 0.35rem;
+}
+
+.person-donation-form .transfer-fraction > label {
+  flex: 1;
+}
+
+.person-donation-form .transfer-fraction > span {
+  padding-bottom: 0.45rem;
+  font-weight: 800;
+}
+
+.person-donation-form .transfer-error {
+  margin: 0;
+  color: #a33a2c;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
 .person-share-heading {
   display: flex;
   align-items: center;

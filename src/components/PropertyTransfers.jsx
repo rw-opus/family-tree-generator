@@ -277,7 +277,7 @@ export function PropertyTransfers({
               </strong>
               <span>
                 {entry.error ||
-                  `${fractionLabel(entry.amount)} of whole property (${percent(entry.amount)})`}
+                  `${entry.kind === "donation" ? "Donation — " : ""}${fractionLabel(entry.amount)} of whole property (${percent(entry.amount)})`}
               </span>
               <button
                 type="button"

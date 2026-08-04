@@ -282,6 +282,33 @@ describe("per-property ownership ledger", () => {
     expect(ledger.owners.find((owner) => owner.id === "company").share).toBe(0.25);
   });
 
+  it("moves ownership on a donation to a person outside the family branch", () => {
+    const ledger = buildPropertyLedger(
+      [
+        { id: "donor", fullName: "Joseph Borg" },
+        { id: "donee", fullName: "Carmen Vella" },
+      ],
+      [],
+      [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          date: "2024-06-01",
+          numerator: 1,
+          denominator: 4,
+          amountType: "seller-holding",
+        },
+      ],
+      { donor: 1 },
+    );
+    expect(ledger.owners.find((owner) => owner.id === "donor").share).toBe(0.75);
+    expect(ledger.owners.find((owner) => owner.id === "donee").share).toBe(0.25);
+    // The kind survives into the ledger entry so history and provenance can name it a donation.
+    expect(ledger.entries[0].kind).toBe("donation");
+  });
+
   it("keeps ledgers for two different properties independent", () => {
     const people = [
       { id: "a", fullName: "A" },

@@ -8,8 +8,30 @@ import {
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
+  provenanceLabel,
   remainingInitialOwnershipShare,
 } from "../../src/domain/propertyVendorTax.js";
+
+describe("provenance labels", () => {
+  const ledger = {
+    parties: [{ id: "donor", name: "Joseph Borg" }],
+    entries: [{ id: "gift", kind: "donation", sellerId: "donor", buyerId: "donee" }],
+  };
+
+  it("names the donor when the share arrived by donation", () => {
+    expect(provenanceLabel(null, { ownerId: "donee" }, ledger)).toBe("Donated by Joseph Borg");
+  });
+
+  it("keeps the acquisition wording for ordinary transfers", () => {
+    const saleLedger = {
+      ...ledger,
+      entries: [{ id: "sale", sellerId: "donor", buyerId: "donee" }],
+    };
+    expect(provenanceLabel(null, { ownerId: "donee" }, saleLedger)).toBe(
+      "Acquired from Joseph Borg",
+    );
+  });
+});
 
 describe("property vendor tax reports", () => {
   it("defaults a selected initial owner to the exact unallocated title", () => {
