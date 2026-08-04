@@ -2,11 +2,11 @@ import { useEffect, useId, useState } from "react";
 import { displayDateToIso, formatDateDraft, isoDateToDisplay } from "../domain/dateFormat.js";
 
 /**
- * A text date field that displays DD-MM-YYYY while emitting only valid ISO
+ * A text date field that displays DD/MM/YYYY while emitting only valid ISO
  * YYYY-MM-DD values for storage. Incomplete and invalid drafts remain local
  * until the user completes a valid date.
  */
-export function DateInput({ value = "", onChange, onBlur, placeholder = "dd-mm-yyyy", ...props }) {
+export function DateInput({ value = "", onChange, onBlur, placeholder = "dd/mm/yyyy", ...props }) {
   const [draft, setDraft] = useState(() => isoDateToDisplay(value));
   const [touched, setTouched] = useState(false);
   const warningId = useId();
@@ -41,7 +41,7 @@ export function DateInput({ value = "", onChange, onBlur, placeholder = "dd-mm-y
         autoComplete="off"
         maxLength={10}
         placeholder={placeholder}
-        pattern="\d{2}-\d{2}-\d{4}"
+        pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
         value={draft}
         aria-invalid={isInvalid || undefined}
         aria-describedby={isInvalid ? warningId : undefined}
@@ -50,7 +50,7 @@ export function DateInput({ value = "", onChange, onBlur, placeholder = "dd-mm-y
       />
       {isInvalid && (
         <small className="date-input-warning" id={warningId} role="alert">
-          Not saved: enter a complete valid date as DD-MM-YYYY.
+          Not saved: enter a complete valid date as DD/MM/YYYY.
         </small>
       )}
     </span>

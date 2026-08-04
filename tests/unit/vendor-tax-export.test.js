@@ -66,7 +66,7 @@ describe("vendor tax Excel export", () => {
     expect(xml).toContain("Maria Borg");
     expect(xml).toContain("1/4");
     expect(xml).toContain("Inherited from Joseph Borg");
-    expect(xml).toContain("02-01-2020 · Not. A. Notary: EUR 100.00");
+    expect(xml).toContain("02/01/2020 · Not. A. Notary: EUR 100.00");
     expect(xml).toContain("12% of difference");
     expect(xml).toContain("8% of selling price");
     expect(xml).toContain("Applied");

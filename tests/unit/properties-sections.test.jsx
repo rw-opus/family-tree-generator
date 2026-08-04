@@ -288,7 +288,7 @@ describe("Properties section views", () => {
     expect(container.textContent).not.toContain("Causa mortis value for this fraction");
     expect(container.textContent).not.toContain("Legal basis of acquisition value");
     expect(container.textContent).not.toContain("Use the accumulated value");
-    expect(container.textContent).toContain("d. 24-11-1992");
+    expect(container.textContent).toContain("d. 24/11/1992");
     expect(container.querySelector("select")).toBeNull();
   });
 

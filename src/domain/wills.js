@@ -17,7 +17,7 @@ function normaliseWillRecord(will, personId, index) {
 }
 
 export function displayWillDate(value) {
-  return isoDateToDisplay(value).replaceAll("-", ".");
+  return isoDateToDisplay(value);
 }
 
 /**

@@ -62,7 +62,7 @@ export function AppEntry() {
   const signOut = () => supabase.auth.signOut({ scope: "local" });
   return (
     <TermsBoundary session={session} onSignOut={signOut}>
-      <App session={session} onSignOut={signOut} />
+      <App localOnlyMode={false} session={session} onSignOut={signOut} />
     </TermsBoundary>
   );
 }

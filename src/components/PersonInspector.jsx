@@ -1024,6 +1024,11 @@ export function PersonInspector({
               ? "This removes the person from this family only; the shared record remains elsewhere."
               : "No partner or descendant dependencies. Confirmation is required.";
 
+  const goToPersonSection = (section) => {
+    const target = document.querySelector(`[data-person-section="${section}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="person-inspector">
       <section className="inspector-profile">
@@ -1046,7 +1051,24 @@ export function PersonInspector({
         </div>
       </section>
 
-      <section className="inspector-section">
+      <nav className="person-section-nav" aria-label="Person detail sections">
+        <button type="button" onClick={() => goToPersonSection("identity")}>
+          Identity
+        </button>
+        <button type="button" onClick={() => goToPersonSection("relationships")}>
+          Relationships
+        </button>
+        {isDeceased && (
+          <button type="button" onClick={() => goToPersonSection("succession")}>
+            Succession
+          </button>
+        )}
+        <button type="button" onClick={() => goToPersonSection("property")}>
+          Property
+        </button>
+      </nav>
+
+      <section className="inspector-section" data-person-section="relationships">
         <div className="inspector-section-heading">
           <div>
             <p className="eyebrow">Relationships</p>
@@ -1257,7 +1279,7 @@ export function PersonInspector({
         )}
       </section>
 
-      <section className="inspector-section">
+      <section className="inspector-section" data-person-section="identity">
         <p className="eyebrow">Personal details</p>
         <fieldset className="person-edit-fields" disabled={!isEditing}>
           <div className="inspector-fields">
@@ -1382,7 +1404,7 @@ export function PersonInspector({
 
         <div className="person-edit-fields person-record-fields">
           {isDeceased && (
-            <div className="person-succession">
+            <div className="person-succession" data-person-section="succession">
               <label className="succession-detail-row">
                 <span>Date of death</span>
                 <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
@@ -1952,7 +1974,7 @@ export function PersonInspector({
               )}
             </div>
           )}
-          <div className="person-share-summary">
+          <div className="person-share-summary" data-person-section="property">
             <div className="person-share-heading">
               <span>
                 Estimated property share

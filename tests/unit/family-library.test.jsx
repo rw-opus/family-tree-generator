@@ -68,7 +68,7 @@ describe("FamilyLibrary", () => {
 
     expect(container.textContent).toContain("Account Details");
     expect(container.textContent).toContain("Roland Wadge");
-    expect(container.textContent).toContain("29-07-2026");
+    expect(container.textContent).toContain("29/07/2026");
     expect(container.textContent).toContain("Borg family");
     expect(container.textContent).toContain("Vella family");
 
@@ -79,7 +79,7 @@ describe("FamilyLibrary", () => {
     expect(handlers.onOpen).toHaveBeenCalledWith("vella");
   });
 
-  it("offers a clearly labelled delete action on Home", () => {
+  it("confirms a clearly labelled delete action inside the application", async () => {
     const handlers = renderLibrary(root);
     const remove = container.querySelector('button[aria-label="Delete Vella family"]');
 
@@ -87,6 +87,12 @@ describe("FamilyLibrary", () => {
     expect(container.querySelector('button[aria-label="Rename Vella family"]')).not.toBeNull();
     act(() => remove.click());
 
+    expect(handlers.onRemove).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+    const confirm = [...container.querySelectorAll('[role="alertdialog"] button')].find((button) =>
+      button.textContent.includes("Delete family"),
+    );
+    await act(async () => confirm.click());
     expect(handlers.onRemove).toHaveBeenCalledWith("vella");
   });
 
@@ -118,13 +124,67 @@ describe("FamilyLibrary", () => {
     expect(handlers.onRename).toHaveBeenCalledWith("vella", "Vella descendants");
   });
 
-  it("offers both creation and GEDCOM import from the first screen", () => {
+  it("collects the family and first-person details before creating a tree", async () => {
     const handlers = renderLibrary(root);
     const create = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Create new family"),
     );
     act(() => create.click());
-    expect(handlers.onCreate).toHaveBeenCalledOnce();
+    expect(handlers.onCreate).not.toHaveBeenCalled();
+
+    const dialog = container.querySelector('[role="dialog"]');
+    const setInput = (labelText, value) => {
+      const label = [...dialog.querySelectorAll("label")].find((item) =>
+        item.textContent.includes(labelText),
+      );
+      const input = label.querySelector("input");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => {
+      setInput("Family name", "Vella family");
+      setInput("Given name", "Maria");
+      setInput("Surname", "Vella");
+      dialog.querySelector('input[value="Female"]').click();
+    });
+    await act(async () => {
+      dialog.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    expect(handlers.onCreate).toHaveBeenCalledWith({
+      title: "Vella family",
+      givenNames: "Maria",
+      surname: "Vella",
+      sex: "Female",
+    });
+  });
+
+  it("closes creation and deletion dialogs with Escape", () => {
+    renderLibrary(root);
+    const create = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Create new family"),
+    );
+
+    act(() => create.click());
+    const creationDialog = container.querySelector('[role="dialog"]');
+    expect(creationDialog).not.toBeNull();
+    act(() =>
+      creationDialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    const remove = container.querySelector('button[aria-label="Delete Vella family"]');
+    act(() => remove.click());
+    const deletionDialog = container.querySelector('[role="alertdialog"]');
+    expect(deletionDialog).not.toBeNull();
+    act(() =>
+      deletionDialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it("offers GEDCOM import from the first screen", () => {
+    const handlers = renderLibrary(root);
 
     const file = new File(["0 HEAD"], "Imported-family.ged", { type: "text/plain" });
     const input = container.querySelector('input[type="file"]');

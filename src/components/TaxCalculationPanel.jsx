@@ -41,22 +41,31 @@ export function TaxCalculationPanel({
           <p className="eyebrow">Sale information</p>
           <h3>Tax Calculation</h3>
         </div>
-        <button
-          type="button"
-          className="secondary-button"
-          disabled={!report.vendors.length}
-          onClick={() => downloadVendorTaxSpreadsheet(report, property, historyEvents)}
-        >
-          <FileSpreadsheet size={16} /> Download one-sheet Excel
-        </button>
+        <span className="tax-download-action">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!report.vendors.length}
+            onClick={() => downloadVendorTaxSpreadsheet(report, property, historyEvents)}
+          >
+            <FileSpreadsheet size={16} /> Download one-sheet Excel
+          </button>
+          {!report.vendors.length && (
+            <small>Add a living current owner to enable the export.</small>
+          )}
+        </span>
       </div>
       <p className="helper-text">
         This is a read-only calculation from the family tree, ownership transfers, person-card
         Declaration Causa Mortis (CM) records and the property selling value.
       </p>
-      <p className="tax-calculation-disclaimer">
-        <strong>Important:</strong> {TAX_CALCULATION_DISCLAIMER}
+      <p className="tax-calculation-summary">
+        Indicative calculation only. Verify the result before filing, signing or payment.
       </p>
+      <details className="tax-calculation-disclaimer">
+        <summary>Important limitations</summary>
+        <p>{TAX_CALCULATION_DISCLAIMER}</p>
+      </details>
 
       <details className="tax-calculation-history">
         <summary>

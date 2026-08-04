@@ -1426,7 +1426,7 @@ describe("PersonInspector", () => {
 
     const succession = container.querySelector(".person-succession");
     expect(succession).not.toBeNull();
-    expect(succession.querySelector(".succession-detail-row input").value).toBe("01-01-2020");
+    expect(succession.querySelector(".succession-detail-row input").value).toBe("01/01/2020");
     expect(
       [...succession.querySelectorAll("input, select, textarea")].filter(
         (control) => control.disabled,
@@ -1604,7 +1604,7 @@ describe("PersonInspector", () => {
     );
 
     expect(container.querySelector(".person-succession")).not.toBeNull();
-    expect(container.querySelector(".succession-detail-row input").value).toBe("03-02-2024");
+    expect(container.querySelector(".succession-detail-row input").value).toBe("03/02/2024");
     expect(container.querySelector(".succession-detail-row input").disabled).toBe(false);
     expect(container.querySelector('select[aria-label="Inheritance basis"]').disabled).toBe(false);
     expect(container.textContent).not.toContain("Succession on death");
@@ -2056,7 +2056,7 @@ describe("PersonInspector", () => {
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         secondWillDate,
-        "27-01-1997",
+        "27/01/1997",
       );
       secondWillDate.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -2717,7 +2717,7 @@ describe("PersonInspector", () => {
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         marriageDate,
-        "15-06-2015",
+        "15/06/2015",
       );
       marriageDate.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -2740,7 +2740,7 @@ describe("PersonInspector", () => {
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         marriageStartDate,
-        "12-05-2014",
+        "12/05/2014",
       );
       marriageStartDate.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -2759,7 +2759,7 @@ describe("PersonInspector", () => {
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         marriageEndDate,
-        "01-03-2020",
+        "01/03/2020",
       );
       marriageEndDate.dispatchEvent(new Event("input", { bubbles: true }));
     });

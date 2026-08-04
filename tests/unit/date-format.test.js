@@ -7,8 +7,9 @@ import {
 } from "../../src/domain/dateFormat.js";
 
 describe("date formatting", () => {
-  it("converts between ISO storage and DD-MM-YYYY display values", () => {
-    expect(isoDateToDisplay("2026-07-31")).toBe("31-07-2026");
+  it("converts between ISO storage and DD/MM/YYYY display values", () => {
+    expect(isoDateToDisplay("2026-07-31")).toBe("31/07/2026");
+    expect(displayDateToIso("31/07/2026")).toBe("2026-07-31");
     expect(displayDateToIso("31-07-2026")).toBe("2026-07-31");
     expect(isoDateToDisplay("")).toBe("");
     expect(displayDateToIso("")).toBe("");
@@ -24,9 +25,9 @@ describe("date formatting", () => {
 
   it("formats mobile digit entry and pasted display dates", () => {
     expect(formatDateDraft("3")).toBe("3");
-    expect(formatDateDraft("310")).toBe("31-0");
-    expect(formatDateDraft("31072026")).toBe("31-07-2026");
-    expect(formatDateDraft("31/07/2026")).toBe("31-07-2026");
-    expect(formatDateDraft("2026-07-31")).toBe("31-07-2026");
+    expect(formatDateDraft("310")).toBe("31/0");
+    expect(formatDateDraft("31072026")).toBe("31/07/2026");
+    expect(formatDateDraft("31/07/2026")).toBe("31/07/2026");
+    expect(formatDateDraft("2026-07-31")).toBe("31/07/2026");
   });
 });
