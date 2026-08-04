@@ -153,6 +153,10 @@ export function AuthScreen() {
             Forgot password?
           </button>
         )}
+        <nav className="commercial-legal-links" aria-label="Legal information">
+          <a href="/?legal=terms">Terms and tax disclaimer</a>
+          <a href="/?legal=privacy">Privacy Notice</a>
+        </nav>
       </form>
     </main>
   );

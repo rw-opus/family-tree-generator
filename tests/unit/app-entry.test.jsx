@@ -18,6 +18,10 @@ vi.mock("../../src/components/AuthScreen.jsx", () => ({
   PasswordResetScreen: () => <div>Password reset</div>,
 }));
 
+vi.mock("../../src/components/TermsBoundary.jsx", () => ({
+  TermsBoundary: ({ children }) => children,
+}));
+
 vi.mock("../../src/supabaseClient.js", () => ({
   supabase: null,
   supabaseConfigured: false,
@@ -30,6 +34,7 @@ describe("commercial rollout entry", () => {
   let root;
 
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -51,5 +56,13 @@ describe("commercial rollout entry", () => {
     vi.stubEnv("VITE_COMMERCIAL_MODE", "true");
     act(() => root.render(<AppEntry />));
     expect(container.textContent).toBe("Configuration required");
+  });
+
+  it("keeps the legal notices public even when Supabase is unavailable", () => {
+    vi.stubEnv("VITE_COMMERCIAL_MODE", "true");
+    window.history.replaceState({}, "", "/?legal=privacy");
+    act(() => root.render(<AppEntry />));
+    expect(container.textContent).toContain("Privacy Notice");
+    expect(container.textContent).not.toContain("Configuration required");
   });
 });

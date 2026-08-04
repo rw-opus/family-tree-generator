@@ -26,7 +26,7 @@ Apply `supabase/migrations/20260731124716_commercial_tree_credits.sql`, or run `
 - `stripe_tree_events` has no anon or authenticated policy;
 - the private quota and credit functions are not exposed through the Data API.
 
-In Auth settings, configure the production Site URL and permitted redirect URLs. Email confirmation should remain enabled for public signup.
+In Auth settings, configure the production Site URL and permitted redirect URLs. Keep direct public signup disabled; accounts are invitation-only. Keep the email provider and confirmation flow enabled for invited accounts.
 
 ## 2. Stripe product
 
@@ -76,6 +76,7 @@ Set these before the Vite build:
 - `VITE_COMMERCIAL_MODE=true`
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SENTRY_DSN` (optional; omit until the monitoring project is approved)
 
 Leave `VITE_COMMERCIAL_MODE` unset or `false` during rollout to keep the existing browser-saved application available. Turn it on only after the database migration and both Edge Functions are deployed.
 
@@ -85,12 +86,14 @@ Do not add Stripe secrets or a Supabase secret/service-role key to Railway's cli
 
 Before accepting live payments:
 
-- obtain final Maltese legal wording for Terms, Privacy and the tax-calculation disclaimer;
+- obtain final Maltese legal approval of the in-app Terms, Privacy Notice and tax-calculation disclaimer template;
 - decide the refund and chargeback policy and add the corresponding support procedure;
 - test Stripe's card, delayed-payment, expiry and duplicate-webhook scenarios in test mode;
 - configure transactional email branding and delivery;
-- establish database backup, incident-response and account-deletion procedures;
+- confirm the provider backup tier and rehearse the procedures in `backup-and-account-deletion.md` and `incident-response.md`;
+- configure a privacy-reduced Sentry project and an independent uptime monitor, or explicitly accept their deferral;
+- enable Supabase leaked-password protection when the project is moved to an eligible plan;
 - confirm VAT, invoice and receipt requirements with the business's accountant;
 - complete a data-protection review because family, property and succession information is personal and potentially sensitive client data.
 
-This code provides the secure commercial foundation, but those business and legal decisions remain required before a public live launch.
+The browser Supabase session architecture is retained deliberately. Any future move to a server-cookie architecture requires a separate application redesign and security review; it is not part of the current rollout.

@@ -1,4 +1,5 @@
 import { FileSpreadsheet } from "lucide-react";
+import { TAX_CALCULATION_DISCLAIMER } from "./LegalNotice.jsx";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { displayNotaryName } from "../domain/notary.js";
 import { approximateFraction } from "../domain/ownership.js";
@@ -38,6 +39,9 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
       <p className="helper-text">
         This is a read-only calculation from the family tree, ownership transfers, person-card
         Declaration Causa Mortis (CM) records and the property selling value.
+      </p>
+      <p className="tax-calculation-disclaimer">
+        <strong>Important:</strong> {TAX_CALCULATION_DISCLAIMER}
       </p>
 
       {report.vendors.length ? (

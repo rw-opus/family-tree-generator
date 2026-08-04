@@ -13,6 +13,13 @@ const orderIndexMigration = readFileSync(
   ),
   "utf8",
 );
+const termsMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260804052042_family_tree_terms_acceptances.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -46,6 +53,16 @@ describe("commercial Supabase schema", () => {
     for (const sql of [schema, orderIndexMigration]) {
       expect(sql).toContain("tree_generations_order_idx");
       expect(sql).toContain("on public.tree_generations (order_id)");
+    }
+  });
+
+  it("keeps clickwrap acceptance versioned, owner-scoped and append-only", () => {
+    for (const sql of [schema, termsMigration]) {
+      expect(sql).toContain("create table if not exists public.terms_acceptances");
+      expect(sql).toContain("terms acceptances select own");
+      expect(sql).toContain("terms acceptances insert own");
+      expect(sql).toContain("grant select, insert on table public.terms_acceptances");
+      expect(sql).not.toMatch(/terms acceptances (update|delete) own/i);
     }
   });
 

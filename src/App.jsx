@@ -29,6 +29,7 @@ import {
   buildPropertyVendorTaxReport,
   propertyStartingOwnershipStatus,
 } from "./domain/propertyVendorTax.js";
+import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
 import {
   createFamilyTree,
   listFamilyTrees,
@@ -694,6 +695,27 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     URL.revokeObjectURL(url);
   };
 
+  const downloadWorkspaceBackup = () => {
+    try {
+      const payload = workspaceBackupJson(treeOptions);
+      const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = workspaceBackupFilename();
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setStatus(
+        `Downloaded a workspace backup containing ${treeOptions.length} famil${
+          treeOptions.length === 1 ? "y" : "ies"
+        }. Keep it secure because it contains personal and financial information.`,
+      );
+    } catch (error) {
+      setStatus(`The workspace backup could not be downloaded: ${error.message}`);
+    }
+  };
+
   const openTree = async (treeId, view = "tree") => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return;
@@ -888,6 +910,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         storageStatus={status}
         recoveryAvailable={Boolean(startupWorkspace.recoveryKey)}
         onDownloadRecovery={downloadLocalRecovery}
+        onDownloadBackup={downloadWorkspaceBackup}
         onCreate={createNewTree}
         onImport={importNewTree}
         onOpen={openTree}

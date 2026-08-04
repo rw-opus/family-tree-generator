@@ -12,7 +12,7 @@ const serverErrorFile = path.join(distributionDirectory, "500.html");
 const port = Number(process.env.PORT) || 4173;
 const contentSecurityPolicy = [
   "base-uri 'self'",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io",
   "default-src 'self'",
   "font-src 'self' data:",
   "form-action 'self'",
@@ -63,6 +63,16 @@ const mimeTypes = {
   ".woff2": "font/woff2",
   ".xml": "application/xml; charset=utf-8",
 };
+
+function runtimeEnvScript() {
+  const env = {
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || "",
+    VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "",
+    VITE_SENTRY_DSN: process.env.VITE_SENTRY_DSN || "",
+    RELEASE_SHA: process.env.RAILWAY_GIT_COMMIT_SHA || buildInfo.commit || "",
+  };
+  return `window.__FAMILY_TREE_ENV__=${JSON.stringify(env).replace(/</g, "\\u003c")};`;
+}
 
 async function resolveFile(requestUrl) {
   const pathname = decodeURIComponent(new URL(requestUrl, "http://localhost").pathname);
@@ -122,6 +132,16 @@ export function createPropertySuccessionServer() {
       response.writeHead(200, {
         "Cache-Control": "no-cache",
         "Content-Type": "application/json; charset=utf-8",
+        ...securityHeaders,
+      });
+      response.end(request.method === "HEAD" ? undefined : body);
+      return;
+    }
+    if (pathname === "/env.js") {
+      const body = runtimeEnvScript();
+      response.writeHead(200, {
+        "Cache-Control": "no-store",
+        "Content-Type": "text/javascript; charset=utf-8",
         ...securityHeaders,
       });
       response.end(request.method === "HEAD" ? undefined : body);

@@ -13,6 +13,19 @@ describe("production hardening", () => {
     expect(server).toContain('"Cross-Origin-Opener-Policy"');
     expect(server).toContain("statusCode: 404");
     expect(server).toContain("serverErrorFile, 500");
+    expect(server).toContain('pathname === "/env.js"');
+    expect(server).toContain("VITE_SENTRY_DSN");
+  });
+
+  it("keeps optional monitoring privacy-reduced and off without a DSN", () => {
+    const main = readProjectFile("src/main.jsx");
+    const safety = readProjectFile("src/safetyUtils.js");
+
+    expect(main).toContain('import("@sentry/browser")');
+    expect(main).toContain("sendDefaultPii: false");
+    expect(main).toContain("beforeSend: sanitiseTelemetryEvent");
+    expect(safety).toContain("delete safeEvent.user");
+    expect(safety).toContain("delete safeEvent.request");
   });
 
   it("publishes the expected metadata and crawler assets", () => {

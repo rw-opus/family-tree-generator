@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Check,
   CreditCard,
+  Download,
   FileUp,
   FolderOpen,
   FolderPlus,
@@ -47,6 +48,7 @@ export function FamilyLibrary({
   onBuyTree,
   onSignOut,
   onDownloadRecovery,
+  onDownloadBackup,
 }) {
   const [query, setQuery] = useState("");
   const [renamingId, setRenamingId] = useState("");
@@ -155,6 +157,9 @@ export function FamilyLibrary({
               <LogOut size={15} /> Sign out
             </button>
           )}
+          <button type="button" className="library-account-action" onClick={onDownloadBackup}>
+            <Download size={15} /> Download workspace backup
+          </button>
           {commercialMode && (
             <div
               className={`tree-pricing-card ${
@@ -204,6 +209,10 @@ export function FamilyLibrary({
               Download recovery copy
             </button>
           )}
+          <nav className="library-legal-links" aria-label="Legal and privacy information">
+            <a href="/?legal=terms">Terms and tax disclaimer</a>
+            <a href="/?legal=privacy">Privacy Notice</a>
+          </nav>
         </section>
 
         <section className="family-library" aria-labelledby="families-title">

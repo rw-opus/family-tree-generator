@@ -15,6 +15,7 @@ const renderLibrary = (root, props = {}) => {
     onRemove: vi.fn(),
     onSignIn: vi.fn(),
     onSignOut: vi.fn(),
+    onDownloadBackup: vi.fn(),
     ...props,
   };
   act(() =>
@@ -130,6 +131,18 @@ describe("FamilyLibrary", () => {
     Object.defineProperty(input, "files", { configurable: true, value: [file] });
     act(() => input.dispatchEvent(new Event("change", { bubbles: true })));
     expect(handlers.onImport).toHaveBeenCalledWith(file);
+  });
+
+  it("offers a full workspace backup and public legal notices", () => {
+    const handlers = renderLibrary(root);
+    const backup = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Download workspace backup"),
+    );
+
+    act(() => backup.click());
+    expect(handlers.onDownloadBackup).toHaveBeenCalledOnce();
+    expect(container.querySelector('a[href="/?legal=terms"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/?legal=privacy"]')).not.toBeNull();
   });
 
   it("keeps the family list focused on opening, renaming, and deleting trees", () => {

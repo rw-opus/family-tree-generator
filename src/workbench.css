@@ -548,6 +548,26 @@
   padding-top: 0.7rem;
 }
 
+.library-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.8rem;
+  border-top: 1px solid #e1e8e3;
+  padding-top: 0.7rem;
+  font-size: 0.68rem;
+}
+
+.library-legal-links a {
+  color: var(--forest);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.library-legal-links a:hover {
+  text-decoration: underline;
+}
+
 .commercial-auth-page {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(300px, 420px);
@@ -714,6 +734,146 @@
   font-weight: 700;
 }
 
+.commercial-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 1rem;
+  border-top: 1px solid #e1e8e3;
+  padding-top: 0.8rem;
+  font-size: 0.7rem;
+}
+
+.commercial-legal-links a {
+  color: var(--forest);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.commercial-legal-links a:hover,
+.commercial-auth-link:hover {
+  text-decoration: underline;
+}
+
+.legal-page {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 12% 15%, rgba(75, 17, 111, 0.08), transparent 28rem),
+    linear-gradient(135deg, #eff4f1 0%, #f8fafc 56%, #edf3ef 100%);
+  padding: clamp(1rem, 4vw, 3rem);
+  color: var(--ink);
+}
+
+.legal-page-card {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  border: 1px solid #cfdad4;
+  border-top: 4px solid var(--forest);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 70px rgba(15, 35, 25, 0.12);
+  padding: clamp(1.15rem, 4vw, 2.2rem);
+}
+
+.legal-page-card > h1 {
+  margin: 0.25rem 0 0;
+  color: var(--ink);
+  font-family: var(--tracker-serif);
+  font-size: clamp(1.65rem, 4vw, 2.4rem);
+  font-weight: 500;
+  line-height: 1.08;
+}
+
+.legal-page-subtitle,
+.legal-notice-intro {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.legal-page-subtitle {
+  margin: 0.65rem 0 1rem;
+  font-size: 0.82rem;
+}
+
+.legal-page-content {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid #dce4df;
+  border-radius: 7px;
+  background: #fbfcfb;
+  padding: clamp(0.9rem, 3vw, 1.4rem);
+  font-size: 0.78rem;
+}
+
+.legal-notice-intro,
+.legal-notice-section p,
+.legal-template-warning {
+  margin: 0;
+}
+
+.legal-notice-section h2 {
+  margin: 0;
+  color: #34473e;
+  font-size: 0.8rem;
+}
+
+.legal-notice-section p {
+  margin-top: 0.25rem;
+  color: #596a62;
+  line-height: 1.58;
+}
+
+.legal-template-warning {
+  border-top: 1px solid #dce4df;
+  padding-top: 0.75rem;
+  color: #7a8781;
+  font-size: 0.68rem;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.legal-home-link {
+  margin-top: 1rem;
+  text-decoration: none;
+}
+
+.legal-gate-page {
+  display: grid;
+  align-items: center;
+}
+
+.legal-gate-scroll {
+  max-height: min(54dvh, 560px);
+  overflow-y: auto;
+}
+
+.legal-acceptance-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  color: #34473e;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.legal-acceptance-check input {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.1rem;
+  accent-color: var(--forest);
+}
+
+.legal-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
 .commercial-loading-screen {
   display: grid;
   place-items: center;
@@ -721,6 +881,51 @@
   background: var(--paper);
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.startup-error-page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  background: var(--paper);
+  padding: 1rem;
+}
+
+.startup-error-card {
+  display: grid;
+  gap: 0.85rem;
+  width: min(520px, 100%);
+  border: 1px solid #e4c7c7;
+  border-top: 4px solid #a13232;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 20px 55px rgba(40, 20, 20, 0.12);
+  padding: 1.4rem;
+}
+
+.startup-error-card h1,
+.startup-error-card p {
+  margin: 0;
+}
+
+.startup-error-card h1 {
+  font-family: var(--tracker-serif);
+  font-size: 1.7rem;
+  font-weight: 500;
+}
+
+.startup-error-card p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.startup-error-card code {
+  border-radius: 5px;
+  background: #fff0f0;
+  padding: 0.7rem;
+  color: #8f2b2b;
+  font-size: 0.75rem;
 }
 
 .sr-only {
@@ -741,6 +946,10 @@ body:has(.family-library-page) {
 }
 
 body:has(.commercial-auth-page) {
+  overflow: auto;
+}
+
+body:has(.legal-page) {
   overflow: auto;
 }
 
@@ -5376,6 +5585,17 @@ body.a3-print-preview-open {
 .tax-calculation-panel {
   display: grid;
   gap: 12px;
+}
+
+.tax-calculation-disclaimer {
+  margin: 0;
+  border-left: 4px solid #a66d16;
+  border-radius: 4px;
+  background: #fff8e8;
+  padding: 10px 12px;
+  color: #704a12;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .tax-calculation-heading {

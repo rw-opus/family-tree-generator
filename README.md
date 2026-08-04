@@ -23,3 +23,11 @@ Until commercial mode is deliberately enabled, the app retains trees in the brow
 The project is Vite-ready for Railway or another Node host. Railway builds with `npm run build` and serves the generated SPA with `npm start`. Production builds always require the Supabase browser variables and stop at a configuration screen rather than falling back to unencrypted browser-local storage. New accounts are invitation-only; keep public signup disabled in the hosted Supabase Auth settings as well as `supabase/config.toml`.
 
 Stripe secrets and the Supabase secret/service key belong only in Supabase Edge Function secrets. They must never use the `VITE_` prefix or be added to Railway's browser build variables.
+
+## Legal and operations
+
+- [`SECURITY.md`](SECURITY.md) records the copied File Tracker decisions on clickwrap, monitoring, leaked-password protection and browser session storage.
+- [`docs/backup-and-account-deletion.md`](docs/backup-and-account-deletion.md) records backup, restoration and verified deletion procedures.
+- [`docs/incident-response.md`](docs/incident-response.md) is the production incident runbook.
+
+The in-app Terms, Privacy Notice and tax disclaimer are product templates and still require final Maltese legal review before a public commercial launch.
