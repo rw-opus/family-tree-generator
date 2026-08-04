@@ -26,6 +26,7 @@ Stripe secrets and the Supabase secret/service key belong only in Supabase Edge 
 
 ## Legal and operations
 
+- [`docs/production-governance-decisions.md`](docs/production-governance-decisions.md) is the canonical production-governance brief and distinguishes required controls from controls actually verified as active.
 - [`SECURITY.md`](SECURITY.md) records the copied File Tracker decisions on clickwrap, monitoring, leaked-password protection and browser session storage.
 - [`docs/backup-and-account-deletion.md`](docs/backup-and-account-deletion.md) records backup, restoration and verified deletion procedures.
 - [`docs/incident-response.md`](docs/incident-response.md) is the production incident runbook.

@@ -5,6 +5,11 @@ adapted to the Family Tree Generator. It is deliberately explicit about which
 controls are implemented and which still depend on a provider plan or an
 external service.
 
+The canonical requirements are recorded in
+[`docs/production-governance-decisions.md`](docs/production-governance-decisions.md).
+This file records their current implementation status and must not describe a
+control as active unless it has been verified.
+
 ## Architecture
 
 - The production application is a React browser client backed by a dedicated
@@ -85,6 +90,7 @@ headers from being cached, and threat-model CSRF as well as XSS:
 
 ## Operational references
 
+- [Production governance decisions](docs/production-governance-decisions.md)
 - [Backup and account deletion](docs/backup-and-account-deletion.md)
 - [Incident response](docs/incident-response.md)
 - [Commercial deployment](docs/commercial-setup.md)
