@@ -45,4 +45,31 @@ describe("fraction calculator", () => {
       ).error,
     ).toBe("Enter four whole numbers.");
   });
+
+  it("accepts 12-digit fraction components and calculates them exactly", () => {
+    expect(
+      calculateFraction(
+        { numerator: "999999999999", denominator: "999999999999" },
+        { numerator: "999999999999", denominator: "999999999999" },
+        "add",
+      ),
+    ).toMatchObject({ numerator: 2, denominator: 1 });
+  });
+
+  it("rejects 13-digit inputs and reduced results", () => {
+    expect(
+      calculateFraction(
+        { numerator: "1000000000000", denominator: 1 },
+        { numerator: 1, denominator: 1 },
+        "add",
+      ).error,
+    ).toContain("12 digits");
+    expect(
+      calculateFraction(
+        { numerator: "999999999999", denominator: 1 },
+        { numerator: 1, denominator: 1 },
+        "add",
+      ).error,
+    ).toContain("12-digit limit");
+  });
 });

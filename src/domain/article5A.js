@@ -1,3 +1,5 @@
+import { fractionComponentNumber } from "./fractions.js";
+
 const ARTICLE_5A_START = "2005-11-01";
 const MODERN_RATE_START = "2015-01-01";
 const UCA_RATE_START = "2016-01-01";
@@ -558,8 +560,8 @@ function finish(lot, base, methods, defaultKey, warnings = []) {
 
 export function assessArticle5ATransfer(lot = {}) {
   const values = article5ATransferValue(lot);
-  const numerator = number(lot.shareNumerator);
-  const denominator = number(lot.shareDenominator);
+  const numerator = fractionComponentNumber(lot.shareNumerator);
+  const denominator = fractionComponentNumber(lot.shareDenominator, { allowZero: false });
   const share = denominator > 0 ? numerator / denominator : 0;
   const declaredValue = number(lot.acquisitionValue);
   const acquisitionType = lot.acquisitionType || "inheritance";

@@ -2,15 +2,23 @@ import { declarationCoverage } from "./declarations.js";
 import { causaMortisDeclaredShare, validateCausaMortisDeclaration } from "./causaMortisCoverage.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "./article5A.js";
 import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
-import {
-  approximateFraction,
-  buildPropertyLedger,
-  startingOwnershipIsUnset,
-  startingOwnershipTotalPercent,
-} from "./ownership.js";
+import { approximateFraction, buildPropertyLedger } from "./ownership.js";
 import { saleTaxLot, vendorTaxSummary } from "./propertyTax.js";
+import {
+  addFractions,
+  compareFractions,
+  fractionToNumber,
+  multiplyFractions,
+  normaliseFraction,
+  subtractFractions,
+  WHOLE_FRACTION,
+  ZERO_FRACTION,
+} from "./fractions.js";
 
-const OWNERSHIP_EPSILON = 0.001;
+const exactShareFromRecord = (record = {}) => {
+  const exact = normaliseFraction(record.shareNumerator, record.shareDenominator);
+  return exact.error ? approximateFraction((Number(record.sharePercent) || 0) / 100) : exact;
+};
 
 const allocationEntries = (allocations) =>
   allocations instanceof Map ? [...allocations.entries()] : Object.entries(allocations || {});
@@ -24,9 +32,16 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
   (ownership.transmissions || []).forEach((transmission) => {
     const deceased = peopleById.get(transmission.deceasedId);
     const inheritanceDate = String(deceased?.dateOfDeath || "");
+    const exactAllocations = transmission.exactAllocations || new Map();
     allocationEntries(transmission.allocations).forEach(([ownerId, allocatedShare]) => {
-      const share = (Number(transmission.amount) || 0) * (Number(allocatedShare) || 0);
-      if (!(share > 0)) return;
+      const allocationFraction =
+        exactAllocations.get?.(ownerId) || approximateFraction(Number(allocatedShare) || 0);
+      const shareFraction = multiplyFractions(
+        transmission.amountFraction || approximateFraction(Number(transmission.amount) || 0),
+        allocationFraction,
+      );
+      const share = fractionToNumber(shareFraction);
+      if (shareFraction.error || compareFractions(shareFraction, ZERO_FRACTION) <= 0) return;
       const owner = peopleById.get(ownerId) || outsidePartiesById.get(ownerId);
       const rows = sources.get(ownerId) || [];
       rows.push({
@@ -36,6 +51,7 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
         ownerName: owner?.fullName || owner?.name || "Unnamed heir",
         inheritanceDate,
         share,
+        shareFraction,
         deceasedEstateShare: Number(transmission.amount) || 0,
         allocationShare: Number(allocatedShare) || 0,
         immediateDescendant:
@@ -124,7 +140,7 @@ const displayRowFromLot = ({
   fallbackShare = 0,
 }) => {
   const storedShare = Number(row.result?.share) || 0;
-  const lotShare = storedShare > OWNERSHIP_EPSILON ? storedShare : Number(fallbackShare) || 0;
+  const lotShare = storedShare > 0 ? storedShare : Number(fallbackShare) || 0;
   const propertySaleValue = Math.max(0, Number(property.saleValue) || 0);
   const attributedSaleValue =
     propertySaleValue && lotShare
@@ -137,8 +153,9 @@ const displayRowFromLot = ({
     (total, declaration) => total + declaration.declaredValue,
     0,
   );
-  const acquisitionValue =
-    declaredValueFromCards || Math.max(0, Number(row.effectiveLot?.acquisitionValue) || 0);
+  const acquisitionValue = declarations.length
+    ? declaredValueFromCards
+    : Math.max(0, Number(row.effectiveLot?.acquisitionValue) || 0);
   const normalisedLotFraction = lotShare !== storedShare ? approximateFraction(lotShare) : null;
   const effectiveLot = {
     ...row.effectiveLot,
@@ -165,6 +182,7 @@ const displayRowFromLot = ({
   return {
     id: row.lot.id,
     share: lotShare,
+    shareFraction: normaliseFraction(effectiveLot.shareNumerator, effectiveLot.shareDenominator),
     provenance: provenanceLabel(source, row.lot, ledger),
     inheritanceDate: source?.inheritanceDate || result.acquisitionDate || "",
     declarations,
@@ -198,7 +216,7 @@ const syntheticInheritedRow = ({
     0,
   );
   const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * source.share;
-  const fraction = approximateFraction(source.share);
+  const fraction = source.shareFraction || approximateFraction(source.share);
   const result = saleTaxLot({
     id: `${vendor.id}-${source.deceasedId}-${index}`,
     ownerId: vendor.id,
@@ -218,6 +236,7 @@ const syntheticInheritedRow = ({
   return {
     id: `${vendor.id}-${source.deceasedId}-${index}`,
     share: source.share,
+    shareFraction: source.shareFraction,
     provenance: `Inherited from ${source.deceasedName}`,
     inheritanceDate: source.inheritanceDate,
     declarations,
@@ -272,13 +291,19 @@ export function buildTaxCalculationReport(
             inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
           }),
         );
-    const coveredShare = rows.reduce((total, row) => total + row.share, 0);
-    if (vendor.share - coveredShare > OWNERSHIP_EPSILON) {
-      const share = vendor.share - coveredShare;
+    const coveredFraction = rows.reduce(
+      (total, row) => addFractions(total, row.shareFraction || approximateFraction(row.share)),
+      ZERO_FRACTION,
+    );
+    const vendorFraction = vendor.shareFraction || approximateFraction(vendor.share);
+    const missingFraction = subtractFractions(vendorFraction, coveredFraction);
+    if (!missingFraction.error && compareFractions(missingFraction, ZERO_FRACTION) > 0) {
+      const share = fractionToNumber(missingFraction);
       const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
       rows.push({
         id: `${vendor.id}-unresolved`,
         share,
+        shareFraction: missingFraction,
         provenance: report.ledger.entries.some(
           (entry) => !entry.error && entry.buyerId === vendor.id,
         )
@@ -291,8 +316,8 @@ export function buildTaxCalculationReport(
         difference: attributedSaleValue,
         methods: [],
         selectedMethod: null,
-        tax: 0,
-        net: attributedSaleValue,
+        tax: null,
+        net: null,
         warning: "The acquisition date and value are needed before tax can be calculated.",
       });
     }
@@ -300,38 +325,51 @@ export function buildTaxCalculationReport(
     const attributedSaleValue = propertySaleValue
       ? propertySaleValue * vendor.share
       : rows.reduce((total, row) => total + row.attributedSaleValue, 0);
-    const tax = rows.reduce((total, row) => total + row.tax, 0);
+    const incompleteRowCount = rows.filter((row) => !row.selectedMethod).length;
+    const tax = incompleteRowCount
+      ? null
+      : rows.reduce((total, row) => total + Number(row.tax || 0), 0);
     return {
       ...vendor,
       rows,
       attributedSaleValue,
       tax,
-      net: attributedSaleValue - tax,
-      incompleteRowCount: rows.filter((row) => !row.selectedMethod).length,
+      net: tax === null ? null : attributedSaleValue - tax,
+      incompleteRowCount,
     };
   });
+  const totalsComplete = vendors.every((vendor) => vendor.incompleteRowCount === 0);
   return {
     vendors,
     totalSaleValue: vendors.reduce((total, vendor) => total + vendor.attributedSaleValue, 0),
-    totalTax: vendors.reduce((total, vendor) => total + vendor.tax, 0),
-    totalNet: vendors.reduce((total, vendor) => total + vendor.net, 0),
+    totalTax: totalsComplete
+      ? vendors.reduce((total, vendor) => total + Number(vendor.tax || 0), 0)
+      : null,
+    totalNet: totalsComplete
+      ? vendors.reduce((total, vendor) => total + Number(vendor.net || 0), 0)
+      : null,
+    totalsComplete,
     excludedLotCount: report.taxSummary.excludedLotCount,
   };
 }
 
 export function propertyStartingOwnershipStatus(property = {}) {
-  const entries = (property.owners || [])
-    .filter((owner) => owner?.personId)
-    .map((owner) => ({
-      id: owner.personId,
-      ownershipSharePercent: owner.sharePercent,
-    }));
-  const isUnset = startingOwnershipIsUnset(entries);
-  const totalPercent = startingOwnershipTotalPercent(entries);
+  const owners = (property.owners || []).filter((owner) => owner?.personId);
+  const isUnset = !owners.some((owner) => {
+    const share = exactShareFromRecord(owner);
+    return !share.error && compareFractions(share, ZERO_FRACTION) > 0;
+  });
+  const totalFraction = owners.reduce(
+    (total, owner) => addFractions(total, exactShareFromRecord(owner)),
+    ZERO_FRACTION,
+  );
+  const totalPercent = fractionToNumber(totalFraction) * 100;
   return {
     isUnset,
     totalPercent,
-    isComplete: !isUnset && Math.abs(totalPercent - 100) < OWNERSHIP_EPSILON,
+    totalFraction,
+    isComplete:
+      !isUnset && !totalFraction.error && compareFractions(totalFraction, WHOLE_FRACTION) === 0,
   };
 }
 
@@ -353,13 +391,14 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
         outsidePartiesById.get(personId)?.name ||
         "Unnamed party",
       share,
+      shareFraction: ownership.ownershipFractionsByPerson?.[personId],
     }),
   );
   const ledger = buildPropertyLedger(
     people,
     outsideParties,
     property.transfers || [],
-    ownership.ownershipByPerson,
+    ownership.ownershipFractionsByPerson || ownership.ownershipByPerson,
   );
   const causaMortisDeclarationOwners = declarationOwners.filter((owner) => {
     const sources = inheritanceSourcesByOwner.get(owner.id) || [];

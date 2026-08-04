@@ -51,16 +51,37 @@ function nextFamilyGroupId(caseData) {
 }
 
 function normalizePeople(people = []) {
-  if (!Array.isArray(people)) return [];
+  if (!Array.isArray(people)) {
+    return { people: [], warnings: ["The saved people list was malformed and needs review."] };
+  }
   const seen = new Set();
-  const normalized = people.filter(isRecord).reduce((result, person) => {
-    const id = text(person.id);
-    if (!id || seen.has(id)) return result;
+  const warnings = [];
+  const duplicateCounts = new Map();
+  const normalized = people.reduce((result, person, index) => {
+    if (!isRecord(person)) {
+      warnings.push(`People record ${index + 1} was malformed and could not be restored.`);
+      return result;
+    }
+    const requestedId = text(person.id);
+    let id = requestedId || `legacy-person-${index + 1}`;
+    if (!requestedId) {
+      warnings.push(`Person ${index + 1} had no identifier; a recovery identifier was assigned.`);
+    }
+    if (seen.has(id)) {
+      const ordinal = (duplicateCounts.get(id) || 1) + 1;
+      duplicateCounts.set(id, ordinal);
+      let recoveredId = `${id}:duplicate:${ordinal}`;
+      while (seen.has(recoveredId)) recoveredId = `${recoveredId}:copy`;
+      warnings.push(
+        `Duplicate person identifier “${id}” was preserved as a separate unlinked record (${recoveredId}).`,
+      );
+      id = recoveredId;
+    }
     seen.add(id);
     result.push(personWithWills(normalisePersonNameFields({ ...cloneValue(person), id })));
     return result;
   }, []);
-  return normalizePartnerRelationships(normalized);
+  return { people: normalizePartnerRelationships(normalized), warnings };
 }
 
 function migrateIntestacyConfirmationSignatures(people = []) {
@@ -88,10 +109,17 @@ function migrateIntestacyConfirmationSignatures(people = []) {
   });
 }
 
-function normalizeFamilyGroup(group, index, caseData, validPersonIds) {
+function normalizeFamilyGroup(group, index, caseData, validPersonIds, warnings) {
   const requestedRootId = text(group?.rootPersonId);
   const requestedPersonIds = uniqueIds(group?.personIds);
   const personIds = requestedPersonIds.filter((personId) => validPersonIds.has(personId));
+  requestedPersonIds
+    .filter((personId) => !validPersonIds.has(personId))
+    .forEach((personId) =>
+      warnings.push(
+        `Family group ${index + 1} referred to missing person “${personId}”; the reference needs review.`,
+      ),
+    );
   const rootPersonId = validPersonIds.has(requestedRootId) ? requestedRootId : personIds[0] || "";
   if (rootPersonId && !personIds.includes(rootPersonId)) personIds.unshift(rootPersonId);
 
@@ -124,7 +152,10 @@ function legacyFamilyGroup(caseData) {
  */
 export function normalizeCase(value = {}) {
   const source = isRecord(value) ? cloneValue(value) : {};
-  const people = migrateIntestacyConfirmationSignatures(normalizePeople(source.people));
+  const peopleResult = normalizePeople(source.people);
+  const people = migrateIntestacyConfirmationSignatures(peopleResult.people);
+  const dataWarnings = [...(Array.isArray(source.dataWarnings) ? source.dataWarnings : [])];
+  dataWarnings.push(...peopleResult.warnings);
   const caseData = {
     ...source,
     id: text(source.id) || DEFAULT_CASE_ID,
@@ -135,19 +166,39 @@ export function normalizeCase(value = {}) {
   const sourceGroups = Array.isArray(source.familyGroups)
     ? source.familyGroups
     : legacyFamilyGroup(caseData);
-  const familyGroups = sourceGroups.map((group, index) =>
-    normalizeFamilyGroup(group, index, caseData, validPersonIds),
-  );
+  const seenGroupIds = new Set();
+  const familyGroups = sourceGroups.map((group, index) => {
+    const normalized = normalizeFamilyGroup(group, index, caseData, validPersonIds, dataWarnings);
+    if (!seenGroupIds.has(normalized.id)) {
+      seenGroupIds.add(normalized.id);
+      return normalized;
+    }
+    let ordinal = 2;
+    let recoveredId = `${normalized.id}:duplicate:${ordinal}`;
+    while (seenGroupIds.has(recoveredId)) {
+      ordinal += 1;
+      recoveredId = `${normalized.id}:duplicate:${ordinal}`;
+    }
+    seenGroupIds.add(recoveredId);
+    dataWarnings.push(
+      `Duplicate family-group identifier “${normalized.id}” was preserved as “${recoveredId}”.`,
+    );
+    return { ...normalized, id: recoveredId };
+  });
   const groupIds = new Set(familyGroups.map((group) => group.id));
   const activeFamilyGroupId = groupIds.has(source.activeFamilyGroupId)
     ? source.activeFamilyGroupId
     : familyGroups[0]?.id || "";
 
-  return {
+  const result = {
     ...caseData,
     familyGroups,
     activeFamilyGroupId,
   };
+  const uniqueWarnings = [...new Set(dataWarnings.map(text).filter(Boolean))];
+  if (uniqueWarnings.length) result.dataWarnings = uniqueWarnings;
+  else delete result.dataWarnings;
+  return result;
 }
 
 // British spelling is retained as an alias for the codebase's existing naming style.

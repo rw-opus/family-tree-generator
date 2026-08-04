@@ -12,6 +12,23 @@ describe("ownership transfer ledger", () => {
   it("shows useful fractional labels", () => {
     expect(approximateFraction(1 / 3)).toEqual({ numerator: 1, denominator: 3 });
   });
+  it("preserves exact calculated fractions with denominators in the millions", () => {
+    expect(approximateFraction(1 / 3000001)).toEqual({ numerator: 1, denominator: 3000001 });
+    expect(approximateFraction((1 / 1000001) * (1 / 3))).toEqual({
+      numerator: 1,
+      denominator: 3000003,
+    });
+  });
+  it("uses 12 digits as the automatic fraction ceiling", () => {
+    expect(approximateFraction(1 / 999999999999)).toEqual({
+      numerator: 1,
+      denominator: 999999999999,
+    });
+    expect(approximateFraction(1 / 1000000000000).denominator).toBeLessThanOrEqual(999999999999);
+  });
+  it("ignores insignificant floating-point noise when recovering a fraction", () => {
+    expect(approximateFraction(0.1 + 0.2)).toEqual({ numerator: 3, denominator: 10 });
+  });
   it("leaves a lone first person without a displayed ownership share", () => {
     expect(buildStarterOwnership([{ id: "first" }])).toEqual({});
   });
@@ -70,6 +87,24 @@ describe("ownership transfer ledger", () => {
     expect(ledger.owners.find((owner) => owner.id === "heir").share).toBe(0.25);
     expect(ledger.owners.find((owner) => owner.id === "company").share).toBe(0.25);
     expect(ledger.total).toBe(1);
+  });
+  it("rejects transfer fractions with a 13-digit component", () => {
+    const ledger = buildOwnershipLedger(
+      [{ id: "seller", name: "Seller", sharePercent: 100 }],
+      [{ id: "buyer", name: "Buyer", type: "individual" }],
+      [
+        {
+          id: "sale",
+          sellerId: "seller",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: "1000000000000",
+          amountType: "seller-holding",
+        },
+      ],
+    );
+
+    expect(ledger.entries[0].error).toContain("12 digits");
   });
   it("supports onward sales to an existing family member", () => {
     const ledger = buildOwnershipLedger(

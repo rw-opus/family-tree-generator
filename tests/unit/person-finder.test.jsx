@@ -54,4 +54,14 @@ describe("PersonFinder", () => {
     expect(onSelectPerson).toHaveBeenCalledWith("child");
     expect(container.querySelector("details").hasAttribute("open")).toBe(false);
   });
+
+  it("does not silently hide matches after the first twenty people", () => {
+    const people = Array.from({ length: 25 }, (_, index) => ({
+      id: `person-${index + 1}`,
+      fullName: `Person ${index + 1}`,
+    }));
+    act(() => root.render(<PersonFinder people={people} onSelectPerson={vi.fn()} />));
+    act(() => container.querySelector("summary").click());
+    expect(container.querySelectorAll(".person-finder-results button")).toHaveLength(25);
+  });
 });

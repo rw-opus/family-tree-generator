@@ -11,7 +11,7 @@ import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
 import { familyGenerationById, widestFamilyGeneration } from "./familyTree/generationRows.js";
 import { LayeredFamilyTree } from "./familyTree/LayeredFamilyTree.jsx";
-import { personCardName, shouldUseDenseChildrenLayout } from "./familyTree/treePresentation.js";
+import { personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
 
 function hasRelationalData(person) {
@@ -53,6 +53,7 @@ export function FamilyTreeCanvas({
   treeTitle = "",
   people = [],
   ownershipByPerson = {},
+  ownershipFractionsByPerson = {},
   currentOwnershipByPerson = {},
   causaMortisCoverageByPerson = {},
   onPrint,
@@ -87,7 +88,7 @@ export function FamilyTreeCanvas({
   const printHandler = onPrint || ((node) => openA3PrintPreview(node, title));
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
-  const usesStackedLegalCards = shouldUseDenseChildrenLayout(relationalPeople.length);
+  const usesStackedLegalCards = personCardFields?.stackLegalDetails === true;
   const generationByPerson = useMemo(
     () => familyGenerationById(relationalPeople),
     [relationalPeople],
@@ -120,6 +121,7 @@ export function FamilyTreeCanvas({
       people={cleanPeople}
       cardName={cardName}
       ownershipByPerson={ownershipByPerson}
+      ownershipFractionsByPerson={ownershipFractionsByPerson}
       currentOwnershipByPerson={currentOwnershipByPerson}
       causaMortisCoverageByPerson={causaMortisCoverageByPerson}
       personCardFields={personCardFields}

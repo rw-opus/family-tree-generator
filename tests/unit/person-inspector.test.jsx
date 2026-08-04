@@ -82,7 +82,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).not.toContain("Back to Tree");
   });
 
-  it("creates an editable missing mother for a post-2005 childless intestacy", () => {
+  it("creates an editable missing mother only after explicit confirmation", () => {
     let latestPeople = [];
     const initialPeople = [
       {
@@ -126,6 +126,13 @@ describe("PersonInspector", () => {
     }
 
     act(() => root.render(<Harness />));
+
+    expect(latestPeople.find((person) => person.id === "michael").motherId).toBe("");
+    const addMissingParent = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Add missing parent"),
+    );
+    expect(addMissingParent).not.toBeNull();
+    act(() => addMissingParent.click());
 
     const michael = latestPeople.find((person) => person.id === "michael");
     const mother = latestPeople.find((person) => person.id === michael.motherId);

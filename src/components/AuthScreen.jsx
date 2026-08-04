@@ -24,11 +24,6 @@ export function AuthScreen() {
       setError("Enter a valid email address.");
       return;
     }
-    if (mode === "sign-up" && password.length < 8) {
-      setError("Use a password of at least 8 characters.");
-      return;
-    }
-
     setBusy(true);
     setError("");
     setMessage("");
@@ -42,24 +37,11 @@ export function AuthScreen() {
         return;
       }
 
-      if (mode === "sign-up") {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: trimmedEmail,
-          password,
-        });
-        if (signUpError) throw signUpError;
-        setMessage(
-          data?.session
-            ? "Account created. Your first five trees are free."
-            : "Account created. Check your email to confirm before signing in.",
-        );
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
-          password,
-        });
-        if (signInError) throw signInError;
-      }
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+      if (signInError) throw signInError;
     } catch (requestError) {
       setError(requestError?.message || "Something went wrong.");
     } finally {
@@ -90,19 +72,11 @@ export function AuthScreen() {
 
       <form className="commercial-auth-card" onSubmit={submit}>
         <p className="library-kicker">Secure account</p>
-        <h2>
-          {mode === "sign-up"
-            ? "Create your account"
-            : mode === "reset"
-              ? "Reset your password"
-              : "Sign in"}
-        </h2>
+        <h2>{mode === "reset" ? "Reset your password" : "Sign in"}</h2>
         <p className="commercial-auth-help">
-          {mode === "sign-up"
-            ? "No card is needed for your first five trees."
-            : mode === "reset"
-              ? "We will send a reset link to your email address."
-              : "Open your saved family trees and property calculations."}
+          {mode === "reset"
+            ? "We will send a reset link to your email address."
+            : "Open your saved family trees and property calculations. Accounts are created by invitation."}
         </p>
 
         <label>
@@ -124,9 +98,9 @@ export function AuthScreen() {
               <input
                 type={showPassword ? "text" : "password"}
                 required
-                minLength={mode === "sign-up" ? 8 : 1}
+                minLength={1}
                 maxLength={1024}
-                autoComplete={mode === "sign-up" ? "new-password" : "current-password"}
+                autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
@@ -146,25 +120,17 @@ export function AuthScreen() {
         {message && <p className="commercial-auth-message success">{message}</p>}
 
         <button type="submit" className="library-primary-button" disabled={busy}>
-          {busy
-            ? "Please wait..."
-            : mode === "sign-up"
-              ? "Create free account"
-              : mode === "reset"
-                ? "Send reset link"
-                : "Sign in"}
+          {busy ? "Please wait..." : mode === "reset" ? "Send reset link" : "Sign in"}
         </button>
-        <button
-          type="button"
-          className="commercial-auth-link"
-          onClick={() => changeMode(mode === "sign-in" ? "sign-up" : "sign-in")}
-        >
-          {mode === "sign-up"
-            ? "Already have an account? Sign in"
-            : mode === "reset"
-              ? "Back to sign in"
-              : "New here? Create an account"}
-        </button>
+        {mode === "reset" && (
+          <button
+            type="button"
+            className="commercial-auth-link"
+            onClick={() => changeMode("sign-in")}
+          >
+            Back to sign in
+          </button>
+        )}
         {mode === "sign-in" && (
           <button
             type="button"

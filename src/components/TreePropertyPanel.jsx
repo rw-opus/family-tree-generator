@@ -8,7 +8,7 @@ import {
   Play,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { buildSuccessionTrace } from "../domain/successionTrace.js";
@@ -26,17 +26,20 @@ const shareLabel = (share) => {
   const fraction = approximateFraction(Number(share) || 0);
   return `${fraction.numerator}/${fraction.denominator} · ${(
     (Number(share) || 0) * 100
-  ).toLocaleString("en-MT", { maximumFractionDigits: 4 })}%`;
+  ).toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
 };
 
 export function TreePropertyPanel({
   property,
+  properties = [],
+  activePropertyId = "",
   people,
   outsideParties,
   propertyReport,
   cardFields,
   onCardFieldsChange,
   onPropertyChange,
+  onPropertySelect,
   onFocusEvent,
   onOpenProperty,
   expanded: controlledExpanded,
@@ -45,6 +48,7 @@ export function TreePropertyPanel({
   const [localExpanded, setLocalExpanded] = useState(false);
   const [traceIndex, setTraceIndex] = useState(-1);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const onFocusEventRef = useRef(onFocusEvent);
   const expanded = controlledExpanded ?? localExpanded;
   const traceEvents = useMemo(
     () => buildSuccessionTrace({ property, people, outsideParties, propertyReport }),
@@ -58,6 +62,15 @@ export function TreePropertyPanel({
   useEffect(() => {
     if (traceIndex >= traceEvents.length) setTraceIndex(traceEvents.length ? 0 : -1);
   }, [traceEvents.length, traceIndex]);
+
+  useEffect(() => {
+    onFocusEventRef.current = onFocusEvent;
+  }, [onFocusEvent]);
+
+  useEffect(() => {
+    if (traceIndex < 0) return;
+    onFocusEventRef.current?.(traceEvent);
+  }, [traceEvent, traceIndex]);
 
   const showTraceEvent = (nextIndex) => {
     if (!traceEvents.length) return;
@@ -98,6 +111,25 @@ export function TreePropertyPanel({
 
         {expanded && (
           <div className="tree-property-panel-body">
+            {properties.length > 1 && (
+              <label className="tree-property-selector">
+                <span>Property currently being calculated</span>
+                <select
+                  value={activePropertyId}
+                  onChange={(event) => onPropertySelect?.(event.target.value)}
+                >
+                  {properties.map((item, index) => (
+                    <option value={item.id} key={item.id}>
+                      {item.address || `Property ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  This family contains {properties.length} saved property records. Only the selected
+                  property is shown and calculated at a time.
+                </small>
+              </label>
+            )}
             <section className="tree-property-summary">
               <label>
                 <span>Property address</span>
@@ -129,7 +161,7 @@ export function TreePropertyPanel({
                 <span>Initial ownership</span>
                 <b className={startingStatus.isComplete ? "valid" : "invalid"}>
                   {startingStatus.totalPercent.toLocaleString("en-MT", {
-                    maximumFractionDigits: 4,
+                    maximumFractionDigits: 2,
                   })}
                   %
                 </b>

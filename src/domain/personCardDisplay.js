@@ -6,6 +6,7 @@ export const DEFAULT_PERSON_CARD_FIELDS = Object.freeze({
   successionBasis: false,
   willDetails: false,
   causaMortisDetails: false,
+  stackLegalDetails: true,
 });
 
 export function normalisePersonCardFields(settings = {}) {
@@ -58,4 +59,19 @@ export function buildTreeCardOwnershipByPerson(currentOwners = [], transmissions
   });
 
   return ownershipByPerson;
+}
+
+export function buildTreeCardOwnershipFractionsByPerson(currentOwners = [], transmissions = []) {
+  const fractionsByPerson = {};
+  currentOwners.forEach((owner) => {
+    if (owner?.personId && owner.shareFraction?.denominator) {
+      fractionsByPerson[owner.personId] = owner.shareFraction;
+    }
+  });
+  transmissions.forEach((transmission) => {
+    if (transmission?.deceasedId && transmission.amountFraction?.denominator) {
+      fractionsByPerson[transmission.deceasedId] = transmission.amountFraction;
+    }
+  });
+  return fractionsByPerson;
 }

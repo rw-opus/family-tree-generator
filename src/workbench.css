@@ -4194,6 +4194,37 @@ body.a3-print-preview-open {
   gap: 0.45rem;
 }
 
+.date-input-field {
+  display: grid;
+  min-width: 0;
+  width: 100%;
+}
+
+.date-input-field > input {
+  width: 100%;
+}
+
+.date-input-warning {
+  color: #a33a2b;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  margin-top: 0.22rem;
+}
+
+.tree-property-selector {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.tree-property-selector > span {
+  font-weight: 700;
+}
+
+.tree-property-selector > small,
+.family-review-warning {
+  color: #9b3c2f;
+}
+
 .tree-stage .family-node-cm-alert {
   margin-top: 0.32rem;
   border-radius: 999px;

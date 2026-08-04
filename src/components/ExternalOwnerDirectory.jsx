@@ -3,7 +3,7 @@ import { approximateFraction } from "../domain/ownership.js";
 
 const percentage = (share) =>
   `${((Number(share) || 0) * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   })}%`;
 
 export function ExternalOwnerDirectory({ outsideParties, currentOwners, onCreateFamilyTree }) {

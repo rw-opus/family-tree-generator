@@ -63,7 +63,7 @@ export function Properties({
         const vendorReport = buildPropertyVendorTaxReport(property, people, outsideParties);
         const { startingOwnership, ownership: result } = vendorReport;
         const ownershipTotalLabel = startingOwnership.totalPercent.toLocaleString("en-MT", {
-          maximumFractionDigits: 4,
+          maximumFractionDigits: 2,
         });
 
         return (
@@ -176,7 +176,7 @@ export function Properties({
                         </span>
                         <b>
                           {row.numerator}/{row.denominator} ·{" "}
-                          {row.sharePercent.toLocaleString("en-MT", { maximumFractionDigits: 4 })}%
+                          {row.sharePercent.toLocaleString("en-MT", { maximumFractionDigits: 2 })}%
                         </b>
                       </div>
                     );

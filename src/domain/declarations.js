@@ -1,4 +1,13 @@
-const COVERAGE_EPSILON = 1e-10;
+import {
+  addFractions,
+  compareFractions,
+  fractionComponentNumber,
+  fractionToNumber,
+  normaliseFraction,
+  subtractFractions,
+  ZERO_FRACTION,
+} from "./fractions.js";
+import { approximateFraction } from "./ownership.js";
 
 function participantsOf(declaration = {}) {
   if (Array.isArray(declaration.participants)) {
@@ -12,8 +21,8 @@ function participantsOf(declaration = {}) {
 
 function participantValues(participant = {}) {
   return {
-    numerator: Number(participant.numerator),
-    denominator: Number(participant.denominator),
+    numerator: fractionComponentNumber(participant.numerator),
+    denominator: fractionComponentNumber(participant.denominator, { allowZero: false }),
     declaredValue: Number(participant.declaredValue),
   };
 }
@@ -32,6 +41,7 @@ function isUsableParticipant(participant = {}) {
 }
 
 function expectedShare(heir = {}) {
+  if (heir.shareFraction?.denominator) return fractionToNumber(heir.shareFraction);
   if (
     heir.share !== undefined &&
     heir.share !== null &&
@@ -51,6 +61,12 @@ function expectedShare(heir = {}) {
   return 0;
 }
 
+function expectedFraction(heir = {}) {
+  if (heir.shareFraction?.denominator) return heir.shareFraction;
+  const exact = normaliseFraction(heir.shareNumerator, heir.shareDenominator);
+  return exact.error ? approximateFraction(expectedShare(heir)) : exact;
+}
+
 export function validateDeclaration(declaration) {
   const { participants, legacyUnquantified } = participantsOf(declaration);
   if (!participants.length) return "Select at least one declarant.";
@@ -59,18 +75,18 @@ export function validateDeclaration(declaration) {
   }
   if (new Set(participants.map((participant) => participant.heirId)).size !== participants.length)
     return "An heir can appear only once in the same declaration.";
-  if (
-    participants.some(
-      (participant) =>
-        !(Number(participant.numerator) > 0) || !(Number(participant.denominator) > 0),
-    )
-  )
+  if (participants.some((participant) => !isUsableFractionParticipant(participant)))
     return "Enter a valid positive ownership fraction for every declarant.";
   if (participants.some((participant) => !(Number(participant.declaredValue) > 0)))
     return "Enter a positive declared value for every declarant.";
   if (!declaration.date) return "Enter the date of the Declaration Causa Mortis.";
   if (!String(declaration.notaryName || "").trim()) return "Enter the notary's name.";
   return "";
+}
+
+function isUsableFractionParticipant(participant = {}) {
+  const { numerator, denominator } = participantValues(participant);
+  return Number.isFinite(numerator) && numerator > 0 && Number.isFinite(denominator);
 }
 
 export function declarationCoverage(heirs = [], declarations = []) {
@@ -90,27 +106,31 @@ export function declarationCoverage(heirs = [], declarations = []) {
         !legacyUnquantified && isUsableParticipant(participant),
     );
     const unusableDeclarationCount = declarationParticipants.length - usableParticipants.length;
-    const declaredFraction = usableParticipants.reduce((sum, { participant }) => {
+    const exactDeclaredFraction = usableParticipants.reduce((sum, { participant }) => {
       const { numerator, denominator } = participantValues(participant);
-      return sum + numerator / denominator;
-    }, 0);
+      return addFractions(sum, normaliseFraction(numerator, denominator));
+    }, ZERO_FRACTION);
+    const declaredFraction = fractionToNumber(exactDeclaredFraction);
     const declaredValue = usableParticipants.reduce(
       (sum, { participant }) => sum + participantValues(participant).declaredValue,
       0,
     );
-    const requiredFraction = expectedShare(heir);
-    const difference = declaredFraction - requiredFraction;
+    const exactRequiredFraction = expectedFraction(heir);
+    const requiredFraction = fractionToNumber(exactRequiredFraction);
+    const exactDifference = subtractFractions(exactDeclaredFraction, exactRequiredFraction);
+    const difference = fractionToNumber(exactDifference);
+    const comparison = compareFractions(exactDeclaredFraction, exactRequiredFraction);
     const status = unusableDeclarationCount
       ? "invalid"
-      : Math.abs(difference) <= COVERAGE_EPSILON
+      : comparison === 0
         ? "complete"
-        : difference < 0
+        : comparison < 0
           ? "under"
           : "over";
     const hasUsableDeclaredValues =
       records.length > 0 &&
       unusableDeclarationCount === 0 &&
-      declaredFraction > COVERAGE_EPSILON &&
+      compareFractions(exactDeclaredFraction, ZERO_FRACTION) > 0 &&
       declaredValue > 0 &&
       status !== "over";
     return {
@@ -120,8 +140,10 @@ export function declarationCoverage(heirs = [], declarations = []) {
       usableDeclarationCount: records.length,
       declarationIds: records.map((record) => record.id),
       declaredFraction,
+      exactDeclaredFraction,
       declaredValue,
       requiredFraction,
+      exactRequiredFraction,
       difference,
       status,
       unusableDeclarationCount,

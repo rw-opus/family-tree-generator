@@ -112,6 +112,37 @@ describe("TreePropertyPanel", () => {
     );
   });
 
+  it("makes legacy additional properties explicitly selectable one at a time", () => {
+    const onPropertySelect = vi.fn();
+    const secondProperty = { ...property, id: "property-2", address: "2 Merchant Street" };
+    act(() =>
+      root.render(
+        <TreePropertyPanel
+          property={property}
+          properties={[property, secondProperty]}
+          activePropertyId={property.id}
+          people={people}
+          outsideParties={[]}
+          propertyReport={propertyReport}
+          cardFields={{}}
+          onCardFieldsChange={vi.fn()}
+          onPropertyChange={vi.fn()}
+          onPropertySelect={onPropertySelect}
+          onFocusEvent={vi.fn()}
+          onOpenProperty={vi.fn()}
+        />,
+      ),
+    );
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    const selector = container.querySelector(".tree-property-selector select");
+    expect(selector).not.toBeNull();
+    act(() => {
+      selector.value = "property-2";
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onPropertySelect).toHaveBeenCalledWith("property-2");
+  });
+
   it("steps through succession events and focuses the relevant person", () => {
     const onFocusEvent = vi.fn();
     act(() =>
@@ -165,6 +196,70 @@ describe("TreePropertyPanel", () => {
     act(() => endTrace.click());
     expect(onFocusEvent).toHaveBeenLastCalledWith(null);
     expect(container.textContent).not.toContain("Proposed property sale");
+  });
+
+  it("refreshes an active trace snapshot when the calculated owners change", () => {
+    const onFocusEvent = vi.fn();
+    const renderPanel = (nextPeople, nextReport) => (
+      <TreePropertyPanel
+        property={property}
+        people={nextPeople}
+        outsideParties={[]}
+        propertyReport={nextReport}
+        cardFields={{}}
+        onCardFieldsChange={vi.fn()}
+        onPropertyChange={vi.fn()}
+        onFocusEvent={onFocusEvent}
+        onOpenProperty={vi.fn()}
+      />
+    );
+
+    act(() => root.render(renderPanel(people, propertyReport)));
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    const start = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Start"),
+    );
+    act(() => start.click());
+    act(() => container.querySelector('button[aria-label="Next succession event"]').click());
+    act(() => container.querySelector('button[aria-label="Next succession event"]').click());
+    expect(onFocusEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ownershipSnapshot: { owner: 1 } }),
+    );
+
+    const mother = { id: "mother", fullName: "Mother of Joseph" };
+    const updatedReport = {
+      ...propertyReport,
+      ownership: {
+        transmissions: [
+          {
+            deceasedId: "deceased",
+            amount: 1,
+            basis: "intestacy",
+            allocations: { mother: 1 },
+          },
+        ],
+      },
+      ledger: {
+        owners: [
+          {
+            id: "mother",
+            personId: "mother",
+            name: "Mother of Joseph",
+            share: 1,
+          },
+        ],
+        entries: [],
+      },
+    };
+
+    act(() => root.render(renderPanel([...people, mother], updatedReport)));
+
+    expect(onFocusEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "sale",
+        ownershipSnapshot: { mother: 1 },
+      }),
+    );
   });
 
   it("opens and prints the complete succession history", () => {

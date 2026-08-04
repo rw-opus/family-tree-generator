@@ -1,5 +1,15 @@
 import { approximateFraction, buildStarterOwnership } from "./ownership.js";
 import {
+  addFractions,
+  compareFractions,
+  fractionToNumber,
+  multiplyFractions,
+  normaliseFraction,
+  subtractFractions,
+  WHOLE_FRACTION,
+  ZERO_FRACTION,
+} from "./fractions.js";
+import {
   findPartnerRelationship,
   legalSpouseIdsForPerson,
   partnerIdsForPerson,
@@ -37,6 +47,7 @@ export function isPersonDeceased(person = {}) {
 
 function wasAliveAt(person, date) {
   if (person.survivalStatusRequired === true) return false;
+  if (date && person.dateOfBirth && person.dateOfBirth > date) return false;
   if (!isPersonDeceased(person)) return true;
   if (!date || !person.dateOfDeath) return false;
   return person.dateOfDeath > date;
@@ -48,6 +59,52 @@ function personName(person = {}) {
 
 function addShare(shares, personId, amount) {
   shares.set(personId, (shares.get(personId) || 0) + amount);
+}
+
+function exactShareFromRecord(record = {}) {
+  const stored = normaliseFraction(record.shareNumerator, record.shareDenominator);
+  if (!stored.error) return stored;
+  return approximateFraction(number(record.sharePercent) / 100);
+}
+
+function exactShareMap(shares = new Map()) {
+  return new Map(
+    [...shares.entries()].map(([personId, share]) => [
+      personId,
+      approximateFraction(number(share)),
+    ]),
+  );
+}
+
+function exactShareMapFromRecords(records = []) {
+  const shares = new Map();
+  records.forEach((record) => {
+    if (!record?.personId) return;
+    addExactShare(shares, record.personId, exactShareFromRecord(record));
+  });
+  return shares;
+}
+
+function numericShareMap(shares = new Map()) {
+  return new Map(
+    [...shares.entries()].map(([personId, share]) => [personId, fractionToNumber(share)]),
+  );
+}
+
+function addExactShare(shares, personId, amount) {
+  const current = shares.get(personId) || ZERO_FRACTION;
+  const total = addFractions(current, amount);
+  if (!total.error) shares.set(personId, total);
+  return total;
+}
+
+function sumExactShares(shares = new Map()) {
+  let total = ZERO_FRACTION;
+  for (const share of shares.values()) {
+    total = addFractions(total, share);
+    if (total.error) return total;
+  }
+  return total;
 }
 
 function familyIndex(people) {
@@ -292,7 +349,7 @@ function collateralDegree(deceasedId, candidateId, index, maxDegree = 12) {
   return Infinity;
 }
 
-export function intestateAllocations(people = [], deceasedId) {
+function calculateIntestateAllocations(people = [], deceasedId) {
   const index = familyIndex(people);
   const deceased = index.peopleById.get(deceasedId);
   const shares = new Map();
@@ -515,11 +572,20 @@ export function intestateAllocations(people = [], deceasedId) {
   return { shares, warnings, destination: "government" };
 }
 
+export function intestateAllocations(people = [], deceasedId) {
+  const result = calculateIntestateAllocations(people, deceasedId);
+  return {
+    ...result,
+    exactShares: result.exactShares || exactShareMap(result.shares),
+  };
+}
+
 export const INTESTACY_CONFIRMATION_SIGNATURE_VERSION = "v2";
 
 function calculatedIntestacySharesSignature(allocation = {}) {
-  return [...(allocation.shares || new Map()).entries()]
-    .map(([personId, share]) => `${personId}:${number(share).toFixed(12)}`)
+  const shares = allocation.exactShares || exactShareMap(allocation.shares || new Map());
+  return [...shares.entries()]
+    .map(([personId, share]) => `${personId}:${share.numerator}/${share.denominator}`)
     .sort()
     .join("|");
 }
@@ -535,7 +601,10 @@ export function legacyIntestacyAllocationSignature(deceased = {}, allocation = {
 export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
   const shares = calculatedIntestacySharesSignature(allocation);
   const confirmedRows = (Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [])
-    .map((row) => `${String(row?.personId || "")}:${number(row?.sharePercent).toFixed(12)}`)
+    .map((row) => {
+      const share = exactShareFromRecord(row);
+      return `${String(row?.personId || "")}:${share.numerator}/${share.denominator}`;
+    })
     .sort()
     .join("|");
   return [
@@ -579,13 +648,20 @@ export function intestacyConfirmationReadiness(
     ...people.map((person) => person.id),
     ...outsideParties.map((party) => party.id),
   ]);
-  const totalPercent = rows.reduce((sum, row) => sum + number(row.sharePercent), 0);
-  const totalComplete = intestacyShareTotalIsComplete(totalPercent);
+  const totalPercent = rows.reduce(
+    (sum, row) => sum + fractionToNumber(exactShareFromRecord(row)) * 100,
+    0,
+  );
+  const exactTotal = rows.reduce(
+    (total, row) => addFractions(total, exactShareFromRecord(row)),
+    ZERO_FRACTION,
+  );
+  const totalComplete = !exactTotal.error && compareFractions(exactTotal, WHOLE_FRACTION) === 0;
   const issues = [];
 
   if (!rows.length) issues.push("Add at least one heir.");
   if (rows.some((row) => !row.personId)) issues.push("Choose a person for every heir row.");
-  if (rows.some((row) => number(row.sharePercent) <= 0)) {
+  if (rows.some((row) => compareFractions(exactShareFromRecord(row), ZERO_FRACTION) <= 0)) {
     issues.push("Enter a positive share for every heir.");
   }
   if (selectedIds.length !== rows.length || uniqueIds.size !== rows.length) {
@@ -646,13 +722,16 @@ export function editedIntestacyAllocations(
     return { valid: false, shares, warnings, currentSignature };
   }
 
-  rows.forEach((row) => addShare(shares, row.personId, number(row.sharePercent) / 100));
-  return { valid: true, shares, warnings, currentSignature };
+  const exactShares = new Map();
+  rows.forEach((row) => {
+    const exact = exactShareFromRecord(row);
+    addExactShare(exactShares, row.personId, exact);
+    addShare(shares, row.personId, fractionToNumber(exact));
+  });
+  return { valid: true, shares, exactShares, warnings, currentSignature };
 }
 
 export const confirmedIntestacyAllocations = editedIntestacyAllocations;
-
-export const WILL_SHARE_PERCENT_EPSILON = 1e-8;
 
 export function willAllocationReadiness(person = {}, validBeneficiaryIds = null) {
   const rows = Array.isArray(person.willHeirs) ? person.willHeirs : [];
@@ -663,15 +742,22 @@ export function willAllocationReadiness(person = {}, validBeneficiaryIds = null)
       : Array.isArray(validBeneficiaryIds)
         ? new Set(validBeneficiaryIds.map(String))
         : null;
-  const totalPercent = rows.reduce((sum, row) => sum + number(row?.sharePercent), 0);
-  const totalComplete = Math.abs(totalPercent - 100) <= WILL_SHARE_PERCENT_EPSILON;
+  const totalPercent = rows.reduce(
+    (sum, row) => sum + fractionToNumber(exactShareFromRecord(row)) * 100,
+    0,
+  );
+  const exactTotal = rows.reduce(
+    (total, row) => addFractions(total, exactShareFromRecord(row)),
+    ZERO_FRACTION,
+  );
+  const totalComplete = !exactTotal.error && compareFractions(exactTotal, WHOLE_FRACTION) === 0;
   const issues = [];
 
   if (!rows.length) issues.push("Add at least one beneficiary.");
   if (selectedIds.length !== rows.length) {
     issues.push("Choose a person or company for every beneficiary row.");
   }
-  if (rows.some((row) => number(row?.sharePercent) <= 0)) {
+  if (rows.some((row) => compareFractions(exactShareFromRecord(row), ZERO_FRACTION) <= 0)) {
     issues.push("Enter a positive share for every beneficiary.");
   }
   if (selectedIds.includes(String(person.id || ""))) {
@@ -692,10 +778,14 @@ export function willAllocationReadiness(person = {}, validBeneficiaryIds = null)
 
 export function willAllocations(person = {}) {
   const shares = new Map();
+  const exactShares = new Map();
   (person.willHeirs || []).forEach((heir) => {
     if (!heir.personId) return;
-    addShare(shares, heir.personId, number(heir.sharePercent) / 100);
+    const exact = exactShareFromRecord(heir);
+    addExactShare(exactShares, heir.personId, exact);
+    addShare(shares, heir.personId, fractionToNumber(exact));
   });
+  shares.exactShares = exactShares;
   return shares;
 }
 
@@ -705,18 +795,44 @@ export function willAllocations(person = {}) {
 function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsideParties = []) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const outsidePartyIds = new Set(outsideParties.map((party) => party.id).filter(Boolean));
-  const ownership = new Map();
+  const ownershipFractions = new Map();
   const contributions = [];
   const transmissions = [];
   const unresolved = [];
 
-  const record = (personId, amount, via) => {
-    addShare(ownership, personId, amount);
-    contributions.push({ ownerId: personId, amount, via });
+  const record = (personId, amountFraction, via) => {
+    const amount = fractionToNumber(amountFraction);
+    const total = addExactShare(ownershipFractions, personId, amountFraction);
+    contributions.push({ ownerId: personId, amount, fraction: amountFraction, via });
+    if (total.error) {
+      unresolved.push({
+        personId,
+        amount,
+        fraction: amountFraction,
+        warnings: [total.error],
+      });
+      return false;
+    }
+    return true;
   };
 
-  const distribute = (personId, amount, via, trail = new Set()) => {
-    if (!personId || amount <= 1e-12) return;
+  const distribute = (personId, amountFraction, via, trail = new Set()) => {
+    const amount = fractionToNumber(amountFraction);
+    if (
+      !personId ||
+      amountFraction?.error ||
+      compareFractions(amountFraction, ZERO_FRACTION) <= 0
+    ) {
+      if (personId && amountFraction?.error) {
+        unresolved.push({
+          personId,
+          amount: 0,
+          fraction: amountFraction,
+          warnings: [amountFraction.error],
+        });
+      }
+      return;
+    }
     if (trail.has(personId)) {
       const path = [...trail];
       const loopStart = Math.max(0, path.indexOf(personId));
@@ -725,23 +841,23 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
       const warning = `Circular inheritance path ${loopNames.join(
         " → ",
       )}; this share could not be allocated.`;
-      record(personId, amount, "unresolved");
-      unresolved.push({ personId, amount, warnings: [warning] });
+      record(personId, amountFraction, "unresolved");
+      unresolved.push({ personId, amount, fraction: amountFraction, warnings: [warning] });
       return;
     }
     const person = peopleById.get(personId);
     if (!person) {
       if (outsidePartyIds.has(personId)) {
-        record(personId, amount, via);
+        record(personId, amountFraction, via);
         return;
       }
       const warning = `The heir or owner identified by ${personId} is no longer in this case.`;
-      record(personId, amount, "unresolved");
-      unresolved.push({ personId, amount, warnings: [warning] });
+      record(personId, amountFraction, "unresolved");
+      unresolved.push({ personId, amount, fraction: amountFraction, warnings: [warning] });
       return;
     }
     if (!isPersonDeceased(person)) {
-      record(personId, amount, via);
+      record(personId, amountFraction, via);
       return;
     }
 
@@ -763,6 +879,11 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
       });
       result = {
         shares: protectedWill.resolved ? protectedWill.shares : new Map(),
+        exactShares: protectedWill.resolved
+          ? protectedWill.applies
+            ? exactShareMap(protectedWill.shares)
+            : exactShareMapFromRecords(person.willHeirs || [])
+          : new Map(),
         warnings: protectedWill.warnings,
         destination: protectedWill.applies
           ? protectedWill.calculation?.article === "619"
@@ -776,6 +897,7 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
       result = edited.valid
         ? {
             shares: edited.shares,
+            exactShares: edited.exactShares,
             warnings: calculated.warnings,
             destination: "edited-intestacy",
           }
@@ -784,52 +906,98 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
             warnings: [...calculated.warnings, ...edited.warnings],
           };
     }
-    let allocated = [...result.shares.values()].reduce((sum, share) => sum + share, 0);
-    if (basis === "will" && Math.abs(allocated - 1) > 1e-10) {
+    const allocations = result.exactShares || exactShareMap(result.shares);
+    const allocatedFraction = sumExactShares(allocations);
+    const allocated = fractionToNumber(allocatedFraction);
+    if (
+      basis === "will" &&
+      !allocatedFraction.error &&
+      compareFractions(allocatedFraction, WHOLE_FRACTION) !== 0
+    ) {
       result.warnings.push(
         `Will beneficiary shares total ${(allocated * 100).toLocaleString("en-MT", {
-          maximumFractionDigits: 4,
+          maximumFractionDigits: 2,
         })}%, not 100%.`,
       );
     }
-    if (allocated > 1 + 1e-10) {
-      result.shares.forEach((share, heirId) => {
-        result.shares.set(heirId, share / allocated);
+    if (allocatedFraction.error || compareFractions(allocatedFraction, WHOLE_FRACTION) > 0) {
+      const warning = allocatedFraction.error
+        ? allocatedFraction.error
+        : "The beneficiary shares exceed the whole estate and were not normalised automatically.";
+      result.warnings.push(warning);
+      transmissions.push({
+        deceasedId: personId,
+        basis,
+        amount,
+        amountFraction,
+        allocations: numericShareMap(allocations),
+        exactAllocations: allocations,
+        warnings: result.warnings,
+        destination: "unresolved",
       });
-      allocated = 1;
+      record(personId, amountFraction, "unresolved");
+      unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
+      return;
     }
     transmissions.push({
       deceasedId: personId,
       basis,
       amount,
-      allocations: result.shares,
+      amountFraction,
+      allocations: numericShareMap(allocations),
+      exactAllocations: allocations,
       warnings: result.warnings,
       destination: result.destination,
     });
-    if (!result.shares.size || allocated <= 1e-12) {
-      record(personId, amount, "unresolved");
-      unresolved.push({ personId, amount, warnings: result.warnings });
+    if (!allocations.size || compareFractions(allocatedFraction, ZERO_FRACTION) <= 0) {
+      record(personId, amountFraction, "unresolved");
+      unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
       return;
     }
 
     const nextTrail = new Set(trail).add(personId);
-    result.shares.forEach((share, heirId) => distribute(heirId, amount * share, basis, nextTrail));
-    if (allocated < 1 - 1e-10) {
-      const remainder = amount * (1 - allocated);
-      record(personId, remainder, "unresolved");
+    const distributions = [...allocations.entries()].map(([heirId, share]) => ({
+      heirId,
+      amount: multiplyFractions(amountFraction, share),
+    }));
+    const multiplicationError = distributions.find((entry) => entry.amount.error)?.amount.error;
+    if (multiplicationError) {
+      result.warnings.push(multiplicationError);
+      record(personId, amountFraction, "unresolved");
+      unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
+      return;
+    }
+    distributions.forEach((entry) => distribute(entry.heirId, entry.amount, basis, nextTrail));
+    if (compareFractions(allocatedFraction, WHOLE_FRACTION) < 0) {
+      const unallocatedRatio = subtractFractions(WHOLE_FRACTION, allocatedFraction);
+      const remainderFraction = multiplyFractions(amountFraction, unallocatedRatio);
+      const remainder = fractionToNumber(remainderFraction);
+      record(personId, remainderFraction, "unresolved");
       unresolved.push({
         personId,
         amount: remainder,
+        fraction: remainderFraction,
         warnings: ["Part of the estate has not been allocated."],
       });
     }
   };
 
-  Object.entries(startingOwnership).forEach(([personId, share]) =>
-    distribute(personId, share, "starting"),
+  Object.entries(startingOwnership).forEach(([personId, share]) => {
+    const fraction =
+      share && typeof share === "object" && "numerator" in share
+        ? normaliseFraction(share.numerator, share.denominator)
+        : approximateFraction(number(share));
+    distribute(personId, fraction, "starting");
+  });
+  const ownershipByPerson = Object.fromEntries(
+    [...ownershipFractions.entries()].map(([personId, share]) => [
+      personId,
+      fractionToNumber(share),
+    ]),
   );
   return {
-    ownershipByPerson: Object.fromEntries(ownership),
+    ownershipByPerson,
+    ownershipFractionsByPerson: Object.fromEntries(ownershipFractions),
     contributions,
     transmissions,
     unresolved,
@@ -838,11 +1006,7 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
 
 export function buildFamilyOwnershipFromExplicitShares(people = []) {
   const startingOwnership = buildStarterOwnership(people);
-  const { ownershipByPerson, transmissions, unresolved } = buildFamilyOwnershipCore(
-    people,
-    startingOwnership,
-  );
-  return { ownershipByPerson, transmissions, unresolved };
+  return buildFamilyOwnershipCore(people, startingOwnership);
 }
 
 // Kept as a compatibility alias for saved imports. New code should use the name
@@ -854,8 +1018,11 @@ function propertyStartingOwnership(property = {}) {
   const startingOwnership = {};
   (property.owners || []).forEach((owner) => {
     if (!owner.personId) return;
-    startingOwnership[owner.personId] =
-      (startingOwnership[owner.personId] || 0) + number(owner.sharePercent) / 100;
+    const share = exactShareFromRecord(owner);
+    startingOwnership[owner.personId] = addFractions(
+      startingOwnership[owner.personId] || ZERO_FRACTION,
+      share,
+    );
   });
   return startingOwnership;
 }
@@ -866,9 +1033,9 @@ export function buildPropertyOwnership(people = [], property = {}, outsidePartie
   const startingOwnership = propertyStartingOwnership(property);
   const core = buildFamilyOwnershipCore(people, startingOwnership, outsideParties);
   const breakdown = core.contributions
-    .filter((contribution) => contribution.amount > 1e-12)
+    .filter((contribution) => compareFractions(contribution.fraction, ZERO_FRACTION) > 0)
     .map((contribution) => {
-      const fraction = approximateFraction(contribution.amount);
+      const fraction = contribution.fraction;
       return {
         propertyId: property.id,
         ownerId: contribution.ownerId,
@@ -881,6 +1048,7 @@ export function buildPropertyOwnership(people = [], property = {}, outsidePartie
   return {
     propertyId: property.id,
     ownershipByPerson: core.ownershipByPerson,
+    ownershipFractionsByPerson: core.ownershipFractionsByPerson,
     ownershipByParty: core.ownershipByPerson,
     breakdown,
     transmissions: core.transmissions,

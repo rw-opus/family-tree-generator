@@ -78,7 +78,10 @@ export function capitalisePersonName(value = "") {
   const words = String(value).trim().split(/\s+/).filter(Boolean);
   return words
     .map((word, wordIndex) => {
-      if (/^\p{Lu}/u.test(word) && /\p{Ll}/u.test(word) && /\p{Lu}/u.test(word.slice(1))) {
+      // Preserve any deliberate mixed-case spelling (for example d'Avila,
+      // McPherson, DeNoto or iPhone). All-lowercase and all-uppercase entries
+      // are still normalised on save.
+      if (/\p{Lu}/u.test(word) && /\p{Ll}/u.test(word)) {
         return word;
       }
 

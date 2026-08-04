@@ -28,8 +28,7 @@ export function PersonFinder({ people = [], onSelectPerson }) {
           searchText: normaliseSearch(`${name} ${fatherName} ${motherName}`),
         };
       })
-      .filter((entry) => !needle || entry.searchText.includes(needle))
-      .slice(0, 20);
+      .filter((entry) => !needle || entry.searchText.includes(needle));
   }, [people, peopleById, query]);
 
   const choosePerson = (personId) => {

@@ -6,9 +6,29 @@ import {
 import {
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
+  propertyStartingOwnershipStatus,
 } from "../../src/domain/propertyVendorTax.js";
 
 describe("property vendor tax reports", () => {
+  it("requires exact full ownership rather than accepting a rounded near-total", () => {
+    expect(
+      propertyStartingOwnershipStatus({
+        owners: [
+          { personId: "a", shareNumerator: 1, shareDenominator: 3 },
+          { personId: "b", shareNumerator: 2, shareDenominator: 3 },
+        ],
+      }).isComplete,
+    ).toBe(true);
+    expect(
+      propertyStartingOwnershipStatus({
+        owners: [
+          { personId: "a", shareNumerator: 1, shareDenominator: 3 },
+          { personId: "b", shareNumerator: 666666666665, shareDenominator: 999999999999 },
+        ],
+      }).isComplete,
+    ).toBe(false);
+  });
+
   it("builds a read-only vendor row from the person-card CM declaration", () => {
     const people = [
       {
@@ -102,16 +122,88 @@ describe("property vendor tax reports", () => {
       taxSummary: { excludedLotCount: 0 },
     };
 
-    const row = buildTaxCalculationReport(
+    const report = buildTaxCalculationReport(
       { id: "property", saleValue: 100000 },
       people,
       [],
       vendorReport,
-    ).vendors[0].rows[0];
+    );
+    const row = report.vendors[0].rows[0];
 
     expect(row.declarations).toEqual([]);
     expect(row.methods).toEqual([]);
     expect(row.warning).toMatch(/value.*needed|causa mortis/i);
+    expect(report.vendors[0].tax).toBeNull();
+    expect(report.vendors[0].net).toBeNull();
+    expect(report.totalTax).toBeNull();
+    expect(report.totalNet).toBeNull();
+  });
+
+  it("treats an explicit zero CM value as zero rather than falling back to a stored value", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        dateOfDeath: "2020-01-01",
+        causaMortisDeclarations: [
+          {
+            id: "cm-zero",
+            propertyId: "property",
+            status: "complete",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            immovablePropertyValue: "0",
+            date: "2020-02-01",
+            notaryName: "Notary Zero",
+            declarantPersonIds: ["child"],
+          },
+        ],
+      },
+      { id: "child", fullName: "Maria Borg" },
+    ];
+    const source = {
+      deceasedId: "deceased",
+      deceasedName: "Joseph Borg",
+      ownerId: "child",
+      inheritanceDate: "2020-01-01",
+      share: 1,
+      shareFraction: { numerator: 1, denominator: 1 },
+      allocationShare: 1,
+    };
+    const vendorReport = {
+      livingVendors: [
+        {
+          id: "child",
+          name: "Maria Borg",
+          share: 1,
+          shareFraction: { numerator: 1, denominator: 1 },
+        },
+      ],
+      saleRows: [
+        {
+          lot: { id: "lot", ownerId: "child", inheritanceSourceDeceasedId: "deceased" },
+          effectiveLot: {
+            shareNumerator: 1,
+            shareDenominator: 1,
+            acquisitionValue: 80000,
+            inheritanceDate: "2020-01-01",
+          },
+          result: { share: 1 },
+          selectedInheritanceSource: source,
+        },
+      ],
+      inheritanceSourcesByOwner: new Map([["child", [source]]]),
+      ledger: { entries: [], parties: [] },
+      taxSummary: { excludedLotCount: 0 },
+    };
+
+    const report = buildTaxCalculationReport(
+      { id: "property", saleValue: 100000 },
+      people,
+      [],
+      vendorReport,
+    );
+    expect(report.vendors[0].rows[0].declaredValue).toBe(0);
   });
 
   it("attributes separate CM declarations only to their named declarants", () => {
@@ -477,7 +569,12 @@ describe("property vendor tax reports", () => {
     const report = buildPropertyVendorTaxReport(property, people, outsideParties);
 
     expect(report.declarationOwners).toEqual([
-      { id: "company", name: "Legacy Holdings Limited", share: 1 },
+      {
+        id: "company",
+        name: "Legacy Holdings Limited",
+        share: 1,
+        shareFraction: { numerator: 1, denominator: 1 },
+      },
     ]);
     expect(report.ledger.owners[0]).toMatchObject({
       id: "company",

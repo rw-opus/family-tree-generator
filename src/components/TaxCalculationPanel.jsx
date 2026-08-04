@@ -11,8 +11,8 @@ const money = new Intl.NumberFormat("en-MT", {
   maximumFractionDigits: 2,
 });
 
-const fractionLabel = (share) => {
-  const fraction = approximateFraction(share);
+const fractionLabel = (share, exactFraction) => {
+  const fraction = exactFraction?.denominator ? exactFraction : approximateFraction(share);
   return `${fraction.numerator}/${fraction.denominator}`;
 };
 
@@ -47,7 +47,7 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
               <header>
                 <span>
                   <strong>{vendor.name}</strong>
-                  <small>Total ownership {fractionLabel(vendor.share)}</small>
+                  <small>Total ownership {fractionLabel(vendor.share, vendor.shareFraction)}</small>
                 </span>
                 <span>
                   <strong>{money.format(vendor.attributedSaleValue)}</strong>
@@ -76,7 +76,7 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
                         <td>
                           <strong>{row.provenance}</strong>
                           {row.inheritanceDate && (
-                            <small>Died {isoDateToDisplay(row.inheritanceDate)}</small>
+                            <small>d. {isoDateToDisplay(row.inheritanceDate)}</small>
                           )}
                           {row.declarations.map((declaration) => (
                             <small key={declaration.id}>
@@ -89,7 +89,7 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
                             </small>
                           ))}
                         </td>
-                        <td>{fractionLabel(row.share)}</td>
+                        <td>{fractionLabel(row.share, row.shareFraction)}</td>
                         <td>{money.format(row.declaredValue)}</td>
                         <td>{money.format(row.attributedSaleValue)}</td>
                         <td>{money.format(row.difference)}</td>
@@ -117,10 +117,12 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
               </div>
               <footer>
                 <span>
-                  Tax payable <strong>{money.format(vendor.tax)}</strong>
+                  Tax payable{" "}
+                  <strong>{vendor.tax == null ? "Pending" : money.format(vendor.tax)}</strong>
                 </span>
                 <span>
-                  Net balance <strong>{money.format(vendor.net)}</strong>
+                  Net balance{" "}
+                  <strong>{vendor.net == null ? "Pending" : money.format(vendor.net)}</strong>
                 </span>
               </footer>
               {vendor.incompleteRowCount > 0 && (
@@ -144,10 +146,12 @@ export function TaxCalculationPanel({ property, people, outsideParties, vendorRe
             Total sale value <strong>{money.format(report.totalSaleValue)}</strong>
           </span>
           <span>
-            Total tax <strong>{money.format(report.totalTax)}</strong>
+            Total tax{" "}
+            <strong>{report.totalTax == null ? "Pending" : money.format(report.totalTax)}</strong>
           </span>
           <span>
-            Total net <strong>{money.format(report.totalNet)}</strong>
+            Total net{" "}
+            <strong>{report.totalNet == null ? "Pending" : money.format(report.totalNet)}</strong>
           </span>
         </div>
       )}

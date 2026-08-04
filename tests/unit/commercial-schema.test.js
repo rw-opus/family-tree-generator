@@ -6,6 +6,11 @@ const migration = readFileSync(
   new URL("../../supabase/migrations/20260731124716_commercial_tree_credits.sql", import.meta.url),
   "utf8",
 );
+const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
+const authScreen = readFileSync(
+  new URL("../../src/components/AuthScreen.jsx", import.meta.url),
+  "utf8",
+);
 
 describe("commercial Supabase schema", () => {
   it("enforces five free trees and paid credits in a private insert trigger", () => {
@@ -28,5 +33,12 @@ describe("commercial Supabase schema", () => {
       "revoke all on table public.stripe_tree_events from anon, authenticated",
     );
     expect(schema).not.toMatch(/using\s*\(\s*true\s*\)/i);
+  });
+
+  it("keeps account creation invitation-only at both client and Supabase config boundaries", () => {
+    expect(authScreen).not.toContain("supabase.auth.signUp");
+    expect(authConfig).toMatch(/\[auth\][\s\S]*enable_signup\s*=\s*false/);
+    expect(authConfig).toMatch(/\[auth\.email\][\s\S]*enable_signup\s*=\s*false/);
+    expect(authConfig).toMatch(/\[auth\.rate_limit\][\s\S]*sign_in_sign_ups\s*=\s*10/);
   });
 });

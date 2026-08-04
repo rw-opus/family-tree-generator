@@ -38,6 +38,7 @@ export function FamilyLibrary({
   billingBusy = false,
   billingMessage = "",
   storageStatus = "",
+  recoveryAvailable = false,
   onCreate,
   onImport,
   onOpen,
@@ -45,6 +46,7 @@ export function FamilyLibrary({
   onRemove,
   onBuyTree,
   onSignOut,
+  onDownloadRecovery,
 }) {
   const [query, setQuery] = useState("");
   const [renamingId, setRenamingId] = useState("");
@@ -197,6 +199,11 @@ export function FamilyLibrary({
               {storageStatus}
             </p>
           )}
+          {recoveryAvailable && (
+            <button type="button" className="library-account-action" onClick={onDownloadRecovery}>
+              Download recovery copy
+            </button>
+          )}
         </section>
 
         <section className="family-library" aria-labelledby="families-title">
@@ -291,6 +298,12 @@ export function FamilyLibrary({
                   >
                     <span>{tree.title || "Untitled family"}</span>
                     {tree.id === activeTreeId && <small>Open now</small>}
+                    {(tree.dataWarnings?.length > 0 || tree.importWarnings?.length > 0) && (
+                      <small className="family-review-warning">
+                        {(tree.dataWarnings?.length || 0) + (tree.importWarnings?.length || 0)}{" "}
+                        import /recovery item(s) need review
+                      </small>
+                    )}
                   </button>
                 )}
                 <span className="family-last-changed" role="cell">

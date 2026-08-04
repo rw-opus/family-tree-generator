@@ -38,7 +38,9 @@ describe("automatic family ownership", () => {
         fullName: "Edgar Wadge",
         isDeceased: true,
         dateOfDeath: "1990-01-01",
+        spouseIds: ["giovanna"],
       }),
+      person("giovanna", { fullName: "Giovanna Wadge", spouseIds: ["edgar"] }),
     ];
 
     expect(missingPotentialIntestateParents(people, "michael")).toEqual(["mother"]);
@@ -58,6 +60,7 @@ describe("automatic family ownership", () => {
 
     expect(allocation.destination).toBe("ascendants");
     expect(allocation.shares.get("mother-placeholder")).toBe(1);
+    expect(allocation.shares.has("giovanna")).toBe(false);
     expect(allocation.warnings.join(" ")).toContain("provisionally treated as surviving");
   });
 
@@ -1154,5 +1157,40 @@ describe("per-property ownership", () => {
     expect(result.unresolved[0].warnings.join(" ")).toContain(
       "Owner Person → Heir Person → Owner Person",
     );
+  });
+
+  it("preserves an exact tiny property share without pruning it", () => {
+    const property = {
+      id: "tiny-share",
+      owners: [
+        {
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 999999999999,
+        },
+      ],
+    };
+    const result = buildPropertyOwnership([person("owner")], property);
+    expect(result.ownershipFractionsByPerson.owner).toEqual({
+      numerator: 1,
+      denominator: 999999999999,
+    });
+    expect(result.breakdown).toHaveLength(1);
+  });
+
+  it("does not treat a person born after the succession as alive at that succession", () => {
+    const people = [
+      person("deceased", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+      }),
+      person("later-child", {
+        fatherId: "deceased",
+        dateOfBirth: "2021-01-01",
+      }),
+    ];
+    const result = intestateAllocations(people, "deceased");
+    expect(result.shares.has("later-child")).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, Building2, Plus, Trash2, UserRound } from "lucide-react";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
 import { DateInput } from "./DateInput.jsx";
 
@@ -15,7 +16,7 @@ const blankTransfer = () => ({
   consideration: "",
 });
 const percent = (share) =>
-  `${(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 6 })}%`;
+  `${(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
 const fractionLabel = (share) => {
   const fraction = approximateFraction(share);
   return `${fraction.numerator}/${fraction.denominator}`;
@@ -161,6 +162,7 @@ export function PropertyTransfers({
               <input
                 type="number"
                 min="0"
+                max={MAX_FRACTION_INTEGER}
                 step="1"
                 value={transferDraft.numerator}
                 onChange={(e) =>
@@ -174,6 +176,7 @@ export function PropertyTransfers({
               <input
                 type="number"
                 min="1"
+                max={MAX_FRACTION_INTEGER}
                 step="1"
                 value={transferDraft.denominator}
                 onChange={(e) =>

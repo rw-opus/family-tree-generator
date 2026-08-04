@@ -21,7 +21,6 @@ import {
   solePartnerParentSuggestions,
 } from "../domain/parentSuggestions.js";
 import {
-  CAUSA_MORTIS_EPSILON,
   isCompletedCausaMortisDeclaration,
   validateCausaMortisDeclaration,
 } from "../domain/causaMortisCoverage.js";
@@ -36,6 +35,7 @@ import {
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
+import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import { applyLegacyProtectedPortionsToWill } from "../domain/legacyLegitim.js";
 import {
   fractionForShare,
@@ -78,11 +78,11 @@ function initials(name) {
     .join("");
 }
 
-function ownershipLabel(share = 0, shareDisplay = "both") {
-  const fraction = approximateFraction(share);
+function ownershipLabel(share = 0, shareDisplay = "both", exactFraction = null) {
+  const fraction = exactFraction?.denominator ? exactFraction : approximateFraction(share);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
   const percentageText = `${(share * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 4,
+    maximumFractionDigits: 2,
   })}%`;
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;
@@ -120,6 +120,7 @@ export function PersonInspector({
   people,
   properties = [],
   ownershipByPerson = {},
+  ownershipFractionsByPerson = {},
   hasAnyPropertyOwnership = false,
   causaMortisCoverage = [],
   selectedPersonId,
@@ -221,7 +222,7 @@ export function PersonInspector({
     setOwnershipDisplay(shareDisplayMode(shareDisplay));
   }, [shareDisplay]);
 
-  useEffect(() => {
+  const createMissingIntestateParents = () => {
     if (!selectedPerson || !missingIntestateParentRoles.length) return;
     const subjectName = personGivenNames(selectedPerson).trim() || displayName(selectedPerson);
     const selectedPatch = {};
@@ -246,7 +247,7 @@ export function PersonInspector({
       ),
       ...createdParents,
     ]);
-  }, [displayName, missingIntestateParentRoles, onChange, people, selectedPerson]);
+  };
 
   const updatePerson = (personId, patch) => {
     onChange(people.map((person) => (person.id === personId ? { ...person, ...patch } : person)));
@@ -418,7 +419,9 @@ export function PersonInspector({
     const remainingShare = coverageTarget
       ? Math.max(0, coverageTarget.requiredShare - coverageTarget.declaredShare)
       : 0;
-    const remainingFraction = approximateFraction(remainingShare);
+    const remainingFraction = coverageTarget?.remainingFraction?.denominator
+      ? coverageTarget.remainingFraction
+      : approximateFraction(remainingShare);
     setCausaMortisDraftOpen(true);
     updateSelected({
       causaMortisDeclarations: [
@@ -457,6 +460,7 @@ export function PersonInspector({
       ? validateCausaMortisDeclaration(normalizedDeclaration, {
           valueRequired: !allSuccessionHeirsDeceased,
           availableShare,
+          availableShareFraction: coverage?.remainingFraction,
         })
       : "Assign the deceased's property share before completing this declaration.";
 
@@ -822,9 +826,7 @@ export function PersonInspector({
   const hasDraftCausaMortisDeclaration = causaMortisDeclarations.some(
     (declaration) => !isCompletedCausaMortisDeclaration(declaration),
   );
-  const hasRemainingCausaMortisShare = causaMortisCoverage.some(
-    (row) => row.status === "under" && row.requiredShare - row.declaredShare > CAUSA_MORTIS_EPSILON,
-  );
+  const hasRemainingCausaMortisShare = causaMortisCoverage.some((row) => row.status === "under");
   const canStartFirstCausaMortisDeclaration = causaMortisDeclarations.length === 0;
   const canAddCausaMortisDeclaration =
     !hasDraftCausaMortisDeclaration &&
@@ -973,7 +975,7 @@ export function PersonInspector({
     ...(seversFamily
       ? ["the only link holding this family together — remove the people either side"]
       : []),
-    ...(!sharedAcrossFamilies && (hasAnyPropertyOwnership || (hasOwnership && ownership > 1e-10))
+    ...(!sharedAcrossFamilies && (hasAnyPropertyOwnership || (hasOwnership && ownership > 0))
       ? ["the person's property ownership"]
       : []),
     ...(!sharedAcrossFamilies ? caseDependencyLabels : []),
@@ -1281,6 +1283,24 @@ export function PersonInspector({
           </label>
         </div>
 
+        {missingIntestateParentRoles.length > 0 && (
+          <section className="potential-parent-survival-alert" role="alert">
+            <strong>Possible parent inheritance needs confirmation</strong>
+            <p>
+              The family tree does not identify {missingIntestateParentRoles.join(" or ")} for this
+              person. Add the missing parent record only if you want the calculator to provisionally
+              treat that parent as a surviving intestate heir.
+            </p>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={createMissingIntestateParents}
+            >
+              Add missing {missingIntestateParentRoles.length > 1 ? "parents" : "parent"}
+            </button>
+          </section>
+        )}
+
         {selectedPerson.survivalStatusRequired === true && (
           <section className="potential-parent-survival-alert" role="alert">
             <strong>Establish whether this parent survived</strong>
@@ -1519,6 +1539,7 @@ export function PersonInspector({
                                 aria-label="Will share numerator"
                                 type="number"
                                 min="0"
+                                max={MAX_FRACTION_INTEGER}
                                 step="1"
                                 value={numerator}
                                 onChange={(event) =>
@@ -1532,6 +1553,7 @@ export function PersonInspector({
                                 aria-label="Will share denominator"
                                 type="number"
                                 min="1"
+                                max={MAX_FRACTION_INTEGER}
                                 step="1"
                                 value={denominator}
                                 onChange={(event) =>
@@ -1759,6 +1781,7 @@ export function PersonInspector({
                             aria-label={`Causa mortis share numerator ${index + 1}`}
                             type="number"
                             min="0"
+                            max={MAX_FRACTION_INTEGER}
                             step="1"
                             required
                             value={declaration.declaredShareNumerator ?? ""}
@@ -1773,6 +1796,7 @@ export function PersonInspector({
                             aria-label={`Causa mortis share denominator ${index + 1}`}
                             type="number"
                             min="1"
+                            max={MAX_FRACTION_INTEGER}
                             step="1"
                             required
                             value={declaration.declaredShareDenominator ?? ""}
@@ -1928,7 +1952,13 @@ export function PersonInspector({
             </div>
             <div className="person-share-value">
               <strong>
-                {hasOwnership ? ownershipLabel(ownership, ownershipDisplay) : "Not yet calculated"}
+                {hasOwnership
+                  ? ownershipLabel(
+                      ownership,
+                      ownershipDisplay,
+                      ownershipFractionsByPerson[selectedPerson.id],
+                    )
+                  : "Not yet calculated"}
               </strong>
               <small>
                 {hasOwnership && propertySaleValue > 0
