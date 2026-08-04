@@ -1,5 +1,5 @@
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
-import { normalisePersonNameFields } from "./people.js";
+import { normalisePersonNameFields, personGivenNames } from "./people.js";
 import { personWithWills } from "./wills.js";
 import {
   INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
@@ -84,6 +84,131 @@ function normalizePeople(people = []) {
   return { people: normalizePartnerRelationships(normalized), warnings };
 }
 
+const LEGACY_POTENTIAL_PARENT_KEYS = new Set([
+  "id",
+  "givenNames",
+  "surname",
+  "fullName",
+  "surnameAtBirth",
+  "designations",
+  "designation",
+  "sex",
+  "fatherId",
+  "motherId",
+  "spouseIds",
+  "siblingIds",
+  "partnerRelationships",
+  "dateOfBirth",
+  "dateOfDeath",
+  "unmarriedOrWidowedAtDeath",
+  "wills",
+  "willDate",
+  "willNotaryName",
+  "willDescription",
+  "notes",
+  "isPotentialIntestateParent",
+  "survivalStatusRequired",
+  "survivalStatusReferencePersonId",
+]);
+
+function hasSavedValue(value) {
+  if (typeof value === "string") return Boolean(value.trim());
+  if (Array.isArray(value)) return value.length > 0;
+  if (isRecord(value)) return Object.keys(value).length > 0;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  return value != null;
+}
+
+function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {
+  if (
+    person?.isPotentialIntestateParent !== true ||
+    person?.survivalStatusRequired !== true ||
+    person?.potentialParentAddedExplicitly === true ||
+    protectedPersonIds.has(person?.id)
+  ) {
+    return false;
+  }
+
+  const sex = String(person.sex || "").toLowerCase();
+  if (sex !== "female" && sex !== "male") return false;
+  const role = sex === "female" ? "mother" : "father";
+  const generatedName = text(person.fullName || person.givenNames).toLowerCase();
+  const referencePersonId = text(person.survivalStatusReferencePersonId);
+  const referencePerson = people.find((candidate) => candidate.id === referencePersonId);
+  const referenceName = personGivenNames(referencePerson).trim() || text(referencePerson?.fullName);
+  const expectedName = `${role} of ${referenceName}`.toLowerCase();
+  if (
+    !referencePerson ||
+    !referenceName ||
+    generatedName !== expectedName ||
+    referencePerson[`${role}Id`] !== person.id
+  ) {
+    return false;
+  }
+
+  const children = people.filter(
+    (candidate) => candidate.fatherId === person.id || candidate.motherId === person.id,
+  );
+  if (children.length !== 1 || children[0].id !== referencePersonId) return false;
+
+  const designations = Array.isArray(person.designations)
+    ? person.designations.map((designation) => text(designation).toLowerCase()).filter(Boolean)
+    : [];
+  if (designations.some((designation) => designation !== "parent")) return false;
+  if (
+    text(person.surname) ||
+    text(person.surnameAtBirth) ||
+    text(person.fatherId) ||
+    text(person.motherId) ||
+    text(person.dateOfBirth) ||
+    text(person.dateOfDeath) ||
+    text(person.notes) ||
+    uniqueIds(person.spouseIds).length ||
+    uniqueIds(person.siblingIds).length ||
+    records(person.partnerRelationships).length ||
+    records(person.wills).length
+  ) {
+    return false;
+  }
+
+  return !Object.entries(person).some(
+    ([key, value]) => !LEGACY_POTENTIAL_PARENT_KEYS.has(key) && hasSavedValue(value),
+  );
+}
+
+/**
+ * An August 2026 build created unresolved parents merely by opening a person's
+ * card. Remove only those untouched generated records. Parents created through
+ * the current explicit action carry a durable marker and are never migrated.
+ */
+function removeLegacyPotentialParents(caseData) {
+  const protectedPersonIds = new Set(
+    collectCasePersonReferences(caseData, { includeRelationships: false }).map(
+      (reference) => reference.personId,
+    ),
+  );
+  const removedIds = new Set(
+    caseData.people
+      .filter((person) =>
+        isUntouchedLegacyPotentialParent(person, caseData.people, protectedPersonIds),
+      )
+      .map((person) => person.id),
+  );
+  if (!removedIds.size) return caseData;
+
+  const people = caseData.people
+    .filter((person) => !removedIds.has(person.id))
+    .map((person) => ({
+      ...person,
+      fatherId: removedIds.has(person.fatherId) ? "" : person.fatherId,
+      motherId: removedIds.has(person.motherId) ? "" : person.motherId,
+      spouseIds: uniqueIds(person.spouseIds).filter((personId) => !removedIds.has(personId)),
+      siblingIds: uniqueIds(person.siblingIds).filter((personId) => !removedIds.has(personId)),
+    }));
+  return { ...caseData, people: normalizePartnerRelationships(people) };
+}
+
 function migrateIntestacyConfirmationSignatures(people = []) {
   return people.map((person) => {
     if (
@@ -156,12 +281,12 @@ export function normalizeCase(value = {}) {
   const people = migrateIntestacyConfirmationSignatures(peopleResult.people);
   const dataWarnings = [...(Array.isArray(source.dataWarnings) ? source.dataWarnings : [])];
   dataWarnings.push(...peopleResult.warnings);
-  const caseData = {
+  const caseData = removeLegacyPotentialParents({
     ...source,
     id: text(source.id) || DEFAULT_CASE_ID,
     people,
     schemaVersion: CASE_SCHEMA_VERSION,
-  };
+  });
   const validPersonIds = new Set(caseData.people.map((person) => person.id));
   const sourceGroups = Array.isArray(source.familyGroups)
     ? source.familyGroups

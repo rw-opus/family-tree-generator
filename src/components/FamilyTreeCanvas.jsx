@@ -35,13 +35,13 @@ function hasRelationalLinks(person) {
 function TreePanel({ treeRef, onPrint, relational, helperText, toolbar, children }) {
   return (
     <section className="tree-panel">
-      <header className="tree-stage-toolbar tree-stage-toolbar-unified">
+      <header className="tree-stage-toolbar tree-stage-toolbar-unified tree-panel-fixed-controls">
         {toolbar}
         <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
           <Printer size={16} /> Print preview
         </button>
       </header>
-      <div className="family-chart" ref={treeRef}>
+      <div className="family-chart tree-canvas-scroll-region" ref={treeRef}>
         <div className={`family-canvas ${relational ? "relational-canvas" : ""}`}>{children}</div>
       </div>
       <p className="helper-text">{helperText}</p>
@@ -101,14 +101,35 @@ export function FamilyTreeCanvas({
   useEffect(() => {
     if (!selectedPersonId || !treeRef.current) return;
 
-    const selectedNode = [...treeRef.current.querySelectorAll("[data-person-id]")].find(
+    const chart = treeRef.current;
+    const selectedNode = [...chart.querySelectorAll("[data-person-id]")].find(
       (element) => element.dataset.personId === selectedPersonId,
     );
-    selectedNode?.scrollIntoView?.({
+    if (!selectedNode) return;
+
+    const chartRect = chart.getBoundingClientRect();
+    const nodeRect = selectedNode.getBoundingClientRect();
+    const options = {
       behavior: "smooth",
-      block: "center",
-      inline: "center",
-    });
+      left: Math.max(
+        0,
+        chart.scrollLeft +
+          nodeRect.left -
+          chartRect.left -
+          (chart.clientWidth - nodeRect.width) / 2,
+      ),
+      top: Math.max(
+        0,
+        chart.scrollTop + nodeRect.top - chartRect.top - (chart.clientHeight - nodeRect.height) / 2,
+      ),
+    };
+
+    if (typeof chart.scrollTo === "function") {
+      chart.scrollTo(options);
+      return;
+    }
+    chart.scrollLeft = options.left;
+    chart.scrollTop = options.top;
   }, [people, selectedPersonId]);
 
   usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);

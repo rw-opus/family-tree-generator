@@ -2972,11 +2972,17 @@ textarea {
 }
 
 .tree-stage-toolbar {
-  position: relative;
+  position: sticky;
   z-index: 8;
+  top: 0;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.7rem;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 62px;
   border-bottom: 1px solid #d7ddd8;
   background: rgba(252, 252, 250, 0.94);
@@ -3894,8 +3900,11 @@ body.succession-history-open {
   display: flex;
   flex: 1;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -3923,7 +3932,10 @@ body.succession-history-open {
 }
 
 .tree-stage .family-chart {
-  flex: 1;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   border: 0;
@@ -4827,7 +4839,13 @@ body.a3-print-preview-open {
   }
 
   .tree-stage-toolbar-unified {
+    position: sticky;
+    top: 0;
+    right: 0;
+    left: 0;
     grid-template-columns: auto minmax(0, 1fr) auto;
+    width: 100%;
+    max-width: 100%;
     min-height: auto;
     padding: 0.45rem 0.6rem;
   }

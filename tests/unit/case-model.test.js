@@ -199,6 +199,142 @@ describe("case model migration", () => {
     });
   });
 
+  it("removes untouched parents created silently by the legacy person-card effect", () => {
+    const result = normalizeCase({
+      id: "legacy-generated-parents",
+      people: [
+        {
+          id: "edgar",
+          givenNames: "Edgar",
+          surname: "Wadge",
+          fullName: "Edgar Wadge",
+          fatherId: "generated-father",
+          motherId: "generated-mother",
+        },
+        {
+          id: "generated-father",
+          givenNames: "Father of Edgar",
+          fullName: "Father of Edgar",
+          surname: "",
+          surnameAtBirth: "",
+          sex: "Male",
+          designations: ["Parent"],
+          fatherId: "",
+          motherId: "",
+          spouseIds: [],
+          siblingIds: [],
+          dateOfBirth: "",
+          dateOfDeath: "",
+          wills: [],
+          notes: "",
+          isPotentialIntestateParent: true,
+          survivalStatusRequired: true,
+          survivalStatusReferencePersonId: "edgar",
+        },
+        {
+          id: "generated-mother",
+          givenNames: "Mother of Edgar",
+          fullName: "Mother of Edgar",
+          surname: "",
+          surnameAtBirth: "",
+          sex: "Female",
+          designations: ["Parent"],
+          fatherId: "",
+          motherId: "",
+          spouseIds: [],
+          siblingIds: [],
+          dateOfBirth: "",
+          dateOfDeath: "",
+          wills: [],
+          notes: "",
+          isPotentialIntestateParent: true,
+          survivalStatusRequired: true,
+          survivalStatusReferencePersonId: "edgar",
+        },
+      ],
+    });
+
+    expect(result.people).toHaveLength(1);
+    expect(result.people[0]).toMatchObject({ id: "edgar", fatherId: "", motherId: "" });
+    expect(result.familyGroups[0].personIds).toEqual(["edgar"]);
+  });
+
+  it("preserves a potential parent that the user added explicitly", () => {
+    const result = normalizeCase({
+      id: "explicit-parent",
+      people: [
+        { id: "michael", fullName: "Michael Wadge", motherId: "mother" },
+        {
+          id: "mother",
+          givenNames: "Mother of Michael",
+          fullName: "Mother of Michael",
+          sex: "Female",
+          designations: ["Parent"],
+          spouseIds: [],
+          siblingIds: [],
+          wills: [],
+          isPotentialIntestateParent: true,
+          potentialParentAddedExplicitly: true,
+          survivalStatusRequired: true,
+          survivalStatusReferencePersonId: "michael",
+        },
+      ],
+    });
+
+    expect(result.people.map((person) => person.id)).toEqual(["michael", "mother"]);
+    expect(result.people[0].motherId).toBe("mother");
+  });
+
+  it("preserves a legacy potential parent once the record contains user data", () => {
+    const result = normalizeCase({
+      id: "edited-parent",
+      people: [
+        { id: "michael", fullName: "Michael Wadge", motherId: "mother" },
+        {
+          id: "mother",
+          givenNames: "Mother of Michael",
+          fullName: "Mother of Michael",
+          sex: "Female",
+          designations: ["Parent"],
+          spouseIds: [],
+          siblingIds: [],
+          wills: [],
+          notes: "Survival still being researched",
+          isPotentialIntestateParent: true,
+          survivalStatusRequired: true,
+          survivalStatusReferencePersonId: "michael",
+        },
+      ],
+    });
+
+    expect(result.people.map((person) => person.id)).toEqual(["michael", "mother"]);
+  });
+
+  it("preserves a legacy potential parent referenced by a property record", () => {
+    const result = normalizeCase({
+      id: "property-owner-parent",
+      people: [
+        { id: "michael", fullName: "Michael Wadge", motherId: "mother" },
+        {
+          id: "mother",
+          givenNames: "Mother of Michael",
+          fullName: "Mother of Michael",
+          sex: "Female",
+          designations: ["Parent"],
+          spouseIds: [],
+          siblingIds: [],
+          wills: [],
+          isPotentialIntestateParent: true,
+          survivalStatusRequired: true,
+          survivalStatusReferencePersonId: "michael",
+        },
+      ],
+      properties: [{ id: "property", owners: [{ personId: "mother", share: 100 }] }],
+    });
+
+    expect(result.people.map((person) => person.id)).toEqual(["michael", "mother"]);
+  });
+
   it("does not pull an unrelated person into a group whose members were removed", () => {
     const result = normalizeCase({
       schemaVersion: 2,

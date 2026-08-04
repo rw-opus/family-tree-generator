@@ -140,6 +140,7 @@ describe("PersonInspector", () => {
       fullName: "Mother of Michael",
       sex: "Female",
       isPotentialIntestateParent: true,
+      potentialParentAddedExplicitly: true,
       survivalStatusRequired: true,
       survivalStatusReferencePersonId: "michael",
     });
@@ -2671,12 +2672,23 @@ describe("PersonInspector", () => {
       type: "marriage",
       startDate: "2015-06-15",
     });
-    act(() =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent.trim() === "Edit identity")
-        .click(),
-    );
     const relationshipType = container.querySelector(".person-partner-link-row select");
+    const marriageStartDate = container.querySelector(
+      'input[aria-label^="Relationship start date with"]',
+    );
+    expect(relationshipType.disabled).toBe(false);
+    expect(marriageStartDate.disabled).toBe(false);
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        marriageStartDate,
+        "12-05-2014",
+      );
+      marriageStartDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
+      type: "marriage",
+      startDate: "2014-05-12",
+    });
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
         relationshipType,
