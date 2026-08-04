@@ -78,6 +78,7 @@ const shareDisplayMode = (value) =>
   ["fraction", "percentage", "both"].includes(value) ? value : "both";
 
 const blankDonationDraft = () => ({
+  kind: "donation",
   doneeMode: "existing",
   doneeId: "",
   doneeName: "",
@@ -86,6 +87,7 @@ const blankDonationDraft = () => ({
   denominator: "2",
   amountType: "seller-holding",
   date: "",
+  consideration: "",
   error: "",
 });
 
@@ -164,7 +166,6 @@ export function PersonInspector({
   const [partnerRelationshipType, setPartnerRelationshipType] = useState(
     PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
   );
-  const [partnerRelationshipDate, setPartnerRelationshipDate] = useState("");
   const [existingSpouseId, setExistingSpouseId] = useState("");
   const [childPartnerChooserOpen, setChildPartnerChooserOpen] = useState(false);
   const [childPartnerId, setChildPartnerId] = useState("");
@@ -242,7 +243,6 @@ export function PersonInspector({
     previousSelectedPersonIdRef.current = nextPersonId;
     setSpouseChooserOpen(false);
     setPartnerRelationshipType(PARTNER_RELATIONSHIP_TYPES.MARRIAGE);
-    setPartnerRelationshipDate("");
     setExistingSpouseId("");
     setChildPartnerChooserOpen(false);
     setChildPartnerId("");
@@ -679,7 +679,6 @@ export function PersonInspector({
             kind === "partnership"
               ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
               : PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
-          startDate: partnerRelationshipDate,
         }),
       );
       return;
@@ -697,6 +696,7 @@ export function PersonInspector({
   const canDonate =
     Boolean(activeProperty && onRecordDonation && donorLedgerHolding) &&
     compareFractions(donorLedgerHolding, ZERO_FRACTION) > 0;
+  const isDonation = donationDraft.kind !== "sale";
 
   const setDonationField = (patch) =>
     setDonationDraft((current) => ({ ...current, ...patch, error: "" }));
@@ -714,38 +714,41 @@ export function PersonInspector({
     if (compareFractions(amount, ZERO_FRACTION) <= 0) {
       return setDonationDraft((d) => ({
         ...d,
-        error: "The donated fraction must be greater than zero.",
+        error: "The transferred fraction must be greater than zero.",
       }));
     }
     if (compareFractions(amount, donorLedgerHolding) > 0) {
       return setDonationDraft((d) => ({
         ...d,
-        error: "The donor does not own enough to complete this donation.",
+        error: "This person does not own enough to complete this transfer.",
       }));
     }
 
-    let donee = null;
+    let acquirer = null;
     let nextPeople = people;
     if (donationDraft.doneeMode === "new") {
       const name = donationDraft.doneeName.trim();
       if (!name) {
-        return setDonationDraft((d) => ({ ...d, error: "Enter the donee's full name." }));
+        return setDonationDraft((d) => ({ ...d, error: "Enter the acquirer's full name." }));
       }
-      // An unrelated donee joins the tree with no family links: the layout places every
+      // An unrelated acquirer joins the tree with no family links: the layout places every
       // disconnected group side by side, so this person starts a mini tree next to the
       // family and can gain a spouse and children from their own card later.
-      donee = {
-        ...createPerson("Donee"),
+      acquirer = {
+        ...createPerson(isDonation ? "Donee" : "Buyer"),
         fullName: name,
         sex: donationDraft.doneeSex,
       };
-      nextPeople = [...people, donee];
+      nextPeople = [...people, acquirer];
     } else {
       if (!donationDraft.doneeId) {
-        return setDonationDraft((d) => ({ ...d, error: "Select who receives the donation." }));
+        return setDonationDraft((d) => ({ ...d, error: "Select who acquires the share." }));
       }
       if (donationDraft.doneeId === selectedPerson.id) {
-        return setDonationDraft((d) => ({ ...d, error: "Donor and donee must be different." }));
+        return setDonationDraft((d) => ({
+          ...d,
+          error: "Transferor and acquirer must be different.",
+        }));
       }
     }
 
@@ -754,14 +757,17 @@ export function PersonInspector({
       propertyId: activeProperty.id,
       transfer: {
         id: crypto.randomUUID(),
-        kind: "donation",
+        // The contract type travels with the transfer because it governs the acquirer's own
+        // tax position on a later resale: a donation triggers the Article 5A(5)(b) rules,
+        // while a sale stands on its own date and price.
+        kind: isDonation ? "donation" : "sale",
         sellerId: selectedPerson.id,
-        buyerId: donee ? donee.id : donationDraft.doneeId,
+        buyerId: acquirer ? acquirer.id : donationDraft.doneeId,
         numerator: String(fraction.numerator),
         denominator: String(fraction.denominator),
         amountType: donationDraft.amountType,
         date: donationDraft.date,
-        consideration: "",
+        consideration: isDonation ? "" : donationDraft.consideration,
       },
     });
     setDonationDraft(blankDonationDraft());
@@ -797,11 +803,9 @@ export function PersonInspector({
     onChange(
       linkPartnerRelationship(people, selectedPerson.id, existingPerson.id, {
         type: partnerRelationshipType,
-        startDate: partnerRelationshipDate,
       }),
     );
     setExistingSpouseId("");
-    setPartnerRelationshipDate("");
     setSpouseChooserOpen(false);
   };
 
@@ -1088,11 +1092,9 @@ export function PersonInspector({
   const togglePartnerChooser = (type) => {
     if (spouseChooserOpen && partnerRelationshipType === type) {
       setSpouseChooserOpen(false);
-      setPartnerRelationshipDate("");
       return;
     }
     setPartnerRelationshipType(type);
-    setPartnerRelationshipDate("");
     setExistingSpouseId("");
     setSpouseChooserOpen(true);
   };
@@ -1154,11 +1156,6 @@ export function PersonInspector({
               ? "This removes the person from this family only; the shared record remains elsewhere."
               : "No partner or descendant dependencies. Confirmation is required.";
 
-  const goToPersonSection = (section) => {
-    const target = document.querySelector(`[data-person-section="${section}"]`);
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
   return (
     <div className="person-inspector">
       <section className="inspector-profile">
@@ -1180,23 +1177,6 @@ export function PersonInspector({
           </button>
         </div>
       </section>
-
-      <nav className="person-section-nav" aria-label="Person detail sections">
-        <button type="button" onClick={() => goToPersonSection("identity")}>
-          Identity
-        </button>
-        <button type="button" onClick={() => goToPersonSection("relationships")}>
-          Relationships
-        </button>
-        {isDeceased && (
-          <button type="button" onClick={() => goToPersonSection("succession")}>
-            Succession
-          </button>
-        )}
-        <button type="button" onClick={() => goToPersonSection("property")}>
-          Property
-        </button>
-      </nav>
 
       <section className="inspector-section" data-person-section="relationships">
         <div className="inspector-section-heading">
@@ -1268,22 +1248,6 @@ export function PersonInspector({
                 ? "Add a wife or husband"
                 : "Add an unmarried partner"}
             </strong>
-            <label className="partner-date-field">
-              <span>
-                {partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
-                  ? "Marriage date (optional)"
-                  : "Partnership date (optional)"}
-              </span>
-              <DateInput
-                aria-label={
-                  partnerRelationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
-                    ? "New marriage date"
-                    : "New partnership date"
-                }
-                value={partnerRelationshipDate}
-                onChange={setPartnerRelationshipDate}
-              />
-            </label>
             <button
               type="button"
               className="secondary-button"
@@ -1293,7 +1257,6 @@ export function PersonInspector({
                     ? "marriage"
                     : "partnership",
                 );
-                setPartnerRelationshipDate("");
                 setSpouseChooserOpen(false);
               }}
             >
@@ -2189,22 +2152,38 @@ export function PersonInspector({
           {canDonate && (
             <div className="person-donation" data-person-section="donation">
               <div className="inspector-section-heading">
-                <h3>Donate a share</h3>
+                <h3>Donate or transfer a share</h3>
                 <button
                   type="button"
                   className="secondary-button"
                   aria-expanded={donationOpen}
                   onClick={() => setDonationOpen((open) => !open)}
                 >
-                  {donationOpen ? "Close" : "Donate…"}
+                  {donationOpen ? "Close" : "Record…"}
                 </button>
               </div>
               {donationOpen && (
                 <form className="person-donation-form" onSubmit={submitDonation}>
                   <label>
-                    Who receives the donation?
+                    Type of contract
                     <select
-                      aria-label="Donee source"
+                      aria-label="Type of contract"
+                      value={donationDraft.kind}
+                      onChange={(event) => setDonationField({ kind: event.target.value })}
+                    >
+                      <option value="donation">Donation</option>
+                      <option value="sale">Sale</option>
+                    </select>
+                  </label>
+                  <p className="helper-text">
+                    {isDonation
+                      ? "On a later resale by the donee, the donor's acquisition date sets the applicable rate."
+                      : "On a later resale, the acquirer's own purchase date and price govern the tax."}
+                  </p>
+                  <label>
+                    {isDonation ? "Who receives the donation?" : "Who acquires the share?"}
+                    <select
+                      aria-label="Acquirer source"
                       value={donationDraft.doneeMode}
                       onChange={(event) => setDonationField({ doneeMode: event.target.value })}
                     >
@@ -2214,9 +2193,9 @@ export function PersonInspector({
                   </label>
                   {donationDraft.doneeMode === "existing" ? (
                     <label>
-                      Donee
+                      {isDonation ? "Donee" : "Buyer"}
                       <select
-                        aria-label="Existing donee"
+                        aria-label="Existing acquirer"
                         value={donationDraft.doneeId}
                         onChange={(event) => setDonationField({ doneeId: event.target.value })}
                       >
@@ -2233,9 +2212,9 @@ export function PersonInspector({
                   ) : (
                     <>
                       <label>
-                        Donee's full name
+                        {isDonation ? "Donee's full name" : "Buyer's full name"}
                         <input
-                          aria-label="New donee full name"
+                          aria-label="New acquirer full name"
                           value={donationDraft.doneeName}
                           onChange={(event) => setDonationField({ doneeName: event.target.value })}
                           placeholder="Full name"
@@ -2244,7 +2223,7 @@ export function PersonInspector({
                       <label>
                         Sex (optional)
                         <select
-                          aria-label="New donee sex"
+                          aria-label="New acquirer sex"
                           value={donationDraft.doneeSex}
                           onChange={(event) => setDonationField({ doneeSex: event.target.value })}
                         >
@@ -2260,9 +2239,9 @@ export function PersonInspector({
                     </>
                   )}
                   <label>
-                    Donation measurement
+                    Transfer measurement
                     <select
-                      aria-label="Donation measurement"
+                      aria-label="Transfer measurement"
                       value={donationDraft.amountType}
                       onChange={(event) => setDonationField({ amountType: event.target.value })}
                     >
@@ -2296,19 +2275,33 @@ export function PersonInspector({
                     </label>
                   </div>
                   <label>
-                    Donation date
+                    {isDonation ? "Donation date" : "Sale date"}
                     <DateInput
                       value={donationDraft.date}
                       onChange={(value) => setDonationField({ date: value })}
                     />
                   </label>
+                  {!isDonation && (
+                    <label>
+                      Consideration (€)
+                      <input
+                        aria-label="Sale consideration"
+                        type="number"
+                        min="0"
+                        value={donationDraft.consideration}
+                        onChange={(event) =>
+                          setDonationField({ consideration: event.target.value })
+                        }
+                      />
+                    </label>
+                  )}
                   {donationDraft.error && (
                     <p className="transfer-error" role="alert">
                       {donationDraft.error}
                     </p>
                   )}
                   <button type="submit" className="primary-button">
-                    Record donation
+                    {isDonation ? "Record donation" : "Record sale"}
                   </button>
                 </form>
               )}
@@ -2363,20 +2356,6 @@ export function PersonInspector({
                         <option value="partnership">Unmarried partners</option>
                       </select>
                       <span className="person-partner-dates">
-                        <label>
-                          <span>
-                            {relationshipState === "partnership"
-                              ? "Partnership date"
-                              : "Marriage date"}
-                          </span>
-                          <DateInput
-                            aria-label={`Relationship start date with ${displayName(partner)}`}
-                            value={relationship?.startDate || ""}
-                            onChange={(value) =>
-                              updatePartnerLink(partner.id, { startDate: value })
-                            }
-                          />
-                        </label>
                         {relationshipState === "former-marriage" && (
                           <label>
                             <span>Marriage ended</span>

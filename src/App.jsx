@@ -847,8 +847,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     });
   };
 
-  // A donation from the person card may create the donee and record the transfer at once.
-  // Both changes go through one functional update so neither overwrites the other.
+  // A donation or sale from the person card may create the acquirer and record the transfer
+  // at once. Both changes go through one functional update so neither overwrites the other.
   const recordDonation = ({ people, propertyId, transfer }) => {
     setTree((current) => {
       const base = reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people);
@@ -861,7 +861,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         ),
       };
     });
-    setStatus("Donation recorded.");
+    setStatus(transfer.kind === "donation" ? "Donation recorded." : "Sale recorded.");
   };
 
   const updatePropertyWorkspace = (patch) => {

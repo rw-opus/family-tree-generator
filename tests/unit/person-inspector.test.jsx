@@ -2858,14 +2858,9 @@ describe("PersonInspector", () => {
         .find((button) => button.textContent.includes("Wife / husband"))
         .click(),
     );
-    const marriageDate = container.querySelector(".partner-date-field input");
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
-        marriageDate,
-        "15/06/2015",
-      );
-      marriageDate.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    // The marriage date is deliberately not collected: a person marked as married is taken
+    // to be married or widowed at the time of death, so no start-date field is offered.
+    expect(container.querySelector(".partner-date-field input")).toBeNull();
     act(() =>
       [...container.querySelectorAll(".spouse-chooser button")]
         .find((button) => button.textContent.includes("Create new wife / husband"))
@@ -2875,25 +2870,10 @@ describe("PersonInspector", () => {
     expect(latestPeople.find((person) => person.id === spouseId).sex).toBe("Female");
     expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
       type: "marriage",
-      startDate: "2015-06-15",
     });
     const relationshipType = container.querySelector(".person-partner-link-row select");
-    const marriageStartDate = container.querySelector(
-      'input[aria-label^="Relationship start date with"]',
-    );
     expect(relationshipType.disabled).toBe(false);
-    expect(marriageStartDate.disabled).toBe(false);
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
-        marriageStartDate,
-        "12/05/2014",
-      );
-      marriageStartDate.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
-      type: "marriage",
-      startDate: "2014-05-12",
-    });
+    expect(container.querySelector('input[aria-label^="Relationship start date with"]')).toBeNull();
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
         relationshipType,
