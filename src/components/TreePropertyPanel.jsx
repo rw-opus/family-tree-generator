@@ -53,6 +53,7 @@ export function TreePropertyPanel({
   onPickInitialOwner,
   expanded: controlledExpanded,
   onExpandedChange,
+  initialOwnerSelectionActive = false,
   hideCollapsedTrigger = false,
 }) {
   const [localExpanded, setLocalExpanded] = useState(false);
@@ -110,7 +111,9 @@ export function TreePropertyPanel({
       {(expanded || !hideCollapsedTrigger) && (
         <aside
           id="ownership-tax-details"
-          className={`tree-property-panel ${expanded ? "expanded" : "collapsed"}`}
+          className={`tree-property-panel ${expanded ? "expanded" : "collapsed"}${
+            initialOwnerSelectionActive ? " initial-owner-selection-active" : ""
+          }`}
           aria-label="Ownership and Tax"
         >
           <button

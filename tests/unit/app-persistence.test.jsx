@@ -335,10 +335,15 @@ describe("App local recovery", () => {
     const pickFromTree = container.querySelector(
       'button[aria-label="Select initial owner from tree"]',
     );
+    expect(pickFromTree.textContent.trim()).toBe("Tree");
+    expect(pickFromTree.querySelector("svg")).toBeNull();
     act(() => pickFromTree.click());
 
     expect(container.querySelector(".initial-owner-tree-picker")).not.toBeNull();
-    expect(container.querySelector(".tree-property-panel")).toBeNull();
+    expect(container.querySelector(".tree-property-panel").classList).toContain("expanded");
+    expect(container.querySelector(".tree-property-panel").classList).toContain(
+      "initial-owner-selection-active",
+    );
     expect(container.querySelector(".ownership-tax-button")).not.toBeNull();
     expect(container.querySelector(".context-dashboard")).toBeNull();
 
