@@ -3228,7 +3228,7 @@ textarea {
   padding: 0.3rem;
 }
 
-.single-property-case .initial-owner-row > select,
+.single-property-case .initial-owner-person-control select,
 .single-property-case .initial-owner-row input {
   min-width: 0;
   min-height: 1.8rem;
@@ -3256,6 +3256,51 @@ textarea {
 .initial-owner-row .icon-button {
   width: 28px;
   min-height: 1.8rem;
+}
+
+.initial-owner-person-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.initial-owner-person-control select {
+  width: 100%;
+  min-width: 0;
+}
+
+.initial-owner-tree-pick-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  min-width: 30px;
+  min-height: 1.8rem;
+  border: 1px solid #9fb9aa;
+  border-radius: 5px;
+  background: #f4f8f5;
+  color: var(--forest);
+}
+
+.initial-owner-tree-pick-button:hover,
+.initial-owner-tree-pick-button:focus-visible {
+  border-color: var(--forest);
+  background: var(--forest-soft);
+}
+
+.initial-owner-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.initial-owner-actions > button {
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
 }
 
 .single-property-case .ownership-grid,
@@ -3796,6 +3841,73 @@ textarea {
   min-height: 2rem;
   margin-top: 0.45rem;
   font-size: 0.66rem;
+}
+
+.initial-ownership-editor.compact .initial-owner-actions .add-button,
+.initial-ownership-editor.compact .initial-owner-tree-add-button {
+  min-height: 2rem;
+  margin-top: 0;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.62rem;
+}
+
+.initial-owner-tree-picker {
+  position: absolute;
+  z-index: 75;
+  top: 4.75rem;
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  width: min(430px, calc(100% - 1.5rem));
+  border: 1px solid #8eada0;
+  border-radius: 9px;
+  background: rgba(247, 252, 249, 0.98);
+  box-shadow: 0 10px 28px rgba(17, 46, 33, 0.16);
+  padding: 0.55rem 0.65rem;
+  color: var(--forest);
+  transform: translateX(-50%);
+}
+
+.initial-owner-tree-picker > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.initial-owner-tree-picker strong {
+  font-size: 0.72rem;
+}
+
+.initial-owner-tree-picker small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.initial-owner-tree-picker button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 1.9rem;
+  border: 1px solid #b8c9c0;
+  border-radius: 5px;
+  background: #fff;
+  color: #4b5a52;
+  padding: 0 0.45rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.initial-owner-pick-active .family-node {
+  cursor: crosshair;
+}
+
+.initial-owner-pick-active .family-node:hover,
+.initial-owner-pick-active .family-node:focus-visible {
+  outline: 3px solid rgba(30, 102, 72, 0.28);
+  outline-offset: 3px;
 }
 
 .tree-current-owners {
@@ -5578,6 +5690,11 @@ body.a3-print-preview-open {
   .tree-navigation-tools {
     top: 6.55rem;
     left: 0.55rem;
+  }
+
+  .initial-owner-tree-picker {
+    top: 9.45rem;
+    width: calc(100% - 1.1rem);
   }
 
   .tree-navigation-tools button {

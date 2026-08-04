@@ -284,6 +284,71 @@ describe("App local recovery", () => {
     expect(container.textContent).not.toContain("Owners & transfers");
   });
 
+  it("assigns an initial owner by selecting a person on the tree", () => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "tree",
+          title: "Tree-selected ownership",
+          people: [
+            { id: "person-1", fullName: "Joseph Borg", sex: "Male" },
+            {
+              id: "person-2",
+              fullName: "Maria Borg",
+              sex: "Female",
+              fatherId: "person-1",
+            },
+          ],
+          familyGroups: [
+            {
+              id: "family",
+              title: "Borg family",
+              rootPersonId: "person-1",
+              personIds: ["person-1", "person-2"],
+            },
+          ],
+          activeFamilyGroupId: "family",
+          properties: [
+            {
+              id: "property",
+              owners: [
+                {
+                  id: "initial-owner",
+                  personId: "",
+                  shareNumerator: 1,
+                  shareDenominator: 1,
+                  sharePercent: 100,
+                },
+              ],
+            },
+          ],
+          settings: { activePropertyId: "property" },
+        },
+      ],
+      "tree",
+      window.localStorage,
+    );
+    act(() => root.render(<App />));
+    openCurrentFamily();
+
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    const pickFromTree = container.querySelector(
+      'button[aria-label="Select initial owner from tree"]',
+    );
+    act(() => pickFromTree.click());
+
+    expect(container.querySelector(".initial-owner-tree-picker")).not.toBeNull();
+    expect(container.querySelector(".tree-property-panel").classList).toContain("collapsed");
+    expect(container.querySelector(".context-dashboard")).toBeNull();
+
+    act(() => container.querySelector('[data-person-id="person-2"]').click());
+
+    expect(container.querySelector(".initial-owner-tree-picker")).toBeNull();
+    expect(container.querySelector(".tree-property-panel").classList).toContain("expanded");
+    expect(container.querySelector('select[aria-label="Initial owner"]').value).toBe("person-2");
+    expect(container.querySelector(".context-dashboard")).toBeNull();
+  });
+
   it("lets the tree zoom out to a 25% overview", async () => {
     act(() => root.render(<App />));
     await createFamily();

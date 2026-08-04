@@ -1302,7 +1302,11 @@ describe("PersonInspector", () => {
     ]
       .map((option) => option.value)
       .filter(Boolean);
-    expect(candidateIds).toEqual(["cousin", "unrelated"]);
+    expect(candidateIds).toEqual(["unrelated", "cousin"]);
+    expect(
+      container.querySelector('select[aria-label="Existing partner"] option[value="cousin"]')
+        .textContent,
+    ).toBe("Mark Borg s/o Paul Borg");
     expect(container.textContent).toContain("cousins and more distant relatives remain available");
 
     act(() =>
@@ -1315,7 +1319,7 @@ describe("PersonInspector", () => {
     ]
       .map((option) => option.value)
       .filter(Boolean);
-    expect(marriageCandidateIds).toEqual(["cousin", "unrelated"]);
+    expect(marriageCandidateIds).toEqual(["unrelated", "cousin"]);
     expect(container.textContent).toContain("Add a wife or husband");
   });
 

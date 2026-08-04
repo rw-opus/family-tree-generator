@@ -5,6 +5,7 @@ import {
   createPerson,
   fatherSurnameDefaultPatch,
   hasDesignation,
+  personChoiceLabel,
   personDisplayName,
   personGivenNames,
   personIdentityIssues,
@@ -13,6 +14,7 @@ import {
   personSurname,
   personDesignations,
   removalWouldSeverFamily,
+  sortPeopleForChoice,
 } from "../domain/people.js";
 import {
   applyParentSuggestions,
@@ -180,6 +182,13 @@ export function PersonInspector({
         ? displayName(partyOrPerson)
         : partyDisplayName(partyOrPerson),
     [displayName, partyDisplayName, peopleById],
+  );
+  const personSelectionLabel = useCallback(
+    (partyOrPerson) =>
+      partyOrPerson && peopleById.has(partyOrPerson.id)
+        ? personChoiceLabel(partyOrPerson, people)
+        : partyDisplayName(partyOrPerson),
+    [partyDisplayName, people, peopleById],
   );
   const parentSuggestions = useMemo(() => solePartnerParentSuggestions(people), [people]);
   const relevantParentSuggestions = useMemo(
@@ -826,9 +835,14 @@ export function PersonInspector({
     successionHeirs.length > 0 &&
     successionHeirs.every((person) => peopleById.has(person.id) && isPersonDeceased(person));
   const declarationCandidateIds = new Set(successionHeirIds);
-  const declarationCandidates = [...people, ...outsideParties].filter((party) =>
-    declarationCandidateIds.has(party.id),
-  );
+  const declarationCandidates = [...people, ...outsideParties]
+    .filter((party) => declarationCandidateIds.has(party.id))
+    .sort((first, second) =>
+      personSelectionLabel(first).localeCompare(personSelectionLabel(second), "en-MT", {
+        sensitivity: "base",
+        numeric: true,
+      }),
+    );
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
   const hasDraftCausaMortisDeclaration = causaMortisDeclarations.some(
     (declaration) => !isCompletedCausaMortisDeclaration(declaration),
@@ -976,11 +990,14 @@ export function PersonInspector({
     }
     addRelative("child", linkedPartners[0]?.id);
   };
-  const existingSpouseCandidates = people.filter(
-    (person) =>
-      person.id !== selectedPerson.id &&
-      !linkedSpouseIds.has(person.id) &&
-      partnerLinkEligibility(people, selectedPerson.id, person.id).allowed,
+  const existingSpouseCandidates = sortPeopleForChoice(
+    people.filter(
+      (person) =>
+        person.id !== selectedPerson.id &&
+        !linkedSpouseIds.has(person.id) &&
+        partnerLinkEligibility(people, selectedPerson.id, person.id).allowed,
+    ),
+    people,
   );
   const parentage = parentageDescription(selectedPerson, people);
   // Having descendants is not itself a reason to keep somebody: a person at the
@@ -1188,7 +1205,7 @@ export function PersonInspector({
                 </option>
                 {existingSpouseCandidates.map((person) => (
                   <option key={person.id} value={person.id}>
-                    {displayName(person)}
+                    {personChoiceLabel(person, people)}
                   </option>
                 ))}
               </select>
@@ -1217,9 +1234,9 @@ export function PersonInspector({
                 onChange={(event) => setChildPartnerId(event.target.value)}
               >
                 <option value="">No other parent assigned yet</option>
-                {linkedPartners.map((person) => (
+                {sortPeopleForChoice(linkedPartners, people).map((person) => (
                   <option key={person.id} value={person.id}>
-                    {displayName(person)}
+                    {personChoiceLabel(person, people)}
                   </option>
                 ))}
               </select>
@@ -1571,22 +1588,31 @@ export function PersonInspector({
                           >
                             <option value="">Choose person or company</option>
                             <optgroup label="People on the family tree">
-                              {people
-                                .filter((person) => person.id !== selectedPerson.id)
-                                .map((person) => (
-                                  <option key={person.id} value={person.id}>
-                                    {displayName(person)}
-                                  </option>
-                                ))}
+                              {sortPeopleForChoice(
+                                people.filter((person) => person.id !== selectedPerson.id),
+                                people,
+                              ).map((person) => (
+                                <option key={person.id} value={person.id}>
+                                  {personChoiceLabel(person, people)}
+                                </option>
+                              ))}
                             </optgroup>
                             {outsideParties.length > 0 && (
                               <optgroup label="Unconnected people and companies">
-                                {outsideParties.map((party) => (
-                                  <option key={party.id} value={party.id}>
-                                    {partyDisplayName(party)}
-                                    {party.type === "company" ? " (company)" : " (unconnected)"}
-                                  </option>
-                                ))}
+                                {[...outsideParties]
+                                  .sort((first, second) =>
+                                    partyDisplayName(first).localeCompare(
+                                      partyDisplayName(second),
+                                      "en-MT",
+                                      { sensitivity: "base", numeric: true },
+                                    ),
+                                  )
+                                  .map((party) => (
+                                    <option key={party.id} value={party.id}>
+                                      {partyDisplayName(party)}
+                                      {party.type === "company" ? " (company)" : " (unconnected)"}
+                                    </option>
+                                  ))}
                               </optgroup>
                             )}
                           </select>
@@ -1931,7 +1957,7 @@ export function PersonInspector({
                                   )}
                                   onChange={() => toggleCausaMortisDeclarant(declaration, party.id)}
                                 />
-                                {displayParty(party)}
+                                {personSelectionLabel(party)}
                               </label>
                             ))}
                           </div>

@@ -65,7 +65,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
             pointer,
             name: "",
             givenNames: "",
-            surnameAtBirth: "",
+            surname: "",
             sex: "",
             birthText: "",
             deathText: "",
@@ -93,7 +93,7 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
         if (level === 1 && tag === "NAME") {
           record.name = cleanName(value);
           record.givenNames = givenNamesFromGedcomName(value);
-          record.surnameAtBirth = surnameFromGedcomName(value);
+          record.surname = surnameFromGedcomName(value);
         } else if (level === 1 && tag === "SEX")
           record.sex = value === "M" ? "Male" : value === "F" ? "Female" : value || "Other";
         else if (level === 1 && ["BIRT", "DEAT"].includes(tag)) {
@@ -124,10 +124,9 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     gedcomId: person.pointer,
     fullName: person.name,
     givenNames: person.givenNames || givenNamesFromFullName(person.name),
-    surname: person.surnameAtBirth || surnameFromFullName(person.name),
+    surname: person.surname || surnameFromFullName(person.name),
     sex: person.sex,
-    surnameAtBirth:
-      person.surnameAtBirth || (person.sex === "Male" ? surnameFromFullName(person.name) : ""),
+    surnameAtBirth: "",
     dateOfBirth: exactDate(person.birthText),
     dateOfDeath: exactDate(person.deathText),
     gedcomBirthDate: person.birthText,

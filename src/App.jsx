@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Calculator, GitBranch, House, Landmark } from "lucide-react";
+import {
+  ArrowLeft,
+  Calculator,
+  GitBranch,
+  House,
+  Landmark,
+  MousePointerClick,
+  X,
+} from "lucide-react";
 import { familyViewKey } from "./components/CaseViewTabs.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
@@ -237,6 +245,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [traceOwnershipSnapshot, setTraceOwnershipSnapshot] = useState(null);
   const [propertyPanelExpanded, setPropertyPanelExpanded] = useState(false);
+  const [initialOwnerPick, setInitialOwnerPick] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
@@ -250,6 +259,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setSelectedPersonId(activation.selectedPersonId);
     setTraceOwnershipSnapshot(null);
     setPropertyPanelExpanded(false);
+    setInitialOwnerPick(null);
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
   }, []);
@@ -861,6 +871,59 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       ),
     });
 
+  const beginInitialOwnerTreePick = (ownerId) => {
+    setInitialOwnerPick({ propertyId: activeProperty.id, ownerId });
+    setTraceOwnershipSnapshot(null);
+    setPropertyPanelExpanded(false);
+    setSelectedPersonId("");
+    setDashboardOpen(false);
+    setStatus("Select a person on the family tree to make them an initial owner.");
+  };
+
+  const cancelInitialOwnerTreePick = ({ reopenPanel = true } = {}) => {
+    setInitialOwnerPick(null);
+    setPropertyPanelExpanded(reopenPanel);
+    setStatus("Initial-owner selection cancelled.");
+  };
+
+  const handleTreePersonSelection = (personId) => {
+    if (!initialOwnerPick) {
+      selectPerson(personId);
+      return;
+    }
+
+    const targetPerson = currentTree.people.find((person) => person.id === personId);
+    const targetProperty = currentTree.properties.find(
+      (property) => property.id === initialOwnerPick.propertyId,
+    );
+    const ownerExists = targetProperty?.owners?.some(
+      (owner) => owner.id === initialOwnerPick.ownerId,
+    );
+    if (!targetPerson || !targetProperty || !ownerExists) {
+      cancelInitialOwnerTreePick();
+      return;
+    }
+
+    setTree({
+      ...currentTree,
+      properties: currentTree.properties.map((property) =>
+        property.id === initialOwnerPick.propertyId
+          ? {
+              ...property,
+              owners: (property.owners || []).map((owner) =>
+                owner.id === initialOwnerPick.ownerId ? { ...owner, personId } : owner,
+              ),
+            }
+          : property,
+      ),
+    });
+    setInitialOwnerPick(null);
+    setSelectedPersonId(personId);
+    setDashboardOpen(false);
+    setPropertyPanelExpanded(true);
+    setStatus(`${targetPerson.fullName || "Selected person"} assigned as an initial owner.`);
+  };
+
   const updatePrimaryPropertyWorkspace = (patch) =>
     updatePropertyWorkspace({
       ...patch,
@@ -874,6 +937,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const returnHome = async () => {
     setTraceOwnershipSnapshot(null);
     setPropertyPanelExpanded(false);
+    setInitialOwnerPick(null);
     if (!cloudMode) {
       setDashboardOpen(false);
       setWorkspaceView("tree");
@@ -1050,9 +1114,28 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
           </aside>
         )}
 
-        <section className="tree-stage" style={{ "--tree-zoom": zoom / 100 }}>
+        <section
+          className={`tree-stage ${initialOwnerPick ? "initial-owner-pick-active" : ""}`}
+          style={{ "--tree-zoom": zoom / 100 }}
+        >
           {activeFamilyGroup && (
             <div className="tree-stage-main">
+              {initialOwnerPick && (
+                <div className="initial-owner-tree-picker" role="status">
+                  <MousePointerClick size={18} />
+                  <span>
+                    <strong>Select an initial owner</strong>
+                    <small>Tap the person on the family tree.</small>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Cancel selecting an initial owner"
+                    onClick={() => cancelInitialOwnerTreePick()}
+                  >
+                    <X size={15} /> Cancel
+                  </button>
+                </div>
+              )}
               <FamilyTreeCanvas
                 treeTitle={currentTree.title}
                 people={visiblePeople}
@@ -1063,7 +1146,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 currentOwnershipByPerson={traceOwnershipSnapshot || currentOwnershipByPerson}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}
-                onSelectPerson={selectPerson}
+                onSelectPerson={handleTreePersonSelection}
                 onFocusPerson={focusPersonOnTree}
                 zoom={zoom}
                 onZoomChange={updateZoom}
@@ -1134,7 +1217,6 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 }
                 onFocusEvent={showTraceEventOnTree}
                 expanded={propertyPanelExpanded}
-                onExpandedChange={setPropertyPanelExpanded}
                 onOpenProperty={() => {
                   setTraceOwnershipSnapshot(null);
                   setPropertyPanelExpanded(false);
@@ -1146,6 +1228,11 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   setWorkspaceView("tax");
                 }}
                 onSelectPerson={selectPerson}
+                onPickInitialOwner={beginInitialOwnerTreePick}
+                onExpandedChange={(expanded) => {
+                  setPropertyPanelExpanded(expanded);
+                  if (expanded && initialOwnerPick) setInitialOwnerPick(null);
+                }}
               />
             </div>
           )}

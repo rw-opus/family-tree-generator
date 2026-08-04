@@ -50,6 +50,7 @@ export function TreePropertyPanel({
   onOpenProperty,
   onOpenTax,
   onSelectPerson,
+  onPickInitialOwner,
   expanded: controlledExpanded,
   onExpandedChange,
 }) {
@@ -191,6 +192,7 @@ export function TreePropertyPanel({
                 heading="Initial shares"
                 helperText="Choose the original owner or owners. Their fractions must total 100%."
                 onChange={(owners) => onPropertyChange({ owners })}
+                onPickFromTree={onPickInitialOwner}
               />
             </details>
 

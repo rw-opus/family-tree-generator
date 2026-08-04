@@ -64,4 +64,33 @@ describe("PersonFinder", () => {
     act(() => container.querySelector("summary").click());
     expect(container.querySelectorAll(".person-finder-results button")).toHaveLength(25);
   });
+
+  it("sorts people alphabetically and uses parentage to order duplicate names", () => {
+    const people = [
+      { id: "zachary", fullName: "Zachary Borg" },
+      { id: "mary-z", fullName: "Mary Agius", sex: "Female", fatherId: "zachary" },
+      { id: "john", fullName: "John Borg" },
+      { id: "mary-j", fullName: "Mary Agius", sex: "Female", fatherId: "john" },
+      { id: "anna", fullName: "Anna Vella" },
+    ];
+
+    act(() => root.render(<PersonFinder people={people} onSelectPerson={vi.fn()} />));
+    act(() => container.querySelector("summary").click());
+
+    const names = [...container.querySelectorAll(".person-finder-results strong")].map(
+      (element) => element.textContent,
+    );
+    expect(names).toEqual([
+      "Anna Vella",
+      "John Borg",
+      "Mary Agius d/o John Borg",
+      "Mary Agius d/o Zachary Borg",
+      "Zachary Borg",
+    ]);
+    const maryRows = [...container.querySelectorAll(".person-finder-results button")].filter(
+      (button) => button.querySelector("strong")?.textContent.startsWith("Mary Agius"),
+    );
+    expect(maryRows[0].textContent).toContain("Father: John Borg");
+    expect(maryRows[1].textContent).toContain("Father: Zachary Borg");
+  });
 });

@@ -39,7 +39,7 @@ describe("GEDCOM import", () => {
       dateOfBirth: "1940-02-02",
       dateOfDeath: "2020-10-10",
       isDeceased: true,
-      surnameAtBirth: "Borg",
+      surnameAtBirth: "",
     });
     expect(anna).toMatchObject({
       fatherId: joseph.id,
@@ -48,6 +48,7 @@ describe("GEDCOM import", () => {
       surnameAtBirth: "Borg",
     });
     expect(joseph.spouseIds).toContain(maria.id);
+    expect(maria).toMatchObject({ surname: "Borg", surnameAtBirth: "" });
     expect(findPartnerRelationship(result.people, joseph.id, maria.id)).toMatchObject({
       type: "marriage",
       startDate: "",
@@ -114,6 +115,7 @@ describe("GEDCOM import", () => {
       fullName: "Pandolfo Testaferrata de Noto",
       givenNames: "Pandolfo",
       surname: "Testaferrata de Noto",
+      surnameAtBirth: "",
     });
   });
 
@@ -147,7 +149,7 @@ describe("GEDCOM import", () => {
     expect(anna).toMatchObject({
       fullName: "Anna Vella",
       surname: "Vella",
-      surnameAtBirth: "Vella",
+      surnameAtBirth: "Borg",
     });
   });
 

@@ -1,6 +1,7 @@
-import { Plus, Trash2 } from "lucide-react";
+import { MousePointerClick, Plus, Trash2 } from "lucide-react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import { propertyStartingOwnershipStatus } from "../domain/propertyVendorTax.js";
+import { personChoiceLabel, sortPeopleForChoice } from "../domain/people.js";
 import {
   fractionForShare,
   shareFromFractionInput,
@@ -22,6 +23,7 @@ export function InitialOwnershipEditor({
   compact = false,
   heading = "Initial owner/s of the property",
   helperText = "Select any person already on the family tree and enter the fraction originally owned.",
+  onPickFromTree,
 }) {
   const owners = property.owners || [];
   const status = propertyStartingOwnershipStatus(property);
@@ -31,6 +33,17 @@ export function InitialOwnershipEditor({
   const updateOwners = (nextOwners) => onChange(nextOwners);
   const updateOwner = (ownerId, patch) =>
     updateOwners(owners.map((owner) => (owner.id === ownerId ? { ...owner, ...patch } : owner)));
+  const addOwner = () => updateOwners([...owners, makeOwner()]);
+  const pickNewOwnerFromTree = () => {
+    const availableOwner = owners.find((owner) => !owner.personId);
+    if (availableOwner) {
+      onPickFromTree?.(availableOwner.id);
+      return;
+    }
+    const owner = makeOwner();
+    updateOwners([...owners, owner]);
+    onPickFromTree?.(owner.id);
+  };
 
   return (
     <div className={`initial-ownership-editor ${compact ? "compact" : ""}`}>
@@ -62,18 +75,31 @@ export function InitialOwnershipEditor({
           const ownerDenominator = owner.shareDenominator ?? ownerFraction.denominator;
           return (
             <div className="initial-owner-row" key={owner.id}>
-              <select
-                aria-label="Initial owner"
-                value={owner.personId}
-                onChange={(event) => updateOwner(owner.id, { personId: event.target.value })}
-              >
-                <option value="">Choose person</option>
-                {people.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.fullName || "Unnamed person"}
-                  </option>
-                ))}
-              </select>
+              <span className="initial-owner-person-control">
+                <select
+                  aria-label="Initial owner"
+                  value={owner.personId}
+                  onChange={(event) => updateOwner(owner.id, { personId: event.target.value })}
+                >
+                  <option value="">Choose person</option>
+                  {sortPeopleForChoice(people).map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {personChoiceLabel(person, people)}
+                    </option>
+                  ))}
+                </select>
+                {onPickFromTree && (
+                  <button
+                    type="button"
+                    className="initial-owner-tree-pick-button"
+                    title="Select this owner by clicking a person on the tree"
+                    aria-label={`Select ${owner.personId ? "a replacement initial owner" : "initial owner"} from tree`}
+                    onClick={() => onPickFromTree(owner.id)}
+                  >
+                    <MousePointerClick size={14} />
+                  </button>
+                )}
+              </span>
               <span className="initial-owner-fraction">
                 <input
                   aria-label="Initial ownership numerator"
@@ -132,13 +158,20 @@ export function InitialOwnershipEditor({
           );
         })}
       </div>
-      <button
-        type="button"
-        className="add-button"
-        onClick={() => updateOwners([...owners, makeOwner()])}
-      >
-        <Plus size={16} /> Add initial owner
-      </button>
+      <div className="initial-owner-actions">
+        <button type="button" className="add-button" onClick={addOwner}>
+          <Plus size={16} /> Add initial owner
+        </button>
+        {onPickFromTree && (
+          <button
+            type="button"
+            className="secondary-button initial-owner-tree-add-button"
+            onClick={pickNewOwnerFromTree}
+          >
+            <MousePointerClick size={15} /> Select from tree
+          </button>
+        )}
+      </div>
     </div>
   );
 }

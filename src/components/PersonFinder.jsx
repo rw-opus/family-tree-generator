@@ -1,6 +1,6 @@
 import { Search, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { personDisplayName } from "../domain/people.js";
+import { personChoiceLabel, personDisplayName } from "../domain/people.js";
 
 const normaliseSearch = (value) =>
   String(value || "")
@@ -23,12 +23,19 @@ export function PersonFinder({ people = [], onSelectPerson }) {
         return {
           person,
           name,
+          choiceLabel: personChoiceLabel(person, people),
           fatherName,
           motherName,
           searchText: normaliseSearch(`${name} ${fatherName} ${motherName}`),
         };
       })
-      .filter((entry) => !needle || entry.searchText.includes(needle));
+      .filter((entry) => !needle || entry.searchText.includes(needle))
+      .sort((first, second) =>
+        first.choiceLabel.localeCompare(second.choiceLabel, "en-MT", {
+          sensitivity: "base",
+          numeric: true,
+        }),
+      );
   }, [people, peopleById, query]);
 
   const choosePerson = (personId) => {
@@ -61,9 +68,9 @@ export function PersonFinder({ people = [], onSelectPerson }) {
           )}
         </label>
         <div className="person-finder-results">
-          {results.map(({ person, name, fatherName, motherName }) => (
+          {results.map(({ person, choiceLabel, fatherName, motherName }) => (
             <button type="button" key={person.id} onClick={() => choosePerson(person.id)}>
-              <strong>{name}</strong>
+              <strong>{choiceLabel}</strong>
               <small>
                 {fatherName || motherName
                   ? `${fatherName ? `Father: ${fatherName}` : "Father not recorded"} · ${
