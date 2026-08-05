@@ -416,6 +416,21 @@ export function ownerProvenanceTranches(report = {}, property = {}, ownerId = ""
     });
   });
 
+  // One succession can be reached through several upstream ownership paths. They are parts of
+  // the same acquisition, identified by the same tranche id, rather than separate provenance
+  // choices. Consolidating before consumption also prevents one saved designation from being
+  // subtracted independently from every duplicate row.
+  const consolidated = new Map();
+  tranches.forEach((tranche) => {
+    const existing = consolidated.get(tranche.trancheId);
+    if (!existing) {
+      consolidated.set(tranche.trancheId, tranche);
+      return;
+    }
+    const fraction = addFractions(existing.fraction, tranche.fraction);
+    consolidated.set(tranche.trancheId, fraction.error ? existing : { ...existing, fraction });
+  });
+
   // Earlier outgoing transfers that recorded their provenance consume it here, so once a
   // first sale exhausts an acquisition, a later transfer no longer offers it — and with one
   // acquisition left the provenance question answers itself. Legacy transfers recorded
@@ -430,7 +445,7 @@ export function ownerProvenanceTranches(report = {}, property = {}, ownerId = ""
       if (!running.error) consumed.set(portion.trancheId, running);
     });
   });
-  return tranches
+  return [...consolidated.values()]
     .map((tranche) => {
       const taken = consumed.get(tranche.trancheId);
       if (!taken) return tranche;

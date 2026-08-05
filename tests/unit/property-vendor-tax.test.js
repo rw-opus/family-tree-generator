@@ -76,6 +76,83 @@ describe("owner provenance tranches", () => {
       "Donated by Carmen Vella",
     ]);
   });
+
+  it("combines repeated paths through the same succession into one provenance", () => {
+    const repeatedSuccession = {
+      ...report,
+      inheritanceSourcesByOwner: new Map([
+        [
+          "heir",
+          [
+            {
+              deceasedId: "father",
+              deceasedName: "Joseph Borg",
+              inheritanceDate: "2015-03-01",
+              shareFraction: { numerator: 1, denominator: 8 },
+            },
+            {
+              deceasedId: "father",
+              deceasedName: "Joseph Borg",
+              inheritanceDate: "2015-03-01",
+              shareFraction: { numerator: 1, denominator: 8 },
+            },
+          ],
+        ],
+      ]),
+    };
+    const inheritedOnlyProperty = { owners: [], transfers: [] };
+
+    const tranches = ownerProvenanceTranches(repeatedSuccession, inheritedOnlyProperty, "heir");
+
+    expect(tranches).toHaveLength(2);
+    expect(tranches.filter((tranche) => tranche.trancheId === "inheritance-father")).toEqual([
+      expect.objectContaining({ fraction: { numerator: 1, denominator: 4 } }),
+    ]);
+  });
+
+  it("consumes a saved designation once after repeated paths are combined", () => {
+    const repeatedSuccession = {
+      ...report,
+      inheritanceSourcesByOwner: new Map([
+        [
+          "heir",
+          [
+            {
+              deceasedId: "father",
+              deceasedName: "Joseph Borg",
+              inheritanceDate: "2015-03-01",
+              shareFraction: { numerator: 1, denominator: 2 },
+            },
+            {
+              deceasedId: "father",
+              deceasedName: "Joseph Borg",
+              inheritanceDate: "2015-03-01",
+              shareFraction: { numerator: 1, denominator: 2 },
+            },
+          ],
+        ],
+      ]),
+    };
+    const propertyAfterTransfer = {
+      owners: [],
+      transfers: [
+        {
+          sellerId: "heir",
+          provenance: [{ trancheId: "inheritance-father", numerator: 1, denominator: 4 }],
+        },
+      ],
+    };
+
+    const tranches = ownerProvenanceTranches(repeatedSuccession, propertyAfterTransfer, "heir");
+
+    expect(tranches).toEqual([
+      expect.objectContaining({
+        trancheId: "inheritance-father",
+        fraction: { numerator: 3, denominator: 4 },
+      }),
+      expect.objectContaining({ trancheId: "transfer-gift" }),
+    ]);
+  });
 });
 
 describe("provenance labels", () => {
