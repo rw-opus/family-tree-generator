@@ -53,6 +53,16 @@ const positionedCards = () =>
     outsideMarriage: node.classList.contains("born-outside-marriage"),
   }));
 
+const touchEvent = (type, touches, changedTouches = touches) => {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "touches", { configurable: true, value: touches });
+  Object.defineProperty(event, "changedTouches", {
+    configurable: true,
+    value: changedTouches,
+  });
+  return event;
+};
+
 describe("FamilyTreeCanvas", () => {
   it("falls back to the designation tree when nobody is linked", () => {
     renderCanvas({
@@ -211,16 +221,6 @@ describe("FamilyTreeCanvas", () => {
     scrollRegion.scrollLeft = 80;
     scrollRegion.scrollTop = 120;
 
-    const touchEvent = (type, touches, changedTouches = touches) => {
-      const event = new Event(type, { bubbles: true, cancelable: true });
-      Object.defineProperty(event, "touches", { configurable: true, value: touches });
-      Object.defineProperty(event, "changedTouches", {
-        configurable: true,
-        value: changedTouches,
-      });
-      return event;
-    };
-
     const start = { identifier: 1, clientX: 100, clientY: 100 };
     const moved = { identifier: 1, clientX: 80, clientY: 35 };
     const moveEvent = touchEvent("touchmove", [moved]);
@@ -236,6 +236,71 @@ describe("FamilyTreeCanvas", () => {
     expect(scrollRegion.scrollLeft).toBe(100);
     expect(scrollRegion.scrollTop).toBe(185);
     expect(onSelectPerson).not.toHaveBeenCalled();
+  });
+
+  it("pans from the fixed toolbar as part of the full-screen gesture surface", () => {
+    const onToolbarClick = vi.fn();
+    renderCanvas({
+      people: family(),
+      toolbar: (
+        <button type="button" onClick={onToolbarClick}>
+          Ownership &amp; Tax
+        </button>
+      ),
+    });
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    const toolbarButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Ownership"),
+    );
+    const gestureSurface = container.querySelector(".tree-panel");
+    scrollRegion.scrollLeft = 100;
+    scrollRegion.scrollTop = 90;
+
+    const start = { identifier: 1, clientX: 160, clientY: 120 };
+    const moved = { identifier: 1, clientX: 90, clientY: 70 };
+    act(() => {
+      toolbarButton.dispatchEvent(touchEvent("touchstart", [start]));
+      gestureSurface.dispatchEvent(touchEvent("touchmove", [moved]));
+      gestureSurface.dispatchEvent(touchEvent("touchend", [], [moved]));
+      toolbarButton.click();
+    });
+
+    expect(scrollRegion.scrollLeft).toBe(170);
+    expect(scrollRegion.scrollTop).toBe(140);
+    expect(onToolbarClick).not.toHaveBeenCalled();
+  });
+
+  it("pinches in and out from anywhere on the tree screen", () => {
+    const onZoomChange = vi.fn();
+    renderCanvas({
+      people: family(),
+      zoom: 100,
+      onZoomChange,
+      toolbar: <button type="button">Ownership &amp; Tax</button>,
+    });
+    const toolbarButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Ownership"),
+    );
+    const gestureSurface = container.querySelector(".tree-panel");
+    const first = { identifier: 1, clientX: 100, clientY: 100 };
+    const second = { identifier: 2, clientX: 200, clientY: 100 };
+    const widerFirst = { ...first, clientX: 50 };
+    const widerSecond = { ...second, clientX: 250 };
+    const narrowerFirst = { ...first, clientX: 125 };
+    const narrowerSecond = { ...second, clientX: 175 };
+
+    const zoomOutward = touchEvent("touchmove", [widerFirst, widerSecond]);
+    const zoomInward = touchEvent("touchmove", [narrowerFirst, narrowerSecond]);
+    act(() => {
+      toolbarButton.dispatchEvent(touchEvent("touchstart", [first, second]));
+      gestureSurface.dispatchEvent(zoomOutward);
+      gestureSurface.dispatchEvent(zoomInward);
+      gestureSurface.dispatchEvent(touchEvent("touchend", [], [first, second]));
+    });
+
+    expect(zoomOutward.defaultPrevented).toBe(true);
+    expect(zoomInward.defaultPrevented).toBe(true);
+    expect(onZoomChange.mock.calls.map(([nextZoom]) => nextZoom)).toEqual([200, 50]);
   });
 
   it("shows a person's surname even when it matches the father's", () => {

@@ -34,6 +34,7 @@ function hasRelationalLinks(person) {
 
 function TreePanel({
   treeRef,
+  gestureSurfaceRef,
   onPrint,
   relational,
   helperText,
@@ -43,7 +44,7 @@ function TreePanel({
   children,
 }) {
   return (
-    <section className="tree-panel">
+    <section className="tree-panel" ref={gestureSurfaceRef}>
       <header className="tree-stage-toolbar tree-stage-toolbar-unified tree-panel-fixed-controls">
         {toolbar}
         <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
@@ -84,6 +85,7 @@ export function FamilyTreeCanvas({
   toolbar,
 }) {
   const treeRef = useRef(null);
+  const gestureSurfaceRef = useRef(null);
   const dragRef = useRef(null);
   const [panHintVisible, setPanHintVisible] = useState(true);
   const [navigatorState, setNavigatorState] = useState({
@@ -224,7 +226,8 @@ export function FamilyTreeCanvas({
 
   useEffect(() => {
     const chart = treeRef.current;
-    if (!chart) return undefined;
+    const gestureSurface = gestureSurfaceRef.current;
+    if (!chart || !gestureSurface) return undefined;
     let suppressClickUntil = 0;
     const beginDrag = ({ id, pointerType, clientX, clientY }) => {
       dragRef.current = {
@@ -315,25 +318,25 @@ export function FamilyTreeCanvas({
       event.preventDefault();
       event.stopPropagation();
     };
-    chart.addEventListener("pointerdown", startPointerDrag);
-    chart.addEventListener("pointermove", movePointerDrag);
-    chart.addEventListener("pointerup", stopPointerDrag);
-    chart.addEventListener("pointercancel", stopPointerDrag);
-    chart.addEventListener("touchstart", startTouchDrag, { passive: true });
-    chart.addEventListener("touchmove", moveTouchDrag, { passive: false });
-    chart.addEventListener("touchend", stopTouchDrag, { passive: true });
-    chart.addEventListener("touchcancel", stopTouchDrag, { passive: true });
-    chart.addEventListener("click", suppressClickAfterPan, true);
+    gestureSurface.addEventListener("pointerdown", startPointerDrag);
+    gestureSurface.addEventListener("pointermove", movePointerDrag);
+    gestureSurface.addEventListener("pointerup", stopPointerDrag);
+    gestureSurface.addEventListener("pointercancel", stopPointerDrag);
+    gestureSurface.addEventListener("touchstart", startTouchDrag, { passive: true });
+    gestureSurface.addEventListener("touchmove", moveTouchDrag, { passive: false });
+    gestureSurface.addEventListener("touchend", stopTouchDrag, { passive: true });
+    gestureSurface.addEventListener("touchcancel", stopTouchDrag, { passive: true });
+    gestureSurface.addEventListener("click", suppressClickAfterPan, true);
     return () => {
-      chart.removeEventListener("pointerdown", startPointerDrag);
-      chart.removeEventListener("pointermove", movePointerDrag);
-      chart.removeEventListener("pointerup", stopPointerDrag);
-      chart.removeEventListener("pointercancel", stopPointerDrag);
-      chart.removeEventListener("touchstart", startTouchDrag);
-      chart.removeEventListener("touchmove", moveTouchDrag);
-      chart.removeEventListener("touchend", stopTouchDrag);
-      chart.removeEventListener("touchcancel", stopTouchDrag);
-      chart.removeEventListener("click", suppressClickAfterPan, true);
+      gestureSurface.removeEventListener("pointerdown", startPointerDrag);
+      gestureSurface.removeEventListener("pointermove", movePointerDrag);
+      gestureSurface.removeEventListener("pointerup", stopPointerDrag);
+      gestureSurface.removeEventListener("pointercancel", stopPointerDrag);
+      gestureSurface.removeEventListener("touchstart", startTouchDrag);
+      gestureSurface.removeEventListener("touchmove", moveTouchDrag);
+      gestureSurface.removeEventListener("touchend", stopTouchDrag);
+      gestureSurface.removeEventListener("touchcancel", stopTouchDrag);
+      gestureSurface.removeEventListener("click", suppressClickAfterPan, true);
     };
   }, []);
 
@@ -343,7 +346,7 @@ export function FamilyTreeCanvas({
     centerPerson(selectedPersonId);
   }, [centerPerson, people, selectedPersonId]);
 
-  usePinchZoom(treeRef, zoom, onZoomChange, usesRelationalLayout);
+  usePinchZoom(gestureSurfaceRef, treeRef, zoom, onZoomChange, usesRelationalLayout);
 
   const handleCardKeyDown = (event, personId) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
@@ -467,6 +470,7 @@ export function FamilyTreeCanvas({
     return (
       <TreePanel
         treeRef={treeRef}
+        gestureSurfaceRef={gestureSurfaceRef}
         onPrint={printHandler}
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
@@ -490,6 +494,7 @@ export function FamilyTreeCanvas({
   return (
     <TreePanel
       treeRef={treeRef}
+      gestureSurfaceRef={gestureSurfaceRef}
       onPrint={printHandler}
       helperText="The diagram is a working visual aid. Dashed entries are connectors added only when a relative is needed to make another branch intelligible."
       toolbar={toolbar}

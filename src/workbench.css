@@ -4864,6 +4864,7 @@ body.succession-history-open {
   background: transparent;
   box-shadow: none;
   padding: 0;
+  touch-action: none;
 }
 
 .tree-stage .tree-toolbar {
