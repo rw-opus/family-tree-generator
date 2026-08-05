@@ -65,6 +65,7 @@ import {
   linkPartnerRelationship,
   PARTNER_RELATIONSHIP_TYPES,
   partnerLinkEligibility,
+  partnerRelationshipStatusAt,
   removePartnerRelationship,
   upsertPartnerRelationship,
 } from "../domain/partnerRelationships.js";
@@ -1041,6 +1042,16 @@ export function PersonInspector({
     setSpouseChooserOpen(false);
   };
 
+  const recordCoParentRelationship = (coParentId, type) => {
+    if (!selectedPerson || !coParentId || coParentId === selectedPerson.id) return;
+    const stampedPeople = stampUnsignedIntestacyContexts();
+    onChange(
+      linkPartnerRelationship(stampedPeople, selectedPerson.id, coParentId, {
+        type,
+      }),
+    );
+  };
+
   const removeSelected = () => {
     if (
       !selectedPerson ||
@@ -1300,6 +1311,22 @@ export function PersonInspector({
       findPartnerRelationship(people, selectedPerson.id, partner.id),
     ]),
   );
+  const activeLinkedSpousesAtDeath = linkedPartners.filter(
+    (partner) =>
+      partner.survivalStatusRequired !== true &&
+      partnerRelationshipStatusAt(
+        partnerRelationshipsById.get(partner.id),
+        selectedPerson.dateOfDeath || "",
+      ) === "active" &&
+      (!isPersonDeceased(partner) ||
+        (Boolean(selectedPerson.dateOfDeath) &&
+          Boolean(partner.dateOfDeath) &&
+          partner.dateOfDeath > selectedPerson.dateOfDeath)),
+  );
+  const excludedSpouseNames = activeLinkedSpousesAtDeath
+    .map((partner) => personDisplayName(partner, people))
+    .filter(Boolean)
+    .join(", ");
   const relationshipActionCounts = {
     ...relationshipCounts,
     marriage: [...partnerRelationshipsById.values()].filter(
@@ -1310,6 +1337,27 @@ export function PersonInspector({
     ).length,
   };
   const linkedSpouseIds = new Set(linkedPartners.map((person) => person.id));
+  const unlinkedCoParentIds = new Set();
+  people.forEach((child) => {
+    if (
+      child.fatherId === selectedPerson.id &&
+      child.motherId &&
+      child.motherId !== selectedPerson.id
+    ) {
+      unlinkedCoParentIds.add(child.motherId);
+    }
+    if (
+      child.motherId === selectedPerson.id &&
+      child.fatherId &&
+      child.fatherId !== selectedPerson.id
+    ) {
+      unlinkedCoParentIds.add(child.fatherId);
+    }
+  });
+  const unlinkedCoParents = [...unlinkedCoParentIds]
+    .filter((personId) => !linkedSpouseIds.has(personId))
+    .map((personId) => peopleById.get(personId))
+    .filter(Boolean);
   const linkedSiblingIds = new Set(selectedPerson.siblingIds || []);
   people.forEach((person) => {
     if ((person.siblingIds || []).includes(selectedPerson.id)) linkedSiblingIds.add(person.id);
@@ -2108,24 +2156,70 @@ export function PersonInspector({
                   to pass through this succession.
                 </p>
               )}
+              {inheritanceBasis === "intestacy" && unlinkedCoParents.length > 0 && (
+                <div className="succession-warning" role="alert">
+                  <strong>Confirm the co-parent relationship.</strong>
+                  {unlinkedCoParents.map((coParent) => (
+                    <div className="co-parent-relationship-review" key={coParent.id}>
+                      <span>
+                        {personDisplayName(coParent, people)} is recorded as a co-parent but not as
+                        a spouse or partner. The person is not included as a spouse until this is
+                        confirmed.
+                      </span>
+                      <span className="inline-actions">
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() =>
+                            recordCoParentRelationship(
+                              coParent.id,
+                              PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
+                            )
+                          }
+                        >
+                          Record marriage
+                        </button>
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() =>
+                            recordCoParentRelationship(
+                              coParent.id,
+                              PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP,
+                            )
+                          }
+                        >
+                          Record partnership
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <label className="succession-detail-row marital-status-at-death">
                 <span>Marital status at death</span>
                 <span className="detail-checkbox">
                   <input
                     type="checkbox"
-                    aria-label="Unmarried or widowed at the time of death"
+                    aria-label="No spouse survived this person"
                     checked={selectedPerson.unmarriedOrWidowedAtDeath === true}
                     onChange={(event) =>
                       updateSelected({ unmarriedOrWidowedAtDeath: event.target.checked })
                     }
                   />
-                  Unmarried or widowed at the time of death.
+                  No spouse survived this person (unmarried or already widowed at death).
                 </span>
               </label>
               {selectedPerson.unmarriedOrWidowedAtDeath === true && (
-                <small className="succession-marital-status-note">
-                  Recorded marriage and partner links remain on the tree but no spouse is included
-                  in this succession.
+                <small
+                  className={`succession-marital-status-note${
+                    excludedSpouseNames ? " succession-warning" : ""
+                  }`}
+                  role={excludedSpouseNames ? "alert" : undefined}
+                >
+                  {excludedSpouseNames
+                    ? `${excludedSpouseNames} is excluded from this succession while this setting is selected. Clear it if the linked spouse survived.`
+                    : "Recorded marriage and partner links remain on the tree, but no spouse is included in this succession."}
                 </small>
               )}
               <label className="succession-detail-row">

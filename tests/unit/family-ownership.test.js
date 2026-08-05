@@ -156,8 +156,6 @@ describe("automatic family ownership", () => {
       }),
       person("former-spouse", {
         spouseIds: ["deceased"],
-        isDeceased: true,
-        dateOfDeath: "",
       }),
       person("child", { fatherId: "deceased", motherId: "former-spouse" }),
     ];
@@ -170,6 +168,9 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson["former-spouse"] || 0).toBe(0);
     expect(result.ownershipByPerson.child).toBeCloseTo(1);
     expect(result.transmissions[0].destination).toBe("descendants");
+    expect(result.transmissions[0].warnings.join(" ")).toContain(
+      "was excluded because deceased is marked as having no surviving spouse",
+    );
   });
 
   it("does not treat shared parenthood alone as a legal spouse link", () => {
@@ -1194,6 +1195,7 @@ describe("automatic family ownership", () => {
     const allocation = intestateAllocations(people, "owner");
     people[0] = {
       ...people[0],
+      intestateHeirsConfirmed: true,
       intestateConfirmationBasis: intestacyLegalContextSignature(people[0], allocation),
     };
     const edited = editedIntestacyAllocations(people, "owner", allocation);
@@ -1217,23 +1219,35 @@ describe("automatic family ownership", () => {
     expect(allocation.warnings.join(" ")).toContain("former Civil Code article 815");
   });
 
-  it("cascades an edited pre-2005 inheritance without confirmation", () => {
+  it("keeps a signed but unapplied edit inactive until it is deliberately applied", () => {
     const people = [
       person("owner", {
         isDeceased: true,
-        dateOfDeath: "2004-12-01",
+        dateOfDeath: "2020-12-01",
         ownershipSharePercent: 100,
       }),
       person("child", { fatherId: "owner" }),
+      person("outsider"),
     ];
     const ownerWithRows = {
       ...people[0],
-      intestateHeirs: [{ id: "child-share", personId: "child", sharePercent: 100 }],
+      intestateHeirs: [{ id: "outsider-share", personId: "outsider", sharePercent: 100 }],
     };
-    people[0] = ownerWithRows;
+    const allocation = intestateAllocations([ownerWithRows, ...people.slice(1)], "owner");
+    people[0] = {
+      ...ownerWithRows,
+      intestateHeirsConfirmed: false,
+      intestateConfirmationBasis: intestacyLegalContextSignature(ownerWithRows, allocation),
+    };
 
     const result = buildAutomaticFamilyOwnership(people);
+    const edited = editedIntestacyAllocations(people, "owner", allocation);
+
+    expect(edited.valid).toBe(false);
+    expect(edited.reviewRequired).toBe(true);
+    expect(edited.warnings.join(" ")).toContain("not been deliberately applied");
     expect(result.ownershipByPerson.child).toBeCloseTo(1);
+    expect(result.ownershipByPerson.outsider || 0).toBe(0);
     expect(result.ownershipByPerson.owner || 0).toBe(0);
     expect(result.unresolved).toEqual([]);
   });
@@ -1255,6 +1269,7 @@ describe("automatic family ownership", () => {
     const originalAllocation = intestateAllocations([ownerWithRows, ...people.slice(1)], "owner");
     const editedOwner = {
       ...ownerWithRows,
+      intestateHeirsConfirmed: true,
       intestateConfirmationBasis: intestacyLegalContextSignature(ownerWithRows, originalAllocation),
     };
 
@@ -1327,6 +1342,7 @@ describe("automatic family ownership", () => {
     const originalAllocation = intestateAllocations(originalPeople, "owner");
     const signedOwner = {
       ...originalPeople[0],
+      intestateHeirsConfirmed: true,
       intestateConfirmationBasis: intestacyLegalContextSignature(
         originalPeople[0],
         originalAllocation,
@@ -1362,6 +1378,7 @@ describe("automatic family ownership", () => {
     const allocation = intestateAllocations(people, "owner");
     people[0] = {
       ...people[0],
+      intestateHeirsConfirmed: true,
       intestateConfirmationBasis: intestacyLegalContextSignature(people[0], allocation),
     };
 
@@ -1387,6 +1404,7 @@ describe("automatic family ownership", () => {
     const allocation = intestateAllocations(people, "owner");
     people[0] = {
       ...people[0],
+      intestateHeirsConfirmed: true,
       intestateConfirmationBasis: intestacyAllocationSignature(people[0], allocation),
       fullName: "Corrected display name",
       notes: "A cosmetic note",
@@ -1417,6 +1435,7 @@ describe("automatic family ownership", () => {
     );
     people[0] = {
       ...people[0],
+      intestateHeirsConfirmed: true,
       intestateConfirmationBasis: `${v2Context}::outsider:1/1`,
     };
 

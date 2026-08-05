@@ -1,5 +1,10 @@
 import { approximateFraction } from "../../domain/ownership.js";
-import { linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
+import { isPersonDeceased, linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
+import {
+  findPartnerRelationship,
+  partnerIdsForPerson,
+  partnerRelationshipStatusAt,
+} from "../../domain/partnerRelationships.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../../domain/article5A.js";
 import { displayNotaryName } from "../../domain/notary.js";
 import { displayWillDate, operativeWill, personWills } from "../../domain/wills.js";
@@ -98,6 +103,47 @@ export function FamilyPersonCard({
   const missingSpouseNames = spousesMissingDeathDates.map((spouse) =>
     capitalisedName(personDisplayName(spouse, people)),
   );
+  const excludedLinkedSpouses =
+    isDeceased && person.unmarriedOrWidowedAtDeath === true
+      ? partnerIdsForPerson(people, person.id)
+          .map((partnerId) => ({
+            partner: people.find((candidate) => candidate.id === partnerId),
+            relationship: findPartnerRelationship(people, person.id, partnerId),
+          }))
+          .filter(
+            ({ partner, relationship }) =>
+              partner &&
+              partner.survivalStatusRequired !== true &&
+              partnerRelationshipStatusAt(relationship, person.dateOfDeath || "") === "active" &&
+              (!isPersonDeceased(partner) ||
+                (Boolean(person.dateOfDeath) &&
+                  Boolean(partner.dateOfDeath) &&
+                  partner.dateOfDeath > person.dateOfDeath)),
+          )
+          .map(({ partner }) => partner)
+      : [];
+  const excludedSpouseNames = excludedLinkedSpouses.map((spouse) =>
+    capitalisedName(personDisplayName(spouse, people)),
+  );
+  const spouseAtDeathConflict = excludedSpouseNames.length > 0;
+  const linkedPartnerIds = new Set(partnerIdsForPerson(people, person.id));
+  const unconfirmedCoParentIds = new Set();
+  if (isDeceased && !isTestate) {
+    people.forEach((child) => {
+      if (child.fatherId === person.id && child.motherId && child.motherId !== person.id) {
+        unconfirmedCoParentIds.add(child.motherId);
+      }
+      if (child.motherId === person.id && child.fatherId && child.fatherId !== person.id) {
+        unconfirmedCoParentIds.add(child.fatherId);
+      }
+    });
+  }
+  const unconfirmedCoParentNames = [...unconfirmedCoParentIds]
+    .filter((personId) => !linkedPartnerIds.has(personId))
+    .map((personId) => people.find((candidate) => candidate.id === personId))
+    .filter(Boolean)
+    .map((coParent) => capitalisedName(personDisplayName(coParent, people)));
+  const coParentRelationshipUnconfirmed = unconfirmedCoParentNames.length > 0;
   const name = cardName(person);
   const givenNames = capitalisedName(personGivenNames(person));
   const surname = capitalisedName(personSurname(person));
@@ -113,6 +159,14 @@ export function FamilyPersonCard({
     missingSpouseNames.length
       ? `. Missing spouse death ${missingSpouseNames.length === 1 ? "date" : "dates"} for ${missingSpouseNames.join(", ")}`
       : ""
+  }${
+    spouseAtDeathConflict
+      ? `. No spouse survived is selected, so ${excludedSpouseNames.join(", ")} is excluded from the succession`
+      : ""
+  }${
+    coParentRelationshipUnconfirmed
+      ? `. Confirm whether ${unconfirmedCoParentNames.join(", ")} was a spouse or partner before relying on the succession`
+      : ""
   }`;
   const survivalStatusRequired = person.survivalStatusRequired === true;
   const surnameAtBirthReviewRequired = person.surnameAtBirthReviewRequired === true;
@@ -120,7 +174,11 @@ export function FamilyPersonCard({
     ? (historicalLawWarningsByPerson[person.id] || []).join(" ")
     : "";
   const missingDataActionRequired =
-    incompleteCausaMortis.length > 0 || survivalStatusRequired || surnameAtBirthReviewRequired;
+    incompleteCausaMortis.length > 0 ||
+    survivalStatusRequired ||
+    surnameAtBirthReviewRequired ||
+    spouseAtDeathConflict ||
+    coParentRelationshipUnconfirmed;
   const actionRequiredGuidance = [
     missingDataActionRequired &&
       "Action required: open this person's card and update the missing detail.",
@@ -137,6 +195,8 @@ export function FamilyPersonCard({
     spousesMissingDeathDates.length && "succession-date-incomplete",
     survivalStatusRequired && "survival-status-required",
     surnameAtBirthReviewRequired && "surname-at-birth-review-required",
+    spouseAtDeathConflict && "spouse-at-death-conflict",
+    coParentRelationshipUnconfirmed && "co-parent-relationship-unconfirmed",
     historicalLawWarning && "historical-law-review-required",
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
@@ -179,6 +239,16 @@ export function FamilyPersonCard({
         <div className="family-node-succession-alert">
           Missing spouse death {missingSpouseNames.length === 1 ? "date" : "dates"}:{" "}
           {missingSpouseNames.join(", ")}
+        </div>
+      )}
+      {!person.isPlaceholder && spouseAtDeathConflict && (
+        <div className="family-node-succession-alert">
+          No spouse at death: {excludedSpouseNames.join(", ")} excluded
+        </div>
+      )}
+      {!person.isPlaceholder && coParentRelationshipUnconfirmed && (
+        <div className="family-node-succession-alert">
+          Confirm relationship: {unconfirmedCoParentNames.join(", ")}
         </div>
       )}
       {!person.isPlaceholder && survivalStatusRequired && (

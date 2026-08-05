@@ -449,6 +449,30 @@ function calculateIntestateAllocations(people = [], deceasedId) {
   }
 
   const atDate = deceased.dateOfDeath;
+  if (deceased.unmarriedOrWidowedAtDeath === true) {
+    const excludedLinkedSpouses = partnerIdsForPerson(people, deceased.id)
+      .map((partnerId) => ({
+        partner: index.peopleById.get(partnerId),
+        relationship: findPartnerRelationship(people, deceased.id, partnerId),
+      }))
+      .filter(
+        ({ partner, relationship }) =>
+          partner &&
+          partnerRelationshipStatusAt(relationship, atDate) === "active" &&
+          wasAliveAt(partner, atDate),
+      )
+      .map(({ partner }) => partner);
+    if (excludedLinkedSpouses.length) {
+      const excludedNames = excludedLinkedSpouses.map(personName).join(", ");
+      warnings.push(
+        `${excludedNames} ${
+          excludedLinkedSpouses.length === 1 ? "was" : "were"
+        } excluded because ${personName(
+          deceased,
+        )} is marked as having no surviving spouse. Clear that setting if a linked spouse survived.`,
+      );
+    }
+  }
   const invalidRelationshipDates = deceased.unmarriedOrWidowedAtDeath
     ? []
     : partnerIdsForPerson(people, deceased.id).flatMap((partnerId) => {
@@ -894,6 +918,7 @@ export function editedIntestacyAllocations(
   const readiness = intestacyConfirmationReadiness(people, deceasedId, calculated, outsideParties);
   const currentSignature = readiness.currentSignature;
   const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
+  const explicitlyApplied = deceased.intestateHeirsConfirmed === true;
   const hasResolvedDeathDate = calculated.destination !== "death-date-unresolved";
   const storedBasis = String(deceased.intestateConfirmationBasis || "").trim();
   const contextMatches = intestacyBasisMatchesContext(storedBasis, deceased, calculated);
@@ -902,6 +927,7 @@ export function editedIntestacyAllocations(
     readiness.rowsValid &&
     readiness.totalComplete &&
     hasResolvedDeathDate &&
+    explicitlyApplied &&
     contextMatches;
 
   if (!valid) {
@@ -909,14 +935,17 @@ export function editedIntestacyAllocations(
       warnings.push(
         !storedBasis
           ? "The edited intestate heirs were saved without a death-date and family-context record. The automatic calculation applies until the edited heirs are reviewed."
-          : contextMatches
-            ? "The edited intestate heirs need review before they can override the automatic calculation."
-            : "The edited intestate heirs were saved against an earlier death date or family context. The automatic calculation applies until the edited heirs are reviewed.",
+          : !contextMatches
+            ? "The edited intestate heirs were saved against an earlier death date or family context. The automatic calculation applies until the edited heirs are reviewed."
+            : !explicitlyApplied
+              ? "The edited intestate heirs have not been deliberately applied. The automatic calculation remains in force until the edited heirs are reviewed and applied."
+              : "The edited intestate heirs need review before they can override the automatic calculation.",
       );
     }
     return {
       valid: false,
       stale: rows.length > 0 && !contextMatches,
+      reviewRequired: rows.length > 0 && (!explicitlyApplied || !contextMatches),
       shares,
       warnings,
       currentSignature,

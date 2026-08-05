@@ -123,6 +123,50 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
+  it("shows when a no-surviving-spouse setting excludes a linked spouse", () => {
+    renderCanvas({
+      people: [
+        person("edgar", "Edgar Wadge", {
+          isDeceased: true,
+          dateOfDeath: "2005-05-20",
+          spouseIds: ["giovanna"],
+          unmarriedOrWidowedAtDeath: true,
+        }),
+        person("giovanna", "Giovanna Wadge", { spouseIds: ["edgar"] }),
+      ],
+    });
+
+    const card = container.querySelector('[data-person-id="edgar"]');
+    expect(card.classList.contains("spouse-at-death-conflict")).toBe(true);
+    expect(card.textContent).toContain("No spouse at death: Giovanna Wadge excluded");
+    expect(card.getAttribute("aria-label")).toContain(
+      "Giovanna Wadge is excluded from the succession",
+    );
+  });
+
+  it("flags co-parents whose marriage or partnership has not been recorded", () => {
+    renderCanvas({
+      people: [
+        person("edgar", "Edgar Wadge", {
+          isDeceased: true,
+          dateOfDeath: "2005-05-20",
+        }),
+        person("giovanna", "Giovanna Wadge"),
+        person("child", "Roland Wadge", {
+          fatherId: "edgar",
+          motherId: "giovanna",
+        }),
+      ],
+    });
+
+    const card = container.querySelector('[data-person-id="edgar"]');
+    expect(card.classList.contains("co-parent-relationship-unconfirmed")).toBe(true);
+    expect(card.textContent).toContain("Confirm relationship: Giovanna Wadge");
+    expect(card.getAttribute("aria-label")).toContain(
+      "Confirm whether Giovanna Wadge was a spouse or partner",
+    );
+  });
+
   it("flags a card only when its calculated property transmission needs historical review", () => {
     renderCanvas({
       people: [

@@ -100,12 +100,11 @@ export function IntestateHeirConfirmation({
   const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const rows = deceased.intestateHeirs || [];
   const calculatedEntries = [...(calculated?.shares || new Map()).entries()];
-  const [editingHeirs, setEditingHeirs] = useState(
-    rows.length > 0 || calculatedEntries.length === 0,
-  );
+  const [editingHeirs, setEditingHeirs] = useState(false);
+  const [draftRows, setDraftRows] = useState([]);
   const calculatedShares = new Map(calculatedEntries);
   const calculatedPersonIds = new Set(calculatedShares.keys());
-  const selectedPersonIds = new Set(rows.map((row) => row.personId).filter(Boolean));
+  const selectedPersonIds = new Set(draftRows.map((row) => row.personId).filter(Boolean));
   const linkedPartners = linkedLegalSpousesFor(people, deceased.id, deceased.dateOfDeath);
   const partnersMissingDeathDate = linkedSpousesMissingDeathDates(
     people,
@@ -135,42 +134,86 @@ export function IntestateHeirConfirmation({
         numeric: true,
       }),
     );
-  const total = totalPercentage(rows);
+  const total = totalPercentage(draftRows);
   const editedAllocation = editedIntestacyAllocations(
     people,
     deceased.id,
     calculated,
     outsideParties,
   );
-  const readiness = intestacyConfirmationReadiness(people, deceased.id, calculated, outsideParties);
+  const savedReadiness = intestacyConfirmationReadiness(
+    people,
+    deceased.id,
+    calculated,
+    outsideParties,
+  );
+  const draftDeceased = {
+    ...deceased,
+    intestateHeirs: draftRows,
+    intestateHeirsConfirmed: true,
+  };
+  const draftPeople = people.map((person) => (person.id === deceased.id ? draftDeceased : person));
+  const readiness = intestacyConfirmationReadiness(
+    draftPeople,
+    deceased.id,
+    calculated,
+    outsideParties,
+  );
   const totalComplete = readiness.totalComplete;
   const rowsCanOverride = editedAllocation.valid;
-  const footerIsValid = rows.length === 0 || totalComplete;
+  const footerIsValid = draftRows.length === 0 || totalComplete;
+  const draftCanApply = readiness.valid;
 
   const patchDeceased = (patch) => onUpdatePerson(deceased.id, patch);
-  const replaceRows = (nextRows) => {
-    const nextDeceased = { ...deceased, intestateHeirs: nextRows };
+  const calculatedDraftRows = () =>
+    calculatedEntries.map(([personId, share]) => ({
+      id: crypto.randomUUID(),
+      personId,
+      ...shareFromPercentage(share * 100),
+    }));
+  const beginEditing = () => {
+    setDraftRows(rows.length ? rows.map((row) => ({ ...row })) : calculatedDraftRows());
+    setEditingHeirs(true);
+  };
+  const cancelEditing = () => {
+    setDraftRows([]);
+    setShowOutsidePartyCreator(false);
+    setEditingHeirs(false);
+  };
+  const useAutomaticCalculation = () => {
     patchDeceased({
-      intestateHeirs: nextRows,
+      intestateHeirs: [],
       intestateHeirsConfirmed: false,
-      intestateConfirmationBasis: intestacyLegalContextSignature(nextDeceased, calculated),
+      intestateConfirmationBasis: "",
     });
+    cancelEditing();
+  };
+  const applyDraft = () => {
+    if (!draftCanApply) return;
+    patchDeceased({
+      intestateHeirs: draftRows.map((row) => ({ ...row })),
+      intestateHeirsConfirmed: true,
+      intestateConfirmationBasis: intestacyLegalContextSignature(draftDeceased, calculated),
+    });
+    cancelEditing();
   };
   const updateRow = (rowId, patch) =>
-    replaceRows(rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
+    setDraftRows((currentRows) =>
+      currentRows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+    );
   const updateRowPercentage = (rowId, percentage) =>
     updateRow(rowId, shareFromPercentageInput(percentage));
   const updateRowFraction = (row, patch) => updateRow(row.id, shareFromFractionInput(row, patch));
   const addPerson = (personId) => {
     if (!personId || selectedPersonIds.has(personId)) return;
     const suggestedShare = calculatedShares.get(personId);
-    replaceRows([
-      ...rows,
+    setDraftRows((currentRows) => [
+      ...currentRows,
       {
         id: crypto.randomUUID(),
         personId,
         ...shareFromPercentage(
-          suggestedShare === undefined ? (rows.length ? 0 : 100) : suggestedShare * 100,
+          suggestedShare === undefined ? (currentRows.length ? 0 : 100) : suggestedShare * 100,
         ),
       },
     ]);
@@ -181,19 +224,10 @@ export function IntestateHeirConfirmation({
     addPerson(party.id);
   };
   useEffect(() => {
-    setEditingHeirs(rows.length > 0 || calculatedEntries.length === 0);
-  }, [calculatedEntries.length, deceased.id, rows.length]);
-
-  const applyCalculated = () => {
-    replaceRows(
-      calculatedEntries.map(([personId, share]) => ({
-        id: crypto.randomUUID(),
-        personId,
-        ...shareFromPercentage(share * 100),
-      })),
-    );
-    setEditingHeirs(true);
-  };
+    setEditingHeirs(false);
+    setDraftRows([]);
+    setShowOutsidePartyCreator(false);
+  }, [deceased.id]);
 
   return (
     <div className="intestate-confirmation">
@@ -205,6 +239,11 @@ export function IntestateHeirConfirmation({
             need to change the people or fractions.
           </small>
         </div>
+        {!editingHeirs && (
+          <button type="button" className="text-button" onClick={beginEditing}>
+            Edit Beneficiaries
+          </button>
+        )}
       </div>
 
       {linkedPartners.length > 0 && (
@@ -245,21 +284,49 @@ export function IntestateHeirConfirmation({
         displayName={displayName}
         shareDisplay={shareDisplay}
         title="Calculated beneficiaries"
-        actionLabel={editingHeirs ? "" : "Edit Beneficiaries"}
-        onApply={applyCalculated}
       />
+
+      {!editingHeirs && rows.length > 0 && (
+        <div className="confirmed-intestate-heirs">
+          <div className="intestate-confirmation-heading">
+            <strong>
+              {rowsCanOverride
+                ? "Edited beneficiaries active"
+                : "Edited beneficiaries require review"}
+            </strong>
+            <button type="button" className="text-button" onClick={useAutomaticCalculation}>
+              Use automatic calculation
+            </button>
+          </div>
+          {!rowsCanOverride &&
+            (editedAllocation.warnings || []).map((warning) => (
+              <small className="succession-warning" key={warning}>
+                {warning}
+              </small>
+            ))}
+          {!rowsCanOverride &&
+            savedReadiness.issues.map((issue, index) => (
+              <small className="succession-warning" key={`${index}-${issue}`}>
+                {issue}
+              </small>
+            ))}
+          {!rowsCanOverride && (
+            <small className="succession-warning">
+              These saved edits are not active, so the automatic proposal remains in force.
+            </small>
+          )}
+        </div>
+      )}
 
       {editingHeirs && (
         <div className="confirmed-intestate-heirs">
           <div className="intestate-confirmation-heading">
             <strong>Edit Beneficiaries</strong>
-            {calculatedEntries.length > 0 && (
-              <button type="button" className="text-button" onClick={() => setEditingHeirs(false)}>
-                Close editor
-              </button>
-            )}
+            <button type="button" className="text-button" onClick={cancelEditing}>
+              Cancel
+            </button>
           </div>
-          {rows.map((row) => {
+          {draftRows.map((row) => {
             const person = peopleById.get(row.personId) || outsidePartiesById.get(row.personId);
             const fraction = fractionForShare(row);
             const numerator = row.shareNumerator ?? fraction.numerator;
@@ -312,7 +379,11 @@ export function IntestateHeirConfirmation({
                   type="button"
                   className="icon-button"
                   aria-label={`Remove ${displayName(person)} from edited heirs`}
-                  onClick={() => replaceRows(rows.filter((candidate) => candidate.id !== row.id))}
+                  onClick={() =>
+                    setDraftRows((currentRows) =>
+                      currentRows.filter((candidate) => candidate.id !== row.id),
+                    )
+                  }
                 >
                   <Trash2 size={14} />
                 </button>
@@ -376,23 +447,27 @@ export function IntestateHeirConfirmation({
             <small
               className={footerIsValid ? "succession-total valid" : "succession-total invalid"}
             >
-              {rows.length === 0
+              {draftRows.length === 0
                 ? "No edited heirs. Automatic proposal applies."
-                : `Total: ${totalLabel(total, shareDisplay)} ${
-                    rowsCanOverride
-                      ? "Override active"
-                      : `- must equal ${
-                          shareDisplay === "fraction"
-                            ? "1/1"
-                            : shareDisplay === "percentage"
-                              ? "100%"
-                              : "1/1 · 100%"
-                        }`
+                : `Total: ${totalLabel(total, shareDisplay)} - must equal ${
+                    shareDisplay === "fraction"
+                      ? "1/1"
+                      : shareDisplay === "percentage"
+                        ? "100%"
+                        : "1/1 · 100%"
                   }`}
             </small>
+            <button
+              type="button"
+              className="compact-confirm"
+              disabled={!draftCanApply}
+              onClick={applyDraft}
+            >
+              Apply edited beneficiaries
+            </button>
           </div>
-          {rows.length > 0 &&
-            !rowsCanOverride &&
+          {draftRows.length > 0 &&
+            !draftCanApply &&
             totalComplete &&
             readiness.issues
               .filter((issue) => issue !== "The heir shares must total 100%.")
@@ -401,17 +476,11 @@ export function IntestateHeirConfirmation({
                   {issue}
                 </small>
               ))}
-          {rows.length > 0 && !editedAllocation.valid && (
-            <>
-              {(editedAllocation.warnings || []).map((warning) => (
-                <small className="succession-warning" key={warning}>
-                  {warning}
-                </small>
-              ))}
-              <small className="succession-warning">
-                These edited heirs are not yet usable, so the automatic proposal remains in force.
-              </small>
-            </>
+          <small>Changes remain a draft until Apply edited beneficiaries is selected.</small>
+          {rows.length > 0 && (
+            <button type="button" className="text-button" onClick={useAutomaticCalculation}>
+              Remove edited beneficiaries and use automatic calculation
+            </button>
           )}
         </div>
       )}

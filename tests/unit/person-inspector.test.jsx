@@ -1483,7 +1483,7 @@ describe("PersonInspector", () => {
     );
 
     const maritalStatus = container.querySelector(
-      'input[aria-label="Unmarried or widowed at the time of death"]',
+      'input[aria-label="No spouse survived this person"]',
     );
     expect(maritalStatus).not.toBeNull();
     expect(maritalStatus.checked).toBe(false);
@@ -1492,6 +1492,76 @@ describe("PersonInspector", () => {
     expect(onChange.mock.calls.at(-1)[0].find((person) => person.id === "deceased")).toMatchObject({
       unmarriedOrWidowedAtDeath: true,
     });
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[{ ...deceased, unmarriedOrWidowedAtDeath: true }, formerSpouse]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    expect(container.textContent).toContain(
+      "Maria Borg is excluded from this succession while this setting is selected",
+    );
+  });
+
+  it("asks the user to confirm a co-parent relationship before treating it as marriage", () => {
+    const onChange = vi.fn();
+    const deceased = {
+      id: "deceased",
+      fullName: "Edgar Wadge",
+      givenNames: "Edgar",
+      surname: "Wadge",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2005-05-20",
+      inheritanceBasis: "intestacy",
+      designations: ["Deceased"],
+    };
+    const coParent = {
+      id: "co-parent",
+      fullName: "Giovanna Wadge",
+      givenNames: "Giovanna",
+      surname: "Wadge",
+      sex: "Female",
+    };
+    const child = {
+      id: "child",
+      fullName: "Roland Wadge",
+      sex: "Male",
+      fatherId: "deceased",
+      motherId: "co-parent",
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, coParent, child]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain(
+      "Giovanna Wadge is recorded as a co-parent but not as a spouse or partner",
+    );
+    const recordMarriage = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Record marriage",
+    );
+    act(() => recordMarriage.click());
+
+    const updatedPeople = onChange.mock.calls.at(-1)[0];
+    expect(updatedPeople.find((person) => person.id === "deceased").spouseIds).toContain(
+      "co-parent",
+    );
+    expect(updatedPeople.find((person) => person.id === "co-parent").spouseIds).toContain(
+      "deceased",
+    );
   });
 
   it("immediately unlocks every succession field when a person is marked deceased", () => {
@@ -1814,9 +1884,22 @@ describe("PersonInspector", () => {
     );
     act(() => editBeneficiaries.click());
 
+    expect(latestPeople[0].intestateHeirs).toBeUndefined();
     expect(container.querySelectorAll(".confirmed-heir-row")).toHaveLength(2);
     expect(container.querySelectorAll(".confirmed-heir-fraction")).toHaveLength(2);
     expect(container.querySelectorAll(".confirmed-heir-percent")).toHaveLength(0);
+
+    const cancel = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Cancel",
+    );
+    act(() => cancel.click());
+    expect(latestPeople[0].intestateHeirs).toBeUndefined();
+    expect(container.querySelectorAll(".confirmed-heir-row")).toHaveLength(0);
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Edit Beneficiaries"))
+        .click(),
+    );
 
     const setNumberInput = (input, value) => {
       act(() => {
@@ -1834,17 +1917,18 @@ describe("PersonInspector", () => {
     expect(childDenominator.value).toBe("");
 
     setNumberInput(childDenominator, "4");
+    expect(latestPeople[0].intestateHeirs).toBeUndefined();
     expect(
-      latestPeople[0].intestateHeirs.find((heir) => heir.personId === "child").sharePercent,
-    ).toBe(25);
+      [...container.querySelectorAll("button")].find((button) =>
+        button.textContent.includes("Apply edited beneficiaries"),
+      ).disabled,
+    ).toBe(true);
 
     const childNumerator = container.querySelector(
       'input[aria-label="Share numerator for Paul Borg"]',
     );
     setNumberInput(childNumerator, "2");
-    expect(
-      latestPeople[0].intestateHeirs.find((heir) => heir.personId === "child").sharePercent,
-    ).toBe(50);
+    expect(latestPeople[0].intestateHeirs).toBeUndefined();
 
     const percentageButton = [...container.querySelectorAll(".person-share-toggle button")].find(
       (button) => button.textContent === "Percentage",
@@ -1858,26 +1942,40 @@ describe("PersonInspector", () => {
       'input[aria-label="Share percentage for Paul Borg"]',
     );
     setNumberInput(childPercentage, "45");
-    expect(latestPeople[0].intestateHeirs.find((heir) => heir.personId === "child")).toMatchObject({
-      sharePercent: 45,
-      sharePercentInput: "45",
-    });
+    expect(latestPeople[0].intestateHeirs).toBeUndefined();
     setNumberInput(
       container.querySelector('input[aria-label="Share percentage for Paul Borg"]'),
       "50",
     );
 
-    expect(latestPeople[0].intestateHeirsConfirmed).toBe(false);
+    const applyEdited = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Apply edited beneficiaries"),
+    );
+    expect(applyEdited.disabled).toBe(false);
+    act(() => applyEdited.click());
+
+    expect(latestPeople[0].intestateHeirsConfirmed).toBe(true);
     expect(latestPeople[0].intestateConfirmationBasis).toMatch(/^v3::/);
     expect(latestPeople[0].intestateHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
-    expect(container.textContent).toContain("Override active");
+    expect(container.textContent).toContain("Edited beneficiaries active");
 
     setNumberInput(container.querySelector(".succession-detail-row input"), "04/02/2024");
     expect(latestPeople[0].dateOfDeath).toBe("2024-02-04");
     expect(container.textContent).toContain(
       "saved against an earlier death date or family context",
     );
-    expect(container.textContent).toContain("automatic proposal remains in force");
+    expect(container.textContent).toContain("Edited beneficiaries require review");
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Use automatic calculation")
+        .click(),
+    );
+    expect(latestPeople[0]).toMatchObject({
+      intestateHeirs: [],
+      intestateHeirsConfirmed: false,
+      intestateConfirmationBasis: "",
+    });
   });
 
   it("warns when an edited heir row points to a deleted person", () => {
@@ -3012,7 +3110,10 @@ describe("PersonInspector", () => {
       );
       heirSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(latestPeople[0].intestateHeirs.map((heir) => heir.personId)).toContain("friend");
+    expect(latestPeople[0].intestateHeirs).toBeUndefined();
+    expect(
+      [...container.querySelectorAll(".confirmed-heir-name")].map((node) => node.textContent),
+    ).toContain("Anna Vella");
 
     heirSelect = container.querySelector(
       'select[aria-label="Add an heir or override the intestacy proposal"]',
@@ -3055,9 +3156,10 @@ describe("PersonInspector", () => {
       type: "company",
     });
     expect(latestPeople).toHaveLength(3);
-    expect(latestPeople[0].intestateHeirs.map((heir) => heir.personId)).toContain(
-      latestOutsideParties[0].id,
-    );
+    expect(latestPeople[0].intestateHeirs).toBeUndefined();
+    expect(
+      [...container.querySelectorAll(".confirmed-heir-name")].map((node) => node.textContent),
+    ).toContain("Legacy Holdings Ltd");
   });
 });
 
