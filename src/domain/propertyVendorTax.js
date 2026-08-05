@@ -416,19 +416,23 @@ export function ownerProvenanceTranches(report = {}, property = {}, ownerId = ""
     });
   });
 
-  // One succession can be reached through several upstream ownership paths. They are parts of
-  // the same acquisition, identified by the same tranche id, rather than separate provenance
-  // choices. Consolidating before consumption also prevents one saved designation from being
-  // subtracted independently from every duplicate row.
-  const consolidated = new Map();
+  // The ownership trace can surface the same acquisition row twice. Suppress only an exact
+  // duplicate: separate provenance fractions must remain separate and their values must never
+  // be added merely because the view received the same row more than once.
+  const seenTranches = new Set();
+  const uniqueTranches = [];
   tranches.forEach((tranche) => {
-    const existing = consolidated.get(tranche.trancheId);
-    if (!existing) {
-      consolidated.set(tranche.trancheId, tranche);
-      return;
-    }
-    const fraction = addFractions(existing.fraction, tranche.fraction);
-    consolidated.set(tranche.trancheId, fraction.error ? existing : { ...existing, fraction });
+    const fingerprint = JSON.stringify([
+      tranche.trancheId,
+      tranche.fraction.numerator,
+      tranche.fraction.denominator,
+      tranche.acquiredOn,
+      tranche.cause,
+      tranche.provenance,
+    ]);
+    if (seenTranches.has(fingerprint)) return;
+    seenTranches.add(fingerprint);
+    uniqueTranches.push(tranche);
   });
 
   // Earlier outgoing transfers that recorded their provenance consume it here, so once a
@@ -445,7 +449,7 @@ export function ownerProvenanceTranches(report = {}, property = {}, ownerId = ""
       if (!running.error) consumed.set(portion.trancheId, running);
     });
   });
-  return [...consolidated.values()]
+  return uniqueTranches
     .map((tranche) => {
       const taken = consumed.get(tranche.trancheId);
       if (!taken) return tranche;

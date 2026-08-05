@@ -77,7 +77,7 @@ describe("owner provenance tranches", () => {
     ]);
   });
 
-  it("combines repeated paths through the same succession into one provenance", () => {
+  it("renders an exact duplicate provenance once without changing its fraction", () => {
     const repeatedSuccession = {
       ...report,
       inheritanceSourcesByOwner: new Map([
@@ -96,9 +96,22 @@ describe("owner provenance tranches", () => {
               inheritanceDate: "2015-03-01",
               shareFraction: { numerator: 1, denominator: 8 },
             },
+            {
+              deceasedId: "mother",
+              deceasedName: "Maria Borg",
+              inheritanceDate: "2018-04-02",
+              shareFraction: { numerator: 1, denominator: 16 },
+            },
+            {
+              deceasedId: "mother",
+              deceasedName: "Maria Borg",
+              inheritanceDate: "2018-04-02",
+              shareFraction: { numerator: 1, denominator: 16 },
+            },
           ],
         ],
       ]),
+      ledger: { parties: [], entries: [] },
     };
     const inheritedOnlyProperty = { owners: [], transfers: [] };
 
@@ -106,11 +119,14 @@ describe("owner provenance tranches", () => {
 
     expect(tranches).toHaveLength(2);
     expect(tranches.filter((tranche) => tranche.trancheId === "inheritance-father")).toEqual([
-      expect.objectContaining({ fraction: { numerator: 1, denominator: 4 } }),
+      expect.objectContaining({ fraction: { numerator: 1, denominator: 8 } }),
+    ]);
+    expect(tranches.filter((tranche) => tranche.trancheId === "inheritance-mother")).toEqual([
+      expect.objectContaining({ fraction: { numerator: 1, denominator: 16 } }),
     ]);
   });
 
-  it("consumes a saved designation once after repeated paths are combined", () => {
+  it("consumes a saved designation once after an exact duplicate is suppressed", () => {
     const repeatedSuccession = {
       ...report,
       inheritanceSourcesByOwner: new Map([
@@ -148,7 +164,7 @@ describe("owner provenance tranches", () => {
     expect(tranches).toEqual([
       expect.objectContaining({
         trancheId: "inheritance-father",
-        fraction: { numerator: 3, denominator: 4 },
+        fraction: { numerator: 1, denominator: 4 },
       }),
       expect.objectContaining({ trancheId: "transfer-gift" }),
     ]);
