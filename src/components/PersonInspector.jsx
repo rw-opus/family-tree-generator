@@ -34,8 +34,9 @@ import {
   missingPotentialIntestateParents,
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
-import { approximateFraction } from "../domain/ownership.js";
+import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
 import {
+  addFractions,
   MAX_FRACTION_INTEGER,
   ZERO_FRACTION,
   compareFractions,
@@ -249,6 +250,16 @@ export function PersonInspector({
     setChildPartnerId("");
     setCausaMortisErrors({});
     setWillOutsidePartyOpen(false);
+    setDonationOpen(
+      Boolean(
+        selectedPerson &&
+        (selectedPerson.inheritanceBasis === "lifetime-disposal" ||
+          (properties[0]?.transfers || []).some(
+            (transfer) => transfer.sellerId === selectedPerson.id,
+          )),
+      ),
+    );
+    setDonationDraft(blankDonationDraft());
     setCausaMortisDraftOpen(
       Boolean(
         selectedPerson?.causaMortisDeclarations?.some(
@@ -257,7 +268,7 @@ export function PersonInspector({
       ),
     );
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
-  }, [selectedPerson]);
+  }, [properties, selectedPerson]);
 
   useEffect(() => {
     setOwnershipDisplay(shareDisplayMode(shareDisplay));
@@ -582,6 +593,12 @@ export function PersonInspector({
     updateSelected({
       designations: checked ? ["Deceased", ...current] : current,
       isDeceased: checked,
+      inheritanceBasis:
+        checked && fullyTransferredInterVivos
+          ? "lifetime-disposal"
+          : selectedPerson.inheritanceBasis === "lifetime-disposal"
+            ? "intestacy"
+            : selectedPerson.inheritanceBasis,
       dateOfDeath: checked ? selectedPerson.dateOfDeath || "" : "",
       unmarriedOrWidowedAtDeath: checked
         ? selectedPerson.unmarriedOrWidowedAtDeath === true
@@ -688,12 +705,60 @@ export function PersonInspector({
   };
 
   const activeProperty = properties[0] || null;
+  const interVivosLedger = useMemo(() => {
+    if (!activeProperty) return null;
+    const startingOwnership = (activeProperty.owners || []).reduce((ownership, owner) => {
+      if (!owner.personId) return ownership;
+      ownership[owner.personId] = addFractions(
+        ownership[owner.personId] || ZERO_FRACTION,
+        fractionForShare(owner),
+      );
+      return ownership;
+    }, {});
+    return buildPropertyLedger(
+      people,
+      outsideParties,
+      activeProperty.transfers || [],
+      startingOwnership,
+    );
+  }, [activeProperty, outsideParties, people]);
+  const recordedOutgoingInterVivosTransfers = useMemo(
+    () =>
+      (interVivosLedger?.entries || []).filter(
+        (entry) => entry.sellerId === selectedPerson?.id && !entry.error,
+      ),
+    [interVivosLedger, selectedPerson?.id],
+  );
+  const interVivosHolding = useMemo(
+    () =>
+      (interVivosLedger?.owners || []).find((owner) => owner.id === selectedPerson?.id)
+        ?.shareFraction || ZERO_FRACTION,
+    [interVivosLedger, selectedPerson?.id],
+  );
+  const fullyTransferredInterVivos =
+    recordedOutgoingInterVivosTransfers.length > 0 &&
+    compareFractions(interVivosHolding, ZERO_FRACTION) === 0;
+  useEffect(() => {
+    if (!activeProperty || !selectedPerson || !isPersonDeceased(selectedPerson)) return;
+    const nextBasis = fullyTransferredInterVivos
+      ? "lifetime-disposal"
+      : selectedPerson.inheritanceBasis === "lifetime-disposal"
+        ? "intestacy"
+        : selectedPerson.inheritanceBasis;
+    if (nextBasis === selectedPerson.inheritanceBasis) return;
+    onChange(
+      people.map((person) =>
+        person.id === selectedPerson.id ? { ...person, inheritanceBasis: nextBasis } : person,
+      ),
+    );
+  }, [activeProperty, fullyTransferredInterVivos, onChange, people, selectedPerson]);
   const donorLedgerHolding = useMemo(() => {
     const owner = (vendorReport?.ledger?.owners || []).find(
       (candidate) => candidate.id === selectedPerson?.id,
     );
-    return owner?.shareFraction || null;
-  }, [selectedPerson?.id, vendorReport]);
+    if (owner?.shareFraction) return owner.shareFraction;
+    return compareFractions(interVivosHolding, ZERO_FRACTION) > 0 ? interVivosHolding : null;
+  }, [interVivosHolding, selectedPerson?.id, vendorReport]);
   const canDonate =
     Boolean(activeProperty && onRecordDonation && donorLedgerHolding) &&
     compareFractions(donorLedgerHolding, ZERO_FRACTION) > 0;
@@ -826,6 +891,14 @@ export function PersonInspector({
       }
     }
 
+    if (isDeceased && compareFractions(amount, donorLedgerHolding) === 0) {
+      nextPeople = nextPeople.map((person) =>
+        person.id === selectedPerson.id
+          ? { ...person, inheritanceBasis: "lifetime-disposal" }
+          : person,
+      );
+    }
+
     onRecordDonation({
       people: nextPeople,
       propertyId: activeProperty.id,
@@ -848,7 +921,6 @@ export function PersonInspector({
       },
     });
     setDonationDraft(blankDonationDraft());
-    setDonationOpen(false);
   };
 
   const createOutsideParty = (party) => {
@@ -993,7 +1065,10 @@ export function PersonInspector({
         identityIssues.length > 1 ? ", " : "",
       )} before adding relatives.`;
   const selectedDisplayName = displayName(selectedPerson);
-  const inheritanceBasis = selectedPerson.inheritanceBasis || "intestacy";
+  // Older saves used "lifetime-disposal" as though a transfer during life replaced the
+  // person's later succession. They are independent events: preserve that legacy value only
+  // as the initial state of the inter-vivos disclosure, while the estate defaults to intestacy.
+  const inheritanceBasis = selectedPerson.inheritanceBasis === "will" ? "will" : "intestacy";
   const recordedWills = personWills(selectedPerson);
   const displayedWills = recordedWills.length
     ? recordedWills
@@ -1233,21 +1308,14 @@ export function PersonInspector({
               ? "This removes the person from this family only; the shared record remains elsewhere."
               : "No partner or descendant dependencies. Confirmation is required.";
 
-  // The transfer section renders standalone for living holders, and inside the Estate
-  // area when a deceased person's share was sold or donated during their lifetime.
+  // A transfer during life is independent of the person's eventual succession. The status
+  // checkbox controls whether this form is visible, so there is no second disclosure control.
   const shareTransferSection = canDonate ? (
-    <div className="person-donation" data-person-section="donation">
-      <div className="inspector-section-heading">
-        <h3>Donate or transfer a share</h3>
-        <button
-          type="button"
-          className="secondary-button"
-          aria-expanded={donationOpen}
-          onClick={() => setDonationOpen((open) => !open)}
-        >
-          {donationOpen ? "Close" : "Record…"}
-        </button>
-      </div>
+    <div
+      id={`inter-vivos-transfer-${selectedPerson.id}`}
+      className="person-donation"
+      data-person-section="donation"
+    >
       {donationOpen && (
         <form className="person-donation-form" onSubmit={submitDonation}>
           <label>
@@ -1471,7 +1539,7 @@ export function PersonInspector({
       )}
     </div>
   ) : null;
-  const showStandaloneShareTransfer = !(isDeceased && inheritanceBasis === "lifetime-disposal");
+  const interVivosDisclosureOpen = donationOpen || fullyTransferredInterVivos;
 
   return (
     <div className="person-inspector">
@@ -1764,9 +1832,28 @@ export function PersonInspector({
               This person is deceased.
             </span>
           </label>
+          <label
+            className={`person-status-control inter-vivos-status-control${
+              fullyTransferredInterVivos ? " completed" : ""
+            }`}
+          >
+            <span>Transfer</span>
+            <span className="detail-checkbox">
+              <input
+                type="checkbox"
+                aria-label="This person transferred a share inter vivos."
+                aria-controls={`inter-vivos-transfer-${selectedPerson.id}`}
+                aria-expanded={interVivosDisclosureOpen}
+                checked={interVivosDisclosureOpen}
+                disabled={fullyTransferredInterVivos}
+                onChange={(event) => setDonationOpen(event.target.checked)}
+              />
+              This person transferred a share inter vivos.
+            </span>
+          </label>
         </div>
 
-        {missingIntestateParentRoles.length > 0 && inheritanceBasis !== "lifetime-disposal" && (
+        {missingIntestateParentRoles.length > 0 && (
           <section className="potential-parent-survival-alert" role="alert">
             <strong>Possible parent inheritance needs confirmation</strong>
             <p>
@@ -1830,11 +1917,20 @@ export function PersonInspector({
 
         <div className="person-edit-fields person-record-fields">
           {isDeceased && (
-            <div className="person-succession" data-person-section="succession">
-              <label className="succession-detail-row">
+            <div
+              className={`person-succession${fullyTransferredInterVivos ? " fully-transferred" : ""}`}
+              data-person-section="succession"
+            >
+              <label className="succession-detail-row succession-death-date">
                 <span>Date of death</span>
                 <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
               </label>
+              {fullyTransferredInterVivos && (
+                <p className="inter-vivos-complete-note">
+                  This person transferred their entire property share during life. No share remained
+                  to pass through this succession.
+                </p>
+              )}
               <label className="succession-detail-row marital-status-at-death">
                 <span>Marital status at death</span>
                 <span className="detail-checkbox">
@@ -1864,25 +1960,10 @@ export function PersonInspector({
                 >
                   <option value="intestacy">Intestate</option>
                   <option value="will">Testate</option>
-                  <option value="lifetime-disposal">Sold / donated during lifetime</option>
                 </select>
               </label>
 
-              {inheritanceBasis === "lifetime-disposal" ? (
-                <div className="lifetime-disposal-details">
-                  <p className="helper-text">
-                    This person disposed of their share during their lifetime, so no succession
-                    arises for it: the acquirer takes under the deed, not as an heir. Record the
-                    donation or sale below.
-                  </p>
-                  {shareTransferSection || (
-                    <p className="helper-text">
-                      No remaining holding is recorded for this person on the active property, so
-                      there is nothing left to transfer.
-                    </p>
-                  )}
-                </div>
-              ) : inheritanceBasis === "intestacy" ? (
+              {inheritanceBasis === "intestacy" ? (
                 <IntestateHeirConfirmation
                   deceased={selectedPerson}
                   people={people}
@@ -2481,7 +2562,20 @@ export function PersonInspector({
               </span>
             </div>
           </div>
-          {showStandaloneShareTransfer && shareTransferSection}
+          {interVivosDisclosureOpen &&
+            (shareTransferSection || (
+              <div
+                id={`inter-vivos-transfer-${selectedPerson.id}`}
+                className="person-donation person-donation-unavailable"
+                data-person-section="donation"
+              >
+                <p className="helper-text">
+                  {activeProperty
+                    ? "No remaining holding is recorded for this person on the active property, so there is nothing available to transfer."
+                    : "Add the property and its initial ownership before recording an inter vivos transfer."}
+                </p>
+              </div>
+            ))}
           {linkedPartners.length > 0 && (
             <div className="person-partner-links">
               <span>Marriage / partner links</span>

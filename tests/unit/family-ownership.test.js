@@ -1070,6 +1070,23 @@ describe("per-property ownership", () => {
     ]);
   });
 
+  it("does not pass on a share marked as wholly disposed of during life", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "lifetime-disposal",
+      }),
+      person("child", { fatherId: "owner" }),
+    ];
+    const property = { id: "flat-1", owners: [{ personId: "owner", sharePercent: 100 }] };
+
+    const result = buildPropertyOwnership(people, property);
+    expect(result.ownershipByPerson.owner).toBeCloseTo(1);
+    expect(result.ownershipByPerson.child).toBeUndefined();
+    expect(result.transmissions).toEqual([]);
+  });
+
   it("tags a will-based transmission distinctly from intestacy", () => {
     const people = [
       person("owner", {

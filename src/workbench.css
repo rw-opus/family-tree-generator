@@ -1869,6 +1869,31 @@ textarea {
   border-top: 1px solid #e8edea;
 }
 
+.inter-vivos-status-control.completed {
+  color: #7a847e;
+  background: #f1f3f2;
+}
+
+.inter-vivos-status-control.completed .detail-checkbox {
+  opacity: 0.72;
+}
+
+.inter-vivos-complete-note {
+  margin: 0.4rem 0 0;
+  border: 1px solid #d7deda;
+  border-radius: 0.55rem;
+  background: #f1f3f2;
+  padding: 0.55rem;
+  color: #59645d;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.person-succession.fully-transferred
+  > :not(.succession-death-date):not(.inter-vivos-complete-note) {
+  display: none;
+}
+
 .sex-checkbox-options {
   display: flex;
   flex-wrap: wrap;

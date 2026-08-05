@@ -1613,7 +1613,11 @@ describe("PersonInspector", () => {
     ].map((span) => span.textContent);
     expect(labels).toEqual(["Name", "Surname", "Surname at birth"]);
     const statusRows = [...container.querySelectorAll(".person-status-control")];
-    expect(statusRows.map((row) => row.firstElementChild.textContent)).toEqual(["Sex", "Status"]);
+    expect(statusRows.map((row) => row.firstElementChild.textContent)).toEqual([
+      "Sex",
+      "Status",
+      "Transfer",
+    ]);
     expect(
       [...statusRows[0].querySelectorAll('input[type="radio"]')].map(
         (input) => input.parentElement.textContent,
@@ -3138,6 +3142,43 @@ describe("PersonInspector provenance designation", () => {
     saleLots: [],
   };
 
+  it("keeps death succession and inter vivos transfer details open together", () => {
+    const deceasedPeople = people.map((person) =>
+      person.id === "seller"
+        ? {
+            ...person,
+            isDeceased: true,
+            dateOfDeath: "2022-01-01",
+            inheritanceBasis: "intestacy",
+            designations: ["Deceased"],
+          }
+        : person,
+    );
+    const vendorReport = buildPropertyVendorTaxReport(property, deceasedPeople, []);
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={deceasedPeople}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-succession")).not.toBeNull();
+    const transferCheckbox = container.querySelector(
+      'input[aria-label="This person transferred a share inter vivos."]',
+    );
+    act(() => transferCheckbox.click());
+    expect(container.querySelector(".person-succession")).not.toBeNull();
+    expect(container.querySelector(".person-donation-form")).not.toBeNull();
+  });
+
   it("asks which provenance a partial transfer comes from and records the answer", () => {
     const vendorReport = buildPropertyVendorTaxReport(property, people, []);
     const onRecordDonation = vi.fn();
@@ -3155,8 +3196,8 @@ describe("PersonInspector provenance designation", () => {
       ),
     );
 
-    const toggle = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Record…"),
+    const toggle = container.querySelector(
+      'input[aria-label="This person transferred a share inter vivos."]',
     );
     expect(toggle).toBeTruthy();
     act(() => toggle.click());
@@ -3216,8 +3257,8 @@ describe("PersonInspector provenance designation", () => {
       ),
     );
 
-    const toggle = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Record…"),
+    const toggle = container.querySelector(
+      'input[aria-label="This person transferred a share inter vivos."]',
     );
     act(() => toggle.click());
 
@@ -3259,7 +3300,7 @@ describe("PersonInspector provenance designation", () => {
   });
 });
 
-describe("PersonInspector lifetime disposal estate", () => {
+describe("PersonInspector legacy lifetime disposal records", () => {
   let container;
   let root;
 
@@ -3275,7 +3316,7 @@ describe("PersonInspector lifetime disposal estate", () => {
     vi.restoreAllMocks();
   });
 
-  it("replaces succession content with the transfer flow when the share left during lifetime", () => {
+  it("keeps succession and an inter vivos transfer as independent events", () => {
     act(() =>
       root.render(
         <PersonInspector
@@ -3297,11 +3338,65 @@ describe("PersonInspector lifetime disposal estate", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Sold / donated during lifetime");
-    expect(container.textContent).toContain("disposed of their share during their lifetime");
-    // No holding is recorded here, so the flow explains itself instead of showing a form.
-    expect(container.textContent).toContain("nothing left to transfer");
-    // Heir confirmation and wills stay hidden.
-    expect(container.textContent).not.toContain("Add will");
+    expect(container.textContent).not.toContain("Sold / donated during lifetime");
+    expect(container.querySelector(".person-succession")).not.toBeNull();
+    expect(
+      container.querySelector('input[aria-label="This person transferred a share inter vivos."]')
+        .checked,
+    ).toBe(true);
+    // No holding is recorded here, so the independent transfer flow explains itself.
+    expect(container.textContent).toContain(
+      "Add the property and its initial ownership before recording an inter vivos transfer.",
+    );
+  });
+
+  it("locks a completed full transfer and omits property succession controls", () => {
+    const people = [
+      {
+        id: "d",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "lifetime-disposal",
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+      { id: "buyer", fullName: "Maria Vella", spouseIds: [], designations: [] },
+    ];
+    const property = {
+      id: "property",
+      owners: [{ id: "owner", personId: "d", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "transfer",
+          sellerId: "d",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2019-01-01",
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          selectedPersonId="d"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const transferCheckbox = container.querySelector(
+      'input[aria-label="This person transferred a share inter vivos."]',
+    );
+    expect(transferCheckbox.checked).toBe(true);
+    expect(transferCheckbox.disabled).toBe(true);
+    expect(container.textContent).toContain("No share remained to pass through this succession.");
+    expect(container.querySelector(".person-succession").classList).toContain("fully-transferred");
   });
 });

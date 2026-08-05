@@ -862,6 +862,13 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     }
 
     const basis = person.inheritanceBasis || "intestacy";
+    // A person who disposed of the whole property share during life keeps that share in the
+    // pre-transfer ledger long enough for the recorded inter-vivos transfer to move it to the
+    // acquirer. Nothing from that property remains to pass through the later succession.
+    if (basis === "lifetime-disposal") {
+      record(personId, amountFraction, via);
+      return;
+    }
     let result;
     if (basis === "will") {
       const legalSpouses = linkedLegalSpousesFor(people, person.id, person.dateOfDeath);
