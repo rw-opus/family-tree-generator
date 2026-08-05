@@ -1,18 +1,27 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, Building2, Plus, Trash2, UserRound } from "lucide-react";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
-import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
+import {
+  MAX_FRACTION_INTEGER,
+  ZERO_FRACTION,
+  compareFractions,
+  fractionToNumber,
+  normaliseFraction,
+} from "../domain/fractions.js";
 import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
 import { personChoiceLabel } from "../domain/people.js";
+import { fractionForShare, shareFromPercentage } from "../domain/shares.js";
 import { DateInput } from "./DateInput.jsx";
 
 const blankParty = () => ({ name: "", type: "individual", registrationNumber: "" });
 const blankTransfer = () => ({
   sellerId: "",
   buyerId: "",
-  numerator: "1",
-  denominator: "2",
-  amountType: "seller-holding",
+  numerator: "",
+  denominator: "",
+  percentage: "",
+  amountType: "all-share",
+  shareInputMode: "fraction",
   date: "",
   consideration: "",
 });
@@ -48,6 +57,53 @@ export function PropertyTransfers({
     });
   const partyName = (id) =>
     ledger.parties.find((party) => party.id === id)?.name || "Unknown party";
+  const selectedSeller = ledger.owners.find((owner) => owner.id === transferDraft.sellerId) || null;
+  const calculateTransfer = () => {
+    if (!selectedSeller) return { error: "Select a current owner." };
+    if (transferDraft.amountType === "all-share") {
+      return {
+        fraction: { numerator: 1, denominator: 1 },
+        amountType: "seller-holding",
+      };
+    }
+
+    let fraction;
+    if (transferDraft.shareInputMode === "percentage") {
+      const percentageInput = String(transferDraft.percentage ?? "").trim();
+      const percentage = Number(percentageInput);
+      if (!percentageInput || !Number.isFinite(percentage)) {
+        return { error: "Enter a valid percentage." };
+      }
+      if (percentage <= 0) {
+        return { error: "The transferred percentage must be greater than zero." };
+      }
+      if (percentage > 100) {
+        return { error: "The transferred percentage cannot exceed 100%." };
+      }
+      fraction = fractionForShare(shareFromPercentage(percentage));
+    } else {
+      fraction = normaliseFraction(transferDraft.numerator, transferDraft.denominator);
+      if (fraction.error) return fraction;
+    }
+    if (compareFractions(fraction, ZERO_FRACTION) <= 0) {
+      return { error: "The transferred share must be greater than zero." };
+    }
+    if (compareFractions(fraction, selectedSeller.shareFraction) > 0) {
+      return {
+        error: "The transferred share cannot be greater than the seller's current holding.",
+      };
+    }
+    return { fraction, amountType: "whole-property" };
+  };
+  const transferCalculation = calculateTransfer();
+  const definedTransferHasInput =
+    transferDraft.amountType === "defined-share" &&
+    (transferDraft.shareInputMode === "percentage"
+      ? Boolean(String(transferDraft.percentage ?? "").trim())
+      : Boolean(
+          String(transferDraft.numerator ?? "").trim() ||
+          String(transferDraft.denominator ?? "").trim(),
+        ));
   const addParty = (event) => {
     event.preventDefault();
     if (!partyDraft.name.trim()) return;
@@ -58,7 +114,21 @@ export function PropertyTransfers({
   };
   const addTransfer = (event) => {
     event.preventDefault();
-    const next = { id: crypto.randomUUID(), ...transferDraft };
+    const calculation = calculateTransfer();
+    if (calculation.error) {
+      return setTransferDraft((draft) => ({ ...draft, error: calculation.error }));
+    }
+    const record = { ...transferDraft };
+    delete record.percentage;
+    delete record.shareInputMode;
+    delete record.error;
+    const next = {
+      id: crypto.randomUUID(),
+      ...record,
+      numerator: String(calculation.fraction.numerator),
+      denominator: String(calculation.fraction.denominator),
+      amountType: calculation.amountType,
+    };
     const check = buildPropertyLedger(
       people,
       outsideParties,
@@ -159,44 +229,117 @@ export function PropertyTransfers({
           <label>
             Transfer measurement
             <select
+              aria-label="Transfer measurement"
               value={transferDraft.amountType}
               onChange={(e) =>
                 setTransferDraft({ ...transferDraft, amountType: e.target.value, error: "" })
               }
             >
-              <option value="seller-holding">Fraction of seller's current holding</option>
-              <option value="whole-property">Fraction of the whole property</option>
+              <option value="all-share">All of the Share</option>
+              <option value="defined-share">Define fraction or percentage</option>
             </select>
           </label>
-          <div className="transfer-fraction">
-            <label>
-              Numerator
-              <input
-                type="number"
-                min="0"
-                max={MAX_FRACTION_INTEGER}
-                step="1"
-                value={transferDraft.numerator}
-                onChange={(e) =>
-                  setTransferDraft({ ...transferDraft, numerator: e.target.value, error: "" })
-                }
-              />
-            </label>
-            <span>/</span>
-            <label>
-              Denominator
-              <input
-                type="number"
-                min="1"
-                max={MAX_FRACTION_INTEGER}
-                step="1"
-                value={transferDraft.denominator}
-                onChange={(e) =>
-                  setTransferDraft({ ...transferDraft, denominator: e.target.value, error: "" })
-                }
-              />
-            </label>
-          </div>
+          {transferDraft.amountType === "defined-share" && (
+            <div className="transfer-definition">
+              <label>
+                Enter share as
+                <select
+                  aria-label="Transfer share format"
+                  value={transferDraft.shareInputMode}
+                  onChange={(e) =>
+                    setTransferDraft({
+                      ...transferDraft,
+                      shareInputMode: e.target.value,
+                      error: "",
+                    })
+                  }
+                >
+                  <option value="fraction">Fraction</option>
+                  <option value="percentage">Percentage</option>
+                </select>
+              </label>
+              {transferDraft.shareInputMode === "percentage" ? (
+                <label>
+                  Percentage of the whole property
+                  <span className="transfer-percentage">
+                    <input
+                      aria-label="Transfer percentage"
+                      type="number"
+                      min="0"
+                      max={
+                        selectedSeller ? fractionToNumber(selectedSeller.shareFraction) * 100 : 100
+                      }
+                      step="any"
+                      inputMode="decimal"
+                      value={transferDraft.percentage}
+                      onChange={(e) =>
+                        setTransferDraft({
+                          ...transferDraft,
+                          percentage: e.target.value,
+                          error: "",
+                        })
+                      }
+                    />
+                    <span>%</span>
+                  </span>
+                </label>
+              ) : (
+                <div className="transfer-fraction">
+                  <label>
+                    Numerator
+                    <input
+                      aria-label="Transfer numerator"
+                      type="number"
+                      min="0"
+                      max={MAX_FRACTION_INTEGER}
+                      step="1"
+                      inputMode="numeric"
+                      value={transferDraft.numerator}
+                      onChange={(e) =>
+                        setTransferDraft({
+                          ...transferDraft,
+                          numerator: e.target.value,
+                          error: "",
+                        })
+                      }
+                    />
+                  </label>
+                  <span>/</span>
+                  <label>
+                    Denominator
+                    <input
+                      aria-label="Transfer denominator"
+                      type="number"
+                      min="1"
+                      max={MAX_FRACTION_INTEGER}
+                      step="1"
+                      inputMode="numeric"
+                      value={transferDraft.denominator}
+                      onChange={(e) =>
+                        setTransferDraft({
+                          ...transferDraft,
+                          denominator: e.target.value,
+                          error: "",
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          {selectedSeller && (
+            <p className="helper-text transfer-limit">
+              Current holding: {selectedSeller.shareFraction.numerator}/
+              {selectedSeller.shareFraction.denominator} of the property. A defined amount cannot
+              exceed this share.
+            </p>
+          )}
+          {definedTransferHasInput && transferCalculation.error && (
+            <p className="transfer-error" role="alert">
+              {transferCalculation.error}
+            </p>
+          )}
           <div className="form-grid compact">
             <label>
               Transfer date
@@ -222,7 +365,11 @@ export function PropertyTransfers({
               {transferDraft.error}
             </p>
           )}
-          <button type="submit" className="primary-button">
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={Boolean(transferCalculation.error)}
+          >
             <ArrowRight size={16} /> Apply transfer
           </button>
         </form>

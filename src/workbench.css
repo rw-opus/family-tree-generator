@@ -1958,6 +1958,40 @@ textarea {
   font-weight: 800;
 }
 
+.person-donation-form .transfer-definition,
+.transfer-form .transfer-definition {
+  display: grid;
+  gap: 0.42rem;
+  border: 1px solid #d8e2dc;
+  border-radius: 0.55rem;
+  background: #fff;
+  padding: 0.45rem;
+}
+
+.person-donation-form .transfer-percentage,
+.transfer-form .transfer-percentage {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.person-donation-form .transfer-percentage input,
+.transfer-form .transfer-percentage input {
+  flex: 1;
+  min-width: 0;
+}
+
+.person-donation-form .transfer-percentage > span,
+.transfer-form .transfer-percentage > span {
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.person-donation-form .transfer-limit,
+.transfer-form .transfer-limit {
+  margin: 0;
+}
+
 .provenance-designation {
   display: grid;
   gap: 0.35rem;
@@ -2009,7 +2043,8 @@ textarea {
   width: 3.4rem;
 }
 
-.person-donation-form .transfer-error {
+.person-donation-form .transfer-error,
+.transfer-form .transfer-error {
   margin: 0;
   color: #a33a2c;
   font-size: 0.64rem;

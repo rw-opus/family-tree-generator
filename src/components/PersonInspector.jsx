@@ -40,7 +40,7 @@ import {
   MAX_FRACTION_INTEGER,
   ZERO_FRACTION,
   compareFractions,
-  multiplyFractions,
+  fractionToNumber,
   normaliseFraction,
 } from "../domain/fractions.js";
 import { applyLegacyProtectedPortionsToWill } from "../domain/legacyLegitim.js";
@@ -85,9 +85,11 @@ const blankDonationDraft = () => ({
   doneeId: "",
   doneeName: "",
   doneeSex: "",
-  numerator: "1",
-  denominator: "2",
-  amountType: "seller-holding",
+  numerator: "",
+  denominator: "",
+  percentage: "",
+  amountType: "all-share",
+  shareInputMode: "fraction",
   date: "",
   designation: {},
   error: "",
@@ -770,15 +772,63 @@ export function PersonInspector({
         : [],
     [activeProperty, canDonate, selectedPerson.id, vendorReport],
   );
-  // The transferred share as a fraction of the whole property, from the current draft.
-  const draftTransferAmount = () => {
-    const fraction = normaliseFraction(donationDraft.numerator, donationDraft.denominator);
-    if (fraction.error) return fraction;
-    return donationDraft.amountType === "whole-property"
-      ? fraction
-      : multiplyFractions(donorLedgerHolding, fraction);
+  // Resolve the user's choice into both the absolute property share being transferred and
+  // the legacy storage shape understood by the ownership ledger. Defined fractions and
+  // percentages are always shares of the whole property, so they can be compared exactly
+  // with the transferor's holding before anything is recorded.
+  const draftTransferCalculation = () => {
+    if (donationDraft.amountType === "all-share") {
+      return {
+        amount: donorLedgerHolding,
+        fraction: { numerator: 1, denominator: 1 },
+        storedAmountType: "seller-holding",
+      };
+    }
+
+    let fraction;
+    if (donationDraft.shareInputMode === "percentage") {
+      const percentageInput = String(donationDraft.percentage ?? "").trim();
+      const percentage = Number(percentageInput);
+      if (!percentageInput || !Number.isFinite(percentage)) {
+        return { error: "Enter a valid percentage." };
+      }
+      if (percentage <= 0) {
+        return { error: "The transferred percentage must be greater than zero." };
+      }
+      if (percentage > 100) {
+        return { error: "The transferred percentage cannot exceed 100%." };
+      }
+      fraction = fractionForShare(shareFromPercentage(percentage));
+    } else {
+      fraction = normaliseFraction(donationDraft.numerator, donationDraft.denominator);
+      if (fraction.error) return fraction;
+    }
+
+    if (compareFractions(fraction, ZERO_FRACTION) <= 0) {
+      return { error: "The transferred share must be greater than zero." };
+    }
+    if (compareFractions(fraction, donorLedgerHolding) > 0) {
+      return {
+        error: "The transferred share cannot be greater than this person's current holding.",
+      };
+    }
+    return {
+      amount: fraction,
+      fraction,
+      storedAmountType: "whole-property",
+    };
   };
-  const previewAmount = canDonate ? draftTransferAmount() : null;
+  const transferCalculation = canDonate ? draftTransferCalculation() : null;
+  const previewAmount = transferCalculation?.amount || null;
+  const definedTransferHasInput =
+    donationDraft.amountType === "defined-share" &&
+    (donationDraft.shareInputMode === "percentage"
+      ? Boolean(String(donationDraft.percentage ?? "").trim())
+      : Boolean(
+          String(donationDraft.numerator ?? "").trim() ||
+          String(donationDraft.denominator ?? "").trim(),
+        ));
+  const transferMeasurementError = transferCalculation?.error || "";
   // The provenance question is exceptional: it only arises when part of the holding is
   // transferred while the holder acquired on more than one occasion. A whole-holding
   // transfer moves every provenance, and a single provenance answers itself.
@@ -839,25 +889,11 @@ export function PersonInspector({
   const submitDonation = (event) => {
     event.preventDefault();
     if (!canDonate) return;
-    const fraction = normaliseFraction(donationDraft.numerator, donationDraft.denominator);
-    if (fraction.error) return setDonationDraft((d) => ({ ...d, error: fraction.error }));
-    const amount =
-      donationDraft.amountType === "whole-property"
-        ? fraction
-        : multiplyFractions(donorLedgerHolding, fraction);
-    if (amount.error) return setDonationDraft((d) => ({ ...d, error: amount.error }));
-    if (compareFractions(amount, ZERO_FRACTION) <= 0) {
-      return setDonationDraft((d) => ({
-        ...d,
-        error: "The transferred fraction must be greater than zero.",
-      }));
+    const calculation = draftTransferCalculation();
+    if (calculation.error) {
+      return setDonationDraft((draft) => ({ ...draft, error: calculation.error }));
     }
-    if (compareFractions(amount, donorLedgerHolding) > 0) {
-      return setDonationDraft((d) => ({
-        ...d,
-        error: "This person does not own enough to complete this transfer.",
-      }));
-    }
+    const { amount, fraction, storedAmountType } = calculation;
     const provenanceResult = transferProvenance(amount);
     if (provenanceResult.error) {
       return setDonationDraft((d) => ({ ...d, error: provenanceResult.error }));
@@ -912,7 +948,7 @@ export function PersonInspector({
         buyerId: acquirer ? acquirer.id : donationDraft.doneeId,
         numerator: String(fraction.numerator),
         denominator: String(fraction.denominator),
-        amountType: donationDraft.amountType,
+        amountType: storedAmountType,
         date: donationDraft.date,
         consideration: "",
         // Which acquisitions the transferred share comes from — designated by the notary
@@ -1397,37 +1433,100 @@ export function PersonInspector({
             <select
               aria-label="Transfer measurement"
               value={donationDraft.amountType}
-              onChange={(event) => setDonationField({ amountType: event.target.value })}
+              onChange={(event) =>
+                setDonationField({
+                  amountType: event.target.value,
+                  designation: {},
+                })
+              }
             >
-              <option value="seller-holding">Fraction of this person's holding</option>
-              <option value="whole-property">Fraction of the whole property</option>
+              <option value="all-share">All of the Share</option>
+              <option value="defined-share">Define fraction or percentage</option>
             </select>
           </label>
-          <div className="transfer-fraction">
-            <label>
-              Numerator
-              <input
-                type="number"
-                min="0"
-                max={MAX_FRACTION_INTEGER}
-                step="1"
-                value={donationDraft.numerator}
-                onChange={(event) => setDonationField({ numerator: event.target.value })}
-              />
-            </label>
-            <span>/</span>
-            <label>
-              Denominator
-              <input
-                type="number"
-                min="1"
-                max={MAX_FRACTION_INTEGER}
-                step="1"
-                value={donationDraft.denominator}
-                onChange={(event) => setDonationField({ denominator: event.target.value })}
-              />
-            </label>
-          </div>
+          {donationDraft.amountType === "defined-share" && (
+            <div className="transfer-definition">
+              <label>
+                Enter share as
+                <select
+                  aria-label="Transfer share format"
+                  value={donationDraft.shareInputMode}
+                  onChange={(event) =>
+                    setDonationField({
+                      shareInputMode: event.target.value,
+                      designation: {},
+                    })
+                  }
+                >
+                  <option value="fraction">Fraction</option>
+                  <option value="percentage">Percentage</option>
+                </select>
+              </label>
+              {donationDraft.shareInputMode === "percentage" ? (
+                <label>
+                  Percentage of the whole property
+                  <span className="transfer-percentage">
+                    <input
+                      aria-label="Transfer percentage"
+                      type="number"
+                      min="0"
+                      max={Math.min(100, fractionToNumber(donorLedgerHolding) * 100)}
+                      step="any"
+                      inputMode="decimal"
+                      value={donationDraft.percentage}
+                      onChange={(event) =>
+                        setDonationField({ percentage: event.target.value, designation: {} })
+                      }
+                    />
+                    <span>%</span>
+                  </span>
+                </label>
+              ) : (
+                <div className="transfer-fraction">
+                  <label>
+                    Numerator
+                    <input
+                      aria-label="Transfer numerator"
+                      type="number"
+                      min="0"
+                      max={MAX_FRACTION_INTEGER}
+                      step="1"
+                      inputMode="numeric"
+                      value={donationDraft.numerator}
+                      onChange={(event) =>
+                        setDonationField({ numerator: event.target.value, designation: {} })
+                      }
+                    />
+                  </label>
+                  <span>/</span>
+                  <label>
+                    Denominator
+                    <input
+                      aria-label="Transfer denominator"
+                      type="number"
+                      min="1"
+                      max={MAX_FRACTION_INTEGER}
+                      step="1"
+                      inputMode="numeric"
+                      value={donationDraft.denominator}
+                      onChange={(event) =>
+                        setDonationField({ denominator: event.target.value, designation: {} })
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          <p className="helper-text transfer-limit">
+            Current holding: {donorLedgerHolding.numerator}/{donorLedgerHolding.denominator} of the
+            property. A defined amount cannot exceed this share.
+          </p>
+          {definedTransferHasInput && transferMeasurementError && (
+            <p className="transfer-error" role="alert">
+              {transferMeasurementError}
+            </p>
+          )}
           {needsProvenanceDesignation && (
             <div
               className="provenance-designation"
@@ -1532,7 +1631,11 @@ export function PersonInspector({
               {donationDraft.error}
             </p>
           )}
-          <button type="submit" className="primary-button">
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={Boolean(transferMeasurementError)}
+          >
             {isDonation ? "Record donation" : "Record sale"}
           </button>
         </form>

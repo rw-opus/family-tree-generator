@@ -3202,7 +3202,27 @@ describe("PersonInspector provenance designation", () => {
     expect(toggle).toBeTruthy();
     act(() => toggle.click());
 
-    // Selling 1/2 of a 3/4 holding is partial, and the holding has two provenances.
+    const measurement = container.querySelector('select[aria-label="Transfer measurement"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        measurement,
+        "defined-share",
+      );
+      measurement.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const numerator = container.querySelector('input[aria-label="Transfer numerator"]');
+    const denominator = container.querySelector('input[aria-label="Transfer denominator"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "1");
+      numerator.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        denominator,
+        "2",
+      );
+      denominator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    // Transferring 1/2 of the whole property is part of a 3/4 holding with two provenances.
     expect(container.textContent).toContain("Which provenance is being transferred?");
     expect(container.textContent).toContain("Initial ownership");
     expect(container.textContent).toContain("Acquired from Maria Vella");
@@ -3227,15 +3247,15 @@ describe("PersonInspector provenance designation", () => {
     expect(onRecordDonation).toHaveBeenCalledTimes(1);
     const { transfer } = onRecordDonation.mock.calls[0][0];
     expect(transfer.kind).toBe("donation");
-    // Half of the 3/4 holding is 3/8 of the property, all designated from initial ownership.
+    // The selected half of the property comes entirely from initial ownership.
     expect(transfer.provenance).toEqual([
       {
         trancheId: "initial-o1",
         label: "Initial ownership",
         cause: "initial",
         acquiredOn: "",
-        numerator: 3,
-        denominator: 8,
+        numerator: 1,
+        denominator: 2,
       },
     ]);
   });
@@ -3262,20 +3282,7 @@ describe("PersonInspector provenance designation", () => {
     );
     act(() => toggle.click());
 
-    const numerator = container.querySelector(".transfer-fraction input");
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "1");
-      numerator.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    const denominator = container.querySelectorAll(".transfer-fraction input")[1];
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
-        denominator,
-        "1",
-      );
-      denominator.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
+    expect(container.querySelector(".transfer-fraction")).toBeNull();
     expect(container.textContent).not.toContain("Which provenance is being transferred?");
 
     const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
@@ -3292,11 +3299,124 @@ describe("PersonInspector provenance designation", () => {
     act(() => submit.click());
 
     const { transfer } = onRecordDonation.mock.calls[0][0];
+    expect(transfer).toMatchObject({
+      numerator: "1",
+      denominator: "1",
+      amountType: "seller-holding",
+    });
     // The whole 3/4 holding moves, carrying both provenances with their own fractions.
     expect(transfer.provenance.map((portion) => portion.trancheId).sort()).toEqual([
       "initial-o1",
       "transfer-t1",
     ]);
+  });
+
+  it("prevents a defined fraction from exceeding the transferor's exact holding", () => {
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    const onRecordDonation = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    act(() =>
+      container
+        .querySelector('input[aria-label="This person transferred a share inter vivos."]')
+        .click(),
+    );
+    const measurement = container.querySelector('select[aria-label="Transfer measurement"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        measurement,
+        "defined-share",
+      );
+      measurement.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const numerator = container.querySelector('input[aria-label="Transfer numerator"]');
+    const denominator = container.querySelector('input[aria-label="Transfer denominator"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "4");
+      numerator.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        denominator,
+        "5",
+      );
+      denominator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain(
+      "The transferred share cannot be greater than this person's current holding.",
+    );
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    expect(submit.disabled).toBe(true);
+    act(() => submit.click());
+    expect(onRecordDonation).not.toHaveBeenCalled();
+  });
+
+  it("prevents a defined percentage from exceeding the transferor's exact holding", () => {
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={vi.fn()}
+        />,
+      ),
+    );
+
+    act(() =>
+      container
+        .querySelector('input[aria-label="This person transferred a share inter vivos."]')
+        .click(),
+    );
+    const measurement = container.querySelector('select[aria-label="Transfer measurement"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        measurement,
+        "defined-share",
+      );
+      measurement.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const format = container.querySelector('select[aria-label="Transfer share format"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        format,
+        "percentage",
+      );
+      format.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const percentage = container.querySelector('input[aria-label="Transfer percentage"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        percentage,
+        "75.01",
+      );
+      percentage.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain(
+      "The transferred share cannot be greater than this person's current holding.",
+    );
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    expect(submit.disabled).toBe(true);
   });
 });
 
