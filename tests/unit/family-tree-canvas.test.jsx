@@ -123,6 +123,45 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
+  it("flags a card only when its calculated property transmission needs historical review", () => {
+    renderCanvas({
+      people: [
+        person("edgar", "Edgar Wadge", {
+          isDeceased: true,
+          dateOfDeath: "1990-04-02",
+          inheritanceBasis: "intestacy",
+        }),
+      ],
+      historicalLawWarningsByPerson: {
+        edgar: [
+          "Historical law must be checked: former Civil Code article 825 was changed from 01-12-1993, after this succession opened.",
+        ],
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="edgar"]');
+    expect(card.classList.contains("historical-law-review-required")).toBe(true);
+    expect(card.textContent).toContain("Check historical law");
+    expect(card.getAttribute("title")).toContain("former Civil Code article 825");
+  });
+
+  it("does not infer a historical-law flag from the date of death alone", () => {
+    renderCanvas({
+      people: [
+        person("owner", "Verified Owner", {
+          isDeceased: true,
+          dateOfDeath: "1993-12-01",
+        }),
+      ],
+    });
+
+    expect(
+      container
+        .querySelector('[data-person-id="owner"]')
+        .classList.contains("historical-law-review-required"),
+    ).toBe(false);
+  });
+
   it("gives a zoomed relational tree an explicit full scroll footprint", () => {
     renderCanvas({ people: family(), zoom: 175 });
 

@@ -338,6 +338,11 @@ export function TreePropertyPanel({
                         <strong>{traceEvent.title}</strong>
                       )}
                       <p>{traceEvent.description}</p>
+                      {(traceEvent.warnings || []).map((warning) => (
+                        <p className="succession-warning" key={warning}>
+                          {warning}
+                        </p>
+                      ))}
                     </div>
                   </div>
                 ) : (

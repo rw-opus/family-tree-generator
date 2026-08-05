@@ -10,6 +10,7 @@ import {
   ZERO_FRACTION,
 } from "./fractions.js";
 import { approximateFraction } from "./ownership.js";
+import { validateCausaMortisDateChronology } from "./chronology.js";
 
 export const causaMortisDeclaredShare = (declaration = {}) => {
   const numerator = fractionComponentNumber(declaration.declaredShareNumerator);
@@ -39,6 +40,7 @@ export function validateCausaMortisDeclaration(
     valueRequired = true,
     availableShare = Number.POSITIVE_INFINITY,
     availableShareFraction = null,
+    dateOfDeath = "",
   } = {},
 ) {
   if (!declaration.propertyId) return "Select the property.";
@@ -57,6 +59,8 @@ export function validateCausaMortisDeclaration(
     return "The declared fraction is greater than the deceased's remaining share.";
   }
   if (!declaration.date) return "Enter the date of the Declaration Causa Mortis.";
+  const chronologyError = validateCausaMortisDateChronology(declaration.date, dateOfDeath);
+  if (chronologyError) return chronologyError;
   if (!String(declaration.notaryName || "").trim()) return "Enter the notary's name.";
   if (!(declaration.declarantPersonIds || []).length) {
     return "Select at least one declarant or heir.";
@@ -97,6 +101,7 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
       const declarations = (person.causaMortisDeclarations || []).filter(
         (declaration) =>
           isCompletedCausaMortisDeclaration(declaration) &&
+          validateCausaMortisDateChronology(declaration.date, person.dateOfDeath) === "" &&
           (declaration.propertyId === property.id ||
             (!declaration.propertyId && properties.length === 1)),
       );

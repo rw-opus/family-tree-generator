@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import {
   editedIntestacyAllocations,
+  intestacyLegalContextSignature,
   intestacyConfirmationReadiness,
   intestacyShareTotalIsComplete,
   isPersonDeceased,
@@ -147,12 +148,14 @@ export function IntestateHeirConfirmation({
   const footerIsValid = rows.length === 0 || totalComplete;
 
   const patchDeceased = (patch) => onUpdatePerson(deceased.id, patch);
-  const replaceRows = (nextRows) =>
+  const replaceRows = (nextRows) => {
+    const nextDeceased = { ...deceased, intestateHeirs: nextRows };
     patchDeceased({
       intestateHeirs: nextRows,
       intestateHeirsConfirmed: false,
-      intestateConfirmationBasis: "",
+      intestateConfirmationBasis: intestacyLegalContextSignature(nextDeceased, calculated),
     });
+  };
   const updateRow = (rowId, patch) =>
     replaceRows(rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
   const updateRowPercentage = (rowId, percentage) =>
@@ -399,9 +402,16 @@ export function IntestateHeirConfirmation({
                 </small>
               ))}
           {rows.length > 0 && !editedAllocation.valid && (
-            <small className="succession-warning">
-              These edited heirs are not yet usable, so the automatic proposal remains in force.
-            </small>
+            <>
+              {(editedAllocation.warnings || []).map((warning) => (
+                <small className="succession-warning" key={warning}>
+                  {warning}
+                </small>
+              ))}
+              <small className="succession-warning">
+                These edited heirs are not yet usable, so the automatic proposal remains in force.
+              </small>
+            </>
           )}
         </div>
       )}

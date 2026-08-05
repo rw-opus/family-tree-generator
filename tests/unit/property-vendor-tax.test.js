@@ -171,6 +171,100 @@ describe("owner provenance tranches", () => {
   });
 });
 
+describe("donation look-through", () => {
+  const people = [
+    {
+      id: "grandfather",
+      fullName: "Joseph Borg",
+      isDeceased: true,
+      dateOfDeath: "2001-05-10",
+      inheritanceBasis: "intestacy",
+      spouseIds: [],
+    },
+    { id: "donor", fullName: "Paul Borg", fatherId: "grandfather", spouseIds: [] },
+    { id: "donee", fullName: "Maria Borg", spouseIds: [] },
+  ];
+  const property = {
+    id: "property",
+    saleValue: 300000,
+    owners: [{ id: "o1", personId: "grandfather", sharePercent: 100 }],
+    declarations: [],
+    transfers: [
+      {
+        id: "gift",
+        kind: "donation",
+        sellerId: "donor",
+        buyerId: "donee",
+        numerator: 1,
+        denominator: 1,
+        amountType: "seller-holding",
+        date: "2024-03-01",
+      },
+    ],
+    saleLots: [
+      {
+        id: "resale",
+        ownerId: "donee",
+        transferDate: "2026-07-31",
+        shareNumerator: 1,
+        shareDenominator: 1,
+        consideration: 300000,
+        marketValue: 300000,
+      },
+    ],
+  };
+
+  it("derives the donor's acquisition date from the recorded donation", () => {
+    const report = buildPropertyVendorTaxReport(property, people, []);
+    const donations = report.donationSourcesByOwner.get("donee");
+    expect(donations).toHaveLength(1);
+    // The donor himself acquired on his father's death, so that is the look-through date.
+    expect(donations[0]).toMatchObject({
+      donorName: "Paul Borg",
+      donationDate: "2024-03-01",
+      donorAcquisitionDate: "2001-05-10",
+    });
+
+    const row = report.saleRows[0];
+    expect(row.effectiveLot).toMatchObject({
+      acquisitionType: "donation",
+      acquisitionDate: "2024-03-01",
+      previousAcquisitionDate: "2001-05-10",
+    });
+    expect(row.donationDatesDerived).toBe(true);
+    // Donated in 2024 and sold in 2026 is inside five years, so the donor's pre-2004
+    // acquisition sets the rate at 10% rather than the donation date's 8%.
+    expect(row.result.methods[0]).toMatchObject({ key: "whole-10", rate: 0.1 });
+  });
+
+  it("leaves the date for the notary when the donor's own acquisition is ambiguous", () => {
+    const twoWayDonor = {
+      ...property,
+      owners: [
+        { id: "o1", personId: "grandfather", sharePercent: 50 },
+        { id: "o2", personId: "donee", sharePercent: 50 },
+      ],
+      transfers: [
+        // The donor buys a quarter from the donee in 2018, on top of what he inherited.
+        {
+          id: "bought",
+          sellerId: "donee",
+          buyerId: "donor",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2018-09-09",
+        },
+        ...property.transfers,
+      ],
+    };
+    const report = buildPropertyVendorTaxReport(twoWayDonor, people, []);
+    // The donor holds an inherited share and a purchased share, so no single date can be
+    // relied upon and nothing is filled in automatically.
+    expect(report.donationSourcesByOwner.get("donee")[0].donorAcquisitionDate).toBe("");
+  });
+});
+
 describe("provenance labels", () => {
   const ledger = {
     parties: [{ id: "donor", name: "Joseph Borg" }],
@@ -290,6 +384,7 @@ describe("property vendor tax reports", () => {
         isDeceased: true,
         dateOfDeath: "2020-01-01",
         inheritanceBasis: "will",
+        willDate: "2019-12-01",
         willHeirs: [{ id: "share", personId: "child", sharePercent: 100 }],
         spouseIds: [],
         causaMortisDeclarations: [
@@ -807,6 +902,7 @@ describe("property vendor tax reports", () => {
         isDeceased: true,
         dateOfDeath: "2020-01-01",
         inheritanceBasis: "will",
+        willDate: "2019-12-01",
         willHeirs: [{ id: "legacy", personId: "company", sharePercent: 100 }],
         spouseIds: [],
       },
@@ -921,6 +1017,7 @@ describe("property vendor tax reports", () => {
           numerator: 1,
           denominator: 1,
           amountType: "whole-property",
+          date: "2021-01-01",
         },
       ],
       saleLots: [

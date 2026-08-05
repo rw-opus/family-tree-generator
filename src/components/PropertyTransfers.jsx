@@ -12,6 +12,8 @@ import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js
 import { personChoiceLabel } from "../domain/people.js";
 import { fractionForShare, shareFromPercentage } from "../domain/shares.js";
 import { DateInput } from "./DateInput.jsx";
+import { validateTransferDateChronology } from "../domain/chronology.js";
+import { ownerProvenanceTranches } from "../domain/propertyVendorTax.js";
 
 const blankParty = () => ({ name: "", type: "individual", registrationNumber: "" });
 const blankTransfer = () => ({
@@ -37,6 +39,8 @@ export function PropertyTransfers({
   outsideParties,
   transfers,
   startingOwnership,
+  property = {},
+  vendorReport = null,
   onChange,
 }) {
   const [partyDraft, setPartyDraft] = useState(blankParty);
@@ -117,6 +121,20 @@ export function PropertyTransfers({
     const calculation = calculateTransfer();
     if (calculation.error) {
       return setTransferDraft((draft) => ({ ...draft, error: calculation.error }));
+    }
+    const seller = people.find((person) => person.id === transferDraft.sellerId);
+    const chronologyError = validateTransferDateChronology({
+      transferDate: transferDraft.date,
+      acquisitionDates: ownerProvenanceTranches(
+        vendorReport || {},
+        property,
+        transferDraft.sellerId,
+      ).map((tranche) => tranche.acquiredOn),
+      sellerDateOfDeath: seller?.dateOfDeath || "",
+      eventLabel: "Transfer",
+    });
+    if (chronologyError) {
+      return setTransferDraft((draft) => ({ ...draft, error: chronologyError }));
     }
     const record = { ...transferDraft };
     delete record.percentage;
@@ -345,7 +363,7 @@ export function PropertyTransfers({
               Transfer date
               <DateInput
                 value={transferDraft.date}
-                onChange={(value) => setTransferDraft({ ...transferDraft, date: value })}
+                onChange={(value) => setTransferDraft({ ...transferDraft, date: value, error: "" })}
               />
             </label>
             <label>

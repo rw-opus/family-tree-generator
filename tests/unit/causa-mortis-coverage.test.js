@@ -20,8 +20,12 @@ const peopleWithDeclarations = (declarations = [], dateOfDeath = "2020-01-01") =
     isDeceased: true,
     dateOfDeath,
     inheritanceBasis: "will",
+    willDate: "2010-01-01",
     willHeirs: [{ id: "heir-record", personId: "child", sharePercent: 100 }],
-    causaMortisDeclarations: declarations,
+    causaMortisDeclarations: declarations.map((declaration) => ({
+      date: "2020-02-01",
+      ...declaration,
+    })),
   },
   { id: "child", fullName: "Maria Borg" },
   { id: "co-owner", fullName: "Paul Vella" },
@@ -148,6 +152,24 @@ describe("buildCausaMortisShareCoverage", () => {
       status: "under",
     });
   });
+
+  it("does not count a completed declaration dated on or before death", () => {
+    const result = buildCausaMortisShareCoverage(
+      peopleWithDeclarations([
+        {
+          id: "invalid-cm",
+          status: "complete",
+          propertyId: "property-1",
+          declaredShareNumerator: 1,
+          declaredShareDenominator: 2,
+          date: "2020-01-01",
+        },
+      ]),
+      [property],
+    );
+
+    expect(result.rows[0]).toMatchObject({ declaredShare: 0, status: "under" });
+  });
 });
 
 describe("validateCausaMortisDeclaration", () => {
@@ -191,5 +213,18 @@ describe("validateCausaMortisDeclaration", () => {
         availableShare: 0.2,
       }),
     ).toBe("The declared fraction is greater than the deceased's remaining share.");
+  });
+
+  it("requires the declaration date to be after a known death", () => {
+    expect(
+      validateCausaMortisDeclaration(completeDeclaration, {
+        dateOfDeath: "2020-06-01",
+      }),
+    ).toBe("Declaration causa mortis date must be after the date of death.");
+    expect(
+      validateCausaMortisDeclaration(completeDeclaration, {
+        dateOfDeath: "2020-05-31",
+      }),
+    ).toBe("");
   });
 });

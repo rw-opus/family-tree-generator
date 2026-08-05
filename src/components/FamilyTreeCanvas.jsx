@@ -52,8 +52,8 @@ function TreePanel({
         </button>
         <p className="tree-required-data-key">
           <span aria-hidden="true" />
-          <strong>Red means action required:</strong> open that person&apos;s card and update the
-          missing detail.
+          <strong>Red means action required:</strong> open that person&apos;s card for the missing
+          detail or section-specific historical-law warning.
         </p>
       </header>
       {navigation}
@@ -72,6 +72,7 @@ export function FamilyTreeCanvas({
   ownershipByPerson = {},
   ownershipFractionsByPerson = {},
   currentOwnershipByPerson = {},
+  historicalLawWarningsByPerson = {},
   causaMortisCoverageByPerson = {},
   onPrint,
   selectedPersonId,
@@ -408,6 +409,7 @@ export function FamilyTreeCanvas({
       ownershipByPerson={ownershipByPerson}
       ownershipFractionsByPerson={ownershipFractionsByPerson}
       currentOwnershipByPerson={currentOwnershipByPerson}
+      historicalLawWarningsByPerson={historicalLawWarningsByPerson}
       causaMortisCoverageByPerson={causaMortisCoverageByPerson}
       personCardFields={personCardFields}
       propertyValue={propertyValue}

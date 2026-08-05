@@ -154,7 +154,7 @@ describe("case model migration", () => {
       migratedCalculation,
     );
 
-    expect(migrated.intestateConfirmationBasis).toMatch(/^v2::/);
+    expect(migrated.intestateConfirmationBasis).toMatch(/^v3::/);
     expect(migrated.intestateConfirmationMigratedFromV1).toBe(true);
     expect(confirmed.valid).toBe(true);
     expect(confirmed.shares.get("spouse")).toBeCloseTo(0.6);

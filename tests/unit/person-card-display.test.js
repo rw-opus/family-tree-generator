@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildTreeCardHistoricalWarningsByPerson,
   buildTreeCardOwnershipByPerson,
   DEFAULT_PERSON_CARD_FIELDS,
   normalisePersonCardFields,
@@ -53,5 +54,19 @@ describe("person-card ownership display", () => {
       "unresolved-deceased": 0.5,
       "first-deceased": 0.75,
     });
+  });
+
+  it("maps only deduplicated section-specific transmission warnings to deceased cards", () => {
+    const historicalWarning =
+      "Historical law must be checked: former Civil Code article 825 changed after this death.";
+    expect(
+      buildTreeCardHistoricalWarningsByPerson([
+        {
+          deceasedId: "edgar",
+          warnings: [historicalWarning, "Enter a missing date.", historicalWarning],
+        },
+        { deceasedId: "other", warnings: ["Ordinary calculation warning."] },
+      ]),
+    ).toEqual({ edgar: [historicalWarning] });
   });
 });

@@ -17,6 +17,21 @@ unchanged to every death before 1 March 2005. The calculator must follow the
 legislation in force on the date of death and therefore requires the relevant
 statutory commencement and repeal dates.
 
+### Provisional calculator decision
+
+Until the remaining earlier texts and commencement dates are verified, the
+calculator applies the rules consolidated at 28 February 2005 to every
+succession opened before 1 March 2005. This keeps ownership moving through the
+tree instead of leaving the estate unresolved. It is expressly provisional:
+where a death predates a verified amendment boundary, the calculation must
+first identify the heir class and the exact former Civil Code provision engaged
+by the recorded facts. It warns the user only if that applicable provision was
+changed after the death. A date by itself, or a broad range such as sections
+788-830, is not enough to trigger a warning. Changes concerning only usufruct or
+habitation do not alter the ownership fractions because those rights are outside
+the product scope. A warning does not stop the provisional ownership cascade,
+and the user may still edit the calculated beneficiaries and fractions.
+
 ## Verified legislative history: Act XXI of 1993
 
 The official text of the
@@ -458,9 +473,8 @@ For a death before 1 March 2005:
    - uncles and aunts;
    - nearest collateral up to the twelfth degree;
    - Government.
-5. Ignore habitation and usufruct when producing ownership fractions, while
-   optionally displaying a legal-information warning that such rights may
-   exist.
+5. Ignore habitation and usufruct when producing ownership fractions and do not
+   display them as separate calculated rights.
 6. For a will, allocate the testamentary dispositions, then enforce any
    applicable old-law full-ownership legitim and abatement rules.
 7. Require all calculated ownership fractions to total 100%, allowing the user
@@ -468,10 +482,10 @@ For a death before 1 March 2005:
 
 ## D. Points requiring confirmation before full automation
 
-1. The calculator must use 1 December 1993 as a legislative boundary. The
-   post-1 December 1993 rules are verified above; the immediately preceding
-   text still has to be sourced before deaths before that date can be fully
-   automated.
+1. The calculator records 1 December 1993 as a verified amendment boundary,
+   not as a blanket warning date. An earlier death receives a provisional result
+   under the 28 February 2005 consolidation and an article-specific warning only
+   where the succession facts engage a provision changed at that boundary.
 2. The statutory instrument that amended or repealed former section 822, and
    its commencement date, still have to be identified. The 1997 judgment is not
    used as the calculator boundary.
@@ -479,7 +493,7 @@ For a death before 1 March 2005:
    automated or always sent to manual legal review.
 4. Whether the section 812 return of property to an ascendant should be shown as
    a warning only.
-5. Whether the system should display informational warnings for ignored
-   habitation or usufruct rights without including them in ownership.
+5. Habitation and usufruct are excluded from both the ownership calculation and
+   the calculated-rights display under the current product instruction.
 6. Whether the historical legal-status terminology should be hidden entirely
    from the user interface and replaced by neutral structured questions.

@@ -67,6 +67,63 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
   return sources;
 }
 
+/**
+ * Where a share arrived by donation, Article 5A looks through to the date the donor had
+ * acquired it. Both facts are already recorded — the donation is a transfer in the ledger and
+ * the donor's own acquisition is either a transmission or an earlier transfer — so the date is
+ * derived rather than keyed. Only one level is followed, matching the statutory look-through;
+ * a donor who was himself donated the share inside five years still needs manual review.
+ */
+function donorAcquisitionDate(donorId, inheritanceSourcesByOwner, ledger, beforeDate = "") {
+  const inherited = (inheritanceSourcesByOwner.get(donorId) || [])
+    .map((source) => source.inheritanceDate)
+    .filter(Boolean);
+  const uniqueInherited = [...new Set(inherited)];
+  const acquired = (ledger.entries || [])
+    .filter(
+      (entry) =>
+        !entry.error &&
+        entry.buyerId === donorId &&
+        /^\d{4}-\d{2}-\d{2}$/.test(String(entry.date || "")) &&
+        (!beforeDate || entry.date <= beforeDate),
+    )
+    .map((entry) => entry.date);
+  const candidates = [...new Set([...uniqueInherited, ...acquired])];
+  // A single unambiguous acquisition can be relied upon; anything else is left for the notary.
+  return candidates.length === 1 ? candidates[0] : "";
+}
+
+/** Donations received by each owner, with the donor's preceding acquisition date resolved. */
+export function buildDonationSourcesByOwner(
+  ledger = {},
+  peopleById = new Map(),
+  outsidePartiesById = new Map(),
+  inheritanceSourcesByOwner = new Map(),
+) {
+  const sources = new Map();
+  (ledger.entries || []).forEach((entry) => {
+    if (entry.error || entry.kind !== "donation" || !entry.buyerId) return;
+    const donor = peopleById.get(entry.sellerId) || outsidePartiesById.get(entry.sellerId);
+    const rows = sources.get(entry.buyerId) || [];
+    rows.push({
+      transferId: entry.id,
+      donorId: entry.sellerId,
+      donorName: donor?.fullName || donor?.name || "another owner",
+      donationDate: entry.date || "",
+      shareFraction: entry.amountFraction || null,
+      share: Number(entry.amount) || 0,
+      donorAcquisitionDate: donorAcquisitionDate(
+        entry.sellerId,
+        inheritanceSourcesByOwner,
+        ledger,
+        entry.date || "",
+      ),
+    });
+    sources.set(entry.buyerId, rows);
+  });
+  return sources;
+}
+
 const declarationAppliesToOwner = (declaration, ownerId) => {
   const declarantIds = (declaration.declarantPersonIds || []).filter(Boolean);
   return !declarantIds.length || declarantIds.includes(ownerId);
@@ -77,7 +134,10 @@ const matchingPersonDeclarations = (person, propertyId, ownerId) =>
     (declaration) =>
       (!propertyId || !declaration.propertyId || declaration.propertyId === propertyId) &&
       declarationAppliesToOwner(declaration, ownerId) &&
-      validateCausaMortisDeclaration(declaration, { valueRequired: true }) === "",
+      validateCausaMortisDeclaration(declaration, {
+        valueRequired: true,
+        dateOfDeath: person?.dateOfDeath || "",
+      }) === "",
   );
 
 const declarationAllocationWeight = (declaration, source, inheritanceSourcesByOwner) => {
@@ -187,9 +247,13 @@ const displayRowFromLot = ({
     id: row.lot.id,
     share: lotShare,
     shareFraction: normaliseFraction(effectiveLot.shareNumerator, effectiveLot.shareDenominator),
-    provenance: provenanceLabel(source, row.lot, ledger),
-    provenancePersonId: source?.deceasedId || "",
+    provenance: row.selectedDonationSource
+      ? `Donated by ${row.selectedDonationSource.donorName}`
+      : provenanceLabel(source, row.lot, ledger),
+    provenancePersonId: source?.deceasedId || row.selectedDonationSource?.donorId || "",
     inheritanceDate: source?.inheritanceDate || result.acquisitionDate || "",
+    donorAcquisitionDate: row.selectedDonationSource?.donorAcquisitionDate || "",
+    donorAcquisitionDateDerived: Boolean(row.donationDatesDerived),
     declarations,
     declaredValue: acquisitionValue,
     attributedSaleValue,
@@ -578,19 +642,47 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     );
   });
   const coverage = declarationCoverage(causaMortisDeclarationOwners, property.declarations || []);
+  const donationSourcesByOwner = buildDonationSourcesByOwner(
+    ledger,
+    peopleById,
+    outsidePartiesById,
+    inheritanceSourcesByOwner,
+  );
   const saleRowsWithoutTax = (property.saleLots || []).map((storedLot) => {
     const lot = storedLot;
     const inheritanceSources = inheritanceSourcesByOwner.get(lot.ownerId) || [];
+    const donationSources = donationSourcesByOwner.get(lot.ownerId) || [];
     const selectedInheritanceSource = lot.inheritanceSourceDeceasedId
       ? inheritanceSources.find((source) => source.deceasedId === lot.inheritanceSourceDeceasedId)
       : inheritanceSources.length === 1
         ? inheritanceSources[0]
         : null;
     const sourceDate = selectedInheritanceSource?.inheritanceDate || "";
+    // A lot is treated as donated when it says so, or when the only way this owner holds the
+    // property is a single recorded donation. Anything more mixed is left to the notary.
+    const selectedDonationSource =
+      donationSources.length === 1 &&
+      ((lot.acquisitionType === "donation" && !inheritanceSources.length) ||
+        (!lot.acquisitionType && !inheritanceSources.length))
+        ? donationSources[0]
+        : null;
+    const donationPatch = selectedDonationSource
+      ? {
+          acquisitionType: "donation",
+          acquisitionDate: lot.acquisitionDate || selectedDonationSource.donationDate,
+          previousAcquisitionDate:
+            lot.previousAcquisitionDate || selectedDonationSource.donorAcquisitionDate,
+        }
+      : {};
+    const donationDatesDerived = Boolean(
+      selectedDonationSource &&
+      !lot.previousAcquisitionDate &&
+      selectedDonationSource.donorAcquisitionDate,
+    );
     const sourcedLot =
       (lot.acquisitionType || "inheritance") === "inheritance" && sourceDate
         ? { ...lot, inheritanceDate: sourceDate }
-        : lot;
+        : { ...lot, ...donationPatch };
     const preCausaMortisCutoff =
       (sourcedLot.acquisitionType || "inheritance") === "inheritance" &&
       Boolean(sourcedLot.inheritanceDate) &&
@@ -631,6 +723,9 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       inheritanceSources,
       selectedInheritanceSource,
       inheritanceDateInferred: Boolean(sourceDate),
+      donationSources,
+      selectedDonationSource,
+      donationDatesDerived,
       preCausaMortisCutoff,
     };
   });
@@ -662,6 +757,7 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     startingOwnership,
     ownership,
     inheritanceSourcesByOwner,
+    donationSourcesByOwner,
     declarationOwners,
     causaMortisDeclarationOwners,
     ledger,

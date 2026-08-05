@@ -575,11 +575,37 @@ export function calculateLegacyArticle619Legitim({ people = [], deceased = {} } 
   };
 }
 
+export function calculateLegacyArticle633SpousePortion(survivingSpouseIds = []) {
+  const beneficiaryIds = [...new Set(survivingSpouseIds.map(String).filter(Boolean))];
+  const collectiveFraction = beneficiaryIds.length ? fraction(1, 4) : fraction(0, 1);
+  const personalFraction = beneficiaryIds.length
+    ? divideFraction(collectiveFraction, beneficiaryIds.length)
+    : fraction(0, 1);
+  return {
+    article: "633",
+    status: beneficiaryIds.length ? "calculated" : "unresolved",
+    collectiveFraction,
+    beneficiaryFloors: beneficiaryIds.map((beneficiaryId) => ({
+      beneficiaryId,
+      fraction: personalFraction,
+      amount: null,
+    })),
+    diagnostics: beneficiaryIds.length
+      ? []
+      : ["Identify the surviving spouse before applying the old-law full-ownership portion."],
+    warnings: beneficiaryIds.length
+      ? []
+      : ["Identify the surviving spouse before applying the old-law full-ownership portion."],
+    unresolved: beneficiaryIds.length === 0,
+  };
+}
+
 export function applyLegacyProtectedPortionsToWill({
   people = [],
   deceased = {},
   willHeirs,
   hasSurvivingSpouse,
+  survivingSpouseIds = [],
   spouseSurvivalUnresolved = false,
 } = {}) {
   const childResult = applyLegacyArticle616ToWill({ people, deceased, willHeirs });
@@ -609,7 +635,7 @@ export function applyLegacyProtectedPortionsToWill({
       ? (Array.isArray(deceased.spouseIds) && deceased.spouseIds.length > 0) ||
         (Array.isArray(deceased.partnerRelationships) && deceased.partnerRelationships.length > 0)
       : hasSurvivingSpouse;
-  if (regime !== "legacy" || spouseRecorded) {
+  if (regime !== "legacy") {
     return {
       applies: false,
       adjusted: false,
@@ -618,6 +644,33 @@ export function applyLegacyProtectedPortionsToWill({
       calculation: null,
       warnings: [],
     };
+  }
+
+  if (spouseRecorded) {
+    const spouseIds = survivingSpouseIds.length
+      ? survivingSpouseIds
+      : Array.isArray(deceased.spouseIds)
+        ? deceased.spouseIds
+        : [];
+    const calculation = calculateLegacyArticle633SpousePortion(spouseIds);
+    if (calculation.unresolved) {
+      return {
+        applies: true,
+        adjusted: false,
+        resolved: false,
+        shares: testamentaryShares,
+        calculation,
+        warnings: calculation.warnings,
+      };
+    }
+    return applyLegitimFloors({
+      testamentaryShares,
+      calculation,
+      incompleteMessage:
+        "Complete the will beneficiary allocation to 100% before applying the old-law surviving-spouse portion.",
+      appliedMessage:
+        "The old-law surviving-spouse full-ownership portion was applied automatically; the named will beneficiaries receive the disposable portion.",
+    });
   }
 
   const calculation = calculateLegacyArticle619Legitim({ people, deceased });

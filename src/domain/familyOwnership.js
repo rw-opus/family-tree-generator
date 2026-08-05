@@ -16,10 +16,11 @@ import {
   partnerRelationshipStatusAt,
 } from "./partnerRelationships.js";
 import { applyLegacyProtectedPortionsToWill } from "./legacyLegitim.js";
+import { validateRelationshipDateChronology, validateWillDateChronology } from "./chronology.js";
+import { operativeWill, personWills } from "./wills.js";
 import {
   article815ReviewWarning,
-  LEGACY_INTESTACY_SOURCE_GAPS,
-  legacySourceGapWarning,
+  legacyHistoricalLawWarning,
   successionRuleset,
 } from "./successionRules.js";
 
@@ -30,10 +31,6 @@ const SURVIVAL_UNRESOLVED_DESTINATIONS = new Set([
   "spouse-status-unresolved",
   "death-date-unresolved",
   "survival-date-unresolved",
-]);
-const LAW_UNRESOLVED_DESTINATIONS = new Set([
-  "legacy-spouse-law-unresolved",
-  "legacy-relative-law-unresolved",
 ]);
 
 export function isPersonDeceased(person = {}) {
@@ -263,14 +260,24 @@ function linkedSiblings(person, people, peopleById) {
 }
 
 function nearestAscendantStatus(person, atDate, peopleById) {
-  let current = [person.fatherId, person.motherId].map((id) => peopleById.get(id)).filter(Boolean);
-  const visited = new Set([person.id]);
+  let current = [
+    { person: peopleById.get(person.fatherId), line: "paternal" },
+    { person: peopleById.get(person.motherId), line: "maternal" },
+  ].filter(({ person: candidate }) => Boolean(candidate));
+  const visited = new Set();
+  let degree = 1;
   while (current.length) {
-    const unique = current.filter((candidate) => {
-      if (visited.has(candidate.id)) return false;
-      visited.add(candidate.id);
-      return true;
+    const uniqueById = new Map();
+    current.forEach(({ person: candidate, line }) => {
+      const visitKey = `${line}:${candidate.id}`;
+      if (visited.has(visitKey) || candidate.id === person.id) return;
+      visited.add(visitKey);
+      const entry = uniqueById.get(candidate.id) || { person: candidate, lines: new Set() };
+      entry.lines.add(line);
+      uniqueById.set(candidate.id, entry);
     });
+    const entries = [...uniqueById.values()];
+    const unique = entries.map((entry) => entry.person);
     const provisional = unique.filter(
       (candidate) =>
         candidate.isPotentialIntestateParent === true && candidate.survivalStatusRequired === true,
@@ -285,12 +292,83 @@ function nearestAscendantStatus(person, atDate, peopleById) {
     const living = unique.filter(
       (candidate) => provisional.includes(candidate) || wasAliveAt(candidate, atDate),
     );
-    if (living.length) return { living, missing: [], provisional };
-    current = unique.flatMap((candidate) =>
-      [candidate.fatherId, candidate.motherId].map((id) => peopleById.get(id)).filter(Boolean),
+    if (living.length) {
+      const livingIds = new Set(living.map((candidate) => candidate.id));
+      return {
+        living,
+        missing: [],
+        provisional,
+        degree,
+        linesByPersonId: new Map(
+          entries
+            .filter((entry) => livingIds.has(entry.person.id))
+            .map((entry) => [entry.person.id, entry.lines]),
+        ),
+      };
+    }
+    current = entries.flatMap(({ person: candidate, lines }) =>
+      [...lines].flatMap((line) =>
+        [candidate.fatherId, candidate.motherId]
+          .map((id) => peopleById.get(id))
+          .filter(Boolean)
+          .map((ancestor) => ({ person: ancestor, line })),
+      ),
     );
+    degree += 1;
   }
-  return { living: [], missing: [], provisional: [] };
+  return {
+    living: [],
+    missing: [],
+    provisional: [],
+    degree: Number.POSITIVE_INFINITY,
+    linesByPersonId: new Map(),
+  };
+}
+
+function viableSiblingBranches(siblings, atDate, index) {
+  return siblings.filter((sibling) => branchIsViable(sibling, atDate, index));
+}
+
+function allocateLegacyAscendants(ascendantStatus, amount) {
+  const shares = new Map();
+  const ascendants = ascendantStatus.living || [];
+  if (!ascendants.length || amount <= 0) return shares;
+
+  if (ascendantStatus.degree === 1) {
+    ascendants.forEach((ascendant) => addShare(shares, ascendant.id, amount / ascendants.length));
+    return shares;
+  }
+
+  const lineEntries = ["paternal", "maternal"]
+    .map((line) => ({
+      line,
+      people: ascendants.filter((ascendant) =>
+        ascendantStatus.linesByPersonId?.get(ascendant.id)?.has(line),
+      ),
+    }))
+    .filter((entry) => entry.people.length);
+  if (!lineEntries.length) {
+    ascendants.forEach((ascendant) => addShare(shares, ascendant.id, amount / ascendants.length));
+    return shares;
+  }
+
+  const perLine = amount / lineEntries.length;
+  lineEntries.forEach(({ people: lineAscendants }) => {
+    lineAscendants.forEach((ascendant) =>
+      addShare(shares, ascendant.id, perLine / lineAscendants.length),
+    );
+  });
+  return shares;
+}
+
+function addHistoricalLawWarning(warnings, dateOfDeath, articleNumbers) {
+  const warning = legacyHistoricalLawWarning(dateOfDeath, articleNumbers);
+  if (!warning) return;
+  const existingIndex = warnings.findIndex((entry) =>
+    entry.startsWith("Historical law must be checked:"),
+  );
+  if (existingIndex >= 0) warnings[existingIndex] = warning;
+  else warnings.push(warning);
 }
 
 /**
@@ -371,6 +449,32 @@ function calculateIntestateAllocations(people = [], deceasedId) {
   }
 
   const atDate = deceased.dateOfDeath;
+  const invalidRelationshipDates = deceased.unmarriedOrWidowedAtDeath
+    ? []
+    : partnerIdsForPerson(people, deceased.id).flatMap((partnerId) => {
+        const partner = index.peopleById.get(partnerId);
+        const relationship = findPartnerRelationship(people, deceased.id, partnerId);
+        if (!partner || !relationship) return [];
+        if (relationship.type === "partnership") return [];
+        const startsAfterThisDeath =
+          relationship.startDate && relationship.startDate > deceased.dateOfDeath;
+        return validateRelationshipDateChronology({
+          startDate: relationship.startDate || "",
+          endDate: relationship.endDate || "",
+          // A marriage explicitly beginning after this death is handled just
+          // below as "not started" and excluded. Keep calculating from the
+          // valid relationships while still showing the warning.
+          personDateOfDeath: startsAfterThisDeath ? "" : deceased.dateOfDeath || "",
+          partnerDateOfDeath: partner.dateOfDeath || "",
+          personLabel: personName(deceased),
+          partnerLabel: personName(partner),
+          relationshipLabel: relationship.type === "partnership" ? "Partnership" : "Marriage",
+        });
+      });
+  if (invalidRelationshipDates.length) {
+    warnings.push(...new Set(invalidRelationshipDates));
+    return { shares, warnings, destination: "spouse-status-unresolved" };
+  }
   const marriagesNotStarted = deceased.unmarriedOrWidowedAtDeath
     ? []
     : partnerIdsForPerson(people, deceased.id)
@@ -390,34 +494,6 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         .join(", ")} starts after the date of death and was excluded.`,
     );
   }
-  const marriagesMissingEndDates = linkedMarriagesMissingEndDates(people, deceased.id, atDate);
-  if (marriagesMissingEndDates.length) {
-    warnings.push(
-      `Enter the date on which the marriage to ${marriagesMissingEndDates
-        .map(personName)
-        .join(", ")} ended before calculating the intestate succession.`,
-    );
-    return { shares, warnings, destination: "spouse-status-unresolved" };
-  }
-
-  const spouses = linkedLegalSpousesFor(people, deceased.id, atDate);
-  const spousesWithUnknownSurvival = linkedSpousesMissingDeathDates(people, deceased.id, atDate);
-  if (spousesWithUnknownSurvival.length) {
-    const names = spousesWithUnknownSurvival.map((person) => person.fullName || "Unnamed partner");
-    warnings.push(
-      `Enter the date of death for ${names.join(
-        ", ",
-      )} before deciding whether the linked spouse survived the deceased.`,
-    );
-    return { shares, warnings, destination: "spouse-survival-unresolved" };
-  }
-  const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
-  if (livingSpouses.length > 1) {
-    warnings.push(
-      `More than one marriage appears active on ${atDate}. Record the end date of every former marriage before calculating the intestate succession.`,
-    );
-    return { shares, warnings, destination: "spouse-status-unresolved" };
-  }
   const children = index.childrenByParent.get(deceased.id) || [];
   const descendantsWithUnknownSurvival = descendantsMissingDeathDates(people, deceased.id);
   if (descendantsWithUnknownSurvival.length) {
@@ -429,6 +505,41 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     return { shares, warnings, destination: "survival-date-unresolved" };
   }
   const descendantProbe = allocateBranches(children, atDate, 1, index);
+  const legacyDescendantsControlOwnership = ruleset.key === "pre2005" && descendantProbe.size > 0;
+  const marriagesMissingEndDates = linkedMarriagesMissingEndDates(people, deceased.id, atDate);
+  if (marriagesMissingEndDates.length) {
+    warnings.push(
+      `Enter the date on which the marriage to ${marriagesMissingEndDates
+        .map(personName)
+        .join(", ")} ended before calculating the intestate succession.`,
+    );
+    if (!legacyDescendantsControlOwnership) {
+      return { shares, warnings, destination: "spouse-status-unresolved" };
+    }
+  }
+
+  const spouses = linkedLegalSpousesFor(people, deceased.id, atDate);
+  const spousesWithUnknownSurvival = linkedSpousesMissingDeathDates(people, deceased.id, atDate);
+  if (spousesWithUnknownSurvival.length) {
+    const names = spousesWithUnknownSurvival.map((person) => person.fullName || "Unnamed partner");
+    warnings.push(
+      `Enter the date of death for ${names.join(
+        ", ",
+      )} before deciding whether the linked spouse survived the deceased.`,
+    );
+    if (!legacyDescendantsControlOwnership) {
+      return { shares, warnings, destination: "spouse-survival-unresolved" };
+    }
+  }
+  const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
+  if (livingSpouses.length > 1) {
+    warnings.push(
+      `More than one marriage appears active on ${atDate}. Record the end date of every former marriage before calculating the intestate succession.`,
+    );
+    if (!legacyDescendantsControlOwnership) {
+      return { shares, warnings, destination: "spouse-status-unresolved" };
+    }
+  }
   if (descendantProbe.size) {
     const isLegacy = ruleset.key === "pre2005";
     const spouseTotal = !isLegacy && livingSpouses.length ? 0.5 : 0;
@@ -438,6 +549,9 @@ function calculateIntestateAllocations(people = [], deceasedId) {
       livingSpouses.forEach((spouse) =>
         addShare(shares, spouse.id, spouseTotal / livingSpouses.length),
       );
+    }
+    if (isLegacy && livingSpouses.length === 1) {
+      addHistoricalLawWarning(warnings, atDate, ["825"]);
     }
     if (ruleset.article815ReviewRequired) warnings.push(article815ReviewWarning());
     return {
@@ -451,31 +565,7 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     };
   }
 
-  if (ruleset.key === "pre2005") {
-    if (livingSpouses.length) {
-      warnings.push(
-        legacySourceGapWarning(
-          LEGACY_INTESTACY_SOURCE_GAPS.survivingSpouse,
-          "a childless surviving spouse and the deceased's relatives",
-        ),
-      );
-      return { shares, warnings, destination: "legacy-spouse-law-unresolved" };
-    }
-    warnings.push(
-      legacySourceGapWarning(
-        [
-          ...LEGACY_INTESTACY_SOURCE_GAPS.ascendants,
-          ...LEGACY_INTESTACY_SOURCE_GAPS.collaterals,
-          ...LEGACY_INTESTACY_SOURCE_GAPS.childrenOutsideMarriage,
-          ...LEGACY_INTESTACY_SOURCE_GAPS.government,
-        ],
-        "a pre-2005 estate without a surviving spouse or descendant",
-      ),
-    );
-    return { shares, warnings, destination: "legacy-relative-law-unresolved" };
-  }
-
-  if (livingSpouses.length) {
+  if (ruleset.key !== "pre2005" && livingSpouses.length) {
     livingSpouses.forEach((spouse) => addShare(shares, spouse.id, 1 / livingSpouses.length));
     return { shares, warnings, destination: "spouse" };
   }
@@ -508,6 +598,60 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     return { shares, warnings, destination: "survival-date-unresolved" };
   }
   const siblingProbe = allocateSiblingBranches(siblings, atDate, 1, index);
+  if (ruleset.key === "pre2005") {
+    const viableSiblingRoots = viableSiblingBranches(siblings, atDate, index);
+    const hasAscendantsOrSiblingBranches = ascendants.length || viableSiblingRoots.length;
+
+    if (livingSpouses.length && !hasAscendantsOrSiblingBranches) {
+      livingSpouses.forEach((spouse) => addShare(shares, spouse.id, 1 / livingSpouses.length));
+      return { shares, warnings, destination: "legacy-spouse" };
+    }
+
+    const relativesTotal = livingSpouses.length ? 0.5 : 1;
+    if (livingSpouses.length) {
+      livingSpouses.forEach((spouse) => addShare(shares, spouse.id, 0.5 / livingSpouses.length));
+    }
+
+    if (ascendants.length && viableSiblingRoots.length) {
+      const headCount = ascendants.length + viableSiblingRoots.length;
+      const perHead = relativesTotal / headCount;
+      ascendants.forEach((ascendant) => addShare(shares, ascendant.id, perHead));
+      const siblingShares = allocateBranches(
+        viableSiblingRoots,
+        atDate,
+        perHead * viableSiblingRoots.length,
+        index,
+      );
+      siblingShares.forEach((share, id) => addShare(shares, id, share));
+      addHistoricalLawWarning(warnings, atDate, livingSpouses.length === 1 ? ["826"] : []);
+      warnings.push(
+        "Former Civil Code article 812 contains a property-specific return rule for certain assets previously given by an ascendant; that rule is not inferred from the family tree and must be checked if relevant.",
+      );
+      return {
+        shares,
+        warnings,
+        destination: "legacy-ascendants-and-sibling-branches",
+      };
+    }
+
+    if (ascendants.length) {
+      const ascendantShares = allocateLegacyAscendants(ascendantStatus, relativesTotal);
+      ascendantShares.forEach((share, id) => addShare(shares, id, share));
+      addHistoricalLawWarning(warnings, atDate, livingSpouses.length === 1 ? ["826"] : []);
+      warnings.push(
+        "Former Civil Code article 812 contains a property-specific return rule for certain assets previously given by an ascendant; that rule is not inferred from the family tree and must be checked if relevant.",
+      );
+      return { shares, warnings, destination: "legacy-ascendants" };
+    }
+
+    if (viableSiblingRoots.length) {
+      const siblingShares = allocateSiblingBranches(siblings, atDate, relativesTotal, index);
+      siblingShares.forEach((share, id) => addShare(shares, id, share));
+      addHistoricalLawWarning(warnings, atDate, livingSpouses.length === 1 ? ["826"] : []);
+      return { shares, warnings, destination: "legacy-sibling-branches" };
+    }
+  }
+
   if (ascendants.length || siblingProbe.size) {
     const ascendantTotal = ascendants.length ? (siblingProbe.size ? 0.5 : 1) : 0;
     ascendants.forEach((ascendant) =>
@@ -563,6 +707,9 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     nearestCollaterals.forEach(({ person }) =>
       addShare(shares, person.id, 1 / nearestCollaterals.length),
     );
+    if (ruleset.key === "pre2005") {
+      return { shares, warnings, destination: "legacy-other-collaterals" };
+    }
     return { shares, warnings, destination: "other-collaterals" };
   }
 
@@ -580,7 +727,8 @@ export function intestateAllocations(people = [], deceasedId) {
   };
 }
 
-export const INTESTACY_CONFIRMATION_SIGNATURE_VERSION = "v2";
+export const INTESTACY_CONFIRMATION_SIGNATURE_VERSION = "v3";
+const PREVIOUS_INTESTACY_CONFIRMATION_SIGNATURE_VERSION = "v2";
 
 function calculatedIntestacySharesSignature(allocation = {}) {
   const shares = allocation.exactShares || exactShareMap(allocation.shares || new Map());
@@ -598,24 +746,65 @@ export function legacyIntestacyAllocationSignature(deceased = {}, allocation = {
   ].join("::");
 }
 
-export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
+function intestacyLegalContextParts(deceased = {}, allocation = {}) {
   const shares = calculatedIntestacySharesSignature(allocation);
-  const confirmedRows = (Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [])
-    .map((row) => {
-      const share = exactShareFromRecord(row);
-      return `${String(row?.personId || "")}:${share.numerator}/${share.denominator}`;
-    })
-    .sort()
-    .join("|");
   return [
-    INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
     deceased.dateOfDeath || "",
     deceased.unmarriedOrWidowedAtDeath === true ? "no-spouse-at-death" : "spouse-status-derived",
     allocation.destination || "",
     shares,
     allocation.contextSignature || "",
-    confirmedRows,
+  ];
+}
+
+/**
+ * Identifies the legal context against which edited intestate shares were made.
+ *
+ * The edited heir rows are deliberately excluded. A user can therefore change
+ * the chosen heirs or their fractions without making the edit invalidate
+ * itself. A material change to the death date, spouse-at-death status, or the
+ * automatic statutory destination/shares produces a different signature and
+ * prevents an earlier manual override from silently surviving that change.
+ */
+export function intestacyLegalContextSignature(deceased = {}, allocation = {}) {
+  return [
+    INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
+    ...intestacyLegalContextParts(deceased, allocation),
   ].join("::");
+}
+
+// Compatibility name retained for existing callers and saved-case migration.
+export function intestacyAllocationSignature(deceased = {}, allocation = {}) {
+  return intestacyLegalContextSignature(deceased, allocation);
+}
+
+function previousIntestacyContextPrefix(deceased = {}, allocation = {}) {
+  return [
+    PREVIOUS_INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
+    ...intestacyLegalContextParts(deceased, allocation),
+  ].join("::");
+}
+
+function intestacyBasisMatchesContext(storedBasis, deceased = {}, allocation = {}) {
+  const basis = String(storedBasis || "").trim();
+  // Rows saved by older releases did not record the death date or family
+  // context against which they were edited. Treating those unsigned rows as
+  // current can silently preserve an obsolete allocation after the facts have
+  // changed (for example, children-only rows after a corrected post-2005 death
+  // date should not displace the surviving spouse). They remain available for
+  // review in the person card, but cannot override the automatic calculation
+  // until the user edits or reapplies them under the current context.
+  if (!basis) return false;
+  if (basis === intestacyLegalContextSignature(deceased, allocation)) return true;
+
+  // v2 appended the edited rows after the legal-context fields. Ignore that
+  // final segment so old signed cases remain usable while still detecting a
+  // later death-date or statutory-context change.
+  const previousPrefix = previousIntestacyContextPrefix(deceased, allocation);
+  if (basis === previousPrefix || basis.startsWith(`${previousPrefix}::`)) return true;
+
+  // The original signature contained only these statutory calculation fields.
+  return basis === legacyIntestacyAllocationSignature(deceased, allocation);
 }
 
 export function intestacyShareTotalIsComplete(totalPercent) {
@@ -678,10 +867,6 @@ export function intestacyConfirmationReadiness(
   if (SURVIVAL_UNRESOLVED_DESTINATIONS.has(calculated.destination)) {
     issues.push("Complete the missing survival dates before confirming the heirs.");
   }
-  if (LAW_UNRESOLVED_DESTINATIONS.has(calculated.destination) && !rows.length) {
-    issues.push("Enter edited heirs totalling 100% for this historical succession.");
-  }
-
   return {
     valid: issues.length === 0,
     rowsValid,
@@ -710,16 +895,32 @@ export function editedIntestacyAllocations(
   const currentSignature = readiness.currentSignature;
   const rows = Array.isArray(deceased.intestateHeirs) ? deceased.intestateHeirs : [];
   const hasResolvedDeathDate = calculated.destination !== "death-date-unresolved";
+  const storedBasis = String(deceased.intestateConfirmationBasis || "").trim();
+  const contextMatches = intestacyBasisMatchesContext(storedBasis, deceased, calculated);
   const valid =
-    rows.length > 0 && readiness.rowsValid && readiness.totalComplete && hasResolvedDeathDate;
+    rows.length > 0 &&
+    readiness.rowsValid &&
+    readiness.totalComplete &&
+    hasResolvedDeathDate &&
+    contextMatches;
 
   if (!valid) {
     if (rows.length) {
       warnings.push(
-        "The edited intestate heirs need review before they can override the automatic calculation.",
+        !storedBasis
+          ? "The edited intestate heirs were saved without a death-date and family-context record. The automatic calculation applies until the edited heirs are reviewed."
+          : contextMatches
+            ? "The edited intestate heirs need review before they can override the automatic calculation."
+            : "The edited intestate heirs were saved against an earlier death date or family context. The automatic calculation applies until the edited heirs are reviewed.",
       );
     }
-    return { valid: false, shares, warnings, currentSignature };
+    return {
+      valid: false,
+      stale: rows.length > 0 && !contextMatches,
+      shares,
+      warnings,
+      currentSignature,
+    };
   }
 
   const exactShares = new Map();
@@ -728,7 +929,15 @@ export function editedIntestacyAllocations(
     addExactShare(exactShares, row.personId, exact);
     addShare(shares, row.personId, fractionToNumber(exact));
   });
-  return { valid: true, shares, exactShares, warnings, currentSignature };
+  return {
+    valid: true,
+    stale: false,
+    legacyUnsigned: !storedBasis,
+    shares,
+    exactShares,
+    warnings,
+    currentSignature,
+  };
 }
 
 export const confirmedIntestacyAllocations = editedIntestacyAllocations;
@@ -752,7 +961,16 @@ export function willAllocationReadiness(person = {}, validBeneficiaryIds = null)
   );
   const totalComplete = !exactTotal.error && compareFractions(exactTotal, WHOLE_FRACTION) === 0;
   const issues = [];
+  const wills = personWills(person);
+  const applicableWill = operativeWill(person);
 
+  if (!wills.length) issues.push("Add the will and its date.");
+  else if (!applicableWill) {
+    const chronologyIssue = wills
+      .map((will) => validateWillDateChronology(will.date, person.dateOfDeath))
+      .find(Boolean);
+    issues.push(chronologyIssue || "Enter a valid will date before the date of death.");
+  }
   if (!rows.length) issues.push("Add at least one beneficiary.");
   if (selectedIds.length !== rows.length) {
     issues.push("Choose a person or company for every beneficiary row.");
@@ -871,33 +1089,55 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     }
     let result;
     if (basis === "will") {
-      const legalSpouses = linkedLegalSpousesFor(people, person.id, person.dateOfDeath);
-      const spouseSurvivalUnresolved = legalSpouses.some(
-        (spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath,
-      );
-      const survivingSpouses = legalSpouses.filter((spouse) =>
-        wasAliveAt(spouse, person.dateOfDeath),
-      );
-      const protectedWill = applyLegacyProtectedPortionsToWill({
-        people,
-        deceased: person,
-        hasSurvivingSpouse: survivingSpouses.length > 0,
-        spouseSurvivalUnresolved,
-      });
-      result = {
-        shares: protectedWill.resolved ? protectedWill.shares : new Map(),
-        exactShares: protectedWill.resolved
-          ? protectedWill.applies
-            ? exactShareMap(protectedWill.shares)
-            : exactShareMapFromRecords(person.willHeirs || [])
-          : new Map(),
-        warnings: protectedWill.warnings,
-        destination: protectedWill.applies
-          ? protectedWill.calculation?.article === "619"
-            ? "will-with-legacy-article-619"
-            : "will-with-legacy-legitim"
-          : "will",
-      };
+      const recordedWills = personWills(person);
+      const applicableWill = operativeWill(person);
+      if (!applicableWill) {
+        const chronologyIssue = recordedWills
+          .map((will) => validateWillDateChronology(will.date, person.dateOfDeath))
+          .find(Boolean);
+        result = {
+          shares: new Map(),
+          exactShares: new Map(),
+          warnings: [
+            chronologyIssue ||
+              (recordedWills.length
+                ? "Enter a valid will date before the date of death."
+                : "Add the will and its date."),
+          ],
+          destination: "will-unresolved",
+        };
+      } else {
+        const legalSpouses = linkedLegalSpousesFor(people, person.id, person.dateOfDeath);
+        const spouseSurvivalUnresolved = legalSpouses.some(
+          (spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath,
+        );
+        const survivingSpouses = legalSpouses.filter((spouse) =>
+          wasAliveAt(spouse, person.dateOfDeath),
+        );
+        const protectedWill = applyLegacyProtectedPortionsToWill({
+          people,
+          deceased: person,
+          hasSurvivingSpouse: survivingSpouses.length > 0,
+          survivingSpouseIds: survivingSpouses.map((spouse) => spouse.id),
+          spouseSurvivalUnresolved,
+        });
+        result = {
+          shares: protectedWill.resolved ? protectedWill.shares : new Map(),
+          exactShares: protectedWill.resolved
+            ? protectedWill.applies
+              ? exactShareMap(protectedWill.shares)
+              : exactShareMapFromRecords(person.willHeirs || [])
+            : new Map(),
+          warnings: protectedWill.warnings,
+          destination: protectedWill.applies
+            ? protectedWill.calculation?.article === "619"
+              ? "will-with-legacy-article-619"
+              : protectedWill.calculation?.article === "633"
+                ? "will-with-legacy-spouse-portion"
+                : "will-with-legacy-legitim"
+            : "will",
+        };
+      }
     } else {
       const calculated = intestateAllocations(people, personId);
       const edited = editedIntestacyAllocations(people, personId, calculated, outsideParties);

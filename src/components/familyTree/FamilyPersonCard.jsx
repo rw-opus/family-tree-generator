@@ -58,6 +58,7 @@ export function FamilyPersonCard({
   ownershipByPerson,
   ownershipFractionsByPerson = {},
   currentOwnershipByPerson = {},
+  historicalLawWarningsByPerson = {},
   causaMortisCoverageByPerson,
   personCardFields = DEFAULT_PERSON_CARD_FIELDS,
   propertyValue,
@@ -115,11 +116,18 @@ export function FamilyPersonCard({
   }`;
   const survivalStatusRequired = person.survivalStatusRequired === true;
   const surnameAtBirthReviewRequired = person.surnameAtBirthReviewRequired === true;
-  const actionRequired =
-    incompleteCausaMortis.length > 0 || survivalStatusRequired || surnameAtBirthReviewRequired;
-  const actionRequiredGuidance = actionRequired
-    ? "Action required: open this person's card and update the missing detail."
+  const historicalLawWarning = isDeceased
+    ? (historicalLawWarningsByPerson[person.id] || []).join(" ")
     : "";
+  const missingDataActionRequired =
+    incompleteCausaMortis.length > 0 || survivalStatusRequired || surnameAtBirthReviewRequired;
+  const actionRequiredGuidance = [
+    missingDataActionRequired &&
+      "Action required: open this person's card and update the missing detail.",
+    historicalLawWarning && "Action required: check the historical law before relying on shares.",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const sexClass = ["Male", "Female"].includes(person.sex) ? person.sex.toLowerCase() : "";
   const classNames = [
     "family-node",
@@ -129,6 +137,7 @@ export function FamilyPersonCard({
     spousesMissingDeathDates.length && "succession-date-incomplete",
     survivalStatusRequired && "survival-status-required",
     surnameAtBirthReviewRequired && "surname-at-birth-review-required",
+    historicalLawWarning && "historical-law-review-required",
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
     ownershipSnapshotActive && hasOwnership && "trace-ownership-snapshot",
@@ -144,7 +153,7 @@ export function FamilyPersonCard({
       data-family-generation={generation}
       data-widest-generation={isWidestGeneration ? "true" : undefined}
       aria-label={`Open ${accessibleName}${actionRequiredGuidance ? `. ${actionRequiredGuidance}` : ""}`}
-      title={actionRequiredGuidance || undefined}
+      title={[actionRequiredGuidance, historicalLawWarning].filter(Boolean).join(" ") || undefined}
       onClick={() => onSelectPerson?.(person.id)}
       onKeyDown={onKeyDown}
       tabIndex={tabIndex}
@@ -177,6 +186,9 @@ export function FamilyPersonCard({
       )}
       {!person.isPlaceholder && surnameAtBirthReviewRequired && (
         <div className="family-node-surname-alert">Confirm surname at birth</div>
+      )}
+      {!person.isPlaceholder && historicalLawWarning && (
+        <div className="family-node-law-alert">Check historical law</div>
       )}
       {!person.isPlaceholder && shareParts.length > 0 && (
         <div className="family-node-ownership">{shareParts.join(" · ")}</div>

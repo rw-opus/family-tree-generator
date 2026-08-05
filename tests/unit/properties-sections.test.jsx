@@ -196,6 +196,7 @@ describe("Properties section views", () => {
                   numerator: 1,
                   denominator: 1,
                   amountType: "whole-property",
+                  date: "2021-01-01",
                 },
               ],
               saleLots: [

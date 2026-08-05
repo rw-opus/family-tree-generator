@@ -1,4 +1,5 @@
 import { isValidIsoDate, isoDateToDisplay } from "./dateFormat.js";
+import { validateWillDateChronology } from "./chronology.js";
 
 const text = (value) => (typeof value === "string" ? value.trim() : "");
 
@@ -46,19 +47,23 @@ export function personWills(person = {}) {
 }
 
 /**
- * The latest valid dated will governs. If no record has a valid date, the
- * last-added record is returned so undated information remains editable.
+ * The latest valid dated will made before a known death governs. Undated or
+ * chronologically impossible records remain editable, but cannot silently
+ * drive the succession calculation.
  */
-export function operativeWillFromRecords(wills = []) {
+export function operativeWillFromRecords(wills = [], dateOfDeath = "") {
   const records = Array.isArray(wills) ? wills : [];
-  const dated = records.filter((will) => isValidIsoDate(will?.date));
-  if (!dated.length) return records.at(-1) || null;
+  const dated = records.filter(
+    (will) =>
+      isValidIsoDate(will?.date) && validateWillDateChronology(will.date, dateOfDeath) === "",
+  );
+  if (!dated.length) return null;
 
   return dated.reduce((latest, will) => (will.date >= latest.date ? will : latest));
 }
 
 export function operativeWill(person = {}) {
-  return operativeWillFromRecords(personWills(person));
+  return operativeWillFromRecords(personWills(person), person.dateOfDeath);
 }
 
 /**
@@ -77,7 +82,7 @@ export function personWithWills(person = {}, wills) {
   const normalisedWills = (Array.isArray(sourceWills) ? sourceWills : []).map((will, index) =>
     normaliseWillRecord(will, person.id, index),
   );
-  const latest = operativeWillFromRecords(normalisedWills);
+  const latest = operativeWillFromRecords(normalisedWills, person.dateOfDeath);
 
   return {
     ...person,

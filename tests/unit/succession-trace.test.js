@@ -45,6 +45,7 @@ describe("succession trace", () => {
     expect(events[1]).toMatchObject({ personId: "edgar", date: "1990-01-01" });
     expect(events[1].ownershipSnapshot).toEqual({ edgar: 1 });
     expect(events[1].description).toContain("Roland Wadge receives 1/1 (100%)");
+    expect(events[1].warnings.join(" ")).not.toContain("Historical law must be checked");
     expect(events[2].description).toContain("Buyer Limited");
     expect(events[2].ownershipSnapshot).toEqual({ buyer: 0.5, roland: 0.5 });
     expect(events.at(-1).ownershipSnapshot).toEqual({ buyer: 0.5, roland: 0.5 });

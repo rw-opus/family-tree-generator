@@ -2469,6 +2469,13 @@ textarea {
   padding: 0.28rem 0.4rem;
 }
 
+.will-record.chronology-invalid,
+.causa-mortis-card.chronology-invalid {
+  border-color: #d98585;
+  background: #fff8f8;
+  box-shadow: 0 0 0 1px rgb(169 40 40 / 8%);
+}
+
 .will-record-heading {
   min-height: 1.8rem;
 }
@@ -3066,6 +3073,13 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+.person-partner-link-row.chronology-invalid {
+  border: 1px solid #d98585;
+  border-radius: 6px;
+  background: #fff8f8;
+  padding: 0.35rem;
 }
 
 .person-partner-link-row {
@@ -5109,7 +5123,8 @@ body.a3-print-preview-open {
 }
 
 .tree-stage .family-node.survival-status-required,
-.tree-stage .family-node.surname-at-birth-review-required {
+.tree-stage .family-node.surname-at-birth-review-required,
+.tree-stage .family-node.historical-law-review-required {
   border-color: #b42318;
   border-top-color: #7a1610;
   box-shadow:
@@ -5251,7 +5266,8 @@ body.a3-print-preview-open {
 }
 
 .tree-stage .family-node-survival-alert,
-.tree-stage .family-node-surname-alert {
+.tree-stage .family-node-surname-alert,
+.tree-stage .family-node-law-alert {
   margin-top: 0.32rem;
   border-radius: 5px;
   background: #fee4e2;

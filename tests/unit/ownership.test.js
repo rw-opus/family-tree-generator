@@ -124,6 +124,7 @@ describe("ownership transfer ledger", () => {
           numerator: 1,
           denominator: 2,
           amountType: "seller-holding",
+          date: "2020-01-01",
         },
       ],
     );
@@ -143,6 +144,7 @@ describe("ownership transfer ledger", () => {
           numerator: 1,
           denominator: "1000000000000",
           amountType: "seller-holding",
+          date: "2020-01-01",
         },
       ],
     );
@@ -164,6 +166,7 @@ describe("ownership transfer ledger", () => {
           numerator: 1,
           denominator: 2,
           amountType: "seller-holding",
+          date: "2020-01-01",
         },
         {
           id: "two",
@@ -172,6 +175,7 @@ describe("ownership transfer ledger", () => {
           numerator: 1,
           denominator: 2,
           amountType: "seller-holding",
+          date: "2020-01-02",
         },
       ],
     );
@@ -190,6 +194,7 @@ describe("ownership transfer ledger", () => {
           numerator: 1,
           denominator: 4,
           amountType: "seller-holding",
+          date: "2020-01-01",
         },
       ],
       [
@@ -215,6 +220,7 @@ describe("ownership transfer ledger", () => {
           numerator: 1,
           denominator: 2,
           amountType: "whole-property",
+          date: "2020-01-01",
         },
       ],
     );
@@ -237,6 +243,7 @@ describe("ownership transfer ledger", () => {
           denominator: 2,
           amountType: "seller-holding",
           error: "Old validation failure",
+          date: "2020-01-01",
         },
       ],
     );
@@ -274,6 +281,7 @@ describe("per-property ownership ledger", () => {
           numerator: 1,
           denominator: 4,
           amountType: "seller-holding",
+          date: "2020-01-01",
         },
       ],
       { owner: 1 },
@@ -307,6 +315,51 @@ describe("per-property ownership ledger", () => {
     expect(ledger.owners.find((owner) => owner.id === "donee").share).toBe(0.25);
     // The kind survives into the ledger entry so history and provenance can name it a donation.
     expect(ledger.entries[0].kind).toBe("donation");
+  });
+
+  it("rejects a transfer before acquisition or after a known seller death", () => {
+    const beforeAcquisition = buildPropertyLedger(
+      [
+        { id: "owner", fullName: "Owner" },
+        { id: "buyer", fullName: "Buyer" },
+      ],
+      [],
+      [
+        {
+          id: "sale",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 2,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+          provenance: [{ acquiredOn: "2020-01-01" }],
+        },
+      ],
+      { owner: 1 },
+    );
+    expect(beforeAcquisition.entries[0].error).toContain("after every known acquisition date");
+
+    const afterDeath = buildPropertyLedger(
+      [
+        { id: "owner", fullName: "Owner", dateOfDeath: "2020-01-01" },
+        { id: "buyer", fullName: "Buyer" },
+      ],
+      [],
+      [
+        {
+          id: "sale",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 2,
+          amountType: "seller-holding",
+          date: "2020-01-02",
+        },
+      ],
+      { owner: 1 },
+    );
+    expect(afterDeath.entries[0].error).toContain("on or before the seller's date of death");
   });
 
   it("keeps ledgers for two different properties independent", () => {

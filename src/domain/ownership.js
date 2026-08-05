@@ -8,6 +8,7 @@ import {
   subtractFractions,
   ZERO_FRACTION,
 } from "./fractions.js";
+import { validateTransferDateChronology } from "./chronology.js";
 
 const value = (input) => Math.max(0, Number(input) || 0);
 
@@ -143,6 +144,7 @@ function resolveTransfers(parties, startingHoldings, transfers) {
   const holdings = new Map(
     parties.map((party) => [party.id, exactValue(startingHoldings.get(party.id) || 0)]),
   );
+  const acquisitionDatesByParty = new Map(parties.map((party) => [party.id, []]));
   const entries = transfers.map((transfer) => {
     const cleanTransfer = { ...transfer };
     delete cleanTransfer.error;
@@ -176,6 +178,23 @@ function resolveTransfers(parties, startingHoldings, transfers) {
         error: "The seller does not own enough to complete this transfer.",
         amount: 0,
       };
+    const seller = parties.find((party) => party.id === transfer.sellerId);
+    const provenanceAcquisitionDates = (transfer.provenance || [])
+      .map((entry) => entry?.acquiredOn)
+      .filter(Boolean);
+    const acquisitionDates = provenanceAcquisitionDates.length
+      ? provenanceAcquisitionDates
+      : acquisitionDatesByParty.get(transfer.sellerId) || [];
+    const eventLabel = transfer.kind === "donation" ? "Donation" : "Transfer";
+    const chronologyError = validateTransferDateChronology({
+      transferDate: transfer.date,
+      acquisitionDates,
+      sellerDateOfDeath: seller?.dateOfDeath || "",
+      eventLabel,
+    });
+    if (chronologyError) {
+      return { ...cleanTransfer, error: chronologyError, amount: 0 };
+    }
     const sellerAfter = subtractFractions(sellerHolding, amountFraction);
     const buyerAfter = addFractions(
       holdings.get(transfer.buyerId) || ZERO_FRACTION,
@@ -190,6 +209,10 @@ function resolveTransfers(parties, startingHoldings, transfers) {
     }
     holdings.set(transfer.sellerId, sellerAfter);
     holdings.set(transfer.buyerId, buyerAfter);
+    acquisitionDatesByParty.set(transfer.buyerId, [
+      ...(acquisitionDatesByParty.get(transfer.buyerId) || []),
+      transfer.date,
+    ]);
     return {
       ...cleanTransfer,
       amount: fractionToNumber(amountFraction),
@@ -279,6 +302,7 @@ export function buildOwnershipLedger(
         id: person.id,
         personId: person.id,
         name: person.fullName || "Unnamed family member",
+        dateOfDeath: person.dateOfDeath || "",
         type: "individual",
         source: "family-tree",
       })),
@@ -311,6 +335,7 @@ export function buildPropertyLedger(
       id: person.id,
       personId: person.id,
       name: person.fullName || "Unnamed family member",
+      dateOfDeath: person.dateOfDeath || "",
       type: "individual",
       source: "family-tree",
     })),

@@ -216,6 +216,8 @@ export function Properties({
                 outsideParties={outsideParties}
                 transfers={property.transfers || []}
                 startingOwnership={result.ownershipByPerson}
+                property={property}
+                vendorReport={vendorReport}
                 onChange={handleTransfersChange(property)}
               />
             )}

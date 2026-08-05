@@ -162,6 +162,7 @@ export function buildSuccessionTrace({
         )}. On death, that holding passes ${basis}${
           recipients.length ? `: ${recipients.join("; ")}` : ", but the recipients are unresolved"
         }.`,
+        warnings: [...new Set(transmission.warnings || [])],
       };
     },
   );

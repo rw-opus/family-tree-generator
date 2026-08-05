@@ -35,6 +35,27 @@ describe("multiple wills", () => {
     expect(operativeWill({ id: "paul", wills })?.notaryName).toBe("Paul Pullicino");
   });
 
+  it("does not treat a will made on or after death as operative", () => {
+    const person = {
+      id: "paul",
+      dateOfDeath: "2020-06-10",
+      wills: [
+        { id: "valid", date: "2019-01-01", notaryName: "Valid Notary" },
+        { id: "same-day", date: "2020-06-10", notaryName: "Invalid Notary" },
+        { id: "later", date: "2020-06-11", notaryName: "Invalid Notary" },
+      ],
+    };
+
+    expect(operativeWill(person)?.id).toBe("valid");
+    expect(operativeWillFromRecords(person.wills, person.dateOfDeath)?.id).toBe("valid");
+    expect(
+      operativeWill({
+        ...person,
+        wills: person.wills.filter((will) => will.id !== "valid"),
+      }),
+    ).toBeNull();
+  });
+
   it("formats will dates with dots for family-tree cards", () => {
     expect(displayWillDate("2012-07-18")).toBe("18/07/2012");
   });

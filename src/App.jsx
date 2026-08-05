@@ -29,6 +29,7 @@ import {
 import { parseGedcom } from "./domain/gedcom.js";
 import { createPerson } from "./domain/people.js";
 import {
+  buildTreeCardHistoricalWarningsByPerson,
   buildTreeCardOwnershipByPerson,
   buildTreeCardOwnershipFractionsByPerson,
   normalisePersonCardFields,
@@ -345,6 +346,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
       propertyReport.ownership.transmissions,
     );
   }, [propertyReport.ledger.owners, propertyReport.ownership.transmissions]);
+  const historicalLawWarningsByPerson = useMemo(
+    () => buildTreeCardHistoricalWarningsByPerson(propertyReport.ownership.transmissions),
+    [propertyReport.ownership.transmissions],
+  );
   const currentOwnershipByPerson = useMemo(
     () =>
       Object.fromEntries(
@@ -1155,6 +1160,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                   traceOwnershipSnapshot ? {} : ownershipFractionsByPerson
                 }
                 currentOwnershipByPerson={traceOwnershipSnapshot || currentOwnershipByPerson}
+                historicalLawWarningsByPerson={historicalLawWarningsByPerson}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}
                 onSelectPerson={handleTreePersonSelection}

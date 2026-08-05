@@ -1680,6 +1680,7 @@ describe("PersonInspector", () => {
         isDeceased: true,
         dateOfDeath: "2020-01-01",
         inheritanceBasis: "will",
+        willDate: "2019-12-01",
         willHeirs: [{ id: "share", personId: "child", sharePercent: 100 }],
         spouseIds: [],
         causaMortisDeclarations: [
@@ -1867,8 +1868,16 @@ describe("PersonInspector", () => {
     );
 
     expect(latestPeople[0].intestateHeirsConfirmed).toBe(false);
+    expect(latestPeople[0].intestateConfirmationBasis).toMatch(/^v3::/);
     expect(latestPeople[0].intestateHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
     expect(container.textContent).toContain("Override active");
+
+    setNumberInput(container.querySelector(".succession-detail-row input"), "04/02/2024");
+    expect(latestPeople[0].dateOfDeath).toBe("2024-02-04");
+    expect(container.textContent).toContain(
+      "saved against an earlier death date or family context",
+    );
+    expect(container.textContent).toContain("automatic proposal remains in force");
   });
 
   it("warns when an edited heir row points to a deleted person", () => {
@@ -2676,7 +2685,7 @@ describe("PersonInspector", () => {
     };
     setInput('input[aria-label="Causa mortis share numerator 1"]', "1");
     setInput('input[aria-label="Causa mortis share denominator 1"]', "4");
-    setInput('input[aria-label="Date of Declaration Causa Mortis 1"]', "2020-06-01");
+    setInput('input[aria-label="Date of Declaration Causa Mortis 1"]', "2020-01-01");
     setInput('input[aria-label="Notary for Declaration Causa Mortis 1"]', "Dr Maria Vella");
     setInput('input[aria-label="Immovable property value declared causa mortis 1"]', "100000");
 
@@ -2684,6 +2693,12 @@ describe("PersonInspector", () => {
       [...container.querySelectorAll("button")].find(
         (button) => button.textContent.trim() === "OK" && !button.disabled,
       );
+    act(() => okButton().click());
+    expect(container.textContent).toContain(
+      "Declaration causa mortis date must be after the date of death.",
+    );
+
+    setInput('input[aria-label="Date of Declaration Causa Mortis 1"]', "2020-06-01");
     act(() => okButton().click());
 
     expect(container.textContent).toContain("Declared 1/4");
@@ -2863,8 +2878,7 @@ describe("PersonInspector", () => {
         .find((button) => button.textContent.includes("Wife / husband"))
         .click(),
     );
-    // The marriage date is deliberately not collected: a person marked as married is taken
-    // to be married or widowed at the time of death, so no start-date field is offered.
+    // No date field is shown until the other person has been created or linked.
     expect(container.querySelector(".partner-date-field input")).toBeNull();
     act(() =>
       [...container.querySelectorAll(".spouse-chooser button")]
@@ -2878,7 +2892,21 @@ describe("PersonInspector", () => {
     });
     const relationshipType = container.querySelector(".person-partner-link-row select");
     expect(relationshipType.disabled).toBe(false);
-    expect(container.querySelector('input[aria-label^="Relationship start date with"]')).toBeNull();
+    const marriageStartDate = container.querySelector(
+      'input[aria-label^="Marriage start date with"]',
+    );
+    expect(marriageStartDate).not.toBeNull();
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        marriageStartDate,
+        "01/03/2010",
+      );
+      marriageStartDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
+      type: "marriage",
+      startDate: "2010-03-01",
+    });
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
         relationshipType,
@@ -3239,6 +3267,15 @@ describe("PersonInspector provenance designation", () => {
     const firstProvenance = container.querySelector('.provenance-pick input[type="checkbox"]');
     act(() => firstProvenance.click());
 
+    const donationDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "01/01/2021",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
     const submit = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Record donation",
     );
@@ -3292,6 +3329,14 @@ describe("PersonInspector provenance designation", () => {
         "other",
       );
       acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const donationDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "01/01/2021",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const submit = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Record donation",

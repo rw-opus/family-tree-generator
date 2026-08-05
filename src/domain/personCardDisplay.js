@@ -1,3 +1,5 @@
+import { isLegacyHistoricalLawWarning } from "./successionRules.js";
+
 export const DEFAULT_PERSON_CARD_FIELDS = Object.freeze({
   ownershipFraction: true,
   ownershipPercentage: true,
@@ -74,4 +76,24 @@ export function buildTreeCardOwnershipFractionsByPerson(currentOwners = [], tran
     }
   });
   return fractionsByPerson;
+}
+
+/**
+ * A red historical-law marker belongs to the property succession that actually
+ * ran through the calculator, not merely to an old date of death. Keeping this
+ * map transmission-based makes the tree, history and tax views use the same
+ * section-specific decision.
+ */
+export function buildTreeCardHistoricalWarningsByPerson(transmissions = []) {
+  const warningsByPerson = {};
+  transmissions.forEach((transmission) => {
+    const deceasedId = String(transmission?.deceasedId || "");
+    if (!deceasedId) return;
+    const historicalWarnings = (transmission.warnings || []).filter(isLegacyHistoricalLawWarning);
+    if (!historicalWarnings.length) return;
+    warningsByPerson[deceasedId] = [
+      ...new Set([...(warningsByPerson[deceasedId] || []), ...historicalWarnings]),
+    ];
+  });
+  return warningsByPerson;
 }

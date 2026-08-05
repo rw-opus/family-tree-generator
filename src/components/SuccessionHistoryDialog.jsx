@@ -94,6 +94,11 @@ export function SuccessionHistoryDialog({ property, events, onSelectPerson, onCl
                     <h3>{event.title}</h3>
                   )}
                   <p>{event.description}</p>
+                  {(event.warnings || []).map((warning) => (
+                    <p className="succession-warning" key={warning}>
+                      {warning}
+                    </p>
+                  ))}
                 </div>
               </li>
             ))}

@@ -445,24 +445,33 @@ describe("old article 619 ascendant legitim", () => {
     });
   });
 
-  it("does not apply ascendant legitim where a spouse survived", () => {
+  it("applies the childless surviving spouse's one-quarter full-ownership portion", () => {
     const deceased = person("testator", {
       isDeceased: true,
       dateOfDeath: "2004-06-01",
       fatherId: "father",
+      spouseIds: ["spouse"],
       inheritanceBasis: "will",
       willHeirs: [{ personId: "outsider", sharePercent: 100 }],
     });
-    const people = [deceased, person("father"), person("outsider")];
+    const people = [
+      deceased,
+      person("spouse", { spouseIds: ["testator"] }),
+      person("father"),
+      person("outsider"),
+    ];
 
     const protection = applyLegacyProtectedPortionsToWill({
       people,
       deceased,
       hasSurvivingSpouse: true,
+      survivingSpouseIds: ["spouse"],
     });
 
-    expect(protection.applies).toBe(false);
-    expect(protection.shares.get("outsider")).toBe(1);
+    expect(protection).toMatchObject({ applies: true, resolved: true, adjusted: true });
+    expect(protection.calculation.article).toBe("633");
+    expect(protection.shares.get("spouse")).toBeCloseTo(1 / 4);
+    expect(protection.shares.get("outsider")).toBeCloseTo(3 / 4);
   });
 
   it("leaves ascendant legitim unresolved when the spouse's survival is unknown", () => {

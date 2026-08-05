@@ -110,6 +110,13 @@ describe("Maltese inherited property estimates", () => {
     expect(result.shares.get("b1")).toBe(0);
   });
   it("classifies the historical succession periods at their exact boundaries", () => {
+    expect(successionRuleset("1993-11-30")).toMatchObject({
+      key: "pre2005",
+      referenceDate: "2005-02-28",
+    });
+    expect(successionRuleset("1993-12-01")).toMatchObject({
+      key: "pre2005",
+    });
     expect(successionRuleset("2005-02-28")).toMatchObject({
       key: "pre2005",
       supported: true,
@@ -136,6 +143,37 @@ describe("Maltese inherited property estimates", () => {
     expect(result.shares.get("child-a")).toBe(50);
     expect(result.shares.get("child-b")).toBe(50);
     expect(result.warnings).toEqual([]);
+  });
+  it("limits legacy suggestion warnings to a changed section engaged by the heir class", () => {
+    const spouseAndChildren = allocateLegacyDescendantIntestacy(
+      [
+        { id: "spouse", relationship: "Surviving spouse", status: "accepted" },
+        { id: "child", relationship: "Child", status: "accepted" },
+      ],
+      "1990-04-02",
+    );
+    const childrenOnly = allocateLegacyDescendantIntestacy(
+      [{ id: "child", relationship: "Child", status: "accepted" }],
+      "1990-04-02",
+    );
+
+    expect(spouseAndChildren.warnings.join(" ")).toContain("article 825");
+    expect(childrenOnly.warnings.join(" ")).not.toContain("Historical law must be checked");
+  });
+  it("suggests childless pre-2005 spouse and sibling shares instead of leaving them unresolved", () => {
+    const heirs = [
+      { id: "spouse", relationship: "Surviving spouse", status: "accepted" },
+      { id: "sibling-a", relationship: "Sibling", status: "accepted" },
+      { id: "sibling-b", relationship: "Sibling", status: "accepted" },
+    ];
+
+    const suggested = suggestedIntestacyShares(heirs, "2004-12-01");
+
+    expect(suggested.map((heir) => [heir.id, heir.sharePercent])).toEqual([
+      ["spouse", 50],
+      ["sibling-a", 25],
+      ["sibling-b", 25],
+    ]);
   });
   it("does not select a legal regime from a malformed death date", () => {
     expect(successionRuleset("28-02-2005")).toMatchObject({

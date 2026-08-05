@@ -89,6 +89,11 @@ export function TaxCalculationPanel({
                   <strong>{event.title}</strong>
                 )}
                 <p>{event.description}</p>
+                {(event.warnings || []).map((warning) => (
+                  <p className="succession-warning" key={warning}>
+                    {warning}
+                  </p>
+                ))}
               </li>
             ))}
           </ol>
