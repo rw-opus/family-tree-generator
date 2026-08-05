@@ -211,43 +211,28 @@ describe("FamilyTreeCanvas", () => {
     scrollRegion.scrollLeft = 80;
     scrollRegion.scrollTop = 120;
 
-    const pointerEvent = (type, properties) => {
+    const touchEvent = (type, touches, changedTouches = touches) => {
       const event = new Event(type, { bubbles: true, cancelable: true });
-      Object.entries(properties).forEach(([key, value]) =>
-        Object.defineProperty(event, key, { configurable: true, value }),
-      );
+      Object.defineProperty(event, "touches", { configurable: true, value: touches });
+      Object.defineProperty(event, "changedTouches", {
+        configurable: true,
+        value: changedTouches,
+      });
       return event;
     };
 
+    const start = { identifier: 1, clientX: 100, clientY: 100 };
+    const moved = { identifier: 1, clientX: 80, clientY: 35 };
+    const moveEvent = touchEvent("touchmove", [moved]);
+
     act(() => {
-      card.dispatchEvent(
-        pointerEvent("pointerdown", {
-          pointerId: 1,
-          pointerType: "touch",
-          button: 0,
-          clientX: 100,
-          clientY: 100,
-        }),
-      );
-      scrollRegion.dispatchEvent(
-        pointerEvent("pointermove", {
-          pointerId: 1,
-          pointerType: "touch",
-          clientX: 80,
-          clientY: 35,
-        }),
-      );
-      scrollRegion.dispatchEvent(
-        pointerEvent("pointerup", {
-          pointerId: 1,
-          pointerType: "touch",
-          clientX: 80,
-          clientY: 35,
-        }),
-      );
+      card.dispatchEvent(touchEvent("touchstart", [start]));
+      scrollRegion.dispatchEvent(moveEvent);
+      scrollRegion.dispatchEvent(touchEvent("touchend", [], [moved]));
       card.click();
     });
 
+    expect(moveEvent.defaultPrevented).toBe(true);
     expect(scrollRegion.scrollLeft).toBe(100);
     expect(scrollRegion.scrollTop).toBe(185);
     expect(onSelectPerson).not.toHaveBeenCalled();

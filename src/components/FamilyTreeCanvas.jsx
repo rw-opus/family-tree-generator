@@ -225,41 +225,25 @@ export function FamilyTreeCanvas({
   useEffect(() => {
     const chart = treeRef.current;
     if (!chart) return undefined;
-    const activeTouchPointers = new Set();
     let suppressClickUntil = 0;
-    const startDrag = (event) => {
-      const mousePointer = event.pointerType === "mouse";
-      if (mousePointer && event.button !== 0) return;
-      if (mousePointer && event.target.closest("button, input, select, textarea, a, label")) return;
-      if (!mousePointer) {
-        activeTouchPointers.add(event.pointerId);
-        if (activeTouchPointers.size > 1) {
-          const activeDrag = dragRef.current;
-          if (activeDrag) chart.releasePointerCapture?.(activeDrag.pointerId);
-          dragRef.current = null;
-          chart.classList.remove("is-panning");
-          return;
-        }
-      }
+    const beginDrag = ({ id, pointerType, clientX, clientY }) => {
       dragRef.current = {
-        pointerId: event.pointerId,
-        pointerType: event.pointerType,
-        x: event.clientX,
-        y: event.clientY,
+        id,
+        pointerType,
+        x: clientX,
+        y: clientY,
         left: chart.scrollLeft,
         top: chart.scrollTop,
         moved: false,
       };
-      chart.setPointerCapture?.(event.pointerId);
       chart.classList.add("is-panning");
       setPanHintVisible(false);
     };
-    const drag = (event) => {
+    const moveDrag = (clientX, clientY, event) => {
       const state = dragRef.current;
-      if (!state || state.pointerId !== event.pointerId) return;
-      if (state.pointerType !== "mouse" && activeTouchPointers.size > 1) return;
-      const deltaX = event.clientX - state.x;
-      const deltaY = event.clientY - state.y;
+      if (!state) return;
+      const deltaX = clientX - state.x;
+      const deltaY = clientY - state.y;
       if (state.pointerType !== "mouse" && !state.moved && Math.hypot(deltaX, deltaY) < 4) return;
       state.moved = true;
       event.preventDefault();
@@ -267,15 +251,63 @@ export function FamilyTreeCanvas({
       chart.scrollTop = state.top - deltaY;
       setPanHintVisible(false);
     };
-    const stopDrag = (event) => {
-      if (event.pointerType !== "mouse") activeTouchPointers.delete(event.pointerId);
-      if (dragRef.current?.pointerId !== event.pointerId) return;
+    const finishDrag = () => {
       const movedByTouch =
-        dragRef.current.pointerType !== "mouse" && dragRef.current.moved === true;
+        dragRef.current?.pointerType === "touch" && dragRef.current.moved === true;
       dragRef.current = null;
       chart.classList.remove("is-panning");
-      chart.releasePointerCapture?.(event.pointerId);
       if (movedByTouch) suppressClickUntil = Date.now() + 500;
+    };
+    const startPointerDrag = (event) => {
+      if (event.pointerType === "touch") return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (event.target.closest("button, input, select, textarea, a, label")) return;
+      beginDrag({
+        id: event.pointerId,
+        pointerType: event.pointerType || "mouse",
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      chart.setPointerCapture?.(event.pointerId);
+    };
+    const movePointerDrag = (event) => {
+      const state = dragRef.current;
+      if (!state || state.pointerType === "touch" || state.id !== event.pointerId) return;
+      moveDrag(event.clientX, event.clientY, event);
+    };
+    const stopPointerDrag = (event) => {
+      const state = dragRef.current;
+      if (!state || state.pointerType === "touch" || state.id !== event.pointerId) return;
+      finishDrag();
+      chart.releasePointerCapture?.(event.pointerId);
+    };
+    const startTouchDrag = (event) => {
+      if (event.touches.length !== 1) {
+        if (dragRef.current?.pointerType === "touch") finishDrag();
+        return;
+      }
+      const touch = event.touches[0];
+      beginDrag({
+        id: touch.identifier,
+        pointerType: "touch",
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+      });
+    };
+    const moveTouchDrag = (event) => {
+      const state = dragRef.current;
+      if (!state || state.pointerType !== "touch" || event.touches.length !== 1) return;
+      const touch = Array.from(event.touches).find((item) => item.identifier === state.id);
+      if (!touch) return;
+      moveDrag(touch.clientX, touch.clientY, event);
+    };
+    const stopTouchDrag = (event) => {
+      const state = dragRef.current;
+      if (!state || state.pointerType !== "touch") return;
+      const touchStillActive = Array.from(event.touches).some(
+        (item) => item.identifier === state.id,
+      );
+      if (!touchStillActive) finishDrag();
     };
     const suppressClickAfterPan = (event) => {
       if (Date.now() > suppressClickUntil) return;
@@ -283,16 +315,24 @@ export function FamilyTreeCanvas({
       event.preventDefault();
       event.stopPropagation();
     };
-    chart.addEventListener("pointerdown", startDrag);
-    chart.addEventListener("pointermove", drag);
-    chart.addEventListener("pointerup", stopDrag);
-    chart.addEventListener("pointercancel", stopDrag);
+    chart.addEventListener("pointerdown", startPointerDrag);
+    chart.addEventListener("pointermove", movePointerDrag);
+    chart.addEventListener("pointerup", stopPointerDrag);
+    chart.addEventListener("pointercancel", stopPointerDrag);
+    chart.addEventListener("touchstart", startTouchDrag, { passive: true });
+    chart.addEventListener("touchmove", moveTouchDrag, { passive: false });
+    chart.addEventListener("touchend", stopTouchDrag, { passive: true });
+    chart.addEventListener("touchcancel", stopTouchDrag, { passive: true });
     chart.addEventListener("click", suppressClickAfterPan, true);
     return () => {
-      chart.removeEventListener("pointerdown", startDrag);
-      chart.removeEventListener("pointermove", drag);
-      chart.removeEventListener("pointerup", stopDrag);
-      chart.removeEventListener("pointercancel", stopDrag);
+      chart.removeEventListener("pointerdown", startPointerDrag);
+      chart.removeEventListener("pointermove", movePointerDrag);
+      chart.removeEventListener("pointerup", stopPointerDrag);
+      chart.removeEventListener("pointercancel", stopPointerDrag);
+      chart.removeEventListener("touchstart", startTouchDrag);
+      chart.removeEventListener("touchmove", moveTouchDrag);
+      chart.removeEventListener("touchend", stopTouchDrag);
+      chart.removeEventListener("touchcancel", stopTouchDrag);
       chart.removeEventListener("click", suppressClickAfterPan, true);
     };
   }, []);
