@@ -20,6 +20,10 @@ const termsMigration = readFileSync(
   ),
   "utf8",
 );
+const unlimitedAccountsMigration = readFileSync(
+  new URL("../../supabase/migrations/20260806060552_unlimited_tree_accounts.sql", import.meta.url),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -37,6 +41,19 @@ describe("commercial Supabase schema", () => {
       expect(sql).toContain("security definer");
       expect(sql).toContain("set search_path = ''");
     }
+  });
+
+  it("supports a private unlimited entitlement without consuming free or paid credits", () => {
+    for (const sql of [schema, unlimitedAccountsMigration]) {
+      expect(sql).toContain("unlimited_trees boolean not null default false");
+      expect(sql).toContain("if account.unlimited_trees then");
+      expect(sql).toContain("allocation_source := 'admin'");
+      expect(sql).toContain("set total_trees_created = total_trees_created + 1");
+      expect(sql).toContain(
+        "revoke all on function private.consume_tree_entitlement() from public, anon, authenticated",
+      );
+    }
+    expect(unlimitedAccountsMigration).not.toContain("rolandwadge@gmail.com");
   });
 
   it("isolates exposed commercial tables and keeps the Stripe ledger private", () => {

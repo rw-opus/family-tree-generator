@@ -507,8 +507,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         try {
           const nextEntitlement = await refreshTreeEntitlement();
           if (cancelled) return;
-          if (nextEntitlement.paidTreeCredits > 0) {
-            setBillingMessage("Payment confirmed. Your new tree credit is ready to use.");
+          if (nextEntitlement.paidTreeCredits > 0 || nextEntitlement.unlimitedTrees) {
+            setBillingMessage("Your account is ready to create a new tree.");
             return;
           }
         } catch {
@@ -597,8 +597,12 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   const handleCreationError = async (error) => {
     if (isTreePaymentRequiredError(error)) {
-      setBillingMessage("Your five free trees have been used. Buy one tree credit for €30.");
-      await refreshTreeEntitlement().catch(() => {});
+      const nextEntitlement = await refreshTreeEntitlement().catch(() => null);
+      setBillingMessage(
+        nextEntitlement?.unlimitedTrees
+          ? "Unlimited tree creation is active. Please try creating the tree again."
+          : "Your five free trees have been used. Buy one tree credit for €30.",
+      );
       return;
     }
     setStatus(`Could not create family: ${error.message}`);
@@ -693,6 +697,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   const buyTreeCredit = async () => {
     if (!cloudMode || billingBusy) return;
+    if (entitlement?.unlimitedTrees) {
+      setBillingMessage("This account already has unlimited tree creation.");
+      return;
+    }
     setBillingBusy(true);
     setBillingMessage("Opening secure Stripe checkout...");
     try {
@@ -814,7 +822,11 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setStatus("Removing family...");
     try {
       await removeFamilyTree(treeId, session.user.id);
-      setStatus("Family removed. Its free or paid generation credit is not restored.");
+      setStatus(
+        entitlement?.unlimitedTrees
+          ? "Family removed."
+          : "Family removed. Its free or paid generation credit is not restored.",
+      );
       return true;
     } catch (error) {
       setTrees((items) => upsertWorkspaceTree(items, selectedTree));

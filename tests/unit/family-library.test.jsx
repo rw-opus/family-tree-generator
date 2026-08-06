@@ -218,6 +218,40 @@ describe("FamilyLibrary", () => {
     expect(handlers.onOpen).toHaveBeenCalledWith("borg");
   });
 
+  it("groups family status clearly and removes duplicate actions while renaming", () => {
+    renderLibrary(root, {
+      trees: [
+        {
+          id: "review",
+          title: "Review family",
+          createdAt: "2026-08-04T00:00:00Z",
+          dataWarnings: [{ message: "One" }],
+          importWarnings: [{ message: "Two" }],
+        },
+      ],
+      activeTreeId: "review",
+    });
+
+    const row = container.querySelector(".family-library-row:not(.family-library-table-head)");
+    expect(row.classList.contains("is-active")).toBe(true);
+    expect(row.querySelector(".family-name-badges").textContent).toContain("Open now");
+    expect(row.querySelector(".family-name-badges").textContent).toContain("2 items to review");
+    expect(row.querySelector(".family-last-changed-label").textContent).toBe("Added");
+
+    act(() => row.querySelector('button[aria-label="Rename Review family"]').click());
+    expect(row.classList.contains("is-renaming")).toBe(true);
+    expect(row.querySelector(".family-row-actions")).toBeNull();
+    expect(row.querySelector('button[aria-label="Save family name"]')).not.toBeNull();
+
+    act(() =>
+      row
+        .querySelector(".family-rename-form")
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(row.classList.contains("is-renaming")).toBe(false);
+    expect(row.querySelector('.family-name-button[aria-label*="currently open"]')).not.toBeNull();
+  });
+
   it("shows the five-free pricing state and blocks creation until a paid credit exists", () => {
     const handlers = renderLibrary(root, {
       commercialMode: true,
@@ -247,5 +281,47 @@ describe("FamilyLibrary", () => {
     );
     act(() => buy.click());
     expect(handlers.onBuyTree).toHaveBeenCalledOnce();
+  });
+
+  it("shows an unlimited allowance without free-tree or checkout messaging", () => {
+    renderLibrary(root, {
+      commercialMode: true,
+      entitlement: {
+        freeTreeLimit: 5,
+        freeTreesUsed: 5,
+        freeTreesRemaining: 0,
+        paidTreeCredits: 0,
+        totalTreesCreated: 12,
+        unlimitedTrees: true,
+        canCreate: true,
+      },
+      canCreate: true,
+      onBuyTree: vi.fn(),
+    });
+
+    expect(container.textContent).toContain("Tree allowance");
+    expect(container.textContent).toContain("Unlimited");
+    expect(container.textContent).toContain("Unlimited tree creation");
+    expect(container.textContent).not.toContain("Free trees remaining");
+    expect(container.textContent).not.toContain("Buy one tree");
+    expect(container.textContent).not.toContain("Tree credits are consumed");
+    expect(container.querySelector('input[type="file"]').disabled).toBe(false);
+
+    const create = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Create new family"),
+    );
+    expect(create.disabled).toBe(false);
+    act(() => create.click());
+    expect(container.querySelector(".library-credit-notice").textContent).toContain(
+      "unlimited tree creation",
+    );
+    expect(container.querySelector(".library-credit-notice").textContent).not.toContain("credit");
+
+    const cancelCreate = [...container.querySelectorAll(".family-creation-dialog button")].find(
+      (button) => button.textContent.includes("Cancel"),
+    );
+    act(() => cancelCreate.click());
+    act(() => container.querySelector('button[aria-label="Delete Vella family"]').click());
+    expect(container.querySelector('[role="alertdialog"]').textContent).not.toContain("credit");
   });
 });

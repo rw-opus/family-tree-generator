@@ -8,11 +8,14 @@ The database is authoritative:
 
 - creations 1–5 are allocated from the free lifetime allowance;
 - creation 6 and later consumes one paid credit;
+- an operator may grant a specific account unlimited tree creation without consuming free or paid credits;
 - creating from a blank tree and importing a GEDCOM are treated identically;
 - updates never consume a new credit;
 - deletion never refunds a credit.
 
 The `family_trees_consume_entitlement` trigger enforces this even if someone calls the Data API directly instead of using the application interface.
+
+Unlimited access is an operator-managed value in `tree_accounts.unlimited_trees`. Users have read-only access to their own allowance row and cannot grant this entitlement to themselves. Set it through an authenticated administrative database operation using the account's immutable Auth user ID; do not implement email-based privilege checks in browser code.
 
 ## 1. Supabase project
 

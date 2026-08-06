@@ -12,9 +12,41 @@ describe("commercial tree entitlements", () => {
       freeTreesUsed: 0,
       freeTreesRemaining: 5,
       paidTreeCredits: 0,
+      unlimitedTrees: false,
       canCreate: true,
     });
     expect(normaliseTreeEntitlement()).toEqual(defaultTreeEntitlement);
+  });
+
+  it("allows an operator-granted unlimited account without consuming credits", () => {
+    expect(
+      normaliseTreeEntitlement({
+        free_tree_limit: 5,
+        free_trees_used: 5,
+        paid_tree_credits: 0,
+        total_trees_created: 20,
+        unlimited_trees: true,
+      }),
+    ).toMatchObject({
+      freeTreesRemaining: 0,
+      paidTreeCredits: 0,
+      totalTreesCreated: 20,
+      unlimitedTrees: true,
+      canCreate: true,
+    });
+  });
+
+  it("requires the database boolean rather than a truthy value for unlimited access", () => {
+    for (const unlimited_trees of ["true", 1]) {
+      expect(
+        normaliseTreeEntitlement({
+          free_tree_limit: 5,
+          free_trees_used: 5,
+          paid_tree_credits: 0,
+          unlimited_trees,
+        }),
+      ).toMatchObject({ unlimitedTrees: false, canCreate: false });
+    }
   });
 
   it("allows paid credits only after the free allowance is exhausted", () => {

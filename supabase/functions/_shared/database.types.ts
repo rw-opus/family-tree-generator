@@ -13,6 +13,7 @@ export type CommercialDatabase = {
           free_tree_limit: number;
           free_trees_used: number;
           paid_tree_credits: number;
+          unlimited_trees: boolean;
           stripe_customer_id: string | null;
           total_trees_created: number;
           updated_at: string;
@@ -22,6 +23,7 @@ export type CommercialDatabase = {
           free_tree_limit?: number;
           free_trees_used?: number;
           paid_tree_credits?: number;
+          unlimited_trees?: boolean;
           stripe_customer_id?: string | null;
           total_trees_created?: number;
           user_id: string;
@@ -30,6 +32,7 @@ export type CommercialDatabase = {
           free_tree_limit: number;
           free_trees_used: number;
           paid_tree_credits: number;
+          unlimited_trees: boolean;
           stripe_customer_id: string | null;
           total_trees_created: number;
           updated_at: string;

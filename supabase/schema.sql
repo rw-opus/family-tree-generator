@@ -1,7 +1,8 @@
 -- Family Tree Generator commercial schema.
 -- Run this only in the Family Tree Generator's own Supabase project.
 -- Commercial rule: the first five lifetime tree generations are free;
--- every later creation or GEDCOM import consumes one paid EUR 30 credit.
+-- every later creation or GEDCOM import consumes one paid EUR 30 credit,
+-- unless an operator has granted the account unlimited tree creation.
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
@@ -27,12 +28,16 @@ create table if not exists public.tree_accounts (
   free_tree_limit smallint not null default 5 check (free_tree_limit between 0 and 100),
   free_trees_used smallint not null default 0 check (free_trees_used >= 0),
   paid_tree_credits integer not null default 0 check (paid_tree_credits >= 0),
+  unlimited_trees boolean not null default false,
   total_trees_created integer not null default 0 check (total_trees_created >= 0),
   stripe_customer_id text unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (free_trees_used <= free_tree_limit)
 );
+
+alter table public.tree_accounts
+  add column if not exists unlimited_trees boolean not null default false;
 
 create table if not exists public.tree_credit_orders (
   id uuid primary key default gen_random_uuid(),
@@ -177,7 +182,12 @@ begin
   where user_id = caller_id
   for update;
 
-  if account.free_trees_used < account.free_tree_limit then
+  if account.unlimited_trees then
+    allocation_source := 'admin';
+    update public.tree_accounts
+    set total_trees_created = total_trees_created + 1
+    where user_id = caller_id;
+  elsif account.free_trees_used < account.free_tree_limit then
     allocation_source := 'free';
     update public.tree_accounts
     set
