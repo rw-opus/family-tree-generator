@@ -3,8 +3,14 @@ import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonInspector } from "../../src/components/PersonInspector.jsx";
+import { normaliseCase } from "../../src/domain/caseModel.js";
 import { findPartnerRelationship } from "../../src/domain/partnerRelationships.js";
 import { buildPropertyVendorTaxReport } from "../../src/domain/propertyVendorTax.js";
+import {
+  beginStatusToggleSession,
+  endStatusToggleSession,
+  statusToggleSession,
+} from "../../src/domain/statusToggleSessions.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -2229,8 +2235,8 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("The most recent dated will applies");
     expect(container.textContent).toContain("Notary (optional)");
     expect(container.textContent).toContain("Description (optional)");
-    expect(container.textContent).toContain("Suggested heirs if intestate");
-    expect(container.textContent).toContain("Edit Beneficiaries");
+    expect(container.textContent).toContain("Suggested Heirs");
+    expect(container.textContent).toContain("Confirm Heirs?");
     expect(container.textContent).not.toContain("Will notes");
     expect(container.textContent).toContain("Declarations Causa Mortis");
     expect(container.textContent).toContain("Date of Declaration Causa Mortis");
@@ -2426,7 +2432,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Required for a death on or after 25 November 1992");
   });
 
-  it("suggests intestate heirs for a testate estate and allows editable will fractions", () => {
+  it("confirms suggested heirs for a testate estate and allows editable will fractions", () => {
     let latestPeople = [];
     const initialPeople = [
       {
@@ -2475,18 +2481,22 @@ describe("PersonInspector", () => {
 
     act(() => root.render(<Harness />));
 
-    expect(container.textContent).toContain("Suggested heirs if intestate");
+    expect(container.textContent).toContain("Suggested Heirs");
     expect(container.textContent).toContain("Maria Borg");
     expect(container.textContent).toContain("Paul Borg");
     expect(container.textContent).toContain("1/2");
 
-    const applySuggestion = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Edit Beneficiaries"),
-    );
-    act(() => applySuggestion.click());
+    const confirmHeirs = container.querySelector('input[aria-label="Confirm Heirs?"]');
+    expect(confirmHeirs.checked).toBe(false);
+    act(() => confirmHeirs.click());
 
     expect(latestPeople[0].willHeirs).toHaveLength(2);
     expect(latestPeople[0].willHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
+    expect(latestPeople[0]).toMatchObject({
+      willHeirsConfirmed: true,
+      willHeirsConfirmationSource: "suggested",
+    });
+    expect(container.querySelector('input[aria-label="Confirm Heirs?"]').checked).toBe(true);
     expect(container.querySelectorAll(".will-heir-fraction")).toHaveLength(2);
     expect(container.querySelectorAll(".will-heir-percent")).toHaveLength(0);
 
@@ -2506,6 +2516,11 @@ describe("PersonInspector", () => {
 
     setNumberInput(updatedDenominator, "4");
     expect(latestPeople[0].willHeirs[1].sharePercent).toBe(25);
+
+    act(() => container.querySelector('input[aria-label="Confirm Heirs?"]').click());
+    expect(latestPeople[0].willHeirs).toEqual([]);
+    expect(latestPeople[0].willHeirsConfirmed).toBe(false);
+    expect(latestPeople[0].willHeirsConfirmationSource).toBe("");
   });
 
   it("selects the calculated heirs when adding a causa mortis declaration", () => {
@@ -3289,7 +3304,55 @@ describe("PersonInspector provenance designation", () => {
     const transferCheckbox = container.querySelector(
       'input[aria-label="Sold/Donated Property Share"]',
     );
+    expect(transferCheckbox.checked).toBe(false);
+    expect(container.querySelector(".person-donation-form")).toBeNull();
     act(() => transferCheckbox.click());
+    expect(container.querySelector(".person-succession")).not.toBeNull();
+    expect(container.querySelector(".person-donation-form")).not.toBeNull();
+  });
+
+  it("reopens a persisted transfer disclosure for a deceased person without relying on local state", () => {
+    const deceasedPeople = people.map((person) =>
+      person.id === "seller"
+        ? {
+            ...person,
+            isDeceased: true,
+            dateOfDeath: "2022-01-01",
+            inheritanceBasis: "intestacy",
+            designations: ["Deceased"],
+          }
+        : person,
+    );
+    const vendorReport = buildPropertyVendorTaxReport(property, deceasedPeople, []);
+    const renderInspector = (interVivosStatusSession = null) =>
+      root.render(
+        <PersonInspector
+          people={deceasedPeople}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          interVivosStatusSession={interVivosStatusSession}
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={vi.fn()}
+        />,
+      );
+
+    act(() => renderInspector());
+    expect(container.querySelector(".person-donation-form")).toBeNull();
+
+    act(() =>
+      renderInspector({
+        id: "status-toggle:inter-vivos:seller:session",
+        type: "inter-vivos",
+        personId: "seller",
+        propertyId: "prop",
+      }),
+    );
+
+    expect(container.querySelector('input[aria-label="Sold/Donated Property Share"]').checked).toBe(
+      true,
+    );
     expect(container.querySelector(".person-succession")).not.toBeNull();
     expect(container.querySelector(".person-donation-form")).not.toBeNull();
   });
@@ -3556,7 +3619,7 @@ describe("PersonInspector legacy lifetime disposal records", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps succession and an inter vivos transfer as independent events", () => {
+  it("does not treat a legacy lifetime-disposal marker alone as a saved transfer disclosure", () => {
     act(() =>
       root.render(
         <PersonInspector
@@ -3581,15 +3644,12 @@ describe("PersonInspector legacy lifetime disposal records", () => {
     expect(container.textContent).not.toContain("Sold / donated during lifetime");
     expect(container.querySelector(".person-succession")).not.toBeNull();
     expect(container.querySelector('input[aria-label="Sold/Donated Property Share"]').checked).toBe(
-      true,
+      false,
     );
-    // No holding is recorded here, so the independent transfer flow explains itself.
-    expect(container.textContent).toContain(
-      "Add the property and its initial ownership before recording an inter vivos transfer.",
-    );
+    expect(container.querySelector('[data-person-section="donation"]')).toBeNull();
   });
 
-  it("locks a completed full transfer and omits property succession controls", () => {
+  it("keeps a completed full transfer available for undo and omits property succession controls", () => {
     const people = [
       {
         id: "d",
@@ -3618,6 +3678,8 @@ describe("PersonInspector legacy lifetime disposal records", () => {
       ],
     };
 
+    const onInterVivosStatusChange = vi.fn();
+
     act(() =>
       root.render(
         <PersonInspector
@@ -3625,6 +3687,7 @@ describe("PersonInspector legacy lifetime disposal records", () => {
           properties={[property]}
           selectedPersonId="d"
           onChange={vi.fn()}
+          onInterVivosStatusChange={onInterVivosStatusChange}
           onSelectPerson={vi.fn()}
         />,
       ),
@@ -3634,8 +3697,214 @@ describe("PersonInspector legacy lifetime disposal records", () => {
       'input[aria-label="Sold/Donated Property Share"]',
     );
     expect(transferCheckbox.checked).toBe(true);
-    expect(transferCheckbox.disabled).toBe(true);
+    expect(transferCheckbox.disabled).toBe(false);
     expect(container.textContent).toContain("No share remained to pass through this succession.");
     expect(container.querySelector(".person-succession").classList).toContain("fully-transferred");
+
+    act(() => transferCheckbox.click());
+    expect(onInterVivosStatusChange).toHaveBeenCalledWith({
+      checked: false,
+      personId: "d",
+      propertyId: "property",
+    });
+  });
+});
+
+describe("PersonInspector reversible status controls", () => {
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it("restores the pre-click person and deletes parent records created by the deceased session", () => {
+    const initialCase = normaliseCase({
+      id: "case",
+      title: "Borg family",
+      activeFamilyGroupId: "family",
+      people: [
+        {
+          id: "person",
+          fullName: "Michael Borg",
+          givenNames: "Michael",
+          surname: "Borg",
+          sex: "Male",
+          designations: ["Owner"],
+          isDeceased: false,
+          dateOfDeath: "2020-01-01",
+          inheritanceBasis: "intestacy",
+          fatherId: "",
+          fatherExplicitlyUnassigned: false,
+          motherId: "",
+          motherExplicitlyUnassigned: false,
+          spouseIds: [],
+          siblingIds: [],
+        },
+      ],
+      familyGroups: [
+        {
+          id: "family",
+          title: "Borg family",
+          rootPersonId: "person",
+          personIds: ["person"],
+        },
+      ],
+      properties: [],
+      outsideParties: [],
+    });
+    const originalPerson = structuredClone(initialCase.people[0]);
+
+    function Harness() {
+      const [caseData, setCaseData] = useState(initialCase);
+      const session = statusToggleSession(caseData, "deceased", "person");
+      const replacePeople = (current, nextPeople) =>
+        normaliseCase({
+          ...current,
+          people: nextPeople,
+          familyGroups: current.familyGroups.map((group) =>
+            group.id === "family"
+              ? { ...group, personIds: nextPeople.map((person) => person.id) }
+              : group,
+          ),
+        });
+
+      const changeDeceasedStatus = ({ checked, personId, people, patch }) => {
+        setCaseData((current) => {
+          let next = checked
+            ? beginStatusToggleSession(current, { type: "deceased", personId })
+            : current;
+          next = replacePeople(
+            next,
+            people.map((person) => (person.id === personId ? { ...person, ...patch } : person)),
+          );
+          return checked
+            ? next
+            : endStatusToggleSession(next, {
+                type: "deceased",
+                personId,
+                activeFamilyGroupId: "family",
+              });
+        });
+      };
+
+      return (
+        <>
+          <PersonInspector
+            people={caseData.people}
+            selectedPersonId="person"
+            familyPersonIds={caseData.familyGroups[0].personIds}
+            deceasedStatusSession={session}
+            onChange={(people) => setCaseData((current) => replacePeople(current, people))}
+            onDeceasedStatusChange={changeDeceasedStatus}
+            onSelectPerson={vi.fn()}
+          />
+          <output data-testid="case-state">{JSON.stringify(caseData)}</output>
+        </>
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    const deceasedCheckbox = () =>
+      [...container.querySelectorAll('input[type="checkbox"]')].find((input) =>
+        input.parentElement.textContent.includes("This person is deceased."),
+      );
+
+    act(() => deceasedCheckbox().click());
+    const addParents = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Add missing parents"),
+    );
+    expect(addParents).toBeTruthy();
+    act(() => addParents.click());
+
+    let caseState = JSON.parse(container.querySelector('[data-testid="case-state"]').textContent);
+    expect(caseState.people).toHaveLength(3);
+    expect(
+      caseState.people.filter((person) => person.statusToggleSessionRole === "potential-parent"),
+    ).toHaveLength(2);
+    expect(caseState.people.find((person) => person.id === "person")).toMatchObject({
+      isDeceased: true,
+      fatherId: expect.any(String),
+      motherId: expect.any(String),
+    });
+
+    act(() => deceasedCheckbox().click());
+    caseState = JSON.parse(container.querySelector('[data-testid="case-state"]').textContent);
+    expect(caseState.people).toEqual([originalPerson]);
+    expect(caseState.familyGroups[0].personIds).toEqual(["person"]);
+    expect(caseState.statusToggleSessions).toEqual([]);
+    expect(container.querySelector(".person-succession")).toBeNull();
+  });
+
+  it("clears an unfinished transfer draft when unchecked and starts clean when reopened", () => {
+    const people = [
+      { id: "seller", fullName: "Joseph Borg", spouseIds: [], designations: [] },
+      { id: "buyer", fullName: "Maria Vella", spouseIds: [], designations: [] },
+    ];
+    const property = {
+      id: "property",
+      owners: [{ id: "owner", personId: "seller", sharePercent: 100 }],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+    const onInterVivosStatusChange = vi.fn();
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onRecordDonation={vi.fn()}
+          onInterVivosStatusChange={onInterVivosStatusChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const transferCheckbox = () =>
+      container.querySelector('input[aria-label="Sold/Donated Property Share"]');
+    act(() => transferCheckbox().click());
+    const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
+    const transferDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirer,
+        "buyer",
+      );
+      acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        transferDate,
+        "01/02/2020",
+      );
+      transferDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    act(() => transferCheckbox().click());
+    expect(container.querySelector(".person-donation-form")).toBeNull();
+    expect(onInterVivosStatusChange).toHaveBeenNthCalledWith(2, {
+      checked: false,
+      personId: "seller",
+      propertyId: "property",
+    });
+
+    act(() => transferCheckbox().click());
+    expect(container.querySelector('select[aria-label="Existing acquirer"]').value).toBe("");
+    expect(container.querySelector('input[aria-label="Donation date"]').value).toBe("");
+    expect(container.querySelector('select[aria-label="Transfer measurement"]').value).toBe(
+      "all-share",
+    );
   });
 });

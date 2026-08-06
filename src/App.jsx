@@ -40,6 +40,11 @@ import {
   buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
 } from "./domain/propertyVendorTax.js";
+import {
+  beginStatusToggleSession,
+  endStatusToggleSession,
+  statusToggleSession,
+} from "./domain/statusToggleSessions.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
 import {
   createFamilyTree,
@@ -318,6 +323,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     ) ||
     currentTree.properties[0] ||
     makePrimaryProperty("primary-property");
+  const deceasedStatusSession = statusToggleSession(currentTree, "deceased", selectedPersonId);
+  const interVivosStatusSession = statusToggleSession(currentTree, "inter-vivos", selectedPersonId);
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const propertyReport = useMemo(
     () =>
@@ -845,6 +852,61 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     );
   };
 
+  const changeDeceasedStatus = ({ checked, personId, people, patch }) => {
+    setTree((current) => {
+      let next = normaliseTree(current);
+      if (checked) {
+        next = beginStatusToggleSession(next, { type: "deceased", personId });
+        next = reconcilePeopleUpdate(next, activeFamilyGroupId, people);
+        return normaliseTree({
+          ...next,
+          people: next.people.map((person) =>
+            person.id === personId ? { ...person, ...patch } : person,
+          ),
+        });
+      }
+
+      next = reconcilePeopleUpdate(next, activeFamilyGroupId, people);
+      return normaliseTree(
+        endStatusToggleSession(next, {
+          type: "deceased",
+          personId,
+          activeFamilyGroupId,
+        }),
+      );
+    });
+    setStatus(
+      checked
+        ? "Deceased status opened. Uncheck it to restore the earlier record."
+        : "Deceased status and its session records were removed.",
+    );
+  };
+
+  const changeInterVivosStatus = ({ checked, personId, propertyId }) => {
+    setTree((current) => {
+      const next = normaliseTree(current);
+      return normaliseTree(
+        checked
+          ? beginStatusToggleSession(next, {
+              type: "inter-vivos",
+              personId,
+              propertyId,
+            })
+          : endStatusToggleSession(next, {
+              type: "inter-vivos",
+              personId,
+              propertyId,
+              activeFamilyGroupId,
+            }),
+      );
+    });
+    setStatus(
+      checked
+        ? "Property transfer opened. Uncheck it to restore the earlier ownership position."
+        : "Transfer records created under this status were removed.",
+    );
+  };
+
   const removePerson = (personId) => {
     const nextTree = removePersonFromFamilyGroup(currentTree, activeFamilyGroupId, personId);
     const nextGroup =
@@ -1131,6 +1193,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 onDeletePerson={removePerson}
                 onChange={updatePeople}
                 onRecordDonation={recordDonation}
+                deceasedStatusSession={deceasedStatusSession}
+                interVivosStatusSession={interVivosStatusSession}
+                onDeceasedStatusChange={changeDeceasedStatus}
+                onInterVivosStatusChange={changeInterVivosStatus}
                 onOutsidePartiesChange={(outsideParties) =>
                   setTree((current) => ({ ...normaliseTree(current), outsideParties }))
                 }

@@ -2290,6 +2290,11 @@ textarea {
   gap: 0.5rem;
 }
 
+.intestacy-proposal-confirmation {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .intestate-confirmation-heading > div {
   display: grid;
   gap: 0.12rem;
