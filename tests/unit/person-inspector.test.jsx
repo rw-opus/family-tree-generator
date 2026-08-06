@@ -1508,7 +1508,7 @@ describe("PersonInspector", () => {
     );
   });
 
-  it("asks the user to confirm a co-parent relationship before treating it as marriage", () => {
+  it("shows recorded co-parents as married without asking for confirmation or a date", () => {
     const onChange = vi.fn();
     const deceased = {
       id: "deceased",
@@ -1547,21 +1547,15 @@ describe("PersonInspector", () => {
       ),
     );
 
-    expect(container.textContent).toContain(
-      "Giovanna Wadge is recorded as a co-parent but not as a spouse or partner",
+    expect(container.textContent).not.toContain("Confirm the co-parent relationship");
+    expect(container.textContent).not.toContain("Record marriage");
+    expect(container.textContent).not.toContain("Marriage date");
+    const relationshipType = container.querySelector(
+      'select[aria-label="Relationship type with Giovanna Wadge"]',
     );
-    const recordMarriage = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Record marriage",
-    );
-    act(() => recordMarriage.click());
-
-    const updatedPeople = onChange.mock.calls.at(-1)[0];
-    expect(updatedPeople.find((person) => person.id === "deceased").spouseIds).toContain(
-      "co-parent",
-    );
-    expect(updatedPeople.find((person) => person.id === "co-parent").spouseIds).toContain(
-      "deceased",
-    );
+    expect(relationshipType).not.toBeNull();
+    expect(relationshipType.value).toBe("marriage");
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("immediately unlocks every succession field when a person is marked deceased", () => {
@@ -2990,21 +2984,8 @@ describe("PersonInspector", () => {
     });
     const relationshipType = container.querySelector(".person-partner-link-row select");
     expect(relationshipType.disabled).toBe(false);
-    const marriageStartDate = container.querySelector(
-      'input[aria-label^="Marriage start date with"]',
-    );
-    expect(marriageStartDate).not.toBeNull();
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
-        marriageStartDate,
-        "01/03/2010",
-      );
-      marriageStartDate.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(findPartnerRelationship(latestPeople, "roland", spouseId)).toMatchObject({
-      type: "marriage",
-      startDate: "2010-03-01",
-    });
+    expect(container.querySelector('input[aria-label^="Marriage start date with"]')).toBeNull();
+    expect(container.textContent).not.toContain("Marriage date");
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
         relationshipType,
@@ -3040,6 +3021,10 @@ describe("PersonInspector", () => {
     expect(findPartnerRelationship(latestPeople, "roland", partnerId)).toMatchObject({
       type: "partnership",
     });
+    const partnershipStartDate = container.querySelector(
+      'input[aria-label^="Partnership start date with"]',
+    );
+    expect(partnershipStartDate).not.toBeNull();
     expect(latestPeople.find((person) => person.id === "roland").spouseIds).toHaveLength(2);
   });
 

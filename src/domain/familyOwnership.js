@@ -172,19 +172,11 @@ function allocateSiblingBranches(siblings, atDate, amount, index) {
   return allocateBranches(siblings, atDate, amount, index);
 }
 
-function linkedSpouses(person, people, peopleById) {
-  const spouseIds = new Set(person.spouseIds || []);
-  people.forEach((candidate) => {
-    if ((candidate.spouseIds || []).includes(person.id)) spouseIds.add(candidate.id);
-  });
-  spouseIds.delete(person.id);
-  return [...spouseIds].map((id) => peopleById.get(id)).filter(Boolean);
-}
-
 export function linkedSpousesFor(people = [], personId) {
-  const index = familyIndex(people);
-  const person = index.peopleById.get(personId);
-  return person ? linkedSpouses(person, people, index.peopleById) : [];
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  return partnerIdsForPerson(people, personId)
+    .map((partnerId) => peopleById.get(partnerId))
+    .filter(Boolean);
 }
 
 export function linkedLegalSpousesFor(people = [], personId, atDate = "") {
@@ -480,15 +472,12 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         const relationship = findPartnerRelationship(people, deceased.id, partnerId);
         if (!partner || !relationship) return [];
         if (relationship.type === "partnership") return [];
-        const startsAfterThisDeath =
-          relationship.startDate && relationship.startDate > deceased.dateOfDeath;
         return validateRelationshipDateChronology({
-          startDate: relationship.startDate || "",
+          // Marriage start dates are not relevant to succession. A linked
+          // marriage is assumed to exist unless it is recorded as having ended.
+          startDate: "",
           endDate: relationship.endDate || "",
-          // A marriage explicitly beginning after this death is handled just
-          // below as "not started" and excluded. Keep calculating from the
-          // valid relationships while still showing the warning.
-          personDateOfDeath: startsAfterThisDeath ? "" : deceased.dateOfDeath || "",
+          personDateOfDeath: deceased.dateOfDeath || "",
           partnerDateOfDeath: partner.dateOfDeath || "",
           personLabel: personName(deceased),
           partnerLabel: personName(partner),
@@ -498,25 +487,6 @@ function calculateIntestateAllocations(people = [], deceasedId) {
   if (invalidRelationshipDates.length) {
     warnings.push(...new Set(invalidRelationshipDates));
     return { shares, warnings, destination: "spouse-status-unresolved" };
-  }
-  const marriagesNotStarted = deceased.unmarriedOrWidowedAtDeath
-    ? []
-    : partnerIdsForPerson(people, deceased.id)
-        .map((partnerId) => ({
-          partner: index.peopleById.get(partnerId),
-          relationship: findPartnerRelationship(people, deceased.id, partnerId),
-        }))
-        .filter(
-          ({ relationship }) => partnerRelationshipStatusAt(relationship, atDate) === "not-started",
-        )
-        .map(({ partner }) => partner)
-        .filter(Boolean);
-  if (marriagesNotStarted.length) {
-    warnings.push(
-      `The recorded marriage to ${marriagesNotStarted
-        .map(personName)
-        .join(", ")} starts after the date of death and was excluded.`,
-    );
   }
   const children = index.childrenByParent.get(deceased.id) || [];
   const descendantsWithUnknownSurvival = descendantsMissingDeathDates(people, deceased.id);

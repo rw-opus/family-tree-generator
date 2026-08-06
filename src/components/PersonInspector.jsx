@@ -1042,16 +1042,6 @@ export function PersonInspector({
     setSpouseChooserOpen(false);
   };
 
-  const recordCoParentRelationship = (coParentId, type) => {
-    if (!selectedPerson || !coParentId || coParentId === selectedPerson.id) return;
-    const stampedPeople = stampUnsignedIntestacyContexts();
-    onChange(
-      linkPartnerRelationship(stampedPeople, selectedPerson.id, coParentId, {
-        type,
-      }),
-    );
-  };
-
   const removeSelected = () => {
     if (
       !selectedPerson ||
@@ -1337,27 +1327,6 @@ export function PersonInspector({
     ).length,
   };
   const linkedSpouseIds = new Set(linkedPartners.map((person) => person.id));
-  const unlinkedCoParentIds = new Set();
-  people.forEach((child) => {
-    if (
-      child.fatherId === selectedPerson.id &&
-      child.motherId &&
-      child.motherId !== selectedPerson.id
-    ) {
-      unlinkedCoParentIds.add(child.motherId);
-    }
-    if (
-      child.motherId === selectedPerson.id &&
-      child.fatherId &&
-      child.fatherId !== selectedPerson.id
-    ) {
-      unlinkedCoParentIds.add(child.fatherId);
-    }
-  });
-  const unlinkedCoParents = [...unlinkedCoParentIds]
-    .filter((personId) => !linkedSpouseIds.has(personId))
-    .map((personId) => peopleById.get(personId))
-    .filter(Boolean);
   const linkedSiblingIds = new Set(selectedPerson.siblingIds || []);
   people.forEach((person) => {
     if ((person.siblingIds || []).includes(selectedPerson.id)) linkedSiblingIds.add(person.id);
@@ -2156,46 +2125,6 @@ export function PersonInspector({
                   to pass through this succession.
                 </p>
               )}
-              {inheritanceBasis === "intestacy" && unlinkedCoParents.length > 0 && (
-                <div className="succession-warning" role="alert">
-                  <strong>Confirm the co-parent relationship.</strong>
-                  {unlinkedCoParents.map((coParent) => (
-                    <div className="co-parent-relationship-review" key={coParent.id}>
-                      <span>
-                        {personDisplayName(coParent, people)} is recorded as a co-parent but not as
-                        a spouse or partner. The person is not included as a spouse until this is
-                        confirmed.
-                      </span>
-                      <span className="inline-actions">
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() =>
-                            recordCoParentRelationship(
-                              coParent.id,
-                              PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
-                            )
-                          }
-                        >
-                          Record marriage
-                        </button>
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() =>
-                            recordCoParentRelationship(
-                              coParent.id,
-                              PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP,
-                            )
-                          }
-                        >
-                          Record partnership
-                        </button>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
               <label className="succession-detail-row marital-status-at-death">
                 <span>Marital status at death</span>
                 <span className="detail-checkbox">
@@ -2922,7 +2851,8 @@ export function PersonInspector({
                   const relationshipLabel =
                     relationshipState === "partnership" ? "Partnership" : "Marriage";
                   const relationshipErrors = validateRelationshipDateChronology({
-                    startDate: relationship?.startDate || "",
+                    startDate:
+                      relationshipState === "partnership" ? relationship?.startDate || "" : "",
                     endDate: relationship?.endDate || "",
                     personDateOfDeath: selectedPerson.dateOfDeath || "",
                     partnerDateOfDeath: partner.dateOfDeath || "",
@@ -2962,6 +2892,8 @@ export function PersonInspector({
                           }
                           updatePartnerLink(partner.id, {
                             type: PARTNER_RELATIONSHIP_TYPES.MARRIAGE,
+                            startDate: "",
+                            startYear: "",
                             endDate: nextState === "former-marriage" ? relationship?.endDate : "",
                             endReason: nextState === "former-marriage" ? "divorce" : "",
                           });
@@ -2972,22 +2904,20 @@ export function PersonInspector({
                         <option value="partnership">Unmarried partners</option>
                       </select>
                       <span className="person-partner-dates">
-                        <label>
-                          <span>
-                            {relationshipState === "partnership"
-                              ? "Partnership started"
-                              : "Marriage date"}
-                          </span>
-                          <DateInput
-                            aria-label={`${relationshipLabel} start date with ${displayName(partner)}`}
-                            value={relationship?.startDate || ""}
-                            onChange={(value) =>
-                              updatePartnerLink(partner.id, {
-                                startDate: value,
-                              })
-                            }
-                          />
-                        </label>
+                        {relationshipState === "partnership" && (
+                          <label>
+                            <span>Partnership started</span>
+                            <DateInput
+                              aria-label={`Partnership start date with ${displayName(partner)}`}
+                              value={relationship?.startDate || ""}
+                              onChange={(value) =>
+                                updatePartnerLink(partner.id, {
+                                  startDate: value,
+                                })
+                              }
+                            />
+                          </label>
+                        )}
                         {relationshipState === "former-marriage" && (
                           <label>
                             <span>Marriage ended</span>

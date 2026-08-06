@@ -144,7 +144,7 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
-  it("flags co-parents whose marriage or partnership has not been recorded", () => {
+  it("does not flag co-parents because they are treated as married by default", () => {
     renderCanvas({
       people: [
         person("edgar", "Edgar Wadge", {
@@ -160,11 +160,9 @@ describe("FamilyTreeCanvas", () => {
     });
 
     const card = container.querySelector('[data-person-id="edgar"]');
-    expect(card.classList.contains("co-parent-relationship-unconfirmed")).toBe(true);
-    expect(card.textContent).toContain("Confirm relationship: Giovanna Wadge");
-    expect(card.getAttribute("aria-label")).toContain(
-      "Confirm whether Giovanna Wadge was a spouse or partner",
-    );
+    expect(card.classList.contains("co-parent-relationship-unconfirmed")).toBe(false);
+    expect(card.textContent).not.toContain("Confirm relationship");
+    expect(card.getAttribute("aria-label")).not.toContain("Confirm whether");
   });
 
   it("flags a card only when its calculated property transmission needs historical review", () => {

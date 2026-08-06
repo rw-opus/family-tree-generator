@@ -32,6 +32,42 @@ describe("partner relationship metadata", () => {
     expect(legalSpouseIdsForPerson(normalized, "giovanna")).toEqual(["edgar"]);
   });
 
+  it("treats recorded co-parents as married by default without requiring a date", () => {
+    const normalized = normalizePartnerRelationships([
+      { id: "edgar", spouseIds: [] },
+      { id: "giovanna", spouseIds: [] },
+      { id: "roland", fatherId: "edgar", motherId: "giovanna", spouseIds: [] },
+    ]);
+
+    expect(normalized.find((person) => person.id === "edgar").spouseIds).toEqual(["giovanna"]);
+    expect(normalized.find((person) => person.id === "giovanna").spouseIds).toEqual(["edgar"]);
+    expect(findPartnerRelationship(normalized, "edgar", "giovanna")).toMatchObject({
+      type: "marriage",
+      startDate: "",
+      startYear: "",
+    });
+    expect(legalSpouseIdsForPerson(normalized, "edgar", "2005-06-20")).toEqual(["giovanna"]);
+  });
+
+  it("honours an explicit unmarried partnership between recorded co-parents", () => {
+    const normalized = normalizePartnerRelationships([
+      {
+        id: "edgar",
+        spouseIds: [],
+        partnerRelationships: [{ personId: "giovanna", type: "partnership" }],
+      },
+      { id: "giovanna", spouseIds: [] },
+      { id: "roland", fatherId: "edgar", motherId: "giovanna", spouseIds: [] },
+    ]);
+
+    expect(findPartnerRelationship(normalized, "edgar", "giovanna")).toMatchObject({
+      type: "partnership",
+      startDate: "",
+    });
+    expect(partnerIdsForPerson(normalized, "edgar")).toEqual(["giovanna"]);
+    expect(legalSpouseIdsForPerson(normalized, "edgar", "2005-06-20")).toEqual([]);
+  });
+
   it("stores one canonical metadata record and supports lookup from either side", () => {
     const people = upsertPartnerRelationship(
       [
@@ -96,7 +132,7 @@ describe("partner relationship metadata", () => {
     });
   });
 
-  it("supports a year-only marriage and compact line annotations", () => {
+  it("does not display marriage dates but retains partnership date annotations", () => {
     const people = upsertPartnerRelationship(
       [
         { id: "a", spouseIds: ["b"] },
@@ -113,7 +149,7 @@ describe("partner relationship metadata", () => {
       startDate: "",
       startYear: "2015",
     });
-    expect(partnerRelationshipAnnotation(marriage)).toBe("m. 2015");
+    expect(partnerRelationshipAnnotation(marriage)).toBe("");
     expect(
       partnerRelationshipAnnotation({
         type: "partnership",
@@ -144,7 +180,7 @@ describe("partner relationship metadata", () => {
     expect(legalSpouseIdsForPerson(people, "b")).toEqual([]);
   });
 
-  it("tracks when a marriage ended and evaluates whether it was active on a date", () => {
+  it("tracks when a marriage ended but does not use its start date", () => {
     const people = upsertPartnerRelationship(
       [
         { id: "a", spouseIds: ["b"] },
@@ -166,11 +202,11 @@ describe("partner relationship metadata", () => {
       endDate: "2015-02-03",
       endReason: "divorce",
     });
-    expect(partnerRelationshipStatusAt(marriage, "2010-01-01")).toBe("active");
+    expect(partnerRelationshipStatusAt(marriage, "1990-01-01")).toBe("active");
     expect(partnerRelationshipStatusAt(marriage, "2020-01-01")).toBe("ended");
     expect(legalSpouseIdsForPerson(people, "a", "2010-01-01")).toEqual(["b"]);
     expect(legalSpouseIdsForPerson(people, "a", "2020-01-01")).toEqual([]);
-    expect(partnerRelationshipAnnotation(marriage)).toBe("m. 2000\u20132015");
+    expect(partnerRelationshipAnnotation(marriage)).toBe("");
   });
 
   it("removes reciprocal topology and metadata together", () => {

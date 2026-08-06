@@ -232,13 +232,34 @@ function topologyKeys(people, candidatesByKey) {
     });
   });
 
+  // Two people recorded as the parents of the same child are treated as
+  // married by default. A marriage date is not required. An explicit
+  // partnerRelationships record can still classify the pair as an unmarried
+  // partnership, because its metadata is retained against the same key.
+  people.forEach((child) => {
+    const fatherId = text(child?.fatherId);
+    const motherId = text(child?.motherId);
+    if (
+      !fatherId ||
+      !motherId ||
+      fatherId === motherId ||
+      !validPersonIds.has(fatherId) ||
+      !validPersonIds.has(motherId)
+    ) {
+      return;
+    }
+    const key = partnerRelationshipKey(fatherId, motherId);
+    if (key) keys.add(key);
+  });
+
   return keys;
 }
 
 /**
  * Makes spouseIds reciprocal while retaining exactly one metadata record for
- * each pair. Metadata is stored on the lexically first Person ID, but lookup is
- * deliberately direction-independent.
+ * each pair. Recorded co-parents are linked as a marriage by default, without
+ * requiring a marriage date. Metadata is stored on the lexically first Person
+ * ID, but lookup is deliberately direction-independent.
  */
 export function normalizePartnerRelationships(people = []) {
   if (!Array.isArray(people)) return [];
@@ -340,9 +361,6 @@ export function partnerRelationshipStatusAt(relationship, atDate = "") {
     normalizePartnerRelationshipType(relationship.type) !== PARTNER_RELATIONSHIP_TYPES.MARRIAGE
   ) {
     return "not-married";
-  }
-  if (atDate && relationship.startDate && relationship.startDate > atDate) {
-    return "not-started";
   }
   if (relationship.endReason && !relationship.endDate) {
     return "end-date-missing";
@@ -470,13 +488,14 @@ export function removePartnerRelationship(people, personId, otherPersonId) {
  */
 export function partnerRelationshipAnnotation(relationship = {}) {
   const type = normalizePartnerRelationshipType(relationship.type);
+  // Marriage dates are deliberately not displayed or used by the product.
+  // A recorded/imported date may remain in source metadata, but the marriage
+  // link itself is enough to establish the relationship.
+  if (type === PARTNER_RELATIONSHIP_TYPES.MARRIAGE) return "";
   const startDate = isValidIsoDate(relationship.startDate) ? relationship.startDate : "";
   const dateOrYear =
     (startDate && isoDateToDisplay(startDate)) || validStartYear(relationship.startYear);
   if (!dateOrYear) return "";
   const startText = startDate.slice(0, 4) || dateOrYear;
-  const endText = isValidIsoDate(relationship.endDate) ? relationship.endDate.slice(0, 4) : "";
-  const range = endText ? `${startText}\u2013${endText}` : startText;
-  if (type === PARTNER_RELATIONSHIP_TYPES.MARRIAGE) return `m. ${range}`;
   return startDate ? isoDateToDisplay(startDate) : startText;
 }

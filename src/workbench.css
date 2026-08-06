@@ -2190,18 +2190,6 @@ textarea {
   line-height: 1.35;
 }
 
-.co-parent-relationship-review {
-  display: grid;
-  gap: 0.2rem;
-  margin-top: 0.25rem;
-}
-
-.co-parent-relationship-review .inline-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
 .automatic-heirs > strong,
 .will-beneficiaries-heading strong {
   color: var(--ink);
@@ -5137,7 +5125,6 @@ body.a3-print-preview-open {
 .tree-stage .family-node.survival-status-required,
 .tree-stage .family-node.surname-at-birth-review-required,
 .tree-stage .family-node.spouse-at-death-conflict,
-.tree-stage .family-node.co-parent-relationship-unconfirmed,
 .tree-stage .family-node.historical-law-review-required {
   border-color: #b42318;
   border-top-color: #7a1610;

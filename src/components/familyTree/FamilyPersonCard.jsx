@@ -126,24 +126,6 @@ export function FamilyPersonCard({
     capitalisedName(personDisplayName(spouse, people)),
   );
   const spouseAtDeathConflict = excludedSpouseNames.length > 0;
-  const linkedPartnerIds = new Set(partnerIdsForPerson(people, person.id));
-  const unconfirmedCoParentIds = new Set();
-  if (isDeceased && !isTestate) {
-    people.forEach((child) => {
-      if (child.fatherId === person.id && child.motherId && child.motherId !== person.id) {
-        unconfirmedCoParentIds.add(child.motherId);
-      }
-      if (child.motherId === person.id && child.fatherId && child.fatherId !== person.id) {
-        unconfirmedCoParentIds.add(child.fatherId);
-      }
-    });
-  }
-  const unconfirmedCoParentNames = [...unconfirmedCoParentIds]
-    .filter((personId) => !linkedPartnerIds.has(personId))
-    .map((personId) => people.find((candidate) => candidate.id === personId))
-    .filter(Boolean)
-    .map((coParent) => capitalisedName(personDisplayName(coParent, people)));
-  const coParentRelationshipUnconfirmed = unconfirmedCoParentNames.length > 0;
   const name = cardName(person);
   const givenNames = capitalisedName(personGivenNames(person));
   const surname = capitalisedName(personSurname(person));
@@ -163,10 +145,6 @@ export function FamilyPersonCard({
     spouseAtDeathConflict
       ? `. No spouse survived is selected, so ${excludedSpouseNames.join(", ")} is excluded from the succession`
       : ""
-  }${
-    coParentRelationshipUnconfirmed
-      ? `. Confirm whether ${unconfirmedCoParentNames.join(", ")} was a spouse or partner before relying on the succession`
-      : ""
   }`;
   const survivalStatusRequired = person.survivalStatusRequired === true;
   const surnameAtBirthReviewRequired = person.surnameAtBirthReviewRequired === true;
@@ -177,8 +155,7 @@ export function FamilyPersonCard({
     incompleteCausaMortis.length > 0 ||
     survivalStatusRequired ||
     surnameAtBirthReviewRequired ||
-    spouseAtDeathConflict ||
-    coParentRelationshipUnconfirmed;
+    spouseAtDeathConflict;
   const actionRequiredGuidance = [
     missingDataActionRequired &&
       "Action required: open this person's card and update the missing detail.",
@@ -196,7 +173,6 @@ export function FamilyPersonCard({
     survivalStatusRequired && "survival-status-required",
     surnameAtBirthReviewRequired && "surname-at-birth-review-required",
     spouseAtDeathConflict && "spouse-at-death-conflict",
-    coParentRelationshipUnconfirmed && "co-parent-relationship-unconfirmed",
     historicalLawWarning && "historical-law-review-required",
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
@@ -244,11 +220,6 @@ export function FamilyPersonCard({
       {!person.isPlaceholder && spouseAtDeathConflict && (
         <div className="family-node-succession-alert">
           No spouse at death: {excludedSpouseNames.join(", ")} excluded
-        </div>
-      )}
-      {!person.isPlaceholder && coParentRelationshipUnconfirmed && (
-        <div className="family-node-succession-alert">
-          Confirm relationship: {unconfirmedCoParentNames.join(", ")}
         </div>
       )}
       {!person.isPlaceholder && survivalStatusRequired && (

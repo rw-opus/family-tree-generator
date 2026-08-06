@@ -173,7 +173,7 @@ describe("automatic family ownership", () => {
     );
   });
 
-  it("does not treat shared parenthood alone as a legal spouse link", () => {
+  it("treats shared parenthood as a marriage by default", () => {
     const people = [
       person("edgar", {
         fullName: "Edgar Wadge",
@@ -190,9 +190,9 @@ describe("automatic family ownership", () => {
       owners: [{ personId: "edgar", sharePercent: 100 }],
     });
 
-    expect(result.ownershipByPerson.wife || 0).toBe(0);
-    expect(result.ownershipByPerson["son-1"]).toBeCloseTo(0.5);
-    expect(result.ownershipByPerson["son-2"]).toBeCloseTo(0.5);
+    expect(result.ownershipByPerson.wife).toBeCloseTo(0.5);
+    expect(result.ownershipByPerson["son-1"]).toBeCloseTo(0.25);
+    expect(result.ownershipByPerson["son-2"]).toBeCloseTo(0.25);
   });
 
   it("does not give an explicitly unmarried partner a spouse share", () => {
@@ -275,12 +275,12 @@ describe("automatic family ownership", () => {
     expect(result.ownershipByPerson["child-will-beneficiary"] || 0).toBe(0);
   });
 
-  it("uses marriage dates to identify the legal spouse at the date of death", () => {
+  it("does not require or use a marriage start date to identify the legal spouse", () => {
     const people = [
       person("deceased", {
         isDeceased: true,
         dateOfDeath: "2020-01-01",
-        spouseIds: ["former", "current", "future"],
+        spouseIds: ["former", "current"],
         partnerRelationships: [
           {
             personId: "former",
@@ -289,13 +289,11 @@ describe("automatic family ownership", () => {
             endDate: "2010-01-01",
             endReason: "divorce",
           },
-          { personId: "current", type: "marriage", startDate: "2015-01-01" },
-          { personId: "future", type: "marriage", startDate: "2025-01-01" },
+          { personId: "current", type: "marriage", startDate: "2025-01-01" },
         ],
       }),
       person("former", { spouseIds: ["deceased"] }),
       person("current", { spouseIds: ["deceased"] }),
-      person("future", { spouseIds: ["deceased"] }),
       person("child", { fatherId: "deceased", motherId: "current" }),
     ];
 
@@ -305,20 +303,18 @@ describe("automatic family ownership", () => {
     });
 
     expect(result.ownershipByPerson.former || 0).toBe(0);
-    expect(result.ownershipByPerson.future || 0).toBe(0);
     expect(result.ownershipByPerson.current).toBeCloseTo(0.5);
     expect(result.ownershipByPerson.child).toBeCloseTo(0.5);
     expect(result.transmissions[0].destination).toBe("spouse-and-descendants");
-    expect(result.transmissions[0].warnings.join(" ")).toContain("starts after the date of death");
+    expect(result.transmissions[0].warnings.join(" ")).not.toContain("starts after");
   });
 
-  it("ignores unsigned children-only overrides after a post-2005 death and includes the spouse", () => {
+  it("defaults co-parents to marriage and ignores unsigned children-only overrides", () => {
     const people = [
       person("edgar", {
         fullName: "Edgar Wadge",
         isDeceased: true,
-        dateOfDeath: "2026-06-21",
-        spouseIds: ["giovanna"],
+        dateOfDeath: "2005-05-20",
         intestateHeirs: [
           { id: "roland-share", personId: "roland", sharePercent: 25 },
           { id: "harvey-share", personId: "harvey", sharePercent: 25 },
@@ -328,7 +324,6 @@ describe("automatic family ownership", () => {
       }),
       person("giovanna", {
         fullName: "Giovanna Wadge",
-        spouseIds: ["edgar"],
       }),
       person("roland", { fatherId: "edgar", motherId: "giovanna" }),
       person("harvey", { fatherId: "edgar", motherId: "giovanna" }),
@@ -355,7 +350,7 @@ describe("automatic family ownership", () => {
     );
   });
 
-  it("leaves an implausibly early marriage unresolved until its date is corrected", () => {
+  it("ignores an old imported marriage start date", () => {
     const people = [
       person("deceased", {
         isDeceased: true,
@@ -368,8 +363,10 @@ describe("automatic family ownership", () => {
     ];
 
     const allocation = intestateAllocations(people, "deceased");
-    expect(allocation.destination).toBe("spouse-status-unresolved");
-    expect(allocation.warnings.join(" ")).toContain("more than 90 years before");
+    expect(allocation.destination).toBe("spouse-and-descendants");
+    expect(allocation.shares.get("spouse")).toBeCloseTo(0.5);
+    expect(allocation.shares.get("child")).toBeCloseTo(0.5);
+    expect(allocation.warnings.join(" ")).not.toContain("more than 90 years before");
   });
 
   it("stops intestacy when former or overlapping marriages are ambiguous", () => {
@@ -1036,6 +1033,27 @@ describe("automatic family ownership", () => {
 
     expect(allocation.destination).toBe("legacy-spouse");
     expect(Object.fromEntries(allocation.shares)).toEqual({ spouse: 1 });
+  });
+
+  it("includes a recorded co-parent as a post-2005 spouse without a marriage date", () => {
+    const people = [
+      person("edgar", {
+        isDeceased: true,
+        dateOfDeath: "2005-06-20",
+      }),
+      person("giovanna"),
+      ...["wallace", "harvey", "roland", "eric"].map((id) =>
+        person(id, { fatherId: "edgar", motherId: "giovanna" }),
+      ),
+    ];
+
+    const allocation = intestateAllocations(people, "edgar");
+
+    expect(allocation.shares.get("giovanna")).toBeCloseTo(1 / 2);
+    ["wallace", "harvey", "roland", "eric"].forEach((id) =>
+      expect(allocation.shares.get(id)).toBeCloseTo(1 / 8),
+    );
+    expect(allocation.destination).toBe("spouse-and-descendants");
   });
 
   it("calculates a pre-1993 estate provisionally and identifies the articles to check", () => {

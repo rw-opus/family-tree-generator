@@ -116,6 +116,32 @@ function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {
   );
   if (children.length !== 1 || children[0].id !== referencePersonId) return false;
 
+  // Partner normalisation infers a marriage between the two recorded parents
+  // of a child. That derived spouseIds link must not make old, silently-created
+  // parent placeholders look user-edited and therefore permanent. Explicit
+  // relationship metadata or any other spouse link remains durable user data.
+  const inferredCoParentIds = new Set(
+    people
+      .filter((candidate) => {
+        if (
+          candidate.id === person.id ||
+          candidate.isPotentialIntestateParent !== true ||
+          candidate.survivalStatusRequired !== true ||
+          candidate.potentialParentAddedExplicitly === true ||
+          text(candidate.survivalStatusReferencePersonId) !== referencePersonId ||
+          records(candidate.partnerRelationships).length
+        ) {
+          return false;
+        }
+        const referenceParents = new Set([referencePerson.fatherId, referencePerson.motherId]);
+        return referenceParents.has(person.id) && referenceParents.has(candidate.id);
+      })
+      .map((candidate) => candidate.id),
+  );
+  const durableSpouseIds = uniqueIds(person.spouseIds).filter(
+    (personId) => !inferredCoParentIds.has(personId),
+  );
+
   const designations = Array.isArray(person.designations)
     ? person.designations.map((designation) => text(designation).toLowerCase()).filter(Boolean)
     : [];
@@ -133,7 +159,7 @@ function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {
     text(person.survivalStatusConfirmed) ||
     (text(person.inheritanceBasis) &&
       text(person.inheritanceBasis).toLowerCase() !== "intestacy") ||
-    uniqueIds(person.spouseIds).length ||
+    durableSpouseIds.length ||
     uniqueIds(person.siblingIds).length ||
     records(person.partnerRelationships).length ||
     records(person.wills).length ||
