@@ -990,6 +990,19 @@ export function PersonInspector({
       }
     }
 
+    // The family-ownership cascade runs before the dated transfer ledger. When a
+    // deceased person disposed of their entire holding during life, retain that
+    // holding long enough for the ledger to move it to the recorded acquirer;
+    // otherwise it would incorrectly descend to the heirs first. This internal
+    // marker does not control whether the transfer form is open.
+    if (isDeceased && compareFractions(amount, donorLedgerHolding) === 0) {
+      nextPeople = nextPeople.map((person) =>
+        person.id === selectedPerson.id
+          ? { ...person, inheritanceBasis: "lifetime-disposal" }
+          : person,
+      );
+    }
+
     const transfer = tagStatusCreatedRecord(
       {
         id: crypto.randomUUID(),
