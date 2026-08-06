@@ -2035,14 +2035,14 @@ export function PersonInspector({
             <span className="detail-checkbox">
               <input
                 type="checkbox"
-                aria-label="This person transferred a share inter vivos."
+                aria-label="Sold/Donated Property Share"
                 aria-controls={`inter-vivos-transfer-${selectedPerson.id}`}
                 aria-expanded={interVivosDisclosureOpen}
                 checked={interVivosDisclosureOpen}
                 disabled={fullyTransferredInterVivos}
                 onChange={(event) => setDonationOpen(event.target.checked)}
               />
-              This person transferred a share inter vivos.
+              Sold/Donated Property Share
             </span>
           </label>
         </div>

@@ -3287,7 +3287,7 @@ describe("PersonInspector provenance designation", () => {
 
     expect(container.querySelector(".person-succession")).not.toBeNull();
     const transferCheckbox = container.querySelector(
-      'input[aria-label="This person transferred a share inter vivos."]',
+      'input[aria-label="Sold/Donated Property Share"]',
     );
     act(() => transferCheckbox.click());
     expect(container.querySelector(".person-succession")).not.toBeNull();
@@ -3311,9 +3311,7 @@ describe("PersonInspector provenance designation", () => {
       ),
     );
 
-    const toggle = container.querySelector(
-      'input[aria-label="This person transferred a share inter vivos."]',
-    );
+    const toggle = container.querySelector('input[aria-label="Sold/Donated Property Share"]');
     expect(toggle).toBeTruthy();
     act(() => toggle.click());
 
@@ -3401,9 +3399,7 @@ describe("PersonInspector provenance designation", () => {
       ),
     );
 
-    const toggle = container.querySelector(
-      'input[aria-label="This person transferred a share inter vivos."]',
-    );
+    const toggle = container.querySelector('input[aria-label="Sold/Donated Property Share"]');
     act(() => toggle.click());
 
     expect(container.querySelector(".transfer-fraction")).toBeNull();
@@ -3460,11 +3456,7 @@ describe("PersonInspector provenance designation", () => {
       ),
     );
 
-    act(() =>
-      container
-        .querySelector('input[aria-label="This person transferred a share inter vivos."]')
-        .click(),
-    );
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
     const measurement = container.querySelector('select[aria-label="Transfer measurement"]');
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
@@ -3512,11 +3504,7 @@ describe("PersonInspector provenance designation", () => {
       ),
     );
 
-    act(() =>
-      container
-        .querySelector('input[aria-label="This person transferred a share inter vivos."]')
-        .click(),
-    );
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
     const measurement = container.querySelector('select[aria-label="Transfer measurement"]');
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
@@ -3592,10 +3580,9 @@ describe("PersonInspector legacy lifetime disposal records", () => {
 
     expect(container.textContent).not.toContain("Sold / donated during lifetime");
     expect(container.querySelector(".person-succession")).not.toBeNull();
-    expect(
-      container.querySelector('input[aria-label="This person transferred a share inter vivos."]')
-        .checked,
-    ).toBe(true);
+    expect(container.querySelector('input[aria-label="Sold/Donated Property Share"]').checked).toBe(
+      true,
+    );
     // No holding is recorded here, so the independent transfer flow explains itself.
     expect(container.textContent).toContain(
       "Add the property and its initial ownership before recording an inter vivos transfer.",
@@ -3644,7 +3631,7 @@ describe("PersonInspector legacy lifetime disposal records", () => {
     );
 
     const transferCheckbox = container.querySelector(
-      'input[aria-label="This person transferred a share inter vivos."]',
+      'input[aria-label="Sold/Donated Property Share"]',
     );
     expect(transferCheckbox.checked).toBe(true);
     expect(transferCheckbox.disabled).toBe(true);
