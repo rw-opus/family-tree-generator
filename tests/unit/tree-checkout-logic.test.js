@@ -18,6 +18,14 @@ describe("tree credit checkout", () => {
     expect(checkoutGate({ free_tree_limit: 5, free_trees_used: 5, paid_tree_credits: 0 })).toEqual({
       allowed: true,
     });
+    expect(
+      checkoutGate({
+        free_tree_limit: 5,
+        free_trees_used: 5,
+        paid_tree_credits: 0,
+        unlimited_trees: true,
+      }),
+    ).toMatchObject({ allowed: false, reason: "account has unlimited tree creation" });
   });
 
   it("creates a one-time server-priced checkout tied to the account and order", () => {

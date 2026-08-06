@@ -71,6 +71,11 @@ import {
 } from "../domain/partnerRelationships.js";
 import { buildTaxCalculationReport, ownerProvenanceTranches } from "../domain/propertyVendorTax.js";
 import { selectTranchePortions } from "../domain/trancheOwnership.js";
+import { tagStatusCreatedRecord } from "../domain/statusToggleSessions.js";
+import {
+  deriveNoSurvivingSpouseAtDeath,
+  MARITAL_STATUS_AT_DEATH_SOURCES,
+} from "../domain/maritalStatusAtDeath.js";
 import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
@@ -174,6 +179,10 @@ export function PersonInspector({
   onChange,
   onOutsidePartiesChange,
   onRecordDonation,
+  deceasedStatusSession = null,
+  interVivosStatusSession = null,
+  onDeceasedStatusChange,
+  onInterVivosStatusChange,
   onSelectPerson,
   onDeletePerson,
 }) {
@@ -266,7 +275,7 @@ export function PersonInspector({
     setDonationOpen(
       Boolean(
         selectedPerson &&
-        (selectedPerson.inheritanceBasis === "lifetime-disposal" ||
+        (interVivosStatusSession ||
           (properties[0]?.transfers || []).some(
             (transfer) => transfer.sellerId === selectedPerson.id,
           )),
@@ -281,7 +290,7 @@ export function PersonInspector({
       ),
     );
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
-  }, [properties, selectedPerson]);
+  }, [interVivosStatusSession, properties, selectedPerson]);
 
   useEffect(() => {
     setOwnershipDisplay(shareDisplayMode(shareDisplay));
@@ -294,7 +303,9 @@ export function PersonInspector({
     const selectedPatch = {};
     const createdParents = missingIntestateParentRoles.map((role) => {
       const relationship = role === "mother" ? "Mother" : "Father";
-      const parent = createPerson("Parent");
+      const parent = tagStatusCreatedRecord(createPerson("Parent"), deceasedStatusSession, {
+        role: "potential-parent",
+      });
       Object.assign(parent, {
         givenNames: `${relationship} of ${subjectName}`,
         fullName: `${relationship} of ${subjectName}`,
@@ -629,7 +640,7 @@ export function PersonInspector({
           }
         : { survivalStatusRequired: false, survivalStatusConfirmed: "alive" }
       : {};
-    updateSelected({
+    const patch = {
       designations: checked ? ["Deceased", ...current] : current,
       isDeceased: checked,
       inheritanceBasis:
@@ -643,7 +654,18 @@ export function PersonInspector({
         ? selectedPerson.unmarriedOrWidowedAtDeath === true
         : false,
       ...survivalPatch,
-    });
+    };
+
+    if (onDeceasedStatusChange) {
+      onDeceasedStatusChange({
+        checked,
+        personId: selectedPerson.id,
+        people: stampUnsignedIntestacyContexts(),
+        patch,
+      });
+      return;
+    }
+    updateSelected(patch);
   };
 
   const updateDateOfDeath = (dateOfDeath) => {
@@ -778,20 +800,10 @@ export function PersonInspector({
   const fullyTransferredInterVivos =
     recordedOutgoingInterVivosTransfers.length > 0 &&
     compareFractions(interVivosHolding, ZERO_FRACTION) === 0;
-  useEffect(() => {
-    if (!activeProperty || !selectedPerson || !isPersonDeceased(selectedPerson)) return;
-    const nextBasis = fullyTransferredInterVivos
-      ? "lifetime-disposal"
-      : selectedPerson.inheritanceBasis === "lifetime-disposal"
-        ? "intestacy"
-        : selectedPerson.inheritanceBasis;
-    if (nextBasis === selectedPerson.inheritanceBasis) return;
-    onChange(
-      people.map((person) =>
-        person.id === selectedPerson.id ? { ...person, inheritanceBasis: nextBasis } : person,
-      ),
-    );
-  }, [activeProperty, fullyTransferredInterVivos, onChange, people, selectedPerson]);
+  const interVivosDisclosureOpen =
+    donationOpen ||
+    Boolean(interVivosStatusSession) ||
+    recordedOutgoingInterVivosTransfers.length > 0;
   const donorLedgerHolding = useMemo(() => {
     const owner = (vendorReport?.ledger?.owners || []).find(
       (candidate) => candidate.id === selectedPerson?.id,
@@ -956,11 +968,15 @@ export function PersonInspector({
       // An unrelated acquirer joins the tree with no family links: the layout places every
       // disconnected group side by side, so this person starts a mini tree next to the
       // family and can gain a spouse and children from their own card later.
-      acquirer = {
-        ...createPerson(isDonation ? "Donee" : "Buyer"),
-        fullName: name,
-        sex: donationDraft.doneeSex,
-      };
+      acquirer = tagStatusCreatedRecord(
+        {
+          ...createPerson(isDonation ? "Donee" : "Buyer"),
+          fullName: name,
+          sex: donationDraft.doneeSex,
+        },
+        interVivosStatusSession,
+        { role: "transfer-acquirer" },
+      );
       nextPeople = [...people, acquirer];
     } else {
       if (!donationDraft.doneeId) {
@@ -974,6 +990,11 @@ export function PersonInspector({
       }
     }
 
+    // The family-ownership cascade runs before the dated transfer ledger. When a
+    // deceased person disposed of their entire holding during life, retain that
+    // holding long enough for the ledger to move it to the recorded acquirer;
+    // otherwise it would incorrectly descend to the heirs first. This internal
+    // marker does not control whether the transfer form is open.
     if (isDeceased && compareFractions(amount, donorLedgerHolding) === 0) {
       nextPeople = nextPeople.map((person) =>
         person.id === selectedPerson.id
@@ -982,10 +1003,8 @@ export function PersonInspector({
       );
     }
 
-    onRecordDonation({
-      people: nextPeople,
-      propertyId: activeProperty.id,
-      transfer: {
+    const transfer = tagStatusCreatedRecord(
+      {
         id: crypto.randomUUID(),
         // The contract type travels with the transfer because it governs the acquirer's own
         // tax position on a later resale: a donation triggers the Article 5A(5)(b) rules,
@@ -998,16 +1017,27 @@ export function PersonInspector({
         amountType: storedAmountType,
         date: donationDraft.date,
         consideration: "",
+        ...(acquirer ? { createdBuyerPersonId: acquirer.id } : {}),
         // Which acquisitions the transferred share comes from — designated by the notary
         // when the question arises, attributed automatically when it answers itself.
         provenance: provenanceResult.provenance,
       },
+      interVivosStatusSession,
+      { role: "transfer" },
+    );
+    onRecordDonation({
+      people: nextPeople,
+      propertyId: activeProperty.id,
+      transfer,
     });
     setDonationDraft(blankDonationDraft());
   };
 
   const createOutsideParty = (party) => {
-    onOutsidePartiesChange?.([...outsideParties, party]);
+    const nextParty = tagStatusCreatedRecord(party, deceasedStatusSession, {
+      role: "succession-party",
+    });
+    onOutsidePartiesChange?.([...outsideParties, nextParty]);
   };
 
   const addOutsideWillHeir = (party) => {
@@ -1237,15 +1267,39 @@ export function PersonInspector({
   const visibleCausaMortisDeclarations = causaMortisDeclarations.filter(
     (declaration) => isCompletedCausaMortisDeclaration(declaration) || causaMortisDraftOpen,
   );
-  const applyIntestacySuggestionToWill = () => {
+  const suggestedWillHeirsConfirmed =
+    selectedPerson.willHeirsConfirmed === true &&
+    selectedPerson.willHeirsConfirmationSource === "suggested";
+  const setSuggestedWillHeirsConfirmed = (confirmed) => {
     const suggestedHeirs = [...(automaticIntestacy?.shares || new Map()).entries()];
-    if (!suggestedHeirs.length) return;
+    if (confirmed && !suggestedHeirs.length) return;
+
+    if (!confirmed) {
+      const snapshot = selectedPerson.willHeirsConfirmationSnapshot;
+      updateSelected({
+        willHeirs: Array.isArray(snapshot?.willHeirs)
+          ? snapshot.willHeirs.map((heir) => ({ ...heir }))
+          : [],
+        willHeirsConfirmed: snapshot?.willHeirsConfirmed === true,
+        willHeirsConfirmationSource: snapshot?.willHeirsConfirmationSource || "",
+        willHeirsConfirmationSnapshot: null,
+      });
+      return;
+    }
+
     updateSelected({
       willHeirs: suggestedHeirs.map(([personId, share]) => ({
         id: crypto.randomUUID(),
         personId,
         ...shareFromPercentage(share * 100),
       })),
+      willHeirsConfirmed: true,
+      willHeirsConfirmationSource: "suggested",
+      willHeirsConfirmationSnapshot: {
+        willHeirs: (selectedPerson.willHeirs || []).map((heir) => ({ ...heir })),
+        willHeirsConfirmed: selectedPerson.willHeirsConfirmed === true,
+        willHeirsConfirmationSource: selectedPerson.willHeirsConfirmationSource || "",
+      },
     });
   };
   const hasUnknownCausaMortisDeathDate = causaMortisCoverage.some(
@@ -1295,6 +1349,7 @@ export function PersonInspector({
       : "Complete the initial ownership, selling price and acquisition details.";
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
+  const derivedNoSurvivingSpouse = deriveNoSurvivingSpouseAtDeath(people, selectedPerson.id);
   const partnerRelationshipsById = new Map(
     linkedPartners.map((partner) => [
       partner.id,
@@ -1442,7 +1497,7 @@ export function PersonInspector({
       className="person-donation"
       data-person-section="donation"
     >
-      {donationOpen && (
+      {interVivosDisclosureOpen && (
         <form className="person-donation-form" onSubmit={submitDonation}>
           <label>
             Type of contract
@@ -1733,7 +1788,15 @@ export function PersonInspector({
       )}
     </div>
   ) : null;
-  const interVivosDisclosureOpen = donationOpen || fullyTransferredInterVivos;
+  const setInterVivosDisclosure = (checked) => {
+    setDonationOpen(checked);
+    if (!checked) setDonationDraft(blankDonationDraft());
+    onInterVivosStatusChange?.({
+      checked,
+      personId: selectedPerson.id,
+      propertyId: activeProperty?.id || "",
+    });
+  };
 
   return (
     <div className="person-inspector">
@@ -2039,8 +2102,7 @@ export function PersonInspector({
                 aria-controls={`inter-vivos-transfer-${selectedPerson.id}`}
                 aria-expanded={interVivosDisclosureOpen}
                 checked={interVivosDisclosureOpen}
-                disabled={fullyTransferredInterVivos}
-                onChange={(event) => setDonationOpen(event.target.checked)}
+                onChange={(event) => setInterVivosDisclosure(event.target.checked)}
               />
               Sold/Donated Property Share
             </span>
@@ -2133,12 +2195,22 @@ export function PersonInspector({
                     aria-label="No spouse survived this person"
                     checked={selectedPerson.unmarriedOrWidowedAtDeath === true}
                     onChange={(event) =>
-                      updateSelected({ unmarriedOrWidowedAtDeath: event.target.checked })
+                      updateSelected({
+                        unmarriedOrWidowedAtDeath: event.target.checked,
+                        unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.MANUAL,
+                      })
                     }
                   />
                   No spouse survived this person (unmarried or already widowed at death).
                 </span>
               </label>
+              {derivedNoSurvivingSpouse !== null &&
+                selectedPerson.unmarriedOrWidowedAtDeathSource ===
+                  MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC && (
+                  <small className="succession-marital-status-note">
+                    Automatically selected from the recorded spouse relationships and death dates.
+                  </small>
+                )}
               {selectedPerson.unmarriedOrWidowedAtDeath === true && (
                 <small
                   className={`succession-marital-status-note${
@@ -2265,9 +2337,10 @@ export function PersonInspector({
                     people={people}
                     displayName={displayParty}
                     shareDisplay={ownershipDisplay}
-                    title="Suggested heirs if intestate"
-                    actionLabel="Edit Beneficiaries"
-                    onApply={applyIntestacySuggestionToWill}
+                    title="Suggested Heirs"
+                    confirmationLabel="Confirm Heirs?"
+                    confirmed={suggestedWillHeirsConfirmed}
+                    onConfirmationChange={setSuggestedWillHeirsConfirmed}
                   />
                   <div className="will-beneficiaries">
                     <div className="will-beneficiaries-heading">

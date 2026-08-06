@@ -47,8 +47,9 @@ export function IntestacyProposal({
   displayName,
   shareDisplay = "fraction",
   title = "Proposed under intestacy",
-  actionLabel = "",
-  onApply,
+  confirmationLabel = "",
+  confirmed = false,
+  onConfirmationChange,
 }) {
   const entries = [...(calculated?.shares || new Map()).entries()];
   const peopleById = new Map(people.map((person) => [person.id, person]));
@@ -56,10 +57,17 @@ export function IntestacyProposal({
     <div className="calculated-intestacy">
       <div className="intestate-confirmation-heading">
         <strong>{title}</strong>
-        {entries.length > 0 && actionLabel && onApply && (
-          <button type="button" className="text-button" onClick={onApply}>
-            {actionLabel}
-          </button>
+        {confirmationLabel && onConfirmationChange && (
+          <label className="detail-checkbox intestacy-proposal-confirmation">
+            <input
+              type="checkbox"
+              aria-label={confirmationLabel}
+              checked={confirmed}
+              disabled={entries.length === 0}
+              onChange={(event) => onConfirmationChange(event.target.checked)}
+            />
+            {confirmationLabel}
+          </label>
         )}
       </div>
       {entries.length > 0 ? (

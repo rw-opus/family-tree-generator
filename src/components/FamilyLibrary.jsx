@@ -71,6 +71,7 @@ export function FamilyLibrary({
   );
   const signedIn = Boolean(session);
   const allowanceLoading = commercialMode && !entitlement;
+  const unlimitedTrees = entitlement?.unlimitedTrees === true;
 
   const closeCreation = () => {
     if (creationBusy) return;
@@ -186,16 +187,25 @@ export function FamilyLibrary({
                   <dt>Trees generated</dt>
                   <dd>{entitlement.totalTreesCreated}</dd>
                 </div>
-                <div>
-                  <dt>Free trees remaining</dt>
-                  <dd>
-                    {entitlement.freeTreesRemaining} of {entitlement.freeTreeLimit}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Paid tree credits</dt>
-                  <dd>{entitlement.paidTreeCredits}</dd>
-                </div>
+                {unlimitedTrees ? (
+                  <div>
+                    <dt>Tree allowance</dt>
+                    <dd>Unlimited</dd>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <dt>Free trees remaining</dt>
+                      <dd>
+                        {entitlement.freeTreesRemaining} of {entitlement.freeTreeLimit}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Paid tree credits</dt>
+                      <dd>{entitlement.paidTreeCredits}</dd>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </dl>
@@ -222,13 +232,16 @@ export function FamilyLibrary({
                 <strong>
                   {allowanceLoading
                     ? "Checking your tree allowance..."
-                    : canCreate
-                      ? "Tree creation available"
-                      : "Additional tree · €30"}
+                    : unlimitedTrees
+                      ? "Unlimited tree creation"
+                      : canCreate
+                        ? "Tree creation available"
+                        : "Additional tree · €30"}
                 </strong>
                 <p>
-                  The first five lifetime trees are free. Each later creation or GEDCOM import uses
-                  one paid credit. Editing remains free.
+                  {unlimitedTrees
+                    ? "This account can create and import any number of family trees."
+                    : "The first five lifetime trees are free. Each later creation or GEDCOM import uses one paid credit. Editing remains free."}
                 </p>
               </div>
               {!allowanceLoading && !canCreate && (
@@ -319,78 +332,106 @@ export function FamilyLibrary({
               <span role="columnheader">Added</span>
               <span role="columnheader">Actions</span>
             </div>
-            {filteredTrees.map((tree) => (
-              <div className="family-library-row" role="row" key={tree.id}>
-                {renamingId === tree.id ? (
-                  <form
-                    className="family-rename-form"
-                    onSubmit={(event) => submitRename(event, tree.id)}
-                  >
-                    <input
-                      aria-label={`New name for ${tree.title || "family"}`}
-                      autoFocus
-                      value={renameDraft}
-                      onChange={(event) => setRenameDraft(event.target.value)}
-                    />
-                    <button
-                      type="submit"
-                      className="library-icon-button"
-                      aria-label="Save family name"
-                    >
-                      <Check size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      className="library-icon-button"
-                      onClick={cancelRename}
-                      aria-label="Cancel renaming"
-                    >
-                      <X size={15} />
-                    </button>
-                  </form>
-                ) : (
-                  <button
-                    type="button"
-                    className="family-name-button"
-                    onClick={() => onOpen(tree.id)}
-                  >
-                    <span>{tree.title || "Untitled family"}</span>
-                    {tree.id === activeTreeId && <small>Open now</small>}
-                    {(tree.dataWarnings?.length > 0 || tree.importWarnings?.length > 0) && (
-                      <small className="family-review-warning">
-                        {(tree.dataWarnings?.length || 0) + (tree.importWarnings?.length || 0)}{" "}
-                        import /recovery item(s) need review
-                      </small>
+            {filteredTrees.map((tree) => {
+              const reviewCount =
+                (tree.dataWarnings?.length || 0) + (tree.importWarnings?.length || 0);
+              const isActive = tree.id === activeTreeId;
+              const isRenaming = renamingId === tree.id;
+
+              return (
+                <div
+                  className={`family-library-row${isActive ? " is-active" : ""}${isRenaming ? " is-renaming" : ""}`}
+                  role="row"
+                  key={tree.id}
+                >
+                  <div className="family-row-name" role="cell">
+                    {isRenaming ? (
+                      <form
+                        className="family-rename-form"
+                        onSubmit={(event) => submitRename(event, tree.id)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Escape") return;
+                          event.preventDefault();
+                          cancelRename();
+                        }}
+                      >
+                        <input
+                          aria-label={`New name for ${tree.title || "family"}`}
+                          autoFocus
+                          value={renameDraft}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                        />
+                        <button
+                          type="submit"
+                          className="library-icon-button"
+                          aria-label="Save family name"
+                        >
+                          <Check size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="library-icon-button"
+                          onClick={cancelRename}
+                          aria-label="Cancel renaming"
+                        >
+                          <X size={15} />
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        className="family-name-button"
+                        onClick={() => onOpen(tree.id)}
+                        aria-label={`Open ${tree.title || "Untitled family"}${isActive ? ", currently open" : ""}${reviewCount ? `, ${reviewCount} ${reviewCount === 1 ? "item" : "items"} to review` : ""}`}
+                      >
+                        <span className="family-name-text">{tree.title || "Untitled family"}</span>
+                        {(isActive || reviewCount > 0) && (
+                          <span className="family-name-badges">
+                            {isActive && <small>Open now</small>}
+                            {reviewCount > 0 && (
+                              <small
+                                className="family-review-warning"
+                                title={`${reviewCount} import or recovery item${reviewCount === 1 ? "" : "s"} need review`}
+                              >
+                                {reviewCount} {reviewCount === 1 ? "item" : "items"} to review
+                              </small>
+                            )}
+                          </span>
+                        )}
+                      </button>
                     )}
-                  </button>
-                )}
-                <span className="family-last-changed" role="cell">
-                  {displayDate(familyAddedDate(tree))}
-                </span>
-                <span className="family-row-actions" role="cell">
-                  <button
-                    type="button"
-                    className="library-row-action"
-                    onClick={() => startRename(tree)}
-                    title={`Rename ${tree.title || "family"}`}
-                    aria-label={`Rename ${tree.title || "family"}`}
-                  >
-                    <Pencil size={14} />
-                    <span className="library-row-action-label">Rename</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="library-row-action danger"
-                    onClick={() => setPendingDelete(tree)}
-                    title={`Delete ${tree.title || "family"}`}
-                    aria-label={`Delete ${tree.title || "family"}`}
-                  >
-                    <Trash2 size={14} />
-                    <span className="library-row-action-label">Delete</span>
-                  </button>
-                </span>
-              </div>
-            ))}
+                  </div>
+                  <span className="family-last-changed" role="cell">
+                    <span className="family-last-changed-label">Added</span>
+                    {displayDate(familyAddedDate(tree))}
+                  </span>
+                  {!isRenaming && (
+                    <span className="family-row-actions" role="cell">
+                      <button
+                        type="button"
+                        className="library-row-action"
+                        onClick={() => startRename(tree)}
+                        title={`Rename ${tree.title || "family"}`}
+                        aria-label={`Rename ${tree.title || "family"}`}
+                      >
+                        <Pencil size={14} />
+                        <span className="library-row-action-label">Rename</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="library-row-action danger"
+                        onClick={() => setPendingDelete(tree)}
+                        title={`Delete ${tree.title || "family"}`}
+                        aria-label={`Delete ${tree.title || "family"}`}
+                      >
+                        <Trash2 size={14} />
+                        <span className="library-row-action-label">Delete</span>
+                      </button>
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
           {!filteredTrees.length && (
             <p className="family-library-empty">
@@ -401,8 +442,9 @@ export function FamilyLibrary({
           )}
           {commercialMode && (
             <p className="library-credit-policy">
-              Tree credits are consumed when a tree is generated. Deleting a tree does not restore
-              its free or paid credit.
+              {unlimitedTrees
+                ? "This account has unlimited tree creation."
+                : "Tree credits are consumed when a tree is generated. Deleting a tree does not restore its free or paid credit."}
             </p>
           )}
         </section>
@@ -497,10 +539,11 @@ export function FamilyLibrary({
             </fieldset>
             {commercialMode && (
               <p className="library-credit-notice">
-                {entitlement?.freeTreesRemaining > 0
-                  ? "Creating this family uses one of your remaining free trees."
-                  : "Creating this family uses one paid tree credit."}{" "}
-                Deleting it later will not restore that credit.
+                {unlimitedTrees
+                  ? "This account has unlimited tree creation."
+                  : entitlement?.freeTreesRemaining > 0
+                    ? "Creating this family uses one of your remaining free trees. Deleting it later will not restore that credit."
+                    : "Creating this family uses one paid tree credit. Deleting it later will not restore that credit."}
               </p>
             )}
             <div className="library-dialog-actions">
@@ -544,7 +587,9 @@ export function FamilyLibrary({
             </div>
             <p id="delete-family-description" className="library-dialog-intro">
               This permanently removes the family and cannot be undone.
-              {commercialMode ? " Its free or paid tree credit will not be restored." : ""}
+              {commercialMode && !unlimitedTrees
+                ? " Its free or paid tree credit will not be restored."
+                : ""}
             </p>
             <div className="library-dialog-actions">
               <button

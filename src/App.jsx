@@ -40,6 +40,11 @@ import {
   buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
 } from "./domain/propertyVendorTax.js";
+import {
+  beginStatusToggleSession,
+  endStatusToggleSession,
+  statusToggleSession,
+} from "./domain/statusToggleSessions.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
 import {
   createFamilyTree,
@@ -318,6 +323,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     ) ||
     currentTree.properties[0] ||
     makePrimaryProperty("primary-property");
+  const deceasedStatusSession = statusToggleSession(currentTree, "deceased", selectedPersonId);
+  const interVivosStatusSession = statusToggleSession(currentTree, "inter-vivos", selectedPersonId);
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const propertyReport = useMemo(
     () =>
@@ -507,8 +514,8 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         try {
           const nextEntitlement = await refreshTreeEntitlement();
           if (cancelled) return;
-          if (nextEntitlement.paidTreeCredits > 0) {
-            setBillingMessage("Payment confirmed. Your new tree credit is ready to use.");
+          if (nextEntitlement.paidTreeCredits > 0 || nextEntitlement.unlimitedTrees) {
+            setBillingMessage("Your account is ready to create a new tree.");
             return;
           }
         } catch {
@@ -597,8 +604,12 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   const handleCreationError = async (error) => {
     if (isTreePaymentRequiredError(error)) {
-      setBillingMessage("Your five free trees have been used. Buy one tree credit for €30.");
-      await refreshTreeEntitlement().catch(() => {});
+      const nextEntitlement = await refreshTreeEntitlement().catch(() => null);
+      setBillingMessage(
+        nextEntitlement?.unlimitedTrees
+          ? "Unlimited tree creation is active. Please try creating the tree again."
+          : "Your five free trees have been used. Buy one tree credit for €30.",
+      );
       return;
     }
     setStatus(`Could not create family: ${error.message}`);
@@ -693,6 +704,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
 
   const buyTreeCredit = async () => {
     if (!cloudMode || billingBusy) return;
+    if (entitlement?.unlimitedTrees) {
+      setBillingMessage("This account already has unlimited tree creation.");
+      return;
+    }
     setBillingBusy(true);
     setBillingMessage("Opening secure Stripe checkout...");
     try {
@@ -814,7 +829,11 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setStatus("Removing family...");
     try {
       await removeFamilyTree(treeId, session.user.id);
-      setStatus("Family removed. Its free or paid generation credit is not restored.");
+      setStatus(
+        entitlement?.unlimitedTrees
+          ? "Family removed."
+          : "Family removed. Its free or paid generation credit is not restored.",
+      );
       return true;
     } catch (error) {
       setTrees((items) => upsertWorkspaceTree(items, selectedTree));
@@ -830,6 +849,61 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
   const updatePeople = (people, options) => {
     setTree((current) =>
       reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people, options),
+    );
+  };
+
+  const changeDeceasedStatus = ({ checked, personId, people, patch }) => {
+    setTree((current) => {
+      let next = normaliseTree(current);
+      if (checked) {
+        next = beginStatusToggleSession(next, { type: "deceased", personId });
+        next = reconcilePeopleUpdate(next, activeFamilyGroupId, people);
+        return normaliseTree({
+          ...next,
+          people: next.people.map((person) =>
+            person.id === personId ? { ...person, ...patch } : person,
+          ),
+        });
+      }
+
+      next = reconcilePeopleUpdate(next, activeFamilyGroupId, people);
+      return normaliseTree(
+        endStatusToggleSession(next, {
+          type: "deceased",
+          personId,
+          activeFamilyGroupId,
+        }),
+      );
+    });
+    setStatus(
+      checked
+        ? "Deceased status opened. Uncheck it to restore the earlier record."
+        : "Deceased status and its session records were removed.",
+    );
+  };
+
+  const changeInterVivosStatus = ({ checked, personId, propertyId }) => {
+    setTree((current) => {
+      const next = normaliseTree(current);
+      return normaliseTree(
+        checked
+          ? beginStatusToggleSession(next, {
+              type: "inter-vivos",
+              personId,
+              propertyId,
+            })
+          : endStatusToggleSession(next, {
+              type: "inter-vivos",
+              personId,
+              propertyId,
+              activeFamilyGroupId,
+            }),
+      );
+    });
+    setStatus(
+      checked
+        ? "Property transfer opened. Uncheck it to restore the earlier ownership position."
+        : "Transfer records created under this status were removed.",
     );
   };
 
@@ -1119,6 +1193,10 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 onDeletePerson={removePerson}
                 onChange={updatePeople}
                 onRecordDonation={recordDonation}
+                deceasedStatusSession={deceasedStatusSession}
+                interVivosStatusSession={interVivosStatusSession}
+                onDeceasedStatusChange={changeDeceasedStatus}
+                onInterVivosStatusChange={changeInterVivosStatus}
                 onOutsidePartiesChange={(outsideParties) =>
                   setTree((current) => ({ ...normaliseTree(current), outsideParties }))
                 }

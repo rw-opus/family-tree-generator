@@ -34,7 +34,9 @@ export default {
     const admin = context.supabaseAdmin as SupabaseClient<CommercialDatabase>;
     const { data: account, error: accountError } = await admin
       .from("tree_accounts")
-      .select("free_tree_limit,free_trees_used,paid_tree_credits,stripe_customer_id")
+      .select(
+        "free_tree_limit,free_trees_used,paid_tree_credits,stripe_customer_id,unlimited_trees",
+      )
       .eq("user_id", userId)
       .maybeSingle();
     if (accountError) {

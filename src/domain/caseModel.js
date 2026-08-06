@@ -1,4 +1,5 @@
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
+import { synchroniseMaritalStatusAtDeath } from "./maritalStatusAtDeath.js";
 import { normalisePersonNameFields, personGivenNames } from "./people.js";
 import { personWithWills } from "./wills.js";
 import {
@@ -81,7 +82,10 @@ function normalizePeople(people = []) {
     result.push(personWithWills(normalisePersonNameFields({ ...cloneValue(person), id })));
     return result;
   }, []);
-  return { people: normalizePartnerRelationships(normalized), warnings };
+  return {
+    people: synchroniseMaritalStatusAtDeath(normalizePartnerRelationships(normalized)),
+    warnings,
+  };
 }
 
 function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {

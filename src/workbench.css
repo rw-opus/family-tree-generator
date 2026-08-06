@@ -295,19 +295,22 @@ textarea:focus-visible {
 }
 
 .family-library-table {
+  position: relative;
   overflow: hidden;
-  border: 1px solid #e0e7e2;
-  border-radius: 6px;
+  border: 1px solid #d9e3dd;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(17, 48, 33, 0.04);
 }
 
 .family-library-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 7rem 11rem;
+  grid-template-columns: minmax(0, 1fr) 7rem auto;
   align-items: center;
   gap: 0.65rem;
   min-height: 3.15rem;
   border-top: 1px solid #e8edea;
-  padding: 0.38rem 0.65rem;
+  padding: 0.48rem 0.7rem;
 }
 
 .family-library-row:first-child {
@@ -324,10 +327,21 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.family-library-row.is-active {
+  background: #f7fbf8;
+  box-shadow: inset 3px 0 0 var(--forest);
+}
+
+.family-row-name {
+  min-width: 0;
+}
+
 .family-name-button {
   display: flex;
+  width: 100%;
   min-width: 0;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.45rem;
   border: 0;
   background: transparent;
@@ -338,15 +352,23 @@ textarea:focus-visible {
   font-weight: 800;
 }
 
-.family-name-button > span {
+.family-name-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.family-name-button:hover > span {
+.family-name-button:hover .family-name-text {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.family-name-badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.3rem;
 }
 
 .family-name-button small {
@@ -359,10 +381,27 @@ textarea:focus-visible {
   font-weight: 850;
 }
 
+.family-name-button .family-review-warning {
+  background: #fff1ef;
+  color: #9b3c2f;
+}
+
 .family-last-changed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   color: #53625a;
   font-size: 0.68rem;
   font-weight: 650;
+}
+
+.family-last-changed-label {
+  display: none;
+  color: #728078;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
 }
 
 .family-row-actions {
@@ -372,7 +411,7 @@ textarea:focus-visible {
 }
 
 .family-row-actions .library-row-action {
-  flex: 1 1 0;
+  flex: 0 0 auto;
 }
 
 .property-workspace-page {
@@ -2249,6 +2288,11 @@ textarea {
   align-items: start;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+.intestacy-proposal-confirmation {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .intestate-confirmation-heading > div {
@@ -6384,39 +6428,103 @@ body.a3-print-preview-open {
   }
 
   .family-library-row {
-    grid-template-columns: minmax(8rem, 1fr) 9.75rem;
-    gap: 0.4rem;
-    min-height: 3.5rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "family family"
+      "added actions";
+    gap: 0.48rem 0.65rem;
+    min-height: 0;
+    padding: 0.72rem 0.68rem;
+  }
+
+  .family-library-row.is-active {
+    box-shadow: inset 3px 0 0 var(--forest);
+  }
+
+  .family-row-name {
+    grid-area: family;
+    align-self: center;
   }
 
   .family-name-button {
-    align-self: end;
-    font-size: 0.82rem;
+    display: grid;
+    min-height: 2.75rem;
+    align-content: center;
+    justify-items: start;
+    gap: 0.32rem;
+    padding-block: 0.2rem;
+    font-size: 0.9rem;
+    line-height: 1.25;
   }
 
-  .family-name-button > span {
+  .family-name-text {
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
   }
 
+  .family-name-badges {
+    gap: 0.25rem;
+  }
+
+  .family-name-button small {
+    max-width: 100%;
+    padding: 0.18rem 0.38rem;
+    font-size: 0.64rem;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
   .family-library-table-head {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    border: 0;
+    margin: -1px;
+    padding: 0;
+    white-space: nowrap;
   }
 
   .family-last-changed {
-    grid-column: 1;
-    font-size: 0.6rem;
+    grid-area: added;
+    align-self: center;
+    gap: 0.28rem;
+    font-size: 0.64rem;
+  }
+
+  .family-last-changed-label {
+    display: inline;
   }
 
   .family-row-actions {
-    grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-area: actions;
+    align-self: center;
+    justify-self: end;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
   }
 
   .family-row-actions .library-row-action {
     min-height: 2.75rem;
-    font-size: 0.72rem;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    padding: 0 0.58rem;
+    font-size: 0.67rem;
+  }
+
+  .family-rename-form .library-icon-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 8px;
+  }
+
+  .family-rename-form {
+    width: 100%;
   }
 
   .family-library-search input {
