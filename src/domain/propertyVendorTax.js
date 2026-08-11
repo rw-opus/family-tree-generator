@@ -64,7 +64,31 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
     });
   });
 
-  return sources;
+  const consolidated = new Map();
+  sources.forEach((rows, ownerId) => {
+    const byDeceased = new Map();
+    rows.forEach((row) => {
+      const existing = byDeceased.get(row.deceasedId);
+      if (!existing) {
+        byDeceased.set(row.deceasedId, row);
+        return;
+      }
+      const shareFraction = addFractions(existing.shareFraction, row.shareFraction);
+      if (shareFraction.error) return;
+      const deceasedEstateShare = existing.deceasedEstateShare + row.deceasedEstateShare;
+      const share = fractionToNumber(shareFraction);
+      byDeceased.set(row.deceasedId, {
+        ...existing,
+        share,
+        shareFraction,
+        deceasedEstateShare,
+        allocationShare: deceasedEstateShare > 0 ? share / deceasedEstateShare : 0,
+        immediateDescendant: existing.immediateDescendant || row.immediateDescendant,
+      });
+    });
+    consolidated.set(ownerId, [...byDeceased.values()]);
+  });
+  return consolidated;
 }
 
 /**
@@ -74,7 +98,17 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
  * derived rather than keyed. Only one level is followed, matching the statutory look-through;
  * a donor who was himself donated the share inside five years still needs manual review.
  */
-function donorAcquisitionDate(donorId, inheritanceSourcesByOwner, ledger, beforeDate = "") {
+function donorAcquisitionDate(
+  donorId,
+  inheritanceSourcesByOwner,
+  ledger,
+  beforeDate = "",
+  designatedDates = [],
+) {
+  const exactDesignatedDates = [...new Set(designatedDates.filter(Boolean))];
+  if (exactDesignatedDates.length) {
+    return exactDesignatedDates.length === 1 ? exactDesignatedDates[0] : "";
+  }
   const inherited = (inheritanceSourcesByOwner.get(donorId) || [])
     .map((source) => source.inheritanceDate)
     .filter(Boolean);
@@ -105,19 +139,43 @@ export function buildDonationSourcesByOwner(
     if (entry.error || entry.kind !== "donation" || !entry.buyerId) return;
     const donor = peopleById.get(entry.sellerId) || outsidePartiesById.get(entry.sellerId);
     const rows = sources.get(entry.buyerId) || [];
-    rows.push({
-      transferId: entry.id,
-      donorId: entry.sellerId,
-      donorName: donor?.fullName || donor?.name || "another owner",
-      donationDate: entry.date || "",
-      shareFraction: entry.amountFraction || null,
-      share: Number(entry.amount) || 0,
-      donorAcquisitionDate: donorAcquisitionDate(
-        entry.sellerId,
-        inheritanceSourcesByOwner,
-        ledger,
-        entry.date || "",
-      ),
+    const designatedSources = (entry.provenance || [])
+      .map((portion) => ({
+        sourceTrancheId: portion.trancheId || "",
+        acquiredOn: portion.acquiredOn || "",
+        shareFraction: normaliseFraction(portion.numerator, portion.denominator),
+      }))
+      .filter(
+        (portion) =>
+          !portion.shareFraction.error &&
+          compareFractions(portion.shareFraction, ZERO_FRACTION) > 0,
+      );
+    const sourceParts = designatedSources.length
+      ? designatedSources
+      : [
+          {
+            sourceTrancheId: "",
+            acquiredOn: "",
+            shareFraction: entry.amountFraction || approximateFraction(entry.amount),
+          },
+        ];
+    sourceParts.forEach((sourcePart) => {
+      rows.push({
+        transferId: entry.id,
+        sourceTrancheId: sourcePart.sourceTrancheId,
+        donorId: entry.sellerId,
+        donorName: donor?.fullName || donor?.name || "another owner",
+        donationDate: entry.date || "",
+        shareFraction: sourcePart.shareFraction,
+        share: fractionToNumber(sourcePart.shareFraction),
+        donorAcquisitionDate: donorAcquisitionDate(
+          entry.sellerId,
+          inheritanceSourcesByOwner,
+          ledger,
+          entry.date || "",
+          sourcePart.acquiredOn ? [sourcePart.acquiredOn] : [],
+        ),
+      });
     });
     sources.set(entry.buyerId, rows);
   });
@@ -440,6 +498,19 @@ export function buildTaxCalculationReport(
  */
 export function ownerProvenanceTranches(report = {}, property = {}, ownerId = "") {
   if (!ownerId) return [];
+  const calculatedTranches = report.ownership?.tranchesByOwner?.get?.(ownerId) || [];
+  if (calculatedTranches.length) {
+    return calculatedTranches.map((tranche) => ({
+      trancheId: tranche.trancheId,
+      personId: ownerId,
+      fraction: tranche.fraction,
+      acquiredOn: tranche.acquiredOn || "",
+      previousAcquiredOn: tranche.previousAcquiredOn || "",
+      upstreamTrancheId: tranche.upstreamTrancheId || "",
+      cause: tranche.cause || "",
+      provenance: tranche.provenance || "",
+    }));
+  }
   const tranches = [];
   (property.owners || []).forEach((owner) => {
     if (owner?.personId !== ownerId) return;
@@ -622,12 +693,14 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       shareFraction: ownership.ownershipFractionsByPerson?.[personId],
     }),
   );
-  const ledger = buildPropertyLedger(
-    people,
-    outsideParties,
-    property.transfers || [],
-    ownership.ownershipFractionsByPerson || ownership.ownershipByPerson,
-  );
+  const ledger =
+    ownership.ledger ||
+    buildPropertyLedger(
+      people,
+      outsideParties,
+      property.transfers || [],
+      ownership.ownershipFractionsByPerson || ownership.ownershipByPerson,
+    );
   const causaMortisDeclarationOwners = declarationOwners.filter((owner) => {
     const sources = inheritanceSourcesByOwner.get(owner.id) || [];
     // Preserve declarations entered directly against a current owner when no
@@ -648,7 +721,43 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     outsidePartiesById,
     inheritanceSourcesByOwner,
   );
-  const saleRowsWithoutTax = (property.saleLots || []).map((storedLot) => {
+  const expandedSaleLots = (property.saleLots || []).flatMap((storedLot) => {
+    const inheritanceSources = inheritanceSourcesByOwner.get(storedLot.ownerId) || [];
+    const donationSources = donationSourcesByOwner.get(storedLot.ownerId) || [];
+    if (
+      donationSources.length < 2 ||
+      inheritanceSources.length ||
+      (storedLot.acquisitionType && storedLot.acquisitionType !== "donation")
+    ) {
+      return [storedLot];
+    }
+    const lotFraction = exactShareFromRecord(storedLot);
+    const sourceTotal = donationSources.reduce(
+      (total, source) => addFractions(total, source.shareFraction),
+      ZERO_FRACTION,
+    );
+    if (
+      lotFraction.error ||
+      sourceTotal.error ||
+      compareFractions(lotFraction, sourceTotal) !== 0
+    ) {
+      return [storedLot];
+    }
+    const lotShare = fractionToNumber(lotFraction);
+    return donationSources.map((source, index) => {
+      const weight = lotShare > 0 ? source.share / lotShare : 0;
+      return {
+        ...storedLot,
+        id: `${storedLot.id}:donation:${source.transferId}:${source.sourceTrancheId || index}`,
+        shareNumerator: source.shareFraction.numerator,
+        shareDenominator: source.shareFraction.denominator,
+        transferValue: (Number(storedLot.transferValue) || 0) * weight,
+        acquisitionValue: (Number(storedLot.acquisitionValue) || 0) * weight,
+        donationSourceKey: `${source.transferId}:${source.sourceTrancheId}`,
+      };
+    });
+  });
+  const saleRowsWithoutTax = expandedSaleLots.map((storedLot) => {
     const lot = storedLot;
     const inheritanceSources = inheritanceSourcesByOwner.get(lot.ownerId) || [];
     const donationSources = donationSourcesByOwner.get(lot.ownerId) || [];
@@ -660,10 +769,13 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     const sourceDate = selectedInheritanceSource?.inheritanceDate || "";
     // A lot is treated as donated when it says so, or when the only way this owner holds the
     // property is a single recorded donation. Anything more mixed is left to the notary.
-    const selectedDonationSource =
-      donationSources.length === 1 &&
-      ((lot.acquisitionType === "donation" && !inheritanceSources.length) ||
-        (!lot.acquisitionType && !inheritanceSources.length))
+    const selectedDonationSource = lot.donationSourceKey
+      ? donationSources.find(
+          (source) => `${source.transferId}:${source.sourceTrancheId}` === lot.donationSourceKey,
+        ) || null
+      : donationSources.length === 1 &&
+          ((lot.acquisitionType === "donation" && !inheritanceSources.length) ||
+            (!lot.acquisitionType && !inheritanceSources.length))
         ? donationSources[0]
         : null;
     const donationPatch = selectedDonationSource

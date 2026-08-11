@@ -216,7 +216,12 @@ export function caseActivationState(value) {
   };
 }
 
-export function App({ localOnlyMode = true, session = null, onSignOut = () => {} }) {
+export function App({
+  localOnlyMode = true,
+  session = null,
+  onChangePassword,
+  onSignOut = () => {},
+}) {
   const cloudMode = Boolean(session?.user?.id) && !localOnlyMode;
   const [startupWorkspace] = useState(() =>
     cloudMode ? { trees: [], activeTreeId: "" } : loadLocalWorkspace(),
@@ -943,6 +948,26 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
     setStatus(transfer.kind === "donation" ? "Donation recorded." : "Sale recorded.");
   };
 
+  const deleteInterVivosTransfer = ({ propertyId, transferId }) => {
+    setTree((current) => {
+      const base = normaliseTree(current);
+      return {
+        ...base,
+        properties: (base.properties || []).map((property) =>
+          property.id === propertyId
+            ? {
+                ...property,
+                transfers: (property.transfers || []).filter(
+                  (transfer) => transfer.id !== transferId,
+                ),
+              }
+            : property,
+        ),
+      };
+    });
+    setStatus("Transfer record deleted.");
+  };
+
   const updatePropertyWorkspace = (patch) => {
     setTree({
       ...currentTree,
@@ -1086,6 +1111,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
         onRename={renameTree}
         onRemove={removeTree}
         onBuyTree={buyTreeCredit}
+        onChangePassword={onChangePassword}
         onSignOut={signOutSafely}
       />
     );
@@ -1193,6 +1219,7 @@ export function App({ localOnlyMode = true, session = null, onSignOut = () => {}
                 onDeletePerson={removePerson}
                 onChange={updatePeople}
                 onRecordDonation={recordDonation}
+                onDeleteInterVivosTransfer={deleteInterVivosTransfer}
                 deceasedStatusSession={deceasedStatusSession}
                 interVivosStatusSession={interVivosStatusSession}
                 onDeceasedStatusChange={changeDeceasedStatus}

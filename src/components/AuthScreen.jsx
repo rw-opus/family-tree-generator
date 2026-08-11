@@ -167,6 +167,7 @@ export function PasswordResetScreen({ onDone, onSignOut }) {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [complete, setComplete] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -180,52 +181,76 @@ export function PasswordResetScreen({ onDone, onSignOut }) {
     }
     setBusy(true);
     setError("");
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setBusy(false);
-    if (updateError) setError(updateError.message || "Could not update the password.");
-    else onDone();
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
+      setPassword("");
+      setConfirm("");
+      setComplete(true);
+    } catch (requestError) {
+      setError(requestError?.message || "Could not update the password.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <main className="commercial-auth-page single-card">
       <form className="commercial-auth-card" onSubmit={submit}>
         <p className="library-kicker">Secure account</p>
-        <h2>Choose a new password</h2>
-        <label>
-          New password
-          <input
-            type="password"
-            required
-            minLength={10}
-            maxLength={1024}
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-        <label>
-          Repeat new password
-          <input
-            type="password"
-            required
-            minLength={10}
-            maxLength={1024}
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(event) => setConfirm(event.target.value)}
-          />
-        </label>
+        <h2>{complete ? "Password changed" : "Choose a new password"}</h2>
+        {!complete && (
+          <>
+            <label>
+              New password
+              <input
+                type="password"
+                required
+                minLength={10}
+                maxLength={1024}
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+            <label>
+              Repeat new password
+              <input
+                type="password"
+                required
+                minLength={10}
+                maxLength={1024}
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(event) => setConfirm(event.target.value)}
+              />
+            </label>
+          </>
+        )}
         {error && (
           <p className="commercial-auth-message error" role="alert" aria-atomic="true">
             {error}
           </p>
         )}
-        <button type="submit" className="library-primary-button" disabled={busy}>
-          {busy ? "Please wait..." : "Set new password"}
-        </button>
-        <button type="button" className="commercial-auth-link" onClick={onSignOut}>
-          Cancel and sign out
-        </button>
+        {complete ? (
+          <>
+            <p className="commercial-auth-message success" role="status" aria-live="polite">
+              Your password has been changed successfully.
+            </p>
+            <button type="button" className="library-primary-button" onClick={onDone}>
+              Continue to account
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="submit" className="library-primary-button" disabled={busy}>
+              {busy ? "Please wait..." : "Set new password"}
+            </button>
+            <button type="button" className="commercial-auth-link" onClick={onSignOut}>
+              Cancel and sign out
+            </button>
+          </>
+        )}
       </form>
     </main>
   );

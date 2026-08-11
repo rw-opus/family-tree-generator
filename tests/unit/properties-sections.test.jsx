@@ -181,6 +181,52 @@ describe("Properties section views", () => {
     expect(onSelectPerson).toHaveBeenLastCalledWith("owner");
   });
 
+  it("shows each recorded transfer once in the current-owner ledger", () => {
+    const transferredPeople = [
+      { id: "owner", fullName: "Joseph Borg" },
+      { id: "buyer", fullName: "Maria Vella" },
+    ];
+    const transferredProperty = {
+      ...properties[0],
+      transfers: [
+        {
+          id: "sale",
+          kind: "sale",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2020-01-01",
+          provenance: [{ trancheId: "initial-initial-owner", numerator: 1, denominator: 4 }],
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[transferredProperty]}
+          people={transferredPeople}
+          outsideParties={[]}
+          singleProperty
+          section="ownership"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    const ownerRows = [...container.querySelectorAll(".owner-list .owner-row")].map((row) =>
+      row.textContent.replace(/\s+/g, " ").trim(),
+    );
+    expect(ownerRows).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/Joseph Borg.*3\/4/),
+        expect.stringMatching(/Maria Vella.*1\/4/),
+      ]),
+    );
+  });
+
   it("shows a manually assessed company vendor as read-only information", () => {
     act(() =>
       root.render(

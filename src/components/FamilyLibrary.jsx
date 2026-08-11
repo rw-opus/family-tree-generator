@@ -6,6 +6,7 @@ import {
   FileUp,
   FolderOpen,
   FolderPlus,
+  KeyRound,
   LogOut,
   Pencil,
   Search,
@@ -13,6 +14,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { AccountPasswordDialog } from "./AccountPasswordDialog.jsx";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 
 const displayDate = (value) => {
@@ -46,11 +48,13 @@ export function FamilyLibrary({
   onRename,
   onRemove,
   onBuyTree,
+  onChangePassword,
   onSignOut,
   onDownloadRecovery,
   onDownloadBackup,
 }) {
   const [query, setQuery] = useState("");
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [creationOpen, setCreationOpen] = useState(false);
   const [creationBusy, setCreationBusy] = useState(false);
   const [creationDraft, setCreationDraft] = useState({
@@ -211,9 +215,20 @@ export function FamilyLibrary({
           </dl>
           <div className="library-account-actions">
             {signedIn && (
-              <button type="button" className="library-account-action" onClick={onSignOut}>
-                <LogOut size={15} /> Sign out
-              </button>
+              <>
+                {onChangePassword && (
+                  <button
+                    type="button"
+                    className="library-account-action"
+                    onClick={() => setPasswordDialogOpen(true)}
+                  >
+                    <KeyRound size={15} /> Change password
+                  </button>
+                )}
+                <button type="button" className="library-account-action" onClick={onSignOut}>
+                  <LogOut size={15} /> Sign out
+                </button>
+              </>
             )}
             <button type="button" className="library-account-action" onClick={onDownloadBackup}>
               <Download size={15} /> Download workspace backup
@@ -556,6 +571,13 @@ export function FamilyLibrary({
             </div>
           </form>
         </div>
+      )}
+
+      {passwordDialogOpen && onChangePassword && (
+        <AccountPasswordDialog
+          onChangePassword={onChangePassword}
+          onClose={() => setPasswordDialogOpen(false)}
+        />
       )}
 
       {pendingDelete && (

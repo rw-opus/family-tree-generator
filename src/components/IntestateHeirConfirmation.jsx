@@ -242,10 +242,7 @@ export function IntestateHeirConfirmation({
       <div className="intestate-confirmation-heading">
         <div>
           <strong>Beneficiaries</strong>
-          <small>
-            Calculated beneficiaries apply automatically. Choose Edit Beneficiaries only when you
-            need to change the people or fractions.
-          </small>
+          <small>Applied automatically unless edited.</small>
         </div>
         {!editingHeirs && (
           <button type="button" className="text-button" onClick={beginEditing}>
@@ -278,10 +275,7 @@ export function IntestateHeirConfirmation({
             </label>
           ))}
           {partnersMissingDeathDate.length > 0 && (
-            <small className="succession-warning">
-              Enter every deceased partner&apos;s date of death before relying on the automatic
-              heirs.
-            </small>
+            <small className="succession-warning">Enter missing spouse death dates.</small>
           )}
         </div>
       )}
@@ -484,7 +478,7 @@ export function IntestateHeirConfirmation({
                   {issue}
                 </small>
               ))}
-          <small>Changes remain a draft until Apply edited beneficiaries is selected.</small>
+          <small>Not saved until applied.</small>
           {rows.length > 0 && (
             <button type="button" className="text-button" onClick={useAutomaticCalculation}>
               Remove edited beneficiaries and use automatic calculation

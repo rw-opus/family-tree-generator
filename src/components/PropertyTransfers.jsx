@@ -13,7 +13,10 @@ import { personChoiceLabel } from "../domain/people.js";
 import { fractionForShare, shareFromPercentage } from "../domain/shares.js";
 import { DateInput } from "./DateInput.jsx";
 import { validateTransferDateChronology } from "../domain/chronology.js";
-import { ownerProvenanceTranches } from "../domain/propertyVendorTax.js";
+import {
+  buildPropertyVendorTaxReport,
+  ownerProvenanceTranches,
+} from "../domain/propertyVendorTax.js";
 
 const blankParty = () => ({ name: "", type: "individual", registrationNumber: "" });
 const blankTransfer = () => ({
@@ -46,8 +49,10 @@ export function PropertyTransfers({
   const [partyDraft, setPartyDraft] = useState(blankParty);
   const [transferDraft, setTransferDraft] = useState(blankTransfer);
   const ledger = useMemo(
-    () => buildPropertyLedger(people, outsideParties, transfers, startingOwnership),
-    [outsideParties, people, startingOwnership, transfers],
+    () =>
+      vendorReport?.ledger ||
+      buildPropertyLedger(people, outsideParties, transfers, startingOwnership),
+    [outsideParties, people, startingOwnership, transfers, vendorReport],
   );
   const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
   const choiceLabel = (party) => {
@@ -66,8 +71,8 @@ export function PropertyTransfers({
     if (!selectedSeller) return { error: "Select a current owner." };
     if (transferDraft.amountType === "all-share") {
       return {
-        fraction: { numerator: 1, denominator: 1 },
-        amountType: "seller-holding",
+        fraction: selectedSeller.shareFraction,
+        amountType: "whole-property",
       };
     }
 
@@ -147,13 +152,17 @@ export function PropertyTransfers({
       denominator: String(calculation.fraction.denominator),
       amountType: calculation.amountType,
     };
-    const check = buildPropertyLedger(
+    const check = buildPropertyVendorTaxReport(
+      { ...property, transfers: [...transfers, next] },
       people,
       outsideParties,
-      [...transfers, next],
-      startingOwnership,
-    ).entries.at(-1);
-    if (check.error) return setTransferDraft((draft) => ({ ...draft, error: check.error }));
+    ).ledger.entries.find((entry) => entry.id === next.id);
+    if (!check || check.error) {
+      return setTransferDraft((draft) => ({
+        ...draft,
+        error: check?.error || "The transfer could not be validated.",
+      }));
+    }
     onChange({ outsideParties, transfers: [...transfers, next] });
     setTransferDraft(blankTransfer());
   };
