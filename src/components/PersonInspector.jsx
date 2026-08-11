@@ -33,9 +33,10 @@ import {
   linkedLegalSpousesFor,
   linkedSpousesFor,
   missingPotentialIntestateParents,
+  previewPropertyTransferCapacity,
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
-import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
+import { approximateFraction } from "../domain/ownership.js";
 import {
   addFractions,
   MAX_FRACTION_INTEGER,
@@ -69,7 +70,11 @@ import {
   removePartnerRelationship,
   upsertPartnerRelationship,
 } from "../domain/partnerRelationships.js";
-import { buildTaxCalculationReport, ownerProvenanceTranches } from "../domain/propertyVendorTax.js";
+import {
+  buildPropertyVendorTaxReport,
+  buildTaxCalculationReport,
+  ownerProvenanceTranches,
+} from "../domain/propertyVendorTax.js";
 import { selectTranchePortions } from "../domain/trancheOwnership.js";
 import { tagStatusCreatedRecord } from "../domain/statusToggleSessions.js";
 import {
@@ -179,6 +184,7 @@ export function PersonInspector({
   onChange,
   onOutsidePartiesChange,
   onRecordDonation,
+  onDeleteInterVivosTransfer,
   deceasedStatusSession = null,
   interVivosStatusSession = null,
   onDeceasedStatusChange,
@@ -263,7 +269,14 @@ export function PersonInspector({
 
   useEffect(() => {
     const nextPersonId = selectedPerson?.id || "";
-    if (previousSelectedPersonIdRef.current === nextPersonId) return;
+    const hasSavedOutgoingTransfer = Boolean(
+      selectedPerson &&
+      (properties[0]?.transfers || []).some((transfer) => transfer.sellerId === selectedPerson.id),
+    );
+    if (previousSelectedPersonIdRef.current === nextPersonId) {
+      if (interVivosStatusSession && !hasSavedOutgoingTransfer) setDonationOpen(true);
+      return;
+    }
     previousSelectedPersonIdRef.current = nextPersonId;
     setSpouseChooserOpen(false);
     setPartnerRelationshipType(PARTNER_RELATIONSHIP_TYPES.MARRIAGE);
@@ -272,15 +285,7 @@ export function PersonInspector({
     setChildPartnerId("");
     setCausaMortisErrors({});
     setWillOutsidePartyOpen(false);
-    setDonationOpen(
-      Boolean(
-        selectedPerson &&
-        (interVivosStatusSession ||
-          (properties[0]?.transfers || []).some(
-            (transfer) => transfer.sellerId === selectedPerson.id,
-          )),
-      ),
-    );
+    setDonationOpen(Boolean(interVivosStatusSession) && !hasSavedOutgoingTransfer);
     setDonationDraft(blankDonationDraft());
     setCausaMortisDraftOpen(
       Boolean(
@@ -767,71 +772,95 @@ export function PersonInspector({
   };
 
   const activeProperty = properties[0] || null;
-  const interVivosLedger = useMemo(() => {
-    if (!activeProperty) return null;
-    const startingOwnership = (activeProperty.owners || []).reduce((ownership, owner) => {
-      if (!owner.personId) return ownership;
-      ownership[owner.personId] = addFractions(
-        ownership[owner.personId] || ZERO_FRACTION,
-        fractionForShare(owner),
-      );
-      return ownership;
-    }, {});
-    return buildPropertyLedger(
-      people,
-      outsideParties,
-      activeProperty.transfers || [],
-      startingOwnership,
-    );
-  }, [activeProperty, outsideParties, people]);
+  const propertyVendorReport = useMemo(
+    () =>
+      vendorReport ||
+      (activeProperty
+        ? buildPropertyVendorTaxReport(activeProperty, people, outsideParties)
+        : null),
+    [activeProperty, outsideParties, people, vendorReport],
+  );
   const recordedOutgoingInterVivosTransfers = useMemo(
     () =>
-      (interVivosLedger?.entries || []).filter(
-        (entry) => entry.sellerId === selectedPerson?.id && !entry.error,
+      (propertyVendorReport?.ledger?.entries || []).filter(
+        (entry) => entry.sellerId === selectedPerson?.id,
       ),
-    [interVivosLedger, selectedPerson?.id],
+    [propertyVendorReport, selectedPerson?.id],
   );
-  const interVivosHolding = useMemo(
+  const estateTransmissionFractions = useMemo(
     () =>
-      (interVivosLedger?.owners || []).find((owner) => owner.id === selectedPerson?.id)
-        ?.shareFraction || ZERO_FRACTION,
-    [interVivosLedger, selectedPerson?.id],
+      (propertyVendorReport?.ownership?.transmissions || [])
+        .filter((transmission) => transmission.deceasedId === selectedPerson?.id)
+        .map((transmission) => transmission.amountFraction)
+        .filter((fraction) => fraction && !fraction.error),
+    [propertyVendorReport, selectedPerson?.id],
   );
-  const fullyTransferredInterVivos =
-    recordedOutgoingInterVivosTransfers.length > 0 &&
-    compareFractions(interVivosHolding, ZERO_FRACTION) === 0;
+  const calculatedEstateShareFraction = useMemo(
+    () =>
+      estateTransmissionFractions.reduce(
+        (total, fraction) => addFractions(total, fraction),
+        ZERO_FRACTION,
+      ),
+    [estateTransmissionFractions],
+  );
+  const selectedIsDeceased = isPersonDeceased(selectedPerson);
+  const isDonation = donationDraft.kind !== "sale";
+  const currentLedgerHolding =
+    (propertyVendorReport?.ledger?.owners || []).find(
+      (candidate) => candidate.id === selectedPerson?.id,
+    )?.shareFraction || ZERO_FRACTION;
   const interVivosDisclosureOpen =
     donationOpen ||
     Boolean(interVivosStatusSession) ||
     recordedOutgoingInterVivosTransfers.length > 0;
-  const donorLedgerHolding = useMemo(() => {
-    const owner = (vendorReport?.ledger?.owners || []).find(
-      (candidate) => candidate.id === selectedPerson?.id,
-    );
-    if (owner?.shareFraction) return owner.shareFraction;
-    return compareFractions(interVivosHolding, ZERO_FRACTION) > 0 ? interVivosHolding : null;
-  }, [interVivosHolding, selectedPerson?.id, vendorReport]);
+  const baseTransferHolding = selectedIsDeceased
+    ? calculatedEstateShareFraction
+    : currentLedgerHolding;
+  const transferCapacityPreview = useMemo(
+    () =>
+      activeProperty && selectedPerson?.id && donationDraft.date
+        ? previewPropertyTransferCapacity(activeProperty, people, outsideParties, {
+            sellerId: selectedPerson.id,
+            date: donationDraft.date,
+            kind: donationDraft.kind,
+          })
+        : null,
+    [
+      activeProperty,
+      donationDraft.date,
+      donationDraft.kind,
+      outsideParties,
+      people,
+      selectedPerson?.id,
+    ],
+  );
+  const provenanceTranches = useMemo(() => {
+    if (transferCapacityPreview && !transferCapacityPreview.error) {
+      return transferCapacityPreview.tranches;
+    }
+    return activeProperty
+      ? ownerProvenanceTranches(propertyVendorReport || {}, activeProperty, selectedPerson.id)
+      : [];
+  }, [activeProperty, propertyVendorReport, selectedPerson.id, transferCapacityPreview]);
+  const donorLedgerHolding =
+    transferCapacityPreview && !transferCapacityPreview.error
+      ? transferCapacityPreview.holdingFraction
+      : baseTransferHolding;
+  const fullyTransferredInterVivos =
+    recordedOutgoingInterVivosTransfers.length > 0 &&
+    compareFractions(baseTransferHolding, ZERO_FRACTION) === 0;
   const canDonate =
     Boolean(activeProperty && onRecordDonation && donorLedgerHolding) &&
-    compareFractions(donorLedgerHolding, ZERO_FRACTION) > 0;
-  const isDonation = donationDraft.kind !== "sale";
-  const provenanceTranches = useMemo(
-    () =>
-      canDonate
-        ? ownerProvenanceTranches(vendorReport || {}, activeProperty || {}, selectedPerson.id)
-        : [],
-    [activeProperty, canDonate, selectedPerson.id, vendorReport],
-  );
-  // Resolve the user's choice into both the absolute property share being transferred and
-  // the legacy storage shape understood by the ownership ledger. Defined fractions and
-  // percentages are always shares of the whole property, so they can be compared exactly
-  // with the transferor's holding before anything is recorded.
+    (donationOpen || compareFractions(baseTransferHolding, ZERO_FRACTION) > 0);
+  // Store every new transfer as an exact fraction of the whole property. In particular,
+  // "all" means the balance displayed now; it must not be recalculated against a different
+  // historical holding if another transaction is later inserted before it.
   const draftTransferCalculation = () => {
     if (donationDraft.amountType === "all-share") {
       return {
         amount: donorLedgerHolding,
-        fraction: { numerator: 1, denominator: 1 },
-        storedAmountType: "seller-holding",
+        fraction: donorLedgerHolding,
+        storedAmountType: "whole-property",
       };
     }
 
@@ -878,7 +907,11 @@ export function PersonInspector({
           String(donationDraft.numerator ?? "").trim() ||
           String(donationDraft.denominator ?? "").trim(),
         ));
-  const transferMeasurementError = transferCalculation?.error || "";
+  const transferMeasurementError =
+    transferCapacityPreview?.error ||
+    (transferCapacityPreview && compareFractions(donorLedgerHolding, ZERO_FRACTION) <= 0
+      ? "This person held no share on the entered transfer date."
+      : transferCalculation?.error || "");
   // The provenance question is exceptional: it only arises when part of the holding is
   // transferred while the holder acquired on more than one occasion. A whole-holding
   // transfer moves every provenance, and a single provenance answers itself.
@@ -990,19 +1023,6 @@ export function PersonInspector({
       }
     }
 
-    // The family-ownership cascade runs before the dated transfer ledger. When a
-    // deceased person disposed of their entire holding during life, retain that
-    // holding long enough for the ledger to move it to the recorded acquirer;
-    // otherwise it would incorrectly descend to the heirs first. This internal
-    // marker does not control whether the transfer form is open.
-    if (isDeceased && compareFractions(amount, donorLedgerHolding) === 0) {
-      nextPeople = nextPeople.map((person) =>
-        person.id === selectedPerson.id
-          ? { ...person, inheritanceBasis: "lifetime-disposal" }
-          : person,
-      );
-    }
-
     const transfer = tagStatusCreatedRecord(
       {
         id: crypto.randomUUID(),
@@ -1025,12 +1045,27 @@ export function PersonInspector({
       interVivosStatusSession,
       { role: "transfer" },
     );
+    const prospectiveEntry = buildPropertyVendorTaxReport(
+      {
+        ...activeProperty,
+        transfers: [...(activeProperty.transfers || []), transfer],
+      },
+      nextPeople,
+      outsideParties,
+    ).ledger.entries.find((entry) => entry.id === transfer.id);
+    if (!prospectiveEntry || prospectiveEntry.error) {
+      return setDonationDraft((draft) => ({
+        ...draft,
+        error: prospectiveEntry?.error || "The transfer could not be validated.",
+      }));
+    }
     onRecordDonation({
       people: nextPeople,
       propertyId: activeProperty.id,
       transfer,
     });
     setDonationDraft(blankDonationDraft());
+    setDonationOpen(false);
   };
 
   const createOutsideParty = (party) => {
@@ -1331,6 +1366,13 @@ export function PersonInspector({
   const displayedSurname = personSurname(selectedPerson);
   const propertySaleValue = Number(properties[0]?.saleValue) || 0;
   const estimatedPropertyValue = propertySaleValue * ownership;
+  const estateShareAtDeathFraction = fullyTransferredInterVivos
+    ? ZERO_FRACTION
+    : calculatedEstateShareFraction;
+  const hasEstateShareAtDeath =
+    fullyTransferredInterVivos || estateTransmissionFractions.length > 0;
+  const estateShareAtDeath = fractionToNumber(estateShareAtDeathFraction);
+  const estateValueAtDeath = propertySaleValue * estateShareAtDeath;
   const finalWithholdingTaxLabel = selectedVendorTax
     ? selectedVendorTax.tax == null
       ? "Pending"
@@ -1489,15 +1531,80 @@ export function PersonInspector({
               ? "This removes the person from this family only; the shared record remains elsewhere."
               : "No partner or descendant dependencies. Confirmation is required.";
 
-  // A transfer during life is independent of the person's eventual succession. The status
-  // checkbox controls whether this form is visible, so there is no second disclosure control.
-  const shareTransferSection = canDonate ? (
-    <div
-      id={`inter-vivos-transfer-${selectedPerson.id}`}
-      className="person-donation"
-      data-person-section="donation"
+  const displayedPropertyShare = isDeceased ? estateShareAtDeath : ownership;
+  const displayedPropertyShareFraction = isDeceased
+    ? estateShareAtDeathFraction
+    : ownershipFractionsByPerson[selectedPerson.id];
+  const hasDisplayedPropertyShare = isDeceased ? hasEstateShareAtDeath : hasOwnership;
+  const displayedPropertyValue = isDeceased ? estateValueAtDeath : estimatedPropertyValue;
+  const propertyShareSummary = (
+    <section
+      className={`person-share-summary${isDeceased ? " estate-balance-step" : ""}`}
+      data-person-section="property"
+      aria-label={isDeceased ? "Share remaining at death" : "Estimated property share"}
     >
-      {interVivosDisclosureOpen && (
+      <div className="person-share-heading">
+        <strong>{isDeceased ? "Share remaining at death" : "Estimated property share"}</strong>
+        <span className="person-share-toggle" aria-label="Estimated share display">
+          <button
+            type="button"
+            className={ownershipDisplay === "fraction" ? "active" : ""}
+            aria-pressed={ownershipDisplay === "fraction"}
+            onClick={() => changeOwnershipDisplay("fraction")}
+          >
+            Fraction
+          </button>
+          <button
+            type="button"
+            className={ownershipDisplay === "percentage" ? "active" : ""}
+            aria-pressed={ownershipDisplay === "percentage"}
+            onClick={() => changeOwnershipDisplay("percentage")}
+          >
+            Percentage
+          </button>
+          <button
+            type="button"
+            className={ownershipDisplay === "both" ? "active" : ""}
+            aria-pressed={ownershipDisplay === "both"}
+            onClick={() => changeOwnershipDisplay("both")}
+          >
+            Both
+          </button>
+        </span>
+      </div>
+      <div className="person-share-value">
+        <strong>
+          {hasDisplayedPropertyShare
+            ? ownershipLabel(
+                displayedPropertyShare,
+                ownershipDisplay,
+                displayedPropertyShareFraction,
+              )
+            : "Not yet calculated"}
+        </strong>
+        <small>
+          {hasDisplayedPropertyShare && (propertySaleValue > 0 || displayedPropertyShare === 0)
+            ? `Current value ${money.format(displayedPropertyValue)}`
+            : "Enter initial ownership and selling price to calculate the value."}
+        </small>
+      </div>
+      {!isDeceased && (
+        <div className="person-final-withholding-tax">
+          <span>Final Withholding Tax</span>
+          <span>
+            <strong>{finalWithholdingTaxLabel}</strong>
+            <small>{finalWithholdingTaxNote}</small>
+          </span>
+        </div>
+      )}
+    </section>
+  );
+
+  // A transfer during life is independent of the person's eventual succession. Completed
+  // records stay compact; the editor opens only for the first or next transfer.
+  const shareTransferSection =
+    canDonate && donationOpen ? (
+      <div className="person-donation" data-person-section="donation">
         <form className="person-donation-form" onSubmit={submitDonation}>
           <label>
             Type of contract
@@ -1510,11 +1617,14 @@ export function PersonInspector({
               <option value="sale">Sale</option>
             </select>
           </label>
-          <p className="helper-text">
-            {isDonation
-              ? "On a later resale by the donee, the donor's acquisition date sets the applicable rate."
-              : "On a later resale, the acquirer's own purchase date governs the tax."}
-          </p>
+          <label>
+            {isDonation ? "Donation date" : "Sale date"}
+            <DateInput
+              aria-label={isDonation ? "Donation date" : "Sale date"}
+              value={donationDraft.date}
+              onChange={(value) => setDonationField({ date: value })}
+            />
+          </label>
           <label>
             {isDonation ? "Who receives the donation?" : "Who acquires the share?"}
             <select
@@ -1567,10 +1677,6 @@ export function PersonInspector({
                   <option value="Female">Female</option>
                 </select>
               </label>
-              <p className="helper-text">
-                This person starts their own small tree beside the family and can be given a spouse,
-                children and details from their card afterwards.
-              </p>
             </>
           )}
           <label>
@@ -1663,10 +1769,12 @@ export function PersonInspector({
               )}
             </div>
           )}
-          <p className="helper-text transfer-limit">
-            Current holding: {donorLedgerHolding.numerator}/{donorLedgerHolding.denominator} of the
-            property. A defined amount cannot exceed this share.
-          </p>
+          <div className="transfer-limit">
+            <span>Available to transfer</span>
+            <strong>
+              {donorLedgerHolding.numerator}/{donorLedgerHolding.denominator}
+            </strong>
+          </div>
           {definedTransferHasInput && transferMeasurementError && (
             <p className="transfer-error" role="alert">
               {transferMeasurementError}
@@ -1679,10 +1787,6 @@ export function PersonInspector({
               aria-label="Provenance designation"
             >
               <span className="provenance-heading">Which provenance is being transferred?</span>
-              <p className="helper-text">
-                Only part of the holding is being transferred and it was acquired on more than one
-                occasion, so the deed must say which acquisition the share comes from.
-              </p>
               {provenanceTranches.map((tranche) => {
                 const entry = donationDraft.designation[tranche.trancheId] || {};
                 return (
@@ -1757,37 +1861,38 @@ export function PersonInspector({
                   </div>
                 );
               })}
-              <p className="helper-text">
-                {designationCheckedCount <= 1
-                  ? "With one acquisition selected, the whole transferred share comes from it."
-                  : "Enter each part as a fraction of the whole property; together they must equal the transferred share."}
-              </p>
+              {designationCheckedCount > 1 && (
+                <small>Selected fractions must equal the transferred share.</small>
+              )}
             </div>
           )}
-          <label>
-            {isDonation ? "Donation date" : "Sale date"}
-            <DateInput
-              aria-label={isDonation ? "Donation date" : "Sale date"}
-              value={donationDraft.date}
-              onChange={(value) => setDonationField({ date: value })}
-            />
-          </label>
           {donationDraft.error && (
             <p className="transfer-error" role="alert">
               {donationDraft.error}
             </p>
           )}
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={Boolean(transferMeasurementError)}
-          >
-            {isDonation ? "Record donation" : "Record sale"}
-          </button>
+          <div className="person-donation-actions">
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={Boolean(transferMeasurementError)}
+            >
+              {isDonation ? "Record donation" : "Record sale"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setDonationDraft(blankDonationDraft());
+                setDonationOpen(false);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
         </form>
-      )}
-    </div>
-  ) : null;
+      </div>
+    ) : null;
   const setInterVivosDisclosure = (checked) => {
     setDonationOpen(checked);
     if (!checked) setDonationDraft(blankDonationDraft());
@@ -1797,6 +1902,94 @@ export function PersonInspector({
       propertyId: activeProperty?.id || "",
     });
   };
+  const lifetimeTransferSection = interVivosDisclosureOpen ? (
+    <section
+      id={`inter-vivos-transfer-${selectedPerson.id}`}
+      className="estate-flow-step lifetime-transfer-step"
+    >
+      <h3 className="estate-flow-heading">Lifetime transfer</h3>
+      {recordedOutgoingInterVivosTransfers.length > 0 && (
+        <div className="lifetime-transfer-history" aria-label="Recorded lifetime transfers">
+          {recordedOutgoingInterVivosTransfers.map((entry) => {
+            const recipient =
+              peopleById.get(entry.buyerId) || outsidePartiesById.get(entry.buyerId);
+            const amountFraction = entry.amountFraction || ZERO_FRACTION;
+            const currentValue = propertySaleValue * fractionToNumber(amountFraction);
+            return (
+              <div
+                className={`lifetime-transfer-record${entry.error ? " invalid" : ""}`}
+                key={entry.id}
+              >
+                <span>
+                  <strong>{entry.kind === "donation" ? "Donation" : "Sale"}</strong>
+                  <small>
+                    {entry.date ? isoDateToDisplay(entry.date) : "Date not entered"} ·{" "}
+                    {recipient ? displayParty(recipient) : "Unknown recipient"}
+                  </small>
+                </span>
+                <span>
+                  {entry.error ? (
+                    <b>Invalid</b>
+                  ) : (
+                    <>
+                      <b>
+                        {ownershipLabel(
+                          fractionToNumber(amountFraction),
+                          ownershipDisplay,
+                          amountFraction,
+                        )}
+                      </b>
+                      {propertySaleValue > 0 && <small>{money.format(currentValue)}</small>}
+                    </>
+                  )}
+                </span>
+                {onDeleteInterVivosTransfer && entry.id && (
+                  <button
+                    type="button"
+                    className="lifetime-transfer-delete"
+                    aria-label={`Delete ${entry.kind === "donation" ? "donation" : "sale"} record`}
+                    onClick={() =>
+                      onDeleteInterVivosTransfer({
+                        propertyId: activeProperty?.id || "",
+                        transferId: entry.id,
+                      })
+                    }
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                )}
+                {entry.error && (
+                  <small className="lifetime-transfer-error" role="alert">
+                    {entry.error}
+                  </small>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {shareTransferSection ||
+        (canDonate && (
+          <button
+            type="button"
+            className="secondary-button lifetime-transfer-add"
+            onClick={() => {
+              setDonationDraft(blankDonationDraft());
+              setDonationOpen(true);
+            }}
+          >
+            {recordedOutgoingInterVivosTransfers.length > 0
+              ? "Add another transfer"
+              : "Add transfer"}
+          </button>
+        )) ||
+        (!fullyTransferredInterVivos && (
+          <p className="transfer-unavailable">
+            {activeProperty ? "No share is available to transfer." : "Add initial ownership first."}
+          </p>
+        ))}
+    </section>
+  ) : null;
 
   return (
     <div className="person-inspector">
@@ -2177,16 +2370,11 @@ export function PersonInspector({
               className={`person-succession${fullyTransferredInterVivos ? " fully-transferred" : ""}`}
               data-person-section="succession"
             >
+              <h3 className="estate-flow-heading">Death details</h3>
               <label className="succession-detail-row succession-death-date">
                 <span>Date of death</span>
                 <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
               </label>
-              {fullyTransferredInterVivos && (
-                <p className="inter-vivos-complete-note">
-                  This person transferred their entire property share during life. No share remained
-                  to pass through this succession.
-                </p>
-              )}
               <label className="succession-detail-row marital-status-at-death">
                 <span>Marital status at death</span>
                 <span className="detail-checkbox">
@@ -2201,14 +2389,14 @@ export function PersonInspector({
                       })
                     }
                   />
-                  No spouse survived this person (unmarried or already widowed at death).
+                  No spouse survived
                 </span>
               </label>
               {derivedNoSurvivingSpouse !== null &&
                 selectedPerson.unmarriedOrWidowedAtDeathSource ===
                   MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC && (
                   <small className="succession-marital-status-note">
-                    Automatically selected from the recorded spouse relationships and death dates.
+                    Set from recorded spouse and death details.
                   </small>
                 )}
               {selectedPerson.unmarriedOrWidowedAtDeath === true && (
@@ -2220,694 +2408,632 @@ export function PersonInspector({
                 >
                   {excludedSpouseNames
                     ? `${excludedSpouseNames} is excluded from this succession while this setting is selected. Clear it if the linked spouse survived.`
-                    : "Recorded marriage and partner links remain on the tree, but no spouse is included in this succession."}
+                    : "No spouse is included in this succession."}
                 </small>
               )}
-              <label className="succession-detail-row">
-                <span>Estate</span>
-                <select
-                  aria-label="Inheritance basis"
-                  value={inheritanceBasis}
-                  onChange={(event) => updateSelected({ inheritanceBasis: event.target.value })}
-                >
-                  <option value="intestacy">Intestate</option>
-                  <option value="will">Testate</option>
-                </select>
-              </label>
-              {testateHistoricalLawWarning && (
-                <p className="succession-warning" role="alert">
-                  {testateHistoricalLawWarning}
-                </p>
-              )}
+              {lifetimeTransferSection}
+              {propertyShareSummary}
+              {!fullyTransferredInterVivos && (
+                <div className="estate-succession-step">
+                  <h3 className="estate-flow-heading">Succession</h3>
+                  <label className="succession-detail-row">
+                    <span>Estate</span>
+                    <select
+                      aria-label="Inheritance basis"
+                      value={inheritanceBasis}
+                      onChange={(event) => updateSelected({ inheritanceBasis: event.target.value })}
+                    >
+                      <option value="intestacy">Intestate</option>
+                      <option value="will">Testate</option>
+                    </select>
+                  </label>
+                  {testateHistoricalLawWarning && (
+                    <p className="succession-warning" role="alert">
+                      {testateHistoricalLawWarning}
+                    </p>
+                  )}
 
-              {inheritanceBasis === "intestacy" ? (
-                <IntestateHeirConfirmation
-                  deceased={selectedPerson}
-                  people={people}
-                  outsideParties={outsideParties}
-                  calculated={automaticIntestacy}
-                  shareDisplay={ownershipDisplay}
-                  displayName={displayParty}
-                  onUpdatePerson={updatePerson}
-                  onCreateOutsideParty={onOutsidePartiesChange ? createOutsideParty : undefined}
-                  onSelectPerson={onSelectPerson}
-                />
-              ) : (
-                <div className="will-details">
-                  <div className="will-records-heading">
-                    <div>
-                      <strong>Wills</strong>
-                      <small>
-                        The most recent dated will applies. Enter its notary or a description such
-                        as UK will.
-                      </small>
-                    </div>
-                    <button type="button" className="secondary-button" onClick={addWill}>
-                      <FilePlus2 size={14} /> Add will
-                    </button>
-                  </div>
-                  <div className="will-records">
-                    {displayedWills.map((will, index) => {
-                      const isLatest = latestWill?.id === will.id;
-                      const chronologyError = recordedWills.length
-                        ? willChronologyErrors.get(will.id)
-                        : "";
-                      return (
-                        <section
-                          className={`will-record ${chronologyError ? "chronology-invalid" : ""}`}
-                          key={will.id}
-                        >
-                          <div className="will-record-heading">
-                            <strong>Will {index + 1}</strong>
-                            <span>
-                              {isLatest && <small className="will-applies">Latest — applies</small>}
-                              {recordedWills.length > 0 && (
-                                <button
-                                  type="button"
-                                  className="icon-button"
-                                  aria-label={`Remove will ${index + 1}`}
-                                  onClick={() => removeWill(will.id)}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </span>
-                          </div>
-                          <label>
-                            <span>Will date</span>
-                            <DateInput
-                              aria-label={`Will date ${index + 1}`}
-                              value={will.date || ""}
-                              onChange={(value) => updateWill(will.id, { date: value })}
-                            />
-                          </label>
-                          {chronologyError && (
-                            <small className="succession-warning" role="alert">
-                              {chronologyError}
-                            </small>
-                          )}
-                          <label>
-                            <span>Notary (optional)</span>
-                            <input
-                              aria-label={`Notary for will ${index + 1}`}
-                              value={will.notaryName || ""}
-                              onChange={(event) =>
-                                updateWill(will.id, { notaryName: event.target.value })
-                              }
-                              placeholder="Notary's name"
-                            />
-                          </label>
-                          <label>
-                            <span>Description (optional)</span>
-                            <input
-                              aria-label={`Description for will ${index + 1}`}
-                              value={will.description || ""}
-                              onChange={(event) =>
-                                updateWill(will.id, { description: event.target.value })
-                              }
-                              placeholder="e.g. UK will"
-                            />
-                          </label>
-                        </section>
-                      );
-                    })}
-                  </div>
-                  <IntestacyProposal
-                    calculated={automaticIntestacy}
-                    people={people}
-                    displayName={displayParty}
-                    shareDisplay={ownershipDisplay}
-                    title="Suggested Heirs"
-                    confirmationLabel="Confirm Heirs?"
-                    confirmed={suggestedWillHeirsConfirmed}
-                    onConfirmationChange={setSuggestedWillHeirsConfirmed}
-                  />
-                  <div className="will-beneficiaries">
-                    <div className="will-beneficiaries-heading">
-                      <strong>Beneficiaries under the latest will</strong>
-                      <span>
-                        <button type="button" className="text-button" onClick={addWillHeir}>
-                          Add beneficiary
+                  {inheritanceBasis === "intestacy" ? (
+                    <IntestateHeirConfirmation
+                      deceased={selectedPerson}
+                      people={people}
+                      outsideParties={outsideParties}
+                      calculated={automaticIntestacy}
+                      shareDisplay={ownershipDisplay}
+                      displayName={displayParty}
+                      onUpdatePerson={updatePerson}
+                      onCreateOutsideParty={onOutsidePartiesChange ? createOutsideParty : undefined}
+                      onSelectPerson={onSelectPerson}
+                    />
+                  ) : (
+                    <div className="will-details">
+                      <div className="will-records-heading">
+                        <div>
+                          <strong>Wills</strong>
+                          <small>The latest dated will applies.</small>
+                        </div>
+                        <button type="button" className="secondary-button" onClick={addWill}>
+                          <FilePlus2 size={14} /> Add will
                         </button>
-                        {onOutsidePartiesChange && (
-                          <button
-                            type="button"
-                            className="text-button"
-                            aria-expanded={willOutsidePartyOpen}
-                            onClick={() => setWillOutsidePartyOpen((open) => !open)}
-                          >
-                            Add unconnected heir
-                          </button>
-                        )}
-                      </span>
-                    </div>
-                    {willOutsidePartyOpen && (
-                      <OutsidePartyCreator
-                        onCreate={addOutsideWillHeir}
-                        onCancel={() => setWillOutsidePartyOpen(false)}
-                      />
-                    )}
-                    {willHeirs.map((heir) => {
-                      const fraction = fractionForShare(heir);
-                      const numerator = heir.shareNumerator ?? fraction.numerator;
-                      const denominator = heir.shareDenominator ?? fraction.denominator;
-                      return (
-                        <div className={`will-heir-row ${ownershipDisplay}`} key={heir.id}>
-                          <select
-                            aria-label="Will beneficiary"
-                            value={heir.personId || ""}
-                            onChange={(event) =>
-                              updateWillHeir(heir.id, { personId: event.target.value })
-                            }
-                          >
-                            <option value="">Choose person or company</option>
-                            <optgroup label="People on the family tree">
-                              {sortPeopleForChoice(
-                                people.filter((person) => person.id !== selectedPerson.id),
-                                people,
-                              ).map((person) => (
-                                <option key={person.id} value={person.id}>
-                                  {personChoiceLabel(person, people)}
-                                </option>
-                              ))}
-                            </optgroup>
-                            {outsideParties.length > 0 && (
-                              <optgroup label="Unconnected people and companies">
-                                {[...outsideParties]
-                                  .sort((first, second) =>
-                                    partyDisplayName(first).localeCompare(
-                                      partyDisplayName(second),
-                                      "en-MT",
-                                      { sensitivity: "base", numeric: true },
-                                    ),
-                                  )
-                                  .map((party) => (
-                                    <option key={party.id} value={party.id}>
-                                      {partyDisplayName(party)}
-                                      {party.type === "company" ? " (company)" : " (unconnected)"}
-                                    </option>
-                                  ))}
-                              </optgroup>
-                            )}
-                          </select>
-                          {ownershipDisplay !== "percentage" && (
-                            <span className="will-heir-fraction">
-                              <input
-                                aria-label="Will share numerator"
-                                type="number"
-                                min="0"
-                                max={MAX_FRACTION_INTEGER}
-                                step="1"
-                                value={numerator}
-                                onChange={(event) =>
-                                  updateWillHeirFraction(heir, {
-                                    numerator: event.target.value,
-                                  })
-                                }
-                              />
-                              <b>/</b>
-                              <input
-                                aria-label="Will share denominator"
-                                type="number"
-                                min="1"
-                                max={MAX_FRACTION_INTEGER}
-                                step="1"
-                                value={denominator}
-                                onChange={(event) =>
-                                  updateWillHeirFraction(heir, {
-                                    denominator: event.target.value,
-                                  })
-                                }
-                              />
-                            </span>
-                          )}
-                          {ownershipDisplay !== "fraction" && (
-                            <span className="will-heir-percent">
-                              <input
-                                aria-label="Will share percentage"
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="any"
-                                value={heir.sharePercentInput ?? heir.sharePercent ?? ""}
-                                onChange={(event) =>
-                                  updateWillHeirPercentage(heir.id, event.target.value)
-                                }
-                              />
-                              <b>%</b>
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            className="icon-button"
-                            aria-label="Remove will beneficiary"
-                            onClick={() => removeWillHeir(heir.id)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                    <small
-                      className={
-                        willReadiness.valid ? "succession-total valid" : "succession-total invalid"
-                      }
-                    >
-                      Total: {ownershipLabel(willTotal / 100, ownershipDisplay)}{" "}
-                      {willReadiness.valid
-                        ? "✓"
-                        : willReadiness.totalComplete
-                          ? `— ${willReadiness.issues[0]}`
-                          : `— must equal ${
-                              ownershipDisplay === "fraction"
-                                ? "1/1"
-                                : ownershipDisplay === "percentage"
-                                  ? "100%"
-                                  : "1/1 · 100%"
-                            }`}
-                    </small>
-                  </div>
-                </div>
-              )}
-
-              <LegacyLegitimPanel
-                deceased={selectedPerson}
-                people={people}
-                shareDisplay={ownershipDisplay}
-                displayName={displayName}
-                onUpdatePerson={updatePerson}
-              />
-
-              {protectedWill?.calculation?.article === "633" && (
-                <section
-                  className="legacy-legitim-panel"
-                  aria-label="Old-law surviving spouse portion"
-                >
-                  <div className="legacy-legitim-heading">
-                    <div>
-                      <strong>Surviving spouse&apos;s protected portion</strong>
-                      <small>Automatically applied for a death before 01/03/2005</small>
-                    </div>
-                    <b>
-                      {ownershipLabel(
-                        protectedWill.calculation.collectiveFraction.decimal,
-                        ownershipDisplay,
-                      )}
-                    </b>
-                  </div>
-                  <div className="legacy-legitim-results">
-                    {protectedWill.calculation.beneficiaryFloors.map((floor) => {
-                      const spouse = peopleById.get(floor.beneficiaryId);
-                      return (
-                        <div className="legacy-legitim-result" key={floor.beneficiaryId}>
-                          <span>{spouse ? displayName(spouse) : "Surviving spouse"}</span>
-                          <span>
-                            Full-ownership portion{" "}
-                            <b>{ownershipLabel(floor.fraction.decimal, ownershipDisplay)}</b>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-
-              {isPreCausaMortisCutoff && (
-                <p className="helper-text causa-mortis-not-applicable">
-                  No Declaration Causa Mortis applies because the succession opened before 25
-                  November 1992.
-                  {inheritedShareStillHeldBySurvivor
-                    ? " A later sale of that inherited share is taxed at 7% of its transfer value under Article 5A(5)(c)(i)."
-                    : ""}
-                </p>
-              )}
-
-              {requiresCausaMortisDetails && (
-                <div className="causa-mortis-records">
-                  <div className="causa-mortis-heading">
-                    <div>
-                      <strong>Declarations Causa Mortis (CM)</strong>
-                      <small>
-                        {hasUnknownCausaMortisDeathDate
-                          ? "The exact death date is needed to decide whether a Declaration Causa Mortis is required."
-                          : "Required for a death on or after 25 November 1992. Complete this form with OK before starting another declaration."}
-                      </small>
-                    </div>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={!hasDraftCausaMortisDeclaration && !canAddCausaMortisDeclaration}
-                      onClick={handleCausaMortisDeclarationAction}
-                      title={
-                        hasDraftCausaMortisDeclaration
-                          ? causaMortisDraftOpen
-                            ? "Close the unfinished Declaration Causa Mortis form."
-                            : "Reopen the unfinished Declaration Causa Mortis form."
-                          : canStartFirstCausaMortisDeclaration
-                            ? "Record the first Declaration Causa Mortis."
-                            : hasRemainingCausaMortisShare
-                              ? "Insert another Declaration Causa Mortis."
-                              : "No undeclared share remains."
-                      }
-                    >
-                      <FilePlus2 size={14} />
-                      {hasDraftCausaMortisDeclaration
-                        ? causaMortisDraftOpen
-                          ? "Close CM Declaration"
-                          : "Open CM Declaration"
-                        : "Insert CM Declaration"}
-                    </button>
-                  </div>
-
-                  {causaMortisCoverage.length > 0 && (
-                    <div className="causa-mortis-coverage" aria-label="Causa mortis share coverage">
-                      {causaMortisCoverage.map((row) => {
-                        const difference = Math.abs(row.difference);
-                        const property = properties.find(
-                          (candidate) => candidate.id === row.propertyId,
-                        );
-                        const sellingPrice = Number(property?.saleValue);
-                        const hasSellingPrice = Number.isFinite(sellingPrice) && sellingPrice > 0;
-                        const requiredShareSaleValue = sellingPrice * row.requiredShare;
-                        const differenceLabel =
-                          row.status === "date-unknown"
-                            ? row.deathDateText
-                              ? `Resolve date (${
-                                  isoDateToDisplay(row.deathDateText) || row.deathDateText
-                                })`
-                              : "Enter exact death date"
-                            : row.status === "under"
-                              ? `Missing ${fractionLabel(difference)}`
-                              : row.status === "over"
-                                ? `Excess ${fractionLabel(difference)}`
-                                : "Complete";
-                        return (
-                          <div
-                            className={`causa-mortis-coverage-row ${row.status}`}
-                            key={row.propertyId}
-                          >
-                            <span>
-                              <strong>{row.propertyAddress}</strong>
-                              <small>
-                                {row.status === "date-unknown"
-                                  ? "Coverage cannot be decided from an unknown or approximate death date."
-                                  : `Required ${fractionLabel(
-                                      row.requiredShare,
-                                    )} · Declared ${fractionLabel(row.declaredShare)}`}
-                              </small>
-                              {row.status !== "date-unknown" && hasSellingPrice && (
-                                <small>
-                                  Required share of selling price{" "}
-                                  {money.format(requiredShareSaleValue)}
+                      </div>
+                      <div className="will-records">
+                        {displayedWills.map((will, index) => {
+                          const isLatest = latestWill?.id === will.id;
+                          const chronologyError = recordedWills.length
+                            ? willChronologyErrors.get(will.id)
+                            : "";
+                          return (
+                            <section
+                              className={`will-record ${chronologyError ? "chronology-invalid" : ""}`}
+                              key={will.id}
+                            >
+                              <div className="will-record-heading">
+                                <strong>Will {index + 1}</strong>
+                                <span>
+                                  {isLatest && (
+                                    <small className="will-applies">Latest — applies</small>
+                                  )}
+                                  {recordedWills.length > 0 && (
+                                    <button
+                                      type="button"
+                                      className="icon-button"
+                                      aria-label={`Remove will ${index + 1}`}
+                                      onClick={() => removeWill(will.id)}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                </span>
+                              </div>
+                              <label>
+                                <span>Will date</span>
+                                <DateInput
+                                  aria-label={`Will date ${index + 1}`}
+                                  value={will.date || ""}
+                                  onChange={(value) => updateWill(will.id, { date: value })}
+                                />
+                              </label>
+                              {chronologyError && (
+                                <small className="succession-warning" role="alert">
+                                  {chronologyError}
                                 </small>
                               )}
-                            </span>
-                            <b>{differenceLabel}</b>
+                              <label>
+                                <span>Notary (optional)</span>
+                                <input
+                                  aria-label={`Notary for will ${index + 1}`}
+                                  value={will.notaryName || ""}
+                                  onChange={(event) =>
+                                    updateWill(will.id, { notaryName: event.target.value })
+                                  }
+                                  placeholder="Notary's name"
+                                />
+                              </label>
+                              <label>
+                                <span>Description (optional)</span>
+                                <input
+                                  aria-label={`Description for will ${index + 1}`}
+                                  value={will.description || ""}
+                                  onChange={(event) =>
+                                    updateWill(will.id, { description: event.target.value })
+                                  }
+                                  placeholder="e.g. UK will"
+                                />
+                              </label>
+                            </section>
+                          );
+                        })}
+                      </div>
+                      <IntestacyProposal
+                        calculated={automaticIntestacy}
+                        people={people}
+                        displayName={displayParty}
+                        shareDisplay={ownershipDisplay}
+                        title="Suggested Heirs"
+                        confirmationLabel="Confirm Heirs?"
+                        confirmed={suggestedWillHeirsConfirmed}
+                        onConfirmationChange={setSuggestedWillHeirsConfirmed}
+                      />
+                      <div className="will-beneficiaries">
+                        <div className="will-beneficiaries-heading">
+                          <strong>Beneficiaries under the latest will</strong>
+                          <span>
+                            <button type="button" className="text-button" onClick={addWillHeir}>
+                              Add beneficiary
+                            </button>
+                            {onOutsidePartiesChange && (
+                              <button
+                                type="button"
+                                className="text-button"
+                                aria-expanded={willOutsidePartyOpen}
+                                onClick={() => setWillOutsidePartyOpen((open) => !open)}
+                              >
+                                Add unconnected heir
+                              </button>
+                            )}
+                          </span>
+                        </div>
+                        {willOutsidePartyOpen && (
+                          <OutsidePartyCreator
+                            onCreate={addOutsideWillHeir}
+                            onCancel={() => setWillOutsidePartyOpen(false)}
+                          />
+                        )}
+                        {willHeirs.map((heir) => {
+                          const fraction = fractionForShare(heir);
+                          const numerator = heir.shareNumerator ?? fraction.numerator;
+                          const denominator = heir.shareDenominator ?? fraction.denominator;
+                          return (
+                            <div className={`will-heir-row ${ownershipDisplay}`} key={heir.id}>
+                              <select
+                                aria-label="Will beneficiary"
+                                value={heir.personId || ""}
+                                onChange={(event) =>
+                                  updateWillHeir(heir.id, { personId: event.target.value })
+                                }
+                              >
+                                <option value="">Choose person or company</option>
+                                <optgroup label="People on the family tree">
+                                  {sortPeopleForChoice(
+                                    people.filter((person) => person.id !== selectedPerson.id),
+                                    people,
+                                  ).map((person) => (
+                                    <option key={person.id} value={person.id}>
+                                      {personChoiceLabel(person, people)}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                                {outsideParties.length > 0 && (
+                                  <optgroup label="Unconnected people and companies">
+                                    {[...outsideParties]
+                                      .sort((first, second) =>
+                                        partyDisplayName(first).localeCompare(
+                                          partyDisplayName(second),
+                                          "en-MT",
+                                          { sensitivity: "base", numeric: true },
+                                        ),
+                                      )
+                                      .map((party) => (
+                                        <option key={party.id} value={party.id}>
+                                          {partyDisplayName(party)}
+                                          {party.type === "company"
+                                            ? " (company)"
+                                            : " (unconnected)"}
+                                        </option>
+                                      ))}
+                                  </optgroup>
+                                )}
+                              </select>
+                              {ownershipDisplay !== "percentage" && (
+                                <span className="will-heir-fraction">
+                                  <input
+                                    aria-label="Will share numerator"
+                                    type="number"
+                                    min="0"
+                                    max={MAX_FRACTION_INTEGER}
+                                    step="1"
+                                    value={numerator}
+                                    onChange={(event) =>
+                                      updateWillHeirFraction(heir, {
+                                        numerator: event.target.value,
+                                      })
+                                    }
+                                  />
+                                  <b>/</b>
+                                  <input
+                                    aria-label="Will share denominator"
+                                    type="number"
+                                    min="1"
+                                    max={MAX_FRACTION_INTEGER}
+                                    step="1"
+                                    value={denominator}
+                                    onChange={(event) =>
+                                      updateWillHeirFraction(heir, {
+                                        denominator: event.target.value,
+                                      })
+                                    }
+                                  />
+                                </span>
+                              )}
+                              {ownershipDisplay !== "fraction" && (
+                                <span className="will-heir-percent">
+                                  <input
+                                    aria-label="Will share percentage"
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="any"
+                                    value={heir.sharePercentInput ?? heir.sharePercent ?? ""}
+                                    onChange={(event) =>
+                                      updateWillHeirPercentage(heir.id, event.target.value)
+                                    }
+                                  />
+                                  <b>%</b>
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                className="icon-button"
+                                aria-label="Remove will beneficiary"
+                                onClick={() => removeWillHeir(heir.id)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <small
+                          className={
+                            willReadiness.valid
+                              ? "succession-total valid"
+                              : "succession-total invalid"
+                          }
+                        >
+                          Total: {ownershipLabel(willTotal / 100, ownershipDisplay)}{" "}
+                          {willReadiness.valid
+                            ? "✓"
+                            : willReadiness.totalComplete
+                              ? `— ${willReadiness.issues[0]}`
+                              : `— must equal ${
+                                  ownershipDisplay === "fraction"
+                                    ? "1/1"
+                                    : ownershipDisplay === "percentage"
+                                      ? "100%"
+                                      : "1/1 · 100%"
+                                }`}
+                        </small>
+                      </div>
+                    </div>
+                  )}
+
+                  <LegacyLegitimPanel
+                    deceased={selectedPerson}
+                    people={people}
+                    shareDisplay={ownershipDisplay}
+                    displayName={displayName}
+                    onUpdatePerson={updatePerson}
+                  />
+
+                  {protectedWill?.calculation?.article === "633" && (
+                    <section
+                      className="legacy-legitim-panel"
+                      aria-label="Old-law surviving spouse portion"
+                    >
+                      <div className="legacy-legitim-heading">
+                        <div>
+                          <strong>Surviving spouse&apos;s protected portion</strong>
+                          <small>Automatically applied for a death before 01/03/2005</small>
+                        </div>
+                        <b>
+                          {ownershipLabel(
+                            protectedWill.calculation.collectiveFraction.decimal,
+                            ownershipDisplay,
+                          )}
+                        </b>
+                      </div>
+                      <div className="legacy-legitim-results">
+                        {protectedWill.calculation.beneficiaryFloors.map((floor) => {
+                          const spouse = peopleById.get(floor.beneficiaryId);
+                          return (
+                            <div className="legacy-legitim-result" key={floor.beneficiaryId}>
+                              <span>{spouse ? displayName(spouse) : "Surviving spouse"}</span>
+                              <span>
+                                Full-ownership portion{" "}
+                                <b>{ownershipLabel(floor.fraction.decimal, ownershipDisplay)}</b>
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+
+                  {isPreCausaMortisCutoff && (
+                    <p className="helper-text causa-mortis-not-applicable">
+                      No Causa Mortis declaration: death before 25/11/1992.
+                      {inheritedShareStillHeldBySurvivor
+                        ? " A later sale of this inherited share is taxed at 7% (Article 5A(5)(c)(i))."
+                        : ""}
+                    </p>
+                  )}
+
+                  {requiresCausaMortisDetails && (
+                    <div className="causa-mortis-records">
+                      <div className="causa-mortis-heading">
+                        <div>
+                          <strong>Causa Mortis</strong>
+                          {hasUnknownCausaMortisDeathDate && (
+                            <small>Enter the exact death date.</small>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={
+                            !hasDraftCausaMortisDeclaration && !canAddCausaMortisDeclaration
+                          }
+                          onClick={handleCausaMortisDeclarationAction}
+                          title={
+                            hasDraftCausaMortisDeclaration
+                              ? causaMortisDraftOpen
+                                ? "Close the unfinished Declaration Causa Mortis form."
+                                : "Reopen the unfinished Declaration Causa Mortis form."
+                              : canStartFirstCausaMortisDeclaration
+                                ? "Record the first Declaration Causa Mortis."
+                                : hasRemainingCausaMortisShare
+                                  ? "Insert another Declaration Causa Mortis."
+                                  : "No undeclared share remains."
+                          }
+                        >
+                          <FilePlus2 size={14} />
+                          {hasDraftCausaMortisDeclaration
+                            ? causaMortisDraftOpen
+                              ? "Close CM Declaration"
+                              : "Open CM Declaration"
+                            : "Insert CM Declaration"}
+                        </button>
+                      </div>
+
+                      {causaMortisCoverage.length > 0 && (
+                        <div
+                          className="causa-mortis-coverage"
+                          aria-label="Causa mortis share coverage"
+                        >
+                          {causaMortisCoverage.map((row) => {
+                            const difference = Math.abs(row.difference);
+                            const property = properties.find(
+                              (candidate) => candidate.id === row.propertyId,
+                            );
+                            const sellingPrice = Number(property?.saleValue);
+                            const hasSellingPrice =
+                              Number.isFinite(sellingPrice) && sellingPrice > 0;
+                            const requiredShareSaleValue = sellingPrice * row.requiredShare;
+                            const differenceLabel =
+                              row.status === "date-unknown"
+                                ? row.deathDateText
+                                  ? `Resolve date (${
+                                      isoDateToDisplay(row.deathDateText) || row.deathDateText
+                                    })`
+                                  : "Enter exact death date"
+                                : row.status === "under"
+                                  ? `Missing ${fractionLabel(difference)}`
+                                  : row.status === "over"
+                                    ? `Excess ${fractionLabel(difference)}`
+                                    : "Complete";
+                            return (
+                              <div
+                                className={`causa-mortis-coverage-row ${row.status}`}
+                                key={row.propertyId}
+                              >
+                                <span>
+                                  <strong>{row.propertyAddress}</strong>
+                                  <small>
+                                    {row.status === "date-unknown"
+                                      ? "Coverage cannot be decided from an unknown or approximate death date."
+                                      : `Required ${fractionLabel(
+                                          row.requiredShare,
+                                        )} · Declared ${fractionLabel(row.declaredShare)}`}
+                                  </small>
+                                  {row.status !== "date-unknown" && hasSellingPrice && (
+                                    <small>
+                                      Required share of selling price{" "}
+                                      {money.format(requiredShareSaleValue)}
+                                    </small>
+                                  )}
+                                </span>
+                                <b>{differenceLabel}</b>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {!causaMortisDeclarations.length && (
+                        <small className="causa-mortis-empty">No declaration recorded.</small>
+                      )}
+
+                      {hasDraftCausaMortisDeclaration && !causaMortisDraftOpen && (
+                        <small className="causa-mortis-empty">Draft declaration closed.</small>
+                      )}
+
+                      {visibleCausaMortisDeclarations.map((declaration, index) => {
+                        const chronologyError = declaration.date
+                          ? validateCausaMortisDateChronology(
+                              declaration.date,
+                              selectedPerson.dateOfDeath,
+                            )
+                          : "";
+                        const declarationError =
+                          causaMortisErrors[declaration.id] || chronologyError;
+                        return (
+                          <div
+                            className={`causa-mortis-card ${
+                              isCompletedCausaMortisDeclaration(declaration) ? "complete" : "draft"
+                            } ${chronologyError ? "chronology-invalid" : ""}`}
+                            key={declaration.id}
+                          >
+                            <div className="causa-mortis-card-heading">
+                              <strong>Declaration Causa Mortis {index + 1}</strong>
+                              <button
+                                type="button"
+                                className="icon-button"
+                                aria-label={`Remove causa mortis declaration ${index + 1}`}
+                                onClick={() => removeCausaMortisDeclaration(declaration.id)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                            <label>
+                              <span>Property</span>
+                              <select
+                                aria-label={`Property declared causa mortis ${index + 1}`}
+                                required
+                                value={
+                                  declaration.propertyId ||
+                                  (properties.length === 1 ? properties[0].id : "")
+                                }
+                                onChange={(event) =>
+                                  updateCausaMortisDeclaration(declaration.id, {
+                                    propertyId: event.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">Select property</option>
+                                {properties.map((property) => (
+                                  <option key={property.id} value={property.id}>
+                                    {property.address || property.description || "Unnamed property"}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              <span>
+                                Share declared <abbr title="Declaration Causa Mortis">CM</abbr>
+                              </span>
+                              <span className="causa-mortis-fraction">
+                                <input
+                                  aria-label={`Causa mortis share numerator ${index + 1}`}
+                                  type="number"
+                                  min="0"
+                                  max={MAX_FRACTION_INTEGER}
+                                  step="1"
+                                  required
+                                  value={declaration.declaredShareNumerator ?? ""}
+                                  onChange={(event) =>
+                                    updateCausaMortisDeclaration(declaration.id, {
+                                      declaredShareNumerator: event.target.value,
+                                    })
+                                  }
+                                />
+                                <b>/</b>
+                                <input
+                                  aria-label={`Causa mortis share denominator ${index + 1}`}
+                                  type="number"
+                                  min="1"
+                                  max={MAX_FRACTION_INTEGER}
+                                  step="1"
+                                  required
+                                  value={declaration.declaredShareDenominator ?? ""}
+                                  onChange={(event) =>
+                                    updateCausaMortisDeclaration(declaration.id, {
+                                      declaredShareDenominator: event.target.value,
+                                    })
+                                  }
+                                />
+                              </span>
+                            </label>
+                            <label>
+                              <span>Date of Declaration Causa Mortis</span>
+                              <DateInput
+                                aria-label={`Date of Declaration Causa Mortis ${index + 1}`}
+                                required
+                                value={declaration.date || ""}
+                                onChange={(value) =>
+                                  updateCausaMortisDeclaration(declaration.id, {
+                                    date: value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              <span>Notary</span>
+                              <input
+                                aria-label={`Notary for Declaration Causa Mortis ${index + 1}`}
+                                required
+                                value={declaration.notaryName || ""}
+                                onChange={(event) =>
+                                  updateCausaMortisDeclaration(declaration.id, {
+                                    notaryName: event.target.value,
+                                  })
+                                }
+                                placeholder="Notary's full name"
+                              />
+                            </label>
+                            <label>
+                              <span>
+                                Value declared
+                                {allSuccessionHeirsDeceased ? " (optional)" : ""}
+                              </span>
+                              <span className="currency-input">
+                                <b>€</b>
+                                <input
+                                  aria-label={`Immovable property value declared causa mortis ${index + 1}`}
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  required={!allSuccessionHeirsDeceased}
+                                  value={declaration.immovablePropertyValue || ""}
+                                  onChange={(event) =>
+                                    updateCausaMortisDeclaration(declaration.id, {
+                                      immovablePropertyValue: event.target.value,
+                                    })
+                                  }
+                                />
+                              </span>
+                            </label>
+                            <div className="causa-mortis-declarants">
+                              <strong>Declarants / heirs</strong>
+                              <small>Untick anyone who did not declare.</small>
+                              {declarationCandidates.length ? (
+                                <div>
+                                  {declarationCandidates.map((party) => (
+                                    <label key={party.id}>
+                                      <input
+                                        type="checkbox"
+                                        checked={(declaration.declarantPersonIds || []).includes(
+                                          party.id,
+                                        )}
+                                        onChange={() =>
+                                          toggleCausaMortisDeclarant(declaration, party.id)
+                                        }
+                                      />
+                                      {personSelectionLabel(party)}
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : (
+                                <small>
+                                  Add or identify the heirs in this case before selecting
+                                  declarants.
+                                </small>
+                              )}
+                            </div>
+                            <small
+                              className={
+                                allSuccessionHeirsDeceased
+                                  ? "causa-mortis-value-note optional"
+                                  : "causa-mortis-value-note required"
+                              }
+                            >
+                              {allSuccessionHeirsDeceased
+                                ? "Value is optional because every identified heir is deceased."
+                                : successionHeirs.length
+                                  ? "Value is required while an identified heir is living."
+                                  : "Value is required until the heirs are identified."}
+                            </small>
+                            <div className="causa-mortis-card-actions">
+                              {declarationError && <small role="alert">{declarationError}</small>}
+                              <button
+                                type="button"
+                                className="primary-button"
+                                disabled={isCompletedCausaMortisDeclaration(declaration)}
+                                onClick={() => completeCausaMortisDeclaration(declaration)}
+                              >
+                                <Check size={14} />
+                                OK
+                              </button>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
-
-                  {!causaMortisDeclarations.length && (
-                    <small className="causa-mortis-empty">
-                      No causa mortis declaration recorded yet. Insert a declaration to open the
-                      form.
-                    </small>
-                  )}
-
-                  {hasDraftCausaMortisDeclaration && !causaMortisDraftOpen && (
-                    <small className="causa-mortis-empty">
-                      Unfinished CM declaration closed. Use Open CM Declaration to continue.
-                    </small>
-                  )}
-
-                  {visibleCausaMortisDeclarations.map((declaration, index) => {
-                    const chronologyError = declaration.date
-                      ? validateCausaMortisDateChronology(
-                          declaration.date,
-                          selectedPerson.dateOfDeath,
-                        )
-                      : "";
-                    const declarationError = causaMortisErrors[declaration.id] || chronologyError;
-                    return (
-                      <div
-                        className={`causa-mortis-card ${
-                          isCompletedCausaMortisDeclaration(declaration) ? "complete" : "draft"
-                        } ${chronologyError ? "chronology-invalid" : ""}`}
-                        key={declaration.id}
-                      >
-                        <div className="causa-mortis-card-heading">
-                          <strong>Declaration Causa Mortis {index + 1}</strong>
-                          <button
-                            type="button"
-                            className="icon-button"
-                            aria-label={`Remove causa mortis declaration ${index + 1}`}
-                            onClick={() => removeCausaMortisDeclaration(declaration.id)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                        <label>
-                          <span>Property</span>
-                          <select
-                            aria-label={`Property declared causa mortis ${index + 1}`}
-                            required
-                            value={
-                              declaration.propertyId ||
-                              (properties.length === 1 ? properties[0].id : "")
-                            }
-                            onChange={(event) =>
-                              updateCausaMortisDeclaration(declaration.id, {
-                                propertyId: event.target.value,
-                              })
-                            }
-                          >
-                            <option value="">Select property</option>
-                            {properties.map((property) => (
-                              <option key={property.id} value={property.id}>
-                                {property.address || property.description || "Unnamed property"}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          <span>
-                            Share declared <abbr title="Declaration Causa Mortis">CM</abbr>
-                          </span>
-                          <span className="causa-mortis-fraction">
-                            <input
-                              aria-label={`Causa mortis share numerator ${index + 1}`}
-                              type="number"
-                              min="0"
-                              max={MAX_FRACTION_INTEGER}
-                              step="1"
-                              required
-                              value={declaration.declaredShareNumerator ?? ""}
-                              onChange={(event) =>
-                                updateCausaMortisDeclaration(declaration.id, {
-                                  declaredShareNumerator: event.target.value,
-                                })
-                              }
-                            />
-                            <b>/</b>
-                            <input
-                              aria-label={`Causa mortis share denominator ${index + 1}`}
-                              type="number"
-                              min="1"
-                              max={MAX_FRACTION_INTEGER}
-                              step="1"
-                              required
-                              value={declaration.declaredShareDenominator ?? ""}
-                              onChange={(event) =>
-                                updateCausaMortisDeclaration(declaration.id, {
-                                  declaredShareDenominator: event.target.value,
-                                })
-                              }
-                            />
-                          </span>
-                        </label>
-                        <label>
-                          <span>Date of Declaration Causa Mortis</span>
-                          <DateInput
-                            aria-label={`Date of Declaration Causa Mortis ${index + 1}`}
-                            required
-                            value={declaration.date || ""}
-                            onChange={(value) =>
-                              updateCausaMortisDeclaration(declaration.id, {
-                                date: value,
-                              })
-                            }
-                          />
-                        </label>
-                        <label>
-                          <span>Notary</span>
-                          <input
-                            aria-label={`Notary for Declaration Causa Mortis ${index + 1}`}
-                            required
-                            value={declaration.notaryName || ""}
-                            onChange={(event) =>
-                              updateCausaMortisDeclaration(declaration.id, {
-                                notaryName: event.target.value,
-                              })
-                            }
-                            placeholder="Notary's full name"
-                          />
-                        </label>
-                        <label>
-                          <span>
-                            Value declared
-                            {allSuccessionHeirsDeceased ? " (optional)" : ""}
-                          </span>
-                          <span className="currency-input">
-                            <b>€</b>
-                            <input
-                              aria-label={`Immovable property value declared causa mortis ${index + 1}`}
-                              type="number"
-                              min="0"
-                              step="any"
-                              required={!allSuccessionHeirsDeceased}
-                              value={declaration.immovablePropertyValue || ""}
-                              onChange={(event) =>
-                                updateCausaMortisDeclaration(declaration.id, {
-                                  immovablePropertyValue: event.target.value,
-                                })
-                              }
-                            />
-                          </span>
-                        </label>
-                        <div className="causa-mortis-declarants">
-                          <strong>Declarants / heirs</strong>
-                          <small>
-                            Identified heirs are selected by default. Untick anyone who did not make
-                            this declaration.
-                          </small>
-                          {declarationCandidates.length ? (
-                            <div>
-                              {declarationCandidates.map((party) => (
-                                <label key={party.id}>
-                                  <input
-                                    type="checkbox"
-                                    checked={(declaration.declarantPersonIds || []).includes(
-                                      party.id,
-                                    )}
-                                    onChange={() =>
-                                      toggleCausaMortisDeclarant(declaration, party.id)
-                                    }
-                                  />
-                                  {personSelectionLabel(party)}
-                                </label>
-                              ))}
-                            </div>
-                          ) : (
-                            <small>
-                              Add or identify the heirs in this case before selecting declarants.
-                            </small>
-                          )}
-                        </div>
-                        <small
-                          className={
-                            allSuccessionHeirsDeceased
-                              ? "causa-mortis-value-note optional"
-                              : "causa-mortis-value-note required"
-                          }
-                        >
-                          {allSuccessionHeirsDeceased
-                            ? "Declared immovable-property value is optional because every identified heir is now deceased."
-                            : successionHeirs.length
-                              ? "Declared immovable-property value is required because at least one identified heir is living."
-                              : "Declared immovable-property value is required until the heirs are identified."}
-                        </small>
-                        <div className="causa-mortis-card-actions">
-                          {declarationError && <small role="alert">{declarationError}</small>}
-                          <button
-                            type="button"
-                            className="primary-button"
-                            disabled={isCompletedCausaMortisDeclaration(declaration)}
-                            onClick={() => completeCausaMortisDeclaration(declaration)}
-                          >
-                            <Check size={14} />
-                            OK
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
               )}
             </div>
           )}
-          <div className="person-share-summary" data-person-section="property">
-            <div className="person-share-heading">
-              <span>
-                Estimated property share
-                {properties.length > 1 && <small> (primary property only)</small>}
-              </span>
-              <span className="person-share-toggle" aria-label="Estimated share display">
-                <button
-                  type="button"
-                  className={ownershipDisplay === "fraction" ? "active" : ""}
-                  aria-pressed={ownershipDisplay === "fraction"}
-                  onClick={() => changeOwnershipDisplay("fraction")}
-                >
-                  Fraction
-                </button>
-                <button
-                  type="button"
-                  className={ownershipDisplay === "percentage" ? "active" : ""}
-                  aria-pressed={ownershipDisplay === "percentage"}
-                  onClick={() => changeOwnershipDisplay("percentage")}
-                >
-                  Percentage
-                </button>
-                <button
-                  type="button"
-                  className={ownershipDisplay === "both" ? "active" : ""}
-                  aria-pressed={ownershipDisplay === "both"}
-                  onClick={() => changeOwnershipDisplay("both")}
-                >
-                  Both
-                </button>
-              </span>
-            </div>
-            <div className="person-share-value">
-              <strong>
-                {hasOwnership
-                  ? ownershipLabel(
-                      ownership,
-                      ownershipDisplay,
-                      ownershipFractionsByPerson[selectedPerson.id],
-                    )
-                  : "Not yet calculated"}
-              </strong>
-              <small>
-                {hasOwnership && propertySaleValue > 0
-                  ? `Estimated value ${money.format(estimatedPropertyValue)}`
-                  : "Enter the initial owner and property selling price to calculate a value."}
-              </small>
-            </div>
-            <div className="person-final-withholding-tax">
-              <span>Final Withholding Tax</span>
-              <span>
-                <strong>{finalWithholdingTaxLabel}</strong>
-                <small>{finalWithholdingTaxNote}</small>
-              </span>
-            </div>
-          </div>
-          {interVivosDisclosureOpen &&
-            (shareTransferSection || (
-              <div
-                id={`inter-vivos-transfer-${selectedPerson.id}`}
-                className="person-donation person-donation-unavailable"
-                data-person-section="donation"
-              >
-                <p className="helper-text">
-                  {activeProperty
-                    ? "No remaining holding is recorded for this person on the active property, so there is nothing available to transfer."
-                    : "Add the property and its initial ownership before recording an inter vivos transfer."}
-                </p>
-              </div>
-            ))}
+          {!isDeceased && propertyShareSummary}
+          {!isDeceased && lifetimeTransferSection}
           {linkedPartners.length > 0 && (
             <div className="person-partner-links">
               <span>Marriage / partner links</span>

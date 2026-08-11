@@ -13,6 +13,7 @@ const renderLibrary = (root, props = {}) => {
     onOpen: vi.fn(),
     onRename: vi.fn(),
     onRemove: vi.fn(),
+    onChangePassword: vi.fn(),
     onSignIn: vi.fn(),
     onSignOut: vi.fn(),
     onDownloadBackup: vi.fn(),
@@ -46,6 +47,23 @@ const renderLibrary = (root, props = {}) => {
     ),
   );
   return handlers;
+};
+
+const setLabelledInput = (container, labelText, value) => {
+  const label = [...container.querySelectorAll("label")].find((item) =>
+    item.textContent.includes(labelText),
+  );
+  const input = label.querySelector("input");
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+const submitDialog = async (dialog) => {
+  await act(async () => {
+    dialog.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 };
 
 describe("FamilyLibrary", () => {
@@ -203,6 +221,78 @@ describe("FamilyLibrary", () => {
     expect(handlers.onDownloadBackup).toHaveBeenCalledOnce();
     expect(container.querySelector('a[href="/?legal=terms"]')).not.toBeNull();
     expect(container.querySelector('a[href="/?legal=privacy"]')).not.toBeNull();
+  });
+
+  it("validates a signed-in password change before submitting it", async () => {
+    const handlers = renderLibrary(root);
+    const openPasswordDialog = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Change password",
+    );
+    act(() => openPasswordDialog.click());
+    const dialog = container.querySelector("form.account-password-dialog");
+
+    act(() => {
+      setLabelledInput(dialog, "Current password", "old-password");
+      setLabelledInput(dialog, "New password", "short");
+      setLabelledInput(dialog, "Repeat new password", "short");
+    });
+    await submitDialog(dialog);
+    expect(handlers.onChangePassword).not.toHaveBeenCalled();
+    expect(dialog.querySelector('[role="alert"]').textContent).toContain("at least 10 characters");
+
+    act(() => {
+      setLabelledInput(dialog, "New password", "a-new-secure-password");
+      setLabelledInput(dialog, "Repeat new password", "a-different-password");
+    });
+    await submitDialog(dialog);
+    expect(handlers.onChangePassword).not.toHaveBeenCalled();
+    expect(dialog.querySelector('[role="alert"]').textContent).toContain("do not match");
+  });
+
+  it("submits the current and new passwords and confirms success", async () => {
+    const handlers = renderLibrary(root);
+    const openPasswordDialog = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Change password",
+    );
+    act(() => openPasswordDialog.click());
+    const dialog = container.querySelector("form.account-password-dialog");
+
+    act(() => {
+      setLabelledInput(dialog, "Current password", "old-password");
+      setLabelledInput(dialog, "New password", "a-new-secure-password");
+      setLabelledInput(dialog, "Repeat new password", "a-new-secure-password");
+    });
+    await submitDialog(dialog);
+
+    expect(handlers.onChangePassword).toHaveBeenCalledWith({
+      currentPassword: "old-password",
+      newPassword: "a-new-secure-password",
+    });
+    expect(dialog.querySelector('[role="status"]').textContent).toContain(
+      "Password has been changed successfully".toLowerCase(),
+    );
+  });
+
+  it("keeps the password dialog usable when the change is rejected", async () => {
+    const onChangePassword = vi.fn().mockRejectedValue(new Error("Current password is incorrect."));
+    renderLibrary(root, { onChangePassword });
+    const openPasswordDialog = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Change password",
+    );
+    act(() => openPasswordDialog.click());
+    const dialog = container.querySelector("form.account-password-dialog");
+
+    act(() => {
+      setLabelledInput(dialog, "Current password", "wrong-password");
+      setLabelledInput(dialog, "New password", "a-new-secure-password");
+      setLabelledInput(dialog, "Repeat new password", "a-new-secure-password");
+    });
+    await submitDialog(dialog);
+
+    expect(dialog.querySelector('[role="alert"]').textContent).toContain(
+      "Current password is incorrect.",
+    );
+    expect(dialog.querySelector('button[type="submit"]').disabled).toBe(false);
   });
 
   it("keeps the family list focused on opening, renaming, and deleting trees", () => {

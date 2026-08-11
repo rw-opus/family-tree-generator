@@ -13,6 +13,104 @@ import {
   remainingInitialOwnershipShare,
 } from "../../src/domain/propertyVendorTax.js";
 
+describe("lifetime transfers before succession", () => {
+  it("moves an inherited partial share to its buyer and passes only the balance to heirs", () => {
+    const people = [
+      {
+        id: "ancestor",
+        fullName: "Ancestor Borg",
+        isDeceased: true,
+        dateOfDeath: "2000-01-01",
+        inheritanceBasis: "intestacy",
+      },
+      {
+        id: "middle",
+        fullName: "Middle Borg",
+        fatherId: "ancestor",
+        isDeceased: true,
+        dateOfDeath: "2022-01-01",
+        inheritanceBasis: "intestacy",
+      },
+      { id: "heir", fullName: "Heir Borg", fatherId: "middle" },
+      { id: "buyer", fullName: "Buyer Vella" },
+    ];
+    const property = {
+      id: "property",
+      owners: [{ id: "initial", personId: "ancestor", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "sale",
+          kind: "sale",
+          sellerId: "middle",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2020-01-01",
+          provenance: [
+            {
+              trancheId: "inheritance-ancestor",
+              numerator: 1,
+              denominator: 4,
+              acquiredOn: "2000-01-01",
+            },
+          ],
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(property, people, []);
+    const owners = Object.fromEntries(
+      report.ledger.owners.map((owner) => [owner.id, owner.shareFraction]),
+    );
+    const middleSuccession = report.ownership.transmissions.find(
+      (transmission) => transmission.deceasedId === "middle",
+    );
+
+    expect(owners.buyer).toEqual({ numerator: 1, denominator: 4 });
+    expect(owners.heir).toEqual({ numerator: 3, denominator: 4 });
+    expect(middleSuccession.amountFraction).toEqual({ numerator: 3, denominator: 4 });
+    expect(report.ledger.entries[0].error).toBeUndefined();
+  });
+
+  it("normalises a legacy relative transfer against the gross pre-death holding", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2022-01-01",
+        inheritanceBasis: "intestacy",
+      },
+      { id: "heir", fullName: "Maria Borg", fatherId: "deceased" },
+      { id: "buyer", fullName: "Paul Vella" },
+    ];
+    const property = {
+      id: "property",
+      owners: [{ id: "initial", personId: "deceased", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "legacy-sale",
+          kind: "sale",
+          sellerId: "deceased",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 2,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(property, people, []);
+    const owners = Object.fromEntries(report.ledger.owners.map((owner) => [owner.id, owner.share]));
+
+    expect(owners.buyer).toBeCloseTo(0.5);
+    expect(owners.heir).toBeCloseTo(0.5);
+    expect(owners.deceased || 0).toBe(0);
+  });
+});
+
 describe("owner provenance tranches", () => {
   const report = {
     inheritanceSourcesByOwner: new Map([

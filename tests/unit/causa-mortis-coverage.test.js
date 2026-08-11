@@ -32,6 +32,56 @@ const peopleWithDeclarations = (declarations = [], dateOfDeath = "2020-01-01") =
 ];
 
 describe("buildCausaMortisShareCoverage", () => {
+  it("requires declarations only for the share left after a lifetime transfer", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willDate: "2010-01-01",
+        willHeirs: [{ id: "heir-record", personId: "child", sharePercent: 100 }],
+        causaMortisDeclarations: [
+          {
+            id: "cm",
+            status: "complete",
+            propertyId: "property-1",
+            declaredShareNumerator: 3,
+            declaredShareDenominator: 4,
+            date: "2020-02-01",
+          },
+        ],
+      },
+      { id: "child", fullName: "Maria Borg" },
+      { id: "buyer", fullName: "Paul Vella" },
+    ];
+    const transferredProperty = {
+      id: "property-1",
+      address: "1 Republic Street",
+      owners: [{ id: "initial", personId: "deceased", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "deceased",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2019-01-01",
+          provenance: [{ trancheId: "initial-initial", numerator: 1, denominator: 4 }],
+        },
+      ],
+    };
+
+    const result = buildCausaMortisShareCoverage(people, [transferredProperty]).rows[0];
+
+    expect(result.requiredFraction).toEqual({ numerator: 3, denominator: 4 });
+    expect(result.declaredFraction).toEqual({ numerator: 3, denominator: 4 });
+    expect(result.status).toBe("complete");
+  });
+
   it("marks missing, exact, and excess declaration shares", () => {
     const missing = buildCausaMortisShareCoverage(peopleWithDeclarations([]), [property]).rows[0];
     expect(missing).toMatchObject({

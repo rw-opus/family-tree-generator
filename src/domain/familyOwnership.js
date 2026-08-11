@@ -1,4 +1,9 @@
-import { approximateFraction, buildStarterOwnership } from "./ownership.js";
+import {
+  approximateFraction,
+  buildPropertyLedger,
+  buildStarterOwnership,
+  chronologicalTransfers,
+} from "./ownership.js";
 import {
   addFractions,
   compareFractions,
@@ -17,6 +22,7 @@ import {
 } from "./partnerRelationships.js";
 import { applyLegacyProtectedPortionsToWill } from "./legacyLegitim.js";
 import { validateRelationshipDateChronology, validateWillDateChronology } from "./chronology.js";
+import { applyPortions, selectTranchePortions } from "./trancheOwnership.js";
 import { operativeWill, personWills } from "./wills.js";
 import {
   article815ReviewWarning,
@@ -1009,7 +1015,17 @@ export function willAllocations(person = {}) {
 // Runs the intestacy/will cascade against an arbitrary starting-ownership map, so the
 // same family logic can be shared between the legacy single-property view and the
 // per-property engine below. startingOwnership is { personId: fraction (0..1) }.
-function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsideParties = []) {
+function buildFamilyOwnershipCore(
+  people = [],
+  startingOwnership = {},
+  outsideParties = [],
+  {
+    deathBefore = null,
+    resolveLifetimeDisposal = false,
+    settledDeathIds = new Set(),
+    startingContributions = null,
+  } = {},
+) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const outsidePartyIds = new Set(outsideParties.map((party) => party.id).filter(Boolean));
   const ownershipFractions = new Map();
@@ -1017,10 +1033,10 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
   const transmissions = [];
   const unresolved = [];
 
-  const record = (personId, amountFraction, via) => {
+  const record = (personId, amountFraction, via, source = null) => {
     const amount = fractionToNumber(amountFraction);
     const total = addExactShare(ownershipFractions, personId, amountFraction);
-    contributions.push({ ownerId: personId, amount, fraction: amountFraction, via });
+    contributions.push({ ownerId: personId, amount, fraction: amountFraction, via, source });
     if (total.error) {
       unresolved.push({
         personId,
@@ -1033,7 +1049,7 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     return true;
   };
 
-  const distribute = (personId, amountFraction, via, trail = new Set()) => {
+  const distribute = (personId, amountFraction, via, trail = new Set(), source = null) => {
     const amount = fractionToNumber(amountFraction);
     if (
       !personId ||
@@ -1058,32 +1074,37 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
       const warning = `Circular inheritance path ${loopNames.join(
         " → ",
       )}; this share could not be allocated.`;
-      record(personId, amountFraction, "unresolved");
+      record(personId, amountFraction, "unresolved", source);
       unresolved.push({ personId, amount, fraction: amountFraction, warnings: [warning] });
       return;
     }
     const person = peopleById.get(personId);
     if (!person) {
       if (outsidePartyIds.has(personId)) {
-        record(personId, amountFraction, via);
+        record(personId, amountFraction, via, source);
         return;
       }
       const warning = `The heir or owner identified by ${personId} is no longer in this case.`;
-      record(personId, amountFraction, "unresolved");
+      record(personId, amountFraction, "unresolved", source);
       unresolved.push({ personId, amount, fraction: amountFraction, warnings: [warning] });
       return;
     }
-    if (!isPersonDeceased(person)) {
-      record(personId, amountFraction, via);
+    const validDeathDate = /^\d{4}-\d{2}-\d{2}$/.test(String(person.dateOfDeath || ""));
+    const deathFallsBeforeCutoff =
+      deathBefore === null || (validDeathDate && person.dateOfDeath < deathBefore);
+    const shouldDistributeSuccession =
+      isPersonDeceased(person) && !settledDeathIds.has(personId) && deathFallsBeforeCutoff;
+    if (!shouldDistributeSuccession) {
+      record(personId, amountFraction, via, source);
       return;
     }
 
-    const basis = person.inheritanceBasis || "intestacy";
-    // A person who disposed of the whole property share during life keeps that share in the
-    // pre-transfer ledger long enough for the recorded inter-vivos transfer to move it to the
-    // acquirer. Nothing from that property remains to pass through the later succession.
-    if (basis === "lifetime-disposal") {
-      record(personId, amountFraction, via);
+    const legacyLifetimeDisposal = person.inheritanceBasis === "lifetime-disposal";
+    const basis = person.inheritanceBasis === "will" ? "will" : "intestacy";
+    // Preserve the old marker only for the legacy, property-less ownership view. A property
+    // calculation uses its dated transfer records instead.
+    if (legacyLifetimeDisposal && !resolveLifetimeDisposal) {
+      record(personId, amountFraction, via, source);
       return;
     }
     let result;
@@ -1180,8 +1201,9 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
         exactAllocations: allocations,
         warnings: result.warnings,
         destination: "unresolved",
+        sourceTrancheId: source?.trancheId || "",
       });
-      record(personId, amountFraction, "unresolved");
+      record(personId, amountFraction, "unresolved", source);
       unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
       return;
     }
@@ -1194,9 +1216,10 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
       exactAllocations: allocations,
       warnings: result.warnings,
       destination: result.destination,
+      sourceTrancheId: source?.trancheId || "",
     });
     if (!allocations.size || compareFractions(allocatedFraction, ZERO_FRACTION) <= 0) {
-      record(personId, amountFraction, "unresolved");
+      record(personId, amountFraction, "unresolved", source);
       unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
       return;
     }
@@ -1209,16 +1232,24 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     const multiplicationError = distributions.find((entry) => entry.amount.error)?.amount.error;
     if (multiplicationError) {
       result.warnings.push(multiplicationError);
-      record(personId, amountFraction, "unresolved");
+      record(personId, amountFraction, "unresolved", source);
       unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
       return;
     }
-    distributions.forEach((entry) => distribute(entry.heirId, entry.amount, basis, nextTrail));
+    const inheritedSource = {
+      trancheId: `inheritance-${personId}`,
+      acquiredOn: person.dateOfDeath || "",
+      cause: "inheritance",
+      provenance: `Inherited from ${personName(person)}`,
+    };
+    distributions.forEach((entry) =>
+      distribute(entry.heirId, entry.amount, basis, nextTrail, inheritedSource),
+    );
     if (compareFractions(allocatedFraction, WHOLE_FRACTION) < 0) {
       const unallocatedRatio = subtractFractions(WHOLE_FRACTION, allocatedFraction);
       const remainderFraction = multiplyFractions(amountFraction, unallocatedRatio);
       const remainder = fractionToNumber(remainderFraction);
-      record(personId, remainderFraction, "unresolved");
+      record(personId, remainderFraction, "unresolved", source);
       unresolved.push({
         personId,
         amount: remainder,
@@ -1228,13 +1259,26 @@ function buildFamilyOwnershipCore(people = [], startingOwnership = {}, outsidePa
     }
   };
 
-  Object.entries(startingOwnership).forEach(([personId, share]) => {
-    const fraction =
-      share && typeof share === "object" && "numerator" in share
-        ? normaliseFraction(share.numerator, share.denominator)
-        : approximateFraction(number(share));
-    distribute(personId, fraction, "starting");
-  });
+  const inputs = Array.isArray(startingContributions)
+    ? startingContributions
+    : Object.entries(startingOwnership).map(([personId, share]) => ({
+        personId,
+        fraction:
+          share && typeof share === "object" && "numerator" in share
+            ? normaliseFraction(share.numerator, share.denominator)
+            : approximateFraction(number(share)),
+        via: "starting",
+        source: null,
+      }));
+  inputs.forEach((entry) =>
+    distribute(
+      entry.personId || entry.ownerId,
+      entry.fraction,
+      entry.via || "starting",
+      new Set(),
+      entry.source || null,
+    ),
+  );
   const ownershipByPerson = Object.fromEntries(
     [...ownershipFractions.entries()].map(([personId, share]) => [
       personId,
@@ -1259,46 +1303,337 @@ export function buildFamilyOwnershipFromExplicitShares(people = []) {
 // that makes the explicit-starting-share requirement clear.
 export const buildAutomaticFamilyOwnership = buildFamilyOwnershipFromExplicitShares;
 
-// Converts a property's explicit owners list into a { personId: fraction } starting map.
-function propertyStartingOwnership(property = {}) {
-  const startingOwnership = {};
-  (property.owners || []).forEach((owner) => {
-    if (!owner.personId) return;
-    const share = exactShareFromRecord(owner);
-    startingOwnership[owner.personId] = addFractions(
-      startingOwnership[owner.personId] || ZERO_FRACTION,
-      share,
-    );
-  });
-  return startingOwnership;
+const validIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+
+function propertyStartingTranches(property = {}) {
+  return (property.owners || [])
+    .map((owner) => {
+      const fraction = exactShareFromRecord(owner);
+      if (!owner.personId || fraction.error || compareFractions(fraction, ZERO_FRACTION) <= 0) {
+        return null;
+      }
+      return {
+        trancheId: `initial-${owner.id || owner.personId}`,
+        personId: owner.personId,
+        fraction,
+        acquiredOn: "",
+        cause: "initial",
+        provenance: "Initial ownership",
+        via: "starting",
+      };
+    })
+    .filter(Boolean);
 }
 
-// Runs the same automatic cascade for a single property's explicit starting owners, and
-// returns a flat per-owner breakdown suitable for future tax integration.
-export function buildPropertyOwnership(people = [], property = {}, outsideParties = []) {
-  const startingOwnership = propertyStartingOwnership(property);
-  const core = buildFamilyOwnershipCore(people, startingOwnership, outsideParties);
-  const breakdown = core.contributions
-    .filter((contribution) => compareFractions(contribution.fraction, ZERO_FRACTION) > 0)
-    .map((contribution) => {
-      const fraction = contribution.fraction;
-      return {
-        propertyId: property.id,
-        ownerId: contribution.ownerId,
-        numerator: fraction.numerator,
-        denominator: fraction.denominator,
-        sharePercent: contribution.amount * 100,
-        via: contribution.via,
-      };
+function mergePropertyTranches(tranches = []) {
+  const merged = new Map();
+  tranches.forEach((tranche) => {
+    if (
+      !tranche?.personId ||
+      tranche.fraction?.error ||
+      compareFractions(tranche.fraction, ZERO_FRACTION) <= 0
+    ) {
+      return;
+    }
+    const key = JSON.stringify([
+      tranche.personId,
+      tranche.trancheId,
+      tranche.acquiredOn || "",
+      tranche.cause || "",
+      tranche.provenance || "",
+      tranche.via || "",
+    ]);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, tranche);
+      return;
+    }
+    const fraction = addFractions(existing.fraction, tranche.fraction);
+    if (!fraction.error) merged.set(key, { ...existing, fraction });
+  });
+  return [...merged.values()];
+}
+
+function ownershipFractionsFromTranches(tranches = []) {
+  const holdings = new Map();
+  tranches.forEach((tranche) => {
+    const total = addFractions(holdings.get(tranche.personId) || ZERO_FRACTION, tranche.fraction);
+    if (!total.error) holdings.set(tranche.personId, total);
+  });
+  return Object.fromEntries(holdings);
+}
+
+function contributionsAsTranches(contributions = []) {
+  return mergePropertyTranches(
+    contributions.map((contribution) => ({
+      ...(contribution.source || {}),
+      trancheId:
+        contribution.source?.trancheId || `holding-${contribution.ownerId}-${contribution.via}`,
+      personId: contribution.ownerId,
+      fraction: contribution.fraction,
+      acquiredOn: contribution.source?.acquiredOn || "",
+      cause: contribution.source?.cause || contribution.via,
+      provenance: contribution.source?.provenance || "",
+      via: contribution.via,
+    })),
+  );
+}
+
+function transferDesignation(transfer = {}) {
+  return (transfer.provenance || []).map((portion) => ({
+    trancheId: portion.trancheId,
+    fraction: normaliseFraction(portion.numerator, portion.denominator),
+  }));
+}
+
+function errorTransferEntry(transfer, error) {
+  const clean = { ...transfer };
+  delete clean.error;
+  return { ...clean, error, amount: 0 };
+}
+
+function transferBuyerDeathError(peopleById, transfer) {
+  const buyer = peopleById.get(transfer.buyerId);
+  if (
+    !buyer ||
+    !isPersonDeceased(buyer) ||
+    !validIsoDate(buyer.dateOfDeath) ||
+    !validIsoDate(transfer.date) ||
+    transfer.date <= buyer.dateOfDeath
+  ) {
+    return "";
+  }
+  return "The buyer had already died on the transfer date.";
+}
+
+/**
+ * Applies deaths and transfers in their real order. This is essential for a share acquired
+ * during life: it must be available for a later transfer, and only the balance actually held
+ * on the date of death may enter that person's succession.
+ */
+function buildChronologicalPropertyOwnership(people = [], property = {}, outsideParties = []) {
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
+  const partyName = (partyId) => {
+    const person = peopleById.get(partyId);
+    if (person) return personName(person);
+    return outsidePartiesById.get(partyId)?.name || "Unknown party";
+  };
+  const settledDeathIds = new Set();
+  const transmissions = [];
+  const unresolved = [];
+  const transferEntries = [];
+  const transferFractionsById = {};
+  let tranches = propertyStartingTranches(property);
+
+  const processDeathsBefore = (deathBefore) => {
+    const core = buildFamilyOwnershipCore(people, {}, outsideParties, {
+      deathBefore,
+      resolveLifetimeDisposal: true,
+      settledDeathIds,
+      startingContributions: tranches.map((tranche) => ({
+        personId: tranche.personId,
+        fraction: tranche.fraction,
+        via: tranche.via,
+        source: tranche,
+      })),
     });
+    tranches = contributionsAsTranches(core.contributions);
+    transmissions.push(...core.transmissions);
+    unresolved.push(...core.unresolved);
+    core.transmissions.forEach((transmission) => settledDeathIds.add(transmission.deceasedId));
+  };
+
+  chronologicalTransfers(property.transfers || []).forEach((transfer) => {
+    if (validIsoDate(transfer.date)) processDeathsBefore(transfer.date);
+
+    const startingOwnership = ownershipFractionsFromTranches(tranches);
+    const attemptedLedger = buildPropertyLedger(
+      people,
+      outsideParties,
+      [transfer],
+      startingOwnership,
+    );
+    let entry = attemptedLedger.entries[0] || errorTransferEntry(transfer, "Invalid transfer.");
+    const buyerDeathError = transferBuyerDeathError(peopleById, transfer);
+    if (!entry.error && buyerDeathError) entry = errorTransferEntry(transfer, buyerDeathError);
+
+    const sellerTranches = tranches.filter((tranche) => tranche.personId === transfer.sellerId);
+    if (!entry.error) {
+      const designation = transferDesignation(transfer);
+      const invalidDesignation = designation.find((portion) => portion.fraction.error);
+      const selection = invalidDesignation
+        ? { error: invalidDesignation.fraction.error }
+        : selectTranchePortions(sellerTranches, entry.amountFraction, {
+            strategy: designation.length ? "designated" : "pro-rata",
+            designation,
+          });
+      const applied = selection.error
+        ? selection
+        : applyPortions(sellerTranches, selection.portions);
+      if (applied.error) {
+        entry = errorTransferEntry(transfer, applied.error);
+      } else {
+        const retainedOthers = tranches.filter((tranche) => tranche.personId !== transfer.sellerId);
+        const acquired = selection.portions.map((portion) => ({
+          trancheId:
+            selection.portions.length === 1
+              ? `transfer-${transfer.id}`
+              : `transfer-${transfer.id}:${portion.tranche.trancheId}`,
+          personId: transfer.buyerId,
+          fraction: portion.fraction,
+          acquiredOn: transfer.date || "",
+          previousAcquiredOn: portion.tranche.acquiredOn || "",
+          previousCause: portion.tranche.cause || "",
+          previousProvenance: portion.tranche.provenance || "",
+          upstreamTrancheId: portion.tranche.trancheId,
+          cause: transfer.kind === "donation" ? "donation" : "purchase",
+          provenance:
+            transfer.kind === "donation"
+              ? `Donated by ${partyName(transfer.sellerId)}`
+              : `Acquired from ${partyName(transfer.sellerId)}`,
+          via: transfer.kind === "donation" ? "donation" : "sale",
+        }));
+        tranches = mergePropertyTranches([...retainedOthers, ...applied.retained, ...acquired]);
+        transferFractionsById[transfer.id] = entry.amountFraction;
+      }
+    }
+    transferEntries.push(entry);
+    if (entry.error) {
+      unresolved.push({
+        personId: transfer.sellerId || transfer.buyerId || "",
+        amount: 0,
+        fraction: ZERO_FRACTION,
+        warnings: [entry.error],
+        transferId: transfer.id || "",
+      });
+    }
+  });
+
+  processDeathsBefore(null);
+  tranches = mergePropertyTranches(tranches);
+  const ownershipFractionsByPerson = ownershipFractionsFromTranches(tranches);
+  const ownershipByPerson = Object.fromEntries(
+    Object.entries(ownershipFractionsByPerson).map(([personId, fraction]) => [
+      personId,
+      fractionToNumber(fraction),
+    ]),
+  );
+  const ledgerBase = buildPropertyLedger(people, outsideParties, [], ownershipFractionsByPerson);
+  const ledger = { ...ledgerBase, entries: transferEntries };
+
+  return {
+    ownershipByPerson,
+    ownershipFractionsByPerson,
+    tranches,
+    tranchesByOwner: new Map(
+      [...new Set(tranches.map((tranche) => tranche.personId))].map((personId) => [
+        personId,
+        tranches.filter((tranche) => tranche.personId === personId),
+      ]),
+    ),
+    transmissions,
+    unresolved,
+    ledger,
+    transferFractionsById,
+  };
+}
+
+// Resolve the transferor's exact holding and component acquisitions immediately before a
+// proposed dated transfer. The temporary full-holding transfer is evaluated by the same
+// chronological engine as the final title calculation, avoiding a misleading present-day
+// balance when a deed is inserted earlier in the history.
+export function previewPropertyTransferCapacity(
+  property = {},
+  people = [],
+  outsideParties = [],
+  { sellerId = "", date = "", kind = "donation" } = {},
+) {
+  if (!sellerId) {
+    return {
+      error: "Select the transferor.",
+      holdingFraction: ZERO_FRACTION,
+      tranches: [],
+    };
+  }
+
+  const occupiedIds = new Set([
+    ...people.map((person) => person.id),
+    ...outsideParties.map((party) => party.id),
+  ]);
+  const occupiedTransferIds = new Set((property.transfers || []).map((transfer) => transfer.id));
+  let previewOwnerId = "__transfer_capacity_preview__";
+  while (occupiedIds.has(previewOwnerId) || occupiedTransferIds.has(`${previewOwnerId}-transfer`)) {
+    previewOwnerId = `_${previewOwnerId}`;
+  }
+  const previewTransferId = `${previewOwnerId}-transfer`;
+  const previewTransfer = {
+    id: previewTransferId,
+    kind: kind === "sale" ? "sale" : "donation",
+    sellerId,
+    buyerId: previewOwnerId,
+    numerator: 1,
+    denominator: 1,
+    amountType: "seller-holding",
+    date,
+  };
+  const preview = buildChronologicalPropertyOwnership(
+    people,
+    {
+      ...property,
+      transfers: [...(property.transfers || []), previewTransfer],
+    },
+    [...outsideParties, { id: previewOwnerId, name: "Transfer preview", type: "person" }],
+  );
+  const entry = preview.ledger.entries.find((candidate) => candidate.id === previewTransferId);
+  if (!entry || entry.error) {
+    return {
+      error: entry?.error || "The transfer position could not be calculated.",
+      holdingFraction: entry?.sellerBeforeFraction || ZERO_FRACTION,
+      tranches: [],
+    };
+  }
+
+  const tranches = (preview.tranchesByOwner.get(previewOwnerId) || [])
+    .filter((tranche) => tranche.upstreamTrancheId)
+    .map((tranche) => ({
+      trancheId: tranche.upstreamTrancheId,
+      personId: sellerId,
+      fraction: tranche.fraction,
+      acquiredOn: tranche.previousAcquiredOn || "",
+      cause: tranche.previousCause || "",
+      provenance: tranche.previousProvenance || "Recorded acquisition",
+    }));
+
+  return {
+    error: "",
+    holdingFraction: entry.sellerBeforeFraction || ZERO_FRACTION,
+    tranches,
+  };
+}
+
+// Runs the same automatic legal allocations for one property's explicit title history.
+export function buildPropertyOwnership(people = [], property = {}, outsideParties = []) {
+  const result = buildChronologicalPropertyOwnership(people, property, outsideParties);
+  const breakdown = result.tranches.map((tranche) => ({
+    propertyId: property.id,
+    ownerId: tranche.personId,
+    numerator: tranche.fraction.numerator,
+    denominator: tranche.fraction.denominator,
+    sharePercent: fractionToNumber(tranche.fraction) * 100,
+    via: tranche.via,
+  }));
   return {
     propertyId: property.id,
-    ownershipByPerson: core.ownershipByPerson,
-    ownershipFractionsByPerson: core.ownershipFractionsByPerson,
-    ownershipByParty: core.ownershipByPerson,
+    ownershipByPerson: result.ownershipByPerson,
+    ownershipFractionsByPerson: result.ownershipFractionsByPerson,
+    ownershipByParty: result.ownershipByPerson,
     breakdown,
-    transmissions: core.transmissions,
-    unresolved: core.unresolved,
+    transmissions: result.transmissions,
+    unresolved: result.unresolved,
+    ledger: result.ledger,
+    tranchesByOwner: result.tranchesByOwner,
+    lifetimeTransferFractionsById: result.transferFractionsById,
   };
 }
 

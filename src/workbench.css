@@ -1928,11 +1928,6 @@ textarea {
   line-height: 1.45;
 }
 
-.person-succession.fully-transferred
-  > :not(.succession-death-date):not(.inter-vivos-complete-note) {
-  display: none;
-}
-
 .sex-checkbox-options {
   display: flex;
   flex-wrap: wrap;
@@ -2028,7 +2023,23 @@ textarea {
 
 .person-donation-form .transfer-limit,
 .transfer-form .transfer-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   margin: 0;
+  border-radius: 0.42rem;
+  background: #eaf3ed;
+  padding: 0.32rem 0.42rem;
+  color: #526158;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.person-donation-form .transfer-limit strong,
+.transfer-form .transfer-limit strong {
+  color: var(--forest);
+  font-size: 0.68rem;
 }
 
 .provenance-designation {
@@ -2188,6 +2199,108 @@ textarea {
   padding: 0.55rem;
 }
 
+.estate-flow-heading {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.estate-flow-step,
+.estate-succession-step {
+  display: grid;
+  gap: 0.45rem;
+  border-top: 1px solid #cbd9d1;
+  padding-top: 0.5rem;
+}
+
+.estate-balance-step {
+  margin-top: 0;
+  border-color: #b9d9c6;
+  background: #eef8f1;
+}
+
+.lifetime-transfer-step .person-donation {
+  margin-top: 0;
+}
+
+.lifetime-transfer-history {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.lifetime-transfer-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #d7e1db;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.38rem 0.45rem;
+}
+
+.lifetime-transfer-record.invalid {
+  border-color: #e7b9b3;
+  background: #fff8f7;
+}
+
+.lifetime-transfer-record > span {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.lifetime-transfer-record > span:last-child {
+  justify-items: end;
+}
+
+.lifetime-transfer-delete {
+  display: inline-grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  place-items: center;
+  border: 1px solid #efc9c5;
+  border-radius: 0.42rem;
+  background: #fff;
+  color: #b23d35;
+  padding: 0;
+}
+
+.lifetime-transfer-error {
+  grid-column: 1 / -1;
+  color: #a33a2c !important;
+  font-weight: 700;
+}
+
+.lifetime-transfer-add {
+  justify-self: start;
+}
+
+.person-donation-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.person-donation-actions > button {
+  flex: 1;
+}
+
+.lifetime-transfer-record strong,
+.lifetime-transfer-record b {
+  color: var(--forest);
+  font-size: 0.65rem;
+}
+
+.lifetime-transfer-record small,
+.transfer-unavailable {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.3;
+}
+
 .succession-detail-row {
   display: grid;
   grid-template-columns: 116px minmax(0, 1fr);
@@ -2201,6 +2314,11 @@ textarea {
 }
 
 .succession-detail-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.succession-death-date {
   border-top: 0;
   padding-top: 0;
 }

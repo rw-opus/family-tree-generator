@@ -2052,7 +2052,7 @@ describe("PersonInspector", () => {
       'input[aria-label="Date of death for Maria Borg"]',
     );
     expect(spouseDeathDate).not.toBeNull();
-    expect(container.textContent).toContain("before relying on the automatic heirs");
+    expect(container.textContent).toContain("Enter missing spouse death dates");
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         spouseDeathDate,
@@ -2232,13 +2232,13 @@ describe("PersonInspector", () => {
 
     expect(container.textContent).toContain("Testate");
     expect(container.textContent).toContain("Add will");
-    expect(container.textContent).toContain("The most recent dated will applies");
+    expect(container.textContent).toContain("The latest dated will applies");
     expect(container.textContent).toContain("Notary (optional)");
     expect(container.textContent).toContain("Description (optional)");
     expect(container.textContent).toContain("Suggested Heirs");
     expect(container.textContent).toContain("Confirm Heirs?");
     expect(container.textContent).not.toContain("Will notes");
-    expect(container.textContent).toContain("Declarations Causa Mortis");
+    expect(container.textContent).toContain("Causa Mortis");
     expect(container.textContent).toContain("Date of Declaration Causa Mortis");
     expect(container.textContent).toContain("Declarants / heirs");
     expect(container.textContent).toContain("Required 1/2");
@@ -2375,9 +2375,9 @@ describe("PersonInspector", () => {
     );
 
     expect(container.textContent).toContain(
-      "No Declaration Causa Mortis applies because the succession opened before 25 November 1992.",
+      "No Causa Mortis declaration: death before 25/11/1992.",
     );
-    expect(container.textContent).toContain("taxed at 7% of its transfer value");
+    expect(container.textContent).toContain("taxed at 7%");
     expect(container.querySelector(".causa-mortis-records")).toBeNull();
     expect(
       container.querySelector('input[aria-label="Date of Declaration Causa Mortis 1"]'),
@@ -2429,7 +2429,7 @@ describe("PersonInspector", () => {
     );
 
     expect(container.querySelector(".causa-mortis-records")).not.toBeNull();
-    expect(container.textContent).toContain("Required for a death on or after 25 November 1992");
+    expect(container.textContent).toContain("Causa Mortis");
   });
 
   it("confirms suggested heirs for a testate estate and allows editable will fractions", () => {
@@ -2874,7 +2874,7 @@ describe("PersonInspector", () => {
     );
     expect(valueInput.required).toBe(false);
     expect(container.textContent).toContain(
-      "optional because every identified heir is now deceased",
+      "Value is optional because every identified heir is deceased",
     );
   });
 
@@ -3206,7 +3206,7 @@ describe("PersonInspector pre-1992 succession note", () => {
       { id: "heir", fullName: "Maria Borg", fatherId: "ancestor", spouseIds: [], designations: [] },
     ]);
 
-    expect(container.textContent).toContain("succession opened before 25");
+    expect(container.textContent).toContain("death before 25/11/1992");
     expect(container.textContent).toContain("Article 5A(5)(c)(i)");
   });
 
@@ -3226,7 +3226,7 @@ describe("PersonInspector pre-1992 succession note", () => {
 
     // Sales tax looks only at the last passage of title, so this succession's
     // rate says nothing about a later sale.
-    expect(container.textContent).toContain("succession opened before 25");
+    expect(container.textContent).toContain("death before 25/11/1992");
     expect(container.textContent).not.toContain("Article 5A(5)(c)(i)");
   });
 });
@@ -3491,15 +3491,165 @@ describe("PersonInspector provenance designation", () => {
 
     const { transfer } = onRecordDonation.mock.calls[0][0];
     expect(transfer).toMatchObject({
-      numerator: "1",
-      denominator: "1",
-      amountType: "seller-holding",
+      numerator: "3",
+      denominator: "4",
+      amountType: "whole-property",
     });
     // The whole 3/4 holding moves, carrying both provenances with their own fractions.
     expect(transfer.provenance.map((portion) => portion.trancheId).sort()).toEqual([
       "initial-o1",
       "transfer-t1",
     ]);
+  });
+
+  it("records all of the share held on the entered deed date", () => {
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    const onRecordDonation = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
+    const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
+    const donationDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirer,
+        "other",
+      );
+      acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "01/01/2019",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    act(() => submit.click());
+
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    expect(onRecordDonation.mock.calls[0][0].transfer).toMatchObject({
+      numerator: "1",
+      denominator: "2",
+      amountType: "whole-property",
+      provenance: [
+        expect.objectContaining({
+          trancheId: "initial-o1",
+          numerator: 1,
+          denominator: 2,
+        }),
+      ],
+    });
+  });
+
+  it("keeps saved transfers compact until another transfer is requested", () => {
+    const savedProperty = {
+      ...property,
+      transfers: [
+        ...property.transfers,
+        {
+          id: "saved-sale",
+          kind: "sale",
+          sellerId: "seller",
+          buyerId: "other",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2021-01-01",
+        },
+      ],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(savedProperty, people, []);
+    const onDeleteInterVivosTransfer = vi.fn();
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[savedProperty]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={vi.fn()}
+          onDeleteInterVivosTransfer={onDeleteInterVivosTransfer}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-donation-form")).toBeNull();
+    const addAnother = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Add another transfer",
+    );
+    expect(addAnother).toBeTruthy();
+
+    act(() => addAnother.click());
+    expect(container.querySelector(".person-donation-form")).not.toBeNull();
+    const cancel = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Cancel",
+    );
+    act(() => cancel.click());
+    expect(container.querySelector(".person-donation-form")).toBeNull();
+
+    const deleteRecord = container.querySelector('button[aria-label="Delete sale record"]');
+    act(() => deleteRecord.click());
+    expect(onDeleteInterVivosTransfer).toHaveBeenCalledWith({
+      propertyId: "prop",
+      transferId: "saved-sale",
+    });
+  });
+
+  it("shows an invalid saved transfer and its error instead of hiding it", () => {
+    const invalidProperty = {
+      ...property,
+      transfers: [
+        {
+          id: "invalid-sale",
+          kind: "sale",
+          sellerId: "seller",
+          buyerId: "other",
+          numerator: 4,
+          denominator: 5,
+          amountType: "whole-property",
+          date: "2021-01-01",
+        },
+      ],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(invalidProperty, people, []);
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[invalidProperty]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={vi.fn()}
+        />,
+      ),
+    );
+
+    const invalidRecord = container.querySelector(".lifetime-transfer-record.invalid");
+    expect(invalidRecord).not.toBeNull();
+    expect(invalidRecord.textContent).toContain("Invalid");
+    expect(invalidRecord.textContent).toContain(
+      "The seller does not own enough to complete this transfer.",
+    );
+    expect(container.querySelector(".person-donation-form")).toBeNull();
   });
 
   it("moves a deceased owner's full lifetime transfer to the acquirer before succession", () => {
@@ -3569,7 +3719,12 @@ describe("PersonInspector provenance designation", () => {
     expect(onRecordDonation).toHaveBeenCalledTimes(1);
     const payload = onRecordDonation.mock.calls[0][0];
     expect(payload.people.find((person) => person.id === "deceased-seller")).toMatchObject({
-      inheritanceBasis: "lifetime-disposal",
+      inheritanceBasis: "intestacy",
+    });
+    expect(payload.transfer).toMatchObject({
+      numerator: "1",
+      denominator: "1",
+      amountType: "whole-property",
     });
 
     const nextReport = buildPropertyVendorTaxReport(
@@ -3686,6 +3841,308 @@ describe("PersonInspector provenance designation", () => {
   });
 });
 
+describe("PersonInspector deceased property flow", () => {
+  let container;
+  let root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it("shows death, lifetime transfer, remaining estate and causa mortis in order", () => {
+    const people = [
+      {
+        id: "owner",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+        designations: ["Deceased"],
+        spouseIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Maria Borg",
+        sex: "Female",
+        fatherId: "owner",
+        spouseIds: [],
+      },
+      { id: "buyer", fullName: "Anna Vella", sex: "Female", spouseIds: [] },
+    ];
+    const property = {
+      id: "property",
+      address: "1 Republic Street",
+      saleValue: 1_000_000,
+      owners: [{ id: "initial-owner", personId: "owner", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "lifetime-sale",
+          kind: "sale",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2019-01-01",
+          provenance: [
+            {
+              trancheId: "initial-initial-owner",
+              numerator: 1,
+              denominator: 4,
+              cause: "initial",
+              acquiredOn: "",
+            },
+          ],
+        },
+      ],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="owner"
+          onChange={vi.fn()}
+          onRecordDonation={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const death = container.querySelector(".succession-death-date");
+    const transfer = container.querySelector(".lifetime-transfer-step");
+    const balance = container.querySelector(".estate-balance-step");
+    const succession = container.querySelector(".estate-succession-step");
+    const causaMortis = container.querySelector(".causa-mortis-records");
+
+    expect(transfer.textContent).toContain("Sale");
+    expect(transfer.textContent).toContain("Anna Vella");
+    expect(transfer.textContent).toContain("1/4");
+    expect(balance.textContent).toContain("3/4");
+    expect(balance.textContent).toContain("€750,000.00");
+    expect(death.compareDocumentPosition(transfer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      transfer.compareDocumentPosition(balance) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      balance.compareDocumentPosition(succession) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      succession.compareDocumentPosition(causaMortis) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("records a partial lifetime transfer, recalculates the death balance, and removes it on undo", () => {
+    const initialCase = normaliseCase({
+      id: "case",
+      title: "Borg family",
+      activeFamilyGroupId: "family",
+      people: [
+        {
+          id: "owner",
+          fullName: "Joseph Borg",
+          sex: "Male",
+          isDeceased: true,
+          dateOfDeath: "2020-01-01",
+          inheritanceBasis: "intestacy",
+          designations: ["Deceased"],
+          spouseIds: [],
+        },
+        {
+          id: "child",
+          fullName: "Paul Borg",
+          sex: "Male",
+          fatherId: "owner",
+          spouseIds: [],
+        },
+        { id: "buyer", fullName: "Maria Vella", sex: "Female", spouseIds: [] },
+      ],
+      familyGroups: [
+        {
+          id: "family",
+          title: "Borg family",
+          rootPersonId: "owner",
+          personIds: ["owner", "child", "buyer"],
+        },
+      ],
+      properties: [
+        {
+          id: "property",
+          address: "1 Republic Street",
+          saleValue: 1_000_000,
+          owners: [{ id: "initial-owner", personId: "owner", sharePercent: 100 }],
+          declarations: [],
+          transfers: [],
+          saleLots: [],
+        },
+      ],
+      outsideParties: [],
+    });
+    const onRecordDonation = vi.fn();
+    const onInterVivosStatusChange = vi.fn();
+    let latestCase = initialCase;
+
+    function Harness() {
+      const [caseData, setCaseData] = useState(initialCase);
+      latestCase = caseData;
+      const property = caseData.properties[0];
+      const interVivosSession = statusToggleSession(caseData, "inter-vivos", "owner", property.id);
+
+      const changeTransferStatus = (payload) => {
+        onInterVivosStatusChange(payload);
+        setCaseData((current) =>
+          payload.checked
+            ? beginStatusToggleSession(current, {
+                type: "inter-vivos",
+                personId: payload.personId,
+                propertyId: payload.propertyId,
+              })
+            : endStatusToggleSession(current, {
+                type: "inter-vivos",
+                personId: payload.personId,
+                propertyId: payload.propertyId,
+                activeFamilyGroupId: "family",
+              }),
+        );
+      };
+
+      const recordTransfer = (payload) => {
+        onRecordDonation(payload);
+        setCaseData((current) =>
+          normaliseCase({
+            ...current,
+            people: payload.people,
+            properties: current.properties.map((candidate) =>
+              candidate.id === payload.propertyId
+                ? {
+                    ...candidate,
+                    transfers: [...(candidate.transfers || []), payload.transfer],
+                  }
+                : candidate,
+            ),
+          }),
+        );
+      };
+
+      return (
+        <PersonInspector
+          people={caseData.people}
+          properties={caseData.properties}
+          outsideParties={caseData.outsideParties}
+          selectedPersonId="owner"
+          interVivosStatusSession={interVivosSession}
+          onChange={(people) => setCaseData((current) => normaliseCase({ ...current, people }))}
+          onInterVivosStatusChange={changeTransferStatus}
+          onRecordDonation={recordTransfer}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    const transferCheckbox = () =>
+      container.querySelector('input[aria-label="Sold/Donated Property Share"]');
+    act(() => transferCheckbox().click());
+
+    const measurement = container.querySelector('select[aria-label="Transfer measurement"]');
+    const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        measurement,
+        "defined-share",
+      );
+      measurement.dispatchEvent(new Event("change", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirer,
+        "buyer",
+      );
+      acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const numerator = container.querySelector('input[aria-label="Transfer numerator"]');
+    const denominator = container.querySelector('input[aria-label="Transfer denominator"]');
+    const transferDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "1");
+      numerator.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        denominator,
+        "4",
+      );
+      denominator.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        transferDate,
+        "01/01/2019",
+      );
+      transferDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    act(() => submit.click());
+
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    const payload = onRecordDonation.mock.calls[0][0];
+    expect(payload).toMatchObject({ propertyId: "property" });
+    expect(payload.transfer).toMatchObject({
+      kind: "donation",
+      sellerId: "owner",
+      buyerId: "buyer",
+      numerator: "1",
+      denominator: "4",
+      amountType: "whole-property",
+      date: "2019-01-01",
+    });
+    expect(payload.transfer.statusToggleSessionId).toBeTruthy();
+    expect(latestCase.properties[0].transfers).toHaveLength(1);
+
+    const death = container.querySelector(".succession-death-date");
+    const transfer = container.querySelector(".lifetime-transfer-step");
+    const balance = container.querySelector(".estate-balance-step");
+    const succession = container.querySelector(".estate-succession-step");
+    const causaMortis = container.querySelector(".causa-mortis-records");
+    expect(transfer.textContent).toContain("Donation");
+    expect(transfer.textContent).toContain("Maria Vella");
+    expect(transfer.textContent).toContain("1/4");
+    expect(balance.textContent).toContain("3/4");
+    expect(death.compareDocumentPosition(transfer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      transfer.compareDocumentPosition(balance) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      balance.compareDocumentPosition(succession) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      succession.compareDocumentPosition(causaMortis) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    act(() => transferCheckbox().click());
+
+    expect(onInterVivosStatusChange).toHaveBeenLastCalledWith({
+      checked: false,
+      personId: "owner",
+      propertyId: "property",
+    });
+    expect(latestCase.properties[0].transfers).toEqual([]);
+    expect(statusToggleSession(latestCase, "inter-vivos", "owner", "property")).toBeNull();
+    expect(container.querySelector(".lifetime-transfer-step")).toBeNull();
+    expect(container.querySelector(".estate-balance-step").textContent).toContain("1/1");
+  });
+});
+
 describe("PersonInspector legacy lifetime disposal records", () => {
   let container;
   let root;
@@ -3781,8 +4238,12 @@ describe("PersonInspector legacy lifetime disposal records", () => {
     );
     expect(transferCheckbox.checked).toBe(true);
     expect(transferCheckbox.disabled).toBe(false);
-    expect(container.textContent).toContain("No share remained to pass through this succession.");
+    expect(container.querySelector(".estate-balance-step").textContent).toContain("0/1");
+    expect(container.querySelector(".estate-balance-step").textContent).toContain(
+      "Current value €0.00",
+    );
     expect(container.querySelector(".person-succession").classList).toContain("fully-transferred");
+    expect(container.querySelector(".estate-succession-step")).toBeNull();
 
     act(() => transferCheckbox.click());
     expect(onInterVivosStatusChange).toHaveBeenCalledWith({

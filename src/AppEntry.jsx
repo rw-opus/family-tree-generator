@@ -3,6 +3,7 @@ import { App } from "./App.jsx";
 import { AuthScreen, ConfigurationError, PasswordResetScreen } from "./components/AuthScreen.jsx";
 import { PublicLegalPage } from "./components/LegalNotice.jsx";
 import { TermsBoundary } from "./components/TermsBoundary.jsx";
+import { changeSignedInPassword } from "./services/accountPassword.js";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
 
 const LoadingScreen = () => (
@@ -60,9 +61,20 @@ export function AppEntry() {
     );
   }
   const signOut = () => supabase.auth.signOut({ scope: "local" });
+  const changePassword = ({ currentPassword, newPassword }) =>
+    changeSignedInPassword(supabase.auth, {
+      email: session.user.email,
+      currentPassword,
+      newPassword,
+    });
   return (
     <TermsBoundary session={session} onSignOut={signOut}>
-      <App localOnlyMode={false} session={session} onSignOut={signOut} />
+      <App
+        localOnlyMode={false}
+        session={session}
+        onChangePassword={changePassword}
+        onSignOut={signOut}
+      />
     </TermsBoundary>
   );
 }

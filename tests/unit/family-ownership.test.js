@@ -1556,7 +1556,7 @@ describe("per-property ownership", () => {
     ]);
   });
 
-  it("does not pass on a share marked as wholly disposed of during life", () => {
+  it("does not let a legacy lifetime-disposal marker suppress succession without a transfer", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -1568,9 +1568,156 @@ describe("per-property ownership", () => {
     const property = { id: "flat-1", owners: [{ personId: "owner", sharePercent: 100 }] };
 
     const result = buildPropertyOwnership(people, property);
-    expect(result.ownershipByPerson.owner).toBeCloseTo(1);
-    expect(result.ownershipByPerson.child).toBeUndefined();
+    expect(result.ownershipByPerson.owner).toBeUndefined();
+    expect(result.ownershipByPerson.child).toBeCloseTo(1);
+    expect(result.transmissions).toHaveLength(1);
+  });
+
+  it("reserves a deceased owner's partial lifetime transfer before distributing the balance", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2022-01-01",
+        inheritanceBasis: "intestacy",
+      }),
+      person("child", { fatherId: "owner" }),
+      person("buyer"),
+    ];
+    const property = {
+      id: "flat-1",
+      owners: [{ id: "initial", personId: "owner", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2021-01-01",
+          provenance: [{ trancheId: "initial-initial", numerator: 1, denominator: 4 }],
+        },
+      ],
+    };
+
+    const result = buildPropertyOwnership(people, property);
+
+    expect(result.ownershipFractionsByPerson.owner).toBeUndefined();
+    expect(result.ownershipFractionsByPerson.buyer).toEqual({ numerator: 1, denominator: 4 });
+    expect(result.ownershipFractionsByPerson.child).toEqual({ numerator: 3, denominator: 4 });
+    expect(result.transmissions).toHaveLength(1);
+    expect(result.transmissions[0].amountFraction).toEqual({ numerator: 3, denominator: 4 });
+    expect(result.lifetimeTransferFractionsById.gift).toEqual({ numerator: 1, denominator: 4 });
+  });
+
+  it("passes only the post-transfer balance to will beneficiaries", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2022-01-01",
+        inheritanceBasis: "will",
+        willDate: "2020-01-01",
+        willHeirs: [{ id: "legacy", personId: "friend", sharePercent: 100 }],
+      }),
+      person("friend"),
+      person("buyer"),
+    ];
+    const property = {
+      id: "flat-1",
+      owners: [{ id: "initial", personId: "owner", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "sale",
+          kind: "sale",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2021-01-01",
+          provenance: [{ trancheId: "initial-initial", numerator: 1, denominator: 4 }],
+        },
+      ],
+    };
+
+    const result = buildPropertyOwnership(people, property);
+
+    expect(result.ownershipFractionsByPerson.owner).toBeUndefined();
+    expect(result.ownershipFractionsByPerson.buyer).toEqual({ numerator: 1, denominator: 4 });
+    expect(result.ownershipFractionsByPerson.friend).toEqual({ numerator: 3, denominator: 4 });
+    expect(result.transmissions[0]).toMatchObject({ deceasedId: "owner", basis: "will" });
+    expect(result.transmissions[0].amountFraction).toEqual({ numerator: 3, denominator: 4 });
+  });
+
+  it("omits succession after a valid full lifetime transfer", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2022-01-01",
+        inheritanceBasis: "intestacy",
+      }),
+      person("child", { fatherId: "owner" }),
+      person("buyer"),
+    ];
+    const property = {
+      id: "flat-1",
+      owners: [{ id: "initial", personId: "owner", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "sale",
+          kind: "sale",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 1,
+          amountType: "whole-property",
+          date: "2021-01-01",
+        },
+      ],
+    };
+
+    const result = buildPropertyOwnership(people, property);
+
+    expect(result.ownershipFractionsByPerson.owner).toBeUndefined();
+    expect(result.ownershipFractionsByPerson.buyer).toEqual({ numerator: 1, denominator: 1 });
+    expect(result.ownershipFractionsByPerson.child).toBeUndefined();
     expect(result.transmissions).toEqual([]);
+  });
+
+  it("does not reduce the estate for a transfer dated after death", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2022-01-01",
+        inheritanceBasis: "intestacy",
+      }),
+      person("child", { fatherId: "owner" }),
+      person("buyer"),
+    ];
+    const property = {
+      id: "flat-1",
+      owners: [{ id: "initial", personId: "owner", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "late-sale",
+          kind: "sale",
+          sellerId: "owner",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2023-01-01",
+        },
+      ],
+    };
+
+    const result = buildPropertyOwnership(people, property);
+
+    expect(result.ownershipFractionsByPerson.owner).toBeUndefined();
+    expect(result.ownershipFractionsByPerson.child).toEqual({ numerator: 1, denominator: 1 });
+    expect(result.transmissions[0].amountFraction).toEqual({ numerator: 1, denominator: 1 });
+    expect(result.lifetimeTransferFractionsById["late-sale"]).toBeUndefined();
   });
 
   it("tags a will-based transmission distinctly from intestacy", () => {
