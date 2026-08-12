@@ -4199,6 +4199,101 @@ describe("PersonInspector provenance designation", () => {
     expect(holdings["deceased-seller"] || 0).toBe(0);
   });
 
+  it("explains why an all-share donation after death cannot be recorded", () => {
+    const deceasedPeople = [
+      {
+        id: "deceased-seller",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2025-03-20",
+        inheritanceBasis: "intestacy",
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+      {
+        id: "child",
+        fullName: "Paul Borg",
+        fatherId: "deceased-seller",
+        spouseIds: [],
+        designations: [],
+      },
+      { id: "buyer", fullName: "Mathea Wadge", spouseIds: [], designations: [] },
+    ];
+    const deceasedProperty = {
+      id: "deceased-property",
+      owners: [{ id: "owner", personId: "deceased-seller", sharePercent: 6.25 }],
+      declarations: [],
+      transfers: [],
+      saleLots: [],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(deceasedProperty, deceasedPeople, []);
+    const onRecordDonation = vi.fn();
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={deceasedPeople}
+          properties={[deceasedProperty]}
+          vendorReport={vendorReport}
+          selectedPersonId="deceased-seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
+    const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
+    const donationDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirer,
+        "buyer",
+      );
+      acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "25/05/2025",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    const transferLimit = container.querySelector(".person-donation-form .transfer-limit");
+    expect(submit.disabled).toBe(true);
+    expect(submit.getAttribute("aria-describedby")).toBe("lifetime-transfer-error");
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      "Donation date must be on or before Joseph Borg's date of death (20/03/2025).",
+    );
+    expect(transferLimit.textContent).toContain("Unavailable on 25/05/2025");
+    expect(transferLimit.textContent).not.toContain("1/16");
+    act(() => submit.click());
+    expect(onRecordDonation).not.toHaveBeenCalled();
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "19/03/2025",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(submit.disabled).toBe(false);
+    expect(container.querySelector("#lifetime-transfer-error")).toBeNull();
+    expect(transferLimit.textContent).toContain("1/16");
+    act(() => submit.click());
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    expect(onRecordDonation.mock.calls[0][0].transfer).toMatchObject({
+      buyerId: "buyer",
+      numerator: "1",
+      denominator: "16",
+      date: "2025-03-19",
+    });
+  });
+
   it("prevents a defined fraction from exceeding the transferor's exact holding", () => {
     const vendorReport = buildPropertyVendorTaxReport(property, people, []);
     const onRecordDonation = vi.fn();

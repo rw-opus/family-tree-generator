@@ -2048,6 +2048,17 @@ textarea {
   font-size: 0.68rem;
 }
 
+.person-donation-form .transfer-limit.unavailable,
+.transfer-form .transfer-limit.unavailable {
+  border: 1px solid #e6b8b8;
+  background: #fff1f1;
+}
+
+.person-donation-form .transfer-limit.unavailable strong,
+.transfer-form .transfer-limit.unavailable strong {
+  color: #a52d2d;
+}
+
 .provenance-designation {
   display: grid;
   gap: 0.35rem;

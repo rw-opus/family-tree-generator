@@ -890,10 +890,12 @@ export function PersonInspector({
       ? ownerProvenanceTranches(propertyVendorReport || {}, activeProperty, selectedPerson.id)
       : [];
   }, [activeProperty, propertyVendorReport, selectedPerson.id, transferCapacityPreview]);
-  const donorLedgerHolding =
-    transferCapacityPreview && !transferCapacityPreview.error
-      ? transferCapacityPreview.holdingFraction
-      : baseTransferHolding;
+  // Once a date has been entered, the dated preview is authoritative even when it
+  // reports an error. Falling back to the balance at death/current balance would
+  // misleadingly present that share as available on an impossible transfer date.
+  const donorLedgerHolding = transferCapacityPreview
+    ? transferCapacityPreview.holdingFraction || ZERO_FRACTION
+    : baseTransferHolding;
   const fullyTransferredInterVivos =
     recordedOutgoingInterVivosTransfers.length > 0 &&
     compareFractions(baseTransferHolding, ZERO_FRACTION) === 0;
@@ -955,11 +957,20 @@ export function PersonInspector({
           String(donationDraft.numerator ?? "").trim() ||
           String(donationDraft.denominator ?? "").trim(),
         ));
-  const transferMeasurementError =
+  const rawTransferCapacityError =
     transferCapacityPreview?.error ||
     (transferCapacityPreview && compareFractions(donorLedgerHolding, ZERO_FRACTION) <= 0
       ? "This person held no share on the entered transfer date."
-      : transferCalculation?.error || "");
+      : "");
+  const transferCapacityError =
+    rawTransferCapacityError ===
+      `${isDonation ? "Donation" : "Sale"} date must be on or before the seller's date of death.` &&
+    selectedPerson?.dateOfDeath
+      ? `${isDonation ? "Donation" : "Sale"} date must be on or before ${displayName(selectedPerson)}'s date of death (${isoDateToDisplay(selectedPerson.dateOfDeath)}).`
+      : rawTransferCapacityError;
+  const transferMeasurementError = transferCapacityError || transferCalculation?.error || "";
+  const displayedTransferError =
+    transferCapacityError || (definedTransferHasInput ? transferCalculation?.error || "" : "");
   // The provenance question is exceptional: it only arises when part of the holding is
   // transferred while the holder acquired on more than one occasion. A whole-holding
   // transfer moves every provenance, and a single provenance answers itself.
@@ -1818,15 +1829,17 @@ export function PersonInspector({
               )}
             </div>
           )}
-          <div className="transfer-limit">
-            <span>Available to transfer</span>
+          <div className={`transfer-limit${transferCapacityError ? " unavailable" : ""}`}>
+            <span>{transferCapacityError ? "Transfer availability" : "Available to transfer"}</span>
             <strong>
-              {donorLedgerHolding.numerator}/{donorLedgerHolding.denominator}
+              {transferCapacityError
+                ? `Unavailable on ${isoDateToDisplay(donationDraft.date) || "this date"}`
+                : `${donorLedgerHolding.numerator}/${donorLedgerHolding.denominator}`}
             </strong>
           </div>
-          {definedTransferHasInput && transferMeasurementError && (
-            <p className="transfer-error" role="alert">
-              {transferMeasurementError}
+          {displayedTransferError && (
+            <p className="transfer-error" id="lifetime-transfer-error" role="alert">
+              {displayedTransferError}
             </p>
           )}
           {needsProvenanceDesignation && (
@@ -1925,6 +1938,7 @@ export function PersonInspector({
               type="submit"
               className="primary-button"
               disabled={Boolean(transferMeasurementError)}
+              aria-describedby={displayedTransferError ? "lifetime-transfer-error" : undefined}
             >
               {isDonation ? "Record donation" : "Record sale"}
             </button>
