@@ -662,6 +662,7 @@ describe("property vendor tax reports", () => {
         causaMortisDeclarations: [
           {
             id: "cm-a",
+            status: "complete",
             propertyId: "property",
             declaredShareNumerator: 1,
             declaredShareDenominator: 2,
@@ -672,6 +673,7 @@ describe("property vendor tax reports", () => {
           },
           {
             id: "cm-b",
+            status: "complete",
             propertyId: "property",
             declaredShareNumerator: 1,
             declaredShareDenominator: 2,
@@ -724,6 +726,110 @@ describe("property vendor tax reports", () => {
       declaredValue: 200,
       declarations: [{ id: "cm-b", declaredShare: 0.5, declaredValue: 200 }],
     });
+  });
+
+  it("allocates a joint CM value proportionately and confines its excess to its declarants", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willDate: "2019-12-01",
+        willHeirs: [
+          { id: "a-share", personId: "a", shareNumerator: 1, shareDenominator: 2 },
+          { id: "b-share", personId: "b", shareNumerator: 1, shareDenominator: 4 },
+          { id: "c-share", personId: "c", shareNumerator: 1, shareDenominator: 4 },
+        ],
+        spouseIds: [],
+        causaMortisDeclarations: [
+          {
+            id: "cm-ab",
+            status: "complete",
+            propertyId: "property",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            immovablePropertyValue: "1200",
+            date: "2020-04-01",
+            notaryName: "Maria Vella",
+            declarantPersonIds: ["a", "b"],
+          },
+          {
+            id: "filled-draft-c",
+            status: "draft",
+            propertyId: "property",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 4,
+            immovablePropertyValue: "300",
+            date: "2020-05-01",
+            notaryName: "Paul Galea",
+            declarantPersonIds: ["c"],
+          },
+        ],
+      },
+      { id: "a", fullName: "Heir A" },
+      { id: "b", fullName: "Heir B" },
+      { id: "c", fullName: "Heir C" },
+    ];
+    const property = {
+      id: "property",
+      saleValue: 120000,
+      owners: [{ id: "initial", personId: "deceased", sharePercent: 100 }],
+      transfers: [],
+      declarations: [],
+      saleLots: [
+        {
+          id: "stale-c-lot",
+          ownerId: "c",
+          acquisitionType: "inheritance",
+          inheritanceDate: "",
+          transferDate: "2026-08-11",
+          shareNumerator: 1,
+          shareDenominator: 4,
+          acquisitionValue: 999,
+          acquisitionValueBasis: "cm-declared",
+          cmValueEligibilityConfirmed: true,
+          useDeclaredValues: true,
+          selectedTaxMethod: "increase-12",
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendorA = report.vendors.find((vendor) => vendor.id === "a");
+    const vendorB = report.vendors.find((vendor) => vendor.id === "b");
+    const vendorC = report.vendors.find((vendor) => vendor.id === "c");
+
+    expect(vendorA.rows[0]).toMatchObject({
+      declaredValue: 800,
+      declarations: [
+        {
+          id: "cm-ab",
+          declaredShare: 2 / 3,
+          declaredShareFraction: { numerator: 2, denominator: 3 },
+          declaredValue: 800,
+        },
+      ],
+    });
+    expect(vendorB.rows[0]).toMatchObject({
+      declaredValue: 400,
+      declarations: [
+        {
+          id: "cm-ab",
+          declaredShare: 1 / 3,
+          declaredShareFraction: { numerator: 1, denominator: 3 },
+          declaredValue: 400,
+        },
+      ],
+    });
+    expect(vendorC.rows[0]).toMatchObject({
+      declaredValue: 0,
+      declarations: [],
+      methods: [],
+      selectedMethod: null,
+    });
+    expect(vendorC.tax).toBeNull();
   });
 
   it("recalculates a legacy zero-share row after assigning the vendor's sole share", () => {
@@ -1241,6 +1347,72 @@ describe("property vendor tax reports", () => {
       },
     });
     expect(report.saleRows[0].result.methods[0].tax).toBeCloseTo(2.4);
+  });
+
+  it("keeps a legacy excess declaration with its named heir without expanding ownership", () => {
+    const property = {
+      id: "property",
+      owners: [
+        { id: "owner-a", personId: "a", shareNumerator: 1, shareDenominator: 2 },
+        { id: "owner-b", personId: "b", shareNumerator: 1, shareDenominator: 2 },
+      ],
+      declarations: [
+        {
+          id: "excess-a",
+          participants: [{ heirId: "a", numerator: 3, denominator: 4, declaredValue: 300 }],
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "a-lot",
+          ownerId: "a",
+          inheritanceDate: "2020-01-01",
+          transferDate: "2026-08-11",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionValue: 0,
+          useDeclaredValues: true,
+          cmValueEligibilityConfirmed: true,
+        },
+        {
+          id: "b-lot",
+          ownerId: "b",
+          inheritanceDate: "2020-01-01",
+          transferDate: "2026-08-11",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionValue: 0,
+          useDeclaredValues: true,
+          cmValueEligibilityConfirmed: true,
+        },
+      ],
+    };
+
+    const report = buildPropertyVendorTaxReport(
+      property,
+      [
+        { id: "a", fullName: "Heir A" },
+        { id: "b", fullName: "Heir B" },
+      ],
+      [],
+    );
+    const rowA = report.saleRows.find((row) => row.lot.ownerId === "a");
+    const rowB = report.saleRows.find((row) => row.lot.ownerId === "b");
+
+    expect(rowA).toMatchObject({
+      useDeclarationValues: true,
+      declaredCoverage: { status: "over", hasUsableDeclaredValues: true },
+      effectiveLot: {
+        acquisitionValue: 300,
+        shareNumerator: 1,
+        shareDenominator: 2,
+      },
+    });
+    expect(rowB).toMatchObject({
+      useDeclarationValues: false,
+      declaredCoverage: { status: "under", declaredValue: 0 },
+    });
   });
 
   it("shares one vendor's €200,000 band across split acquisitions", () => {

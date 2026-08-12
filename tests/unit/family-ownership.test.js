@@ -71,6 +71,54 @@ describe("automatic family ownership", () => {
     expect(allocation.warnings.join(" ")).toContain("provisionally treated as surviving");
   });
 
+  it("does not let a stale potential-parent flag make a same-day deceased parent inherit", () => {
+    const people = [
+      person("child", {
+        isDeceased: true,
+        dateOfDeath: "2020-04-12",
+        inheritanceBasis: "intestacy",
+        motherId: "mother",
+      }),
+      person("mother", {
+        isPotentialIntestateParent: true,
+        survivalStatusRequired: true,
+        survivalStatusReferencePersonId: "child",
+        isDeceased: true,
+        dateOfDeath: "2020-04-12",
+      }),
+    ];
+
+    const allocation = intestateAllocations(people, "child");
+
+    expect(allocation.destination).toBe("government");
+    expect(allocation.shares.has("mother")).toBe(false);
+    expect(allocation.warnings.join(" ")).not.toContain("provisionally treated as surviving");
+  });
+
+  it("lets a potential parent who died later inherit despite a stale warning flag", () => {
+    const people = [
+      person("child", {
+        isDeceased: true,
+        dateOfDeath: "2020-04-12",
+        inheritanceBasis: "intestacy",
+        motherId: "mother",
+      }),
+      person("mother", {
+        isPotentialIntestateParent: true,
+        survivalStatusRequired: true,
+        survivalStatusReferencePersonId: "child",
+        isDeceased: true,
+        dateOfDeath: "2020-04-13",
+      }),
+    ];
+
+    const allocation = intestateAllocations(people, "child");
+
+    expect(allocation.destination).toBe("ascendants");
+    expect(allocation.shares.get("mother")).toBe(1);
+    expect(allocation.warnings.join(" ")).not.toContain("provisionally treated as surviving");
+  });
+
   it("does not create parent placeholders ahead of descendants or a surviving spouse", () => {
     const base = person("owner", {
       isDeceased: true,

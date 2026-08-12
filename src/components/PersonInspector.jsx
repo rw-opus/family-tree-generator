@@ -4,6 +4,7 @@ import {
   composeFullName,
   createPerson,
   fatherSurnameDefaultPatch,
+  givenNamesFromFullName,
   hasDesignation,
   personChoiceLabel,
   personDisplayName,
@@ -15,6 +16,7 @@ import {
   personDesignations,
   removalWouldSeverFamily,
   sortPeopleForChoice,
+  surnameFromFullName,
 } from "../domain/people.js";
 import {
   applyParentSuggestions,
@@ -61,6 +63,10 @@ import {
   validateWillDateChronology,
 } from "../domain/chronology.js";
 import { isLegacyHistoricalLawWarning } from "../domain/successionRules.js";
+import {
+  isPotentialParentSurvivalUnresolved,
+  synchronisePotentialParentSurvival,
+} from "../domain/potentialParentSurvival.js";
 import {
   findPartnerRelationship,
   linkPartnerRelationship,
@@ -135,8 +141,10 @@ function ownershipLabel(share = 0, shareDisplay = "both", exactFraction = null) 
   return `${fractionText} · ${percentageText}`;
 }
 
-function fractionLabel(share = 0) {
-  const fraction = approximateFraction(Math.max(0, share));
+function fractionLabel(share = 0, exactFraction = null) {
+  const fraction = exactFraction?.denominator
+    ? exactFraction
+    : approximateFraction(Math.max(0, share));
   return `${fraction.numerator}/${fraction.denominator}`;
 }
 
@@ -356,7 +364,11 @@ export function PersonInspector({
     // silently defeating the recalculated statutory shares.
     const stampedPeople = stampUnsignedIntestacyContexts();
     onChange(
-      stampedPeople.map((person) => (person.id === personId ? { ...person, ...patch } : person)),
+      stampedPeople.map((person) =>
+        person.id === personId
+          ? synchronisePotentialParentSurvival({ ...person, ...patch })
+          : person,
+      ),
     );
   };
 
@@ -417,22 +429,24 @@ export function PersonInspector({
 
   const updateSex = (sex) => {
     const patch = { sex };
-    if (
-      sex === "Male" &&
-      !selectedPerson.surnameAtBirthReviewRequired &&
-      !selectedPerson.surnameAtBirth
-    ) {
-      patch.surnameAtBirth = personSurname(selectedPerson);
+    if (sex === "Male" && !selectedPerson.surnameAtBirth) {
+      if (selectedPerson.gedcomUnmarriedParents !== true) {
+        patch.surnameAtBirth = personSurname(selectedPerson);
+        patch.surnameAtBirthReviewRequired = false;
+      }
+    }
+    if (sex === "Female" && !String(selectedPerson.surnameAtBirth || "").trim()) {
+      patch.surnameAtBirthReviewRequired = true;
     }
     updateSelected(patch);
   };
 
   const updateSurnameAtBirth = (surnameAtBirth) => {
+    const needsBirthSurname =
+      selectedPerson.gedcomUnmarriedParents === true || selectedPerson.sex === "Female";
     updateSelected({
       surnameAtBirth,
-      ...(selectedPerson.surnameAtBirthReviewRequired
-        ? { surnameAtBirthReviewRequired: !surnameAtBirth.trim() }
-        : {}),
+      surnameAtBirthReviewRequired: needsBirthSurname && !surnameAtBirth.trim(),
     });
   };
 
@@ -532,17 +546,43 @@ export function PersonInspector({
     });
   };
 
-  const addCausaMortisDeclaration = () => {
+  const addCausaMortisDeclaration = (requestedPropertyId = "") => {
     if (!canAddCausaMortisDeclaration) return;
-    const coverageTarget = causaMortisCoverage.find((row) => row.status === "under");
+    const requestedCoverage = requestedPropertyId
+      ? causaMortisCoverage.find((row) => row.propertyId === requestedPropertyId)
+      : null;
+    const coverageTarget =
+      requestedCoverage ||
+      causaMortisCoverage.find((row) => row.status === "under" || row.status === "mixed");
     const propertyId =
-      coverageTarget?.propertyId || (properties.length === 1 ? properties[0].id : "");
-    const remainingShare = coverageTarget
-      ? Math.max(0, coverageTarget.requiredShare - coverageTarget.declaredShare)
-      : 0;
-    const remainingFraction = coverageTarget?.remainingFraction?.denominator
+      requestedPropertyId ||
+      coverageTarget?.propertyId ||
+      (properties.length === 1 ? properties[0].id : "");
+    const hasExactRemainingCoverage =
+      coverageTarget?.remainingFraction?.denominator &&
+      compareFractions(coverageTarget.remainingFraction, ZERO_FRACTION) > 0;
+    const hasRemainingCoverage =
+      Boolean(hasExactRemainingCoverage) ||
+      coverageTarget?.status === "under" ||
+      coverageTarget?.status === "mixed";
+    const remainingShare = hasExactRemainingCoverage
+      ? fractionToNumber(coverageTarget.remainingFraction)
+      : hasRemainingCoverage
+        ? Math.max(
+            0,
+            Number(coverageTarget?.requiredShare || 0) - Number(coverageTarget?.declaredShare || 0),
+          ) || Math.abs(Number(coverageTarget?.difference) || 0)
+        : 0;
+    const remainingFraction = hasExactRemainingCoverage
       ? coverageTarget.remainingFraction
       : approximateFraction(remainingShare);
+    const prefillRemainingShare = Boolean(hasRemainingCoverage);
+    const isAdditionalDeclaration = (selectedPerson.causaMortisDeclarations || []).length > 0;
+    const defaultDeclarantIds = Array.isArray(coverageTarget?.underDeclaredRecipientIds)
+      ? coverageTarget.underDeclaredRecipientIds.filter((personId) =>
+          declarationCandidates.some((candidate) => candidate.id === personId),
+        )
+      : declarationCandidates.map((person) => person.id);
     setCausaMortisDraftOpen(true);
     updateSelected({
       causaMortisDeclarations: [
@@ -551,12 +591,20 @@ export function PersonInspector({
           id: crypto.randomUUID(),
           status: "draft",
           propertyId,
-          declaredShareNumerator: remainingFraction.numerator,
-          declaredShareDenominator: remainingFraction.denominator,
+          declaredShareNumerator: prefillRemainingShare
+            ? remainingFraction.numerator
+            : isAdditionalDeclaration
+              ? ""
+              : 0,
+          declaredShareDenominator: prefillRemainingShare
+            ? remainingFraction.denominator
+            : isAdditionalDeclaration
+              ? ""
+              : 1,
           date: "",
           notaryName: "",
           immovablePropertyValue: "",
-          declarantPersonIds: declarationCandidates.map((person) => person.id),
+          declarantPersonIds: defaultDeclarantIds,
         },
       ],
     });
@@ -570,21 +618,21 @@ export function PersonInspector({
     addCausaMortisDeclaration();
   };
 
+  const handleCausaMortisCoverageAction = (propertyId) => {
+    if (hasDraftCausaMortisDeclaration) {
+      setCausaMortisDraftOpen(true);
+      return;
+    }
+    addCausaMortisDeclaration(propertyId);
+  };
+
   const completeCausaMortisDeclaration = (declaration) => {
     const propertyId = declaration.propertyId || (properties.length === 1 ? properties[0].id : "");
     const normalizedDeclaration = { ...declaration, propertyId };
-    const coverage = causaMortisCoverage.find((row) => row.propertyId === propertyId);
-    const availableShare = coverage
-      ? Math.max(0, coverage.requiredShare - coverage.declaredShare)
-      : 0;
-    const error = coverage
-      ? validateCausaMortisDeclaration(normalizedDeclaration, {
-          valueRequired: !allSuccessionHeirsDeceased,
-          availableShare,
-          availableShareFraction: coverage?.remainingFraction,
-          dateOfDeath: selectedPerson.dateOfDeath || "",
-        })
-      : "Assign the deceased's property share before completing this declaration.";
+    const error = validateCausaMortisDeclaration(normalizedDeclaration, {
+      valueRequired: !allSuccessionHeirsDeceased,
+      dateOfDeath: selectedPerson.dateOfDeath || "",
+    });
 
     if (error) {
       setCausaMortisErrors((current) => ({ ...current, [declaration.id]: error }));
@@ -632,7 +680,7 @@ export function PersonInspector({
 
   const setDeceased = (checked) => {
     const current = personDesignations(selectedPerson).filter(
-      (designation) => designation !== "Deceased",
+      (designation) => String(designation).toLowerCase() !== "deceased",
     );
     if (checked) setIsEditing(true);
     const survivalPatch = selectedPerson.isPotentialIntestateParent
@@ -1004,7 +1052,11 @@ export function PersonInspector({
       acquirer = tagStatusCreatedRecord(
         {
           ...createPerson(isDonation ? "Donee" : "Buyer"),
+          givenNames: givenNamesFromFullName(name),
+          surname: surnameFromFullName(name),
           fullName: name,
+          surnameAtBirth: donationDraft.doneeSex === "Male" ? surnameFromFullName(name) : "",
+          surnameAtBirthReviewRequired: donationDraft.doneeSex === "Female",
           sex: donationDraft.doneeSex,
         },
         interVivosStatusSession,
@@ -1294,11 +1346,8 @@ export function PersonInspector({
   const hasDraftCausaMortisDeclaration = causaMortisDeclarations.some(
     (declaration) => !isCompletedCausaMortisDeclaration(declaration),
   );
-  const hasRemainingCausaMortisShare = causaMortisCoverage.some((row) => row.status === "under");
   const canStartFirstCausaMortisDeclaration = causaMortisDeclarations.length === 0;
-  const canAddCausaMortisDeclaration =
-    !hasDraftCausaMortisDeclaration &&
-    (canStartFirstCausaMortisDeclaration || hasRemainingCausaMortisShare);
+  const canAddCausaMortisDeclaration = !hasDraftCausaMortisDeclaration;
   const visibleCausaMortisDeclarations = causaMortisDeclarations.filter(
     (declaration) => isCompletedCausaMortisDeclaration(declaration) || causaMortisDraftOpen,
   );
@@ -1400,7 +1449,7 @@ export function PersonInspector({
   );
   const activeLinkedSpousesAtDeath = linkedPartners.filter(
     (partner) =>
-      partner.survivalStatusRequired !== true &&
+      !isPotentialParentSurvivalUnresolved(partner) &&
       partnerRelationshipStatusAt(
         partnerRelationshipsById.get(partner.id),
         selectedPerson.dateOfDeath || "",
@@ -2320,7 +2369,7 @@ export function PersonInspector({
           </section>
         )}
 
-        {selectedPerson.survivalStatusRequired === true && (
+        {isPotentialParentSurvivalUnresolved(selectedPerson) && (
           <section className="potential-parent-survival-alert" role="alert">
             <strong>Establish whether this parent survived</strong>
             <p>
@@ -2340,7 +2389,7 @@ export function PersonInspector({
                   updateSelected({
                     isDeceased: false,
                     designations: personDesignations(selectedPerson).filter(
-                      (designation) => designation !== "Deceased",
+                      (designation) => String(designation).toLowerCase() !== "deceased",
                     ),
                     dateOfDeath: "",
                     survivalStatusRequired: false,
@@ -2749,9 +2798,6 @@ export function PersonInspector({
                         <button
                           type="button"
                           className="secondary-button"
-                          disabled={
-                            !hasDraftCausaMortisDeclaration && !canAddCausaMortisDeclaration
-                          }
                           onClick={handleCausaMortisDeclarationAction}
                           title={
                             hasDraftCausaMortisDeclaration
@@ -2760,9 +2806,7 @@ export function PersonInspector({
                                 : "Reopen the unfinished Declaration Causa Mortis form."
                               : canStartFirstCausaMortisDeclaration
                                 ? "Record the first Declaration Causa Mortis."
-                                : hasRemainingCausaMortisShare
-                                  ? "Insert another Declaration Causa Mortis."
-                                  : "No undeclared share remains."
+                                : "Insert another Declaration Causa Mortis."
                           }
                         >
                           <FilePlus2 size={14} />
@@ -2795,15 +2839,53 @@ export function PersonInspector({
                                       isoDateToDisplay(row.deathDateText) || row.deathDateText
                                     })`
                                   : "Enter exact death date"
-                                : row.status === "under"
-                                  ? `Missing ${fractionLabel(difference)}`
-                                  : row.status === "over"
-                                    ? `Excess ${fractionLabel(difference)}`
-                                    : "Complete";
+                                : row.status === "allocation-unresolved"
+                                  ? "Check declarants"
+                                  : row.status === "mixed"
+                                    ? `Missing ${fractionLabel(
+                                        fractionToNumber(row.missingFraction),
+                                        row.missingFraction,
+                                      )} · Excess ${fractionLabel(
+                                        fractionToNumber(row.excessFraction),
+                                        row.excessFraction,
+                                      )}`
+                                    : row.status === "under"
+                                      ? `Missing ${fractionLabel(
+                                          row.missingFraction
+                                            ? fractionToNumber(row.missingFraction)
+                                            : difference,
+                                          row.missingFraction,
+                                        )}`
+                                      : row.status === "over"
+                                        ? `Excess ${fractionLabel(
+                                            row.excessFraction
+                                              ? fractionToNumber(row.excessFraction)
+                                              : difference,
+                                            row.excessFraction,
+                                          )}`
+                                        : "Complete";
+                            const recipientIssues = (row.recipientCoverage || [])
+                              .filter((recipient) => recipient.status !== "complete")
+                              .map((recipient) => {
+                                const relevantFraction =
+                                  recipient.status === "under"
+                                    ? recipient.missingFraction
+                                    : recipient.excessFraction;
+                                return `${recipient.name}: ${
+                                  recipient.status === "under" ? "missing" : "excess"
+                                } ${fractionLabel(
+                                  fractionToNumber(relevantFraction),
+                                  relevantFraction,
+                                )}`;
+                              });
                             return (
-                              <div
+                              <button
+                                type="button"
                                 className={`causa-mortis-coverage-row ${row.status}`}
                                 key={row.propertyId}
+                                onClick={() => handleCausaMortisCoverageAction(row.propertyId)}
+                                aria-label={`Insert another causa mortis declaration for ${row.propertyAddress}`}
+                                title="Insert another Declaration Causa Mortis for this property."
                               >
                                 <span>
                                   <strong>{row.propertyAddress}</strong>
@@ -2812,8 +2894,15 @@ export function PersonInspector({
                                       ? "Coverage cannot be decided from an unknown or approximate death date."
                                       : `Required ${fractionLabel(
                                           row.requiredShare,
-                                        )} · Declared ${fractionLabel(row.declaredShare)}`}
+                                          row.requiredFraction,
+                                        )} · Declared ${fractionLabel(
+                                          row.declaredShare,
+                                          row.declaredFraction,
+                                        )}`}
                                   </small>
+                                  {recipientIssues.length > 0 && (
+                                    <small>{recipientIssues.join(" · ")}</small>
+                                  )}
                                   {row.status !== "date-unknown" && hasSellingPrice && (
                                     <small>
                                       Required share of selling price{" "}
@@ -2822,7 +2911,7 @@ export function PersonInspector({
                                   )}
                                 </span>
                                 <b>{differenceLabel}</b>
-                              </div>
+                              </button>
                             );
                           })}
                         </div>

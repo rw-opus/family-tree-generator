@@ -15,7 +15,15 @@ describe("vendor tax Excel export", () => {
                 provenance: "Inherited from Joseph Borg",
                 inheritanceDate: "2020-01-02",
                 share: 0.25,
-                declarations: [{ date: "2020-01-02", declaredValue: 100, notaryName: "A. Notary" }],
+                declarations: [
+                  {
+                    date: "2020-01-02",
+                    declaredShare: 0.25,
+                    declaredShareFraction: { numerator: 1, denominator: 4 },
+                    declaredValue: 100,
+                    notaryName: "A. Notary",
+                  },
+                ],
                 declaredValue: 100,
                 attributedSaleValue: 120,
                 difference: 20,
@@ -66,7 +74,7 @@ describe("vendor tax Excel export", () => {
     expect(xml).toContain("Maria Borg");
     expect(xml).toContain("1/4");
     expect(xml).toContain("Inherited from Joseph Borg");
-    expect(xml).toContain("02/01/2020 · Not. A. Notary: EUR 100.00");
+    expect(xml).toContain("02/01/2020 · Not. A. Notary: CM fraction 1/4; EUR 100.00");
     expect(xml).toContain("12% of difference");
     expect(xml).toContain("8% of selling price");
     expect(xml).toContain("Applied");

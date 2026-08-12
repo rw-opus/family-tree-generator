@@ -415,9 +415,15 @@ textarea:focus-visible {
 }
 
 .property-workspace-page {
+  width: 100%;
+  max-width: 100vw;
+  height: 100dvh;
   min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--paper);
   color: var(--ink);
+  -webkit-overflow-scrolling: touch;
 }
 
 .property-workspace-header {
@@ -2966,10 +2972,24 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
   border: 1px solid #b9d9c6;
   border-radius: 5px;
   background: #f2faf5;
   padding: 0.38rem 0.45rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.causa-mortis-coverage-row:hover {
+  box-shadow: inset 0 0 0 1px rgba(40, 112, 77, 0.28);
+}
+
+.causa-mortis-coverage-row:focus-visible {
+  outline: 3px solid rgba(75, 17, 111, 0.22);
+  outline-offset: 2px;
 }
 
 .causa-mortis-coverage-row > span {
@@ -2990,6 +3010,8 @@ textarea {
 
 .causa-mortis-coverage-row.under,
 .causa-mortis-coverage-row.over,
+.causa-mortis-coverage-row.mixed,
+.causa-mortis-coverage-row.allocation-unresolved,
 .causa-mortis-coverage-row.date-unknown {
   border-color: #dda7a7;
   background: #fff3f3;
@@ -2999,6 +3021,10 @@ textarea {
 .causa-mortis-coverage-row.under b,
 .causa-mortis-coverage-row.over strong,
 .causa-mortis-coverage-row.over b,
+.causa-mortis-coverage-row.mixed strong,
+.causa-mortis-coverage-row.mixed b,
+.causa-mortis-coverage-row.allocation-unresolved strong,
+.causa-mortis-coverage-row.allocation-unresolved b,
 .causa-mortis-coverage-row.date-unknown strong,
 .causa-mortis-coverage-row.date-unknown b {
   color: #a12828;
@@ -5287,6 +5313,7 @@ body.a3-print-preview-open {
 .tree-stage .family-node.survival-status-required,
 .tree-stage .family-node.surname-at-birth-review-required,
 .tree-stage .family-node.spouse-at-death-conflict,
+.tree-stage .family-node.will-details-invalid,
 .tree-stage .family-node.historical-law-review-required {
   border-color: #b42318;
   border-top-color: #7a1610;
@@ -5430,6 +5457,7 @@ body.a3-print-preview-open {
 
 .tree-stage .family-node-survival-alert,
 .tree-stage .family-node-surname-alert,
+.tree-stage .family-node-will-alert,
 .tree-stage .family-node-law-alert {
   margin-top: 0.32rem;
   border-radius: 5px;
@@ -7157,6 +7185,14 @@ body.a3-print-preview-open {
   .tax-calculation-history li {
     grid-template-columns: 1fr;
     gap: 3px;
+  }
+
+  /* Keep the mobile tax workspace on one vertical scrolling surface. A nested
+     history scroller traps touch gestures and prevents users reaching the
+     vendor calculations below it, especially in iOS in-app browsers. */
+  .tax-calculation-history > ol {
+    max-height: none;
+    overflow-y: visible;
   }
 
   .tax-calculation-table-wrap {

@@ -222,7 +222,11 @@ export function App({
   onChangePassword,
   onSignOut = () => {},
 }) {
-  const cloudMode = Boolean(session?.user?.id) && !localOnlyMode;
+  // Supabase emits TOKEN_REFRESHED with a new Session object for the same user.
+  // Cloud hydration must follow the authenticated identity, not object identity,
+  // otherwise every token rotation reloads (and reactivates) the first saved tree.
+  const authenticatedUserId = session?.user?.id || "";
+  const cloudMode = Boolean(authenticatedUserId) && !localOnlyMode;
   const [startupWorkspace] = useState(() =>
     cloudMode ? { trees: [], activeTreeId: "" } : loadLocalWorkspace(),
   );
@@ -256,6 +260,7 @@ export function App({
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [traceOwnershipSnapshot, setTraceOwnershipSnapshot] = useState(null);
+  const [traceOwnershipFractionSnapshot, setTraceOwnershipFractionSnapshot] = useState(null);
   const [propertyPanelExpanded, setPropertyPanelExpanded] = useState(false);
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
@@ -270,6 +275,7 @@ export function App({
     setActiveFamilyGroupId(activation.activeFamilyGroupId);
     setSelectedPersonId(activation.selectedPersonId);
     setTraceOwnershipSnapshot(null);
+    setTraceOwnershipFractionSnapshot(null);
     setPropertyPanelExpanded(false);
     setInitialOwnerPick(null);
     if (options.openDashboard) setDashboardOpen(true);
@@ -278,18 +284,21 @@ export function App({
 
   useEffect(() => {
     if (!cloudMode) return undefined;
-    const queue = createCloudSaveQueue((snapshot) => saveFamilyTree(snapshot, session.user.id), {
-      onSaveStart: () => setStatus("Saving securely..."),
-      onSaveSuccess: () => setStatus("Saved securely to your workspace."),
-      onSaveError: (error) =>
-        setStatus(`Cloud save needs attention: ${error?.message || "Unknown error"}`),
-    });
+    const queue = createCloudSaveQueue(
+      (snapshot) => saveFamilyTree(snapshot, authenticatedUserId),
+      {
+        onSaveStart: () => setStatus("Saving securely..."),
+        onSaveSuccess: () => setStatus("Saved securely to your workspace."),
+        onSaveError: (error) =>
+          setStatus(`Cloud save needs attention: ${error?.message || "Unknown error"}`),
+      },
+    );
     cloudSaveQueueRef.current = queue;
     return () => {
       if (cloudSaveQueueRef.current === queue) cloudSaveQueueRef.current = null;
       queue.dispose();
     };
-  }, [cloudMode, session?.user?.id]);
+  }, [authenticatedUserId, cloudMode]);
 
   useEffect(() => {
     if (!cloudMode) return undefined;
@@ -307,10 +316,10 @@ export function App({
       setEntitlement(defaultTreeEntitlement);
       return defaultTreeEntitlement;
     }
-    const nextEntitlement = await loadTreeEntitlement(session.user.id);
+    const nextEntitlement = await loadTreeEntitlement(authenticatedUserId);
     setEntitlement(nextEntitlement);
     return nextEntitlement;
-  }, [cloudMode, session]);
+  }, [authenticatedUserId, cloudMode]);
 
   const currentTree = useMemo(() => normaliseTree(tree), [tree]);
   const requestedActiveFamilyGroup = currentTree.familyGroups.find(
@@ -474,7 +483,7 @@ export function App({
 
   useEffect(() => {
     if (!cloudMode) return;
-    Promise.all([listFamilyTrees(session.user.id), refreshTreeEntitlement()])
+    Promise.all([listFamilyTrees(authenticatedUserId), refreshTreeEntitlement()])
       .then(([items]) => {
         setTrees(items);
         if (items[0]) {
@@ -486,7 +495,7 @@ export function App({
         setStatus("Saved securely to your workspace.");
       })
       .catch((error) => setStatus(`Cloud storage needs attention: ${error.message}`));
-  }, [activateCase, cloudMode, refreshTreeEntitlement, session]);
+  }, [activateCase, authenticatedUserId, cloudMode, refreshTreeEntitlement]);
 
   useEffect(() => {
     if (!cloudMode || !activeTreeIsListed) return undefined;
@@ -552,6 +561,10 @@ export function App({
   );
 
   const selectPerson = (personId) => {
+    // Entering edit mode always returns the cards to the current legal position.
+    // Otherwise a previously selected history step can mask the user's edits.
+    setTraceOwnershipSnapshot(null);
+    setTraceOwnershipFractionSnapshot(null);
     setPropertyPanelExpanded(false);
     const targetGroup =
       findFamilyGroupsForPerson(currentTree, personId).find(
@@ -585,6 +598,7 @@ export function App({
 
   const showTraceEventOnTree = (event) => {
     setTraceOwnershipSnapshot(event?.ownershipSnapshot || null);
+    setTraceOwnershipFractionSnapshot(event?.ownershipFractionSnapshot || null);
     if (event?.personId) {
       focusPersonOnTree(event.personId);
       return;
@@ -803,7 +817,7 @@ export function App({
         cloudSaveQueueRef.current.schedule(normaliseTree(renamed));
         saved = await cloudSaveQueueRef.current.flush();
       } else {
-        saved = await saveFamilyTree(renamed, session.user.id);
+        saved = await saveFamilyTree(renamed, authenticatedUserId);
       }
       setTrees((items) => items.map((item) => (item.id === treeId ? saved : item)));
       if (treeId === currentTree.id) setTree(saved);
@@ -833,7 +847,7 @@ export function App({
 
     setStatus("Removing family...");
     try {
-      await removeFamilyTree(treeId, session.user.id);
+      await removeFamilyTree(treeId, authenticatedUserId);
       setStatus(
         entitlement?.unlimitedTrees
           ? "Family removed."
@@ -986,6 +1000,7 @@ export function App({
   const beginInitialOwnerTreePick = (ownerId) => {
     setInitialOwnerPick({ propertyId: activeProperty.id, ownerId });
     setTraceOwnershipSnapshot(null);
+    setTraceOwnershipFractionSnapshot(null);
     setPropertyPanelExpanded(true);
     setSelectedPersonId("");
     setDashboardOpen(false);
@@ -1050,6 +1065,7 @@ export function App({
 
   const returnHome = async () => {
     setTraceOwnershipSnapshot(null);
+    setTraceOwnershipFractionSnapshot(null);
     setPropertyPanelExpanded(false);
     setInitialOwnerPick(null);
     if (!cloudMode) {
@@ -1262,7 +1278,9 @@ export function App({
                 people={visiblePeople}
                 ownershipByPerson={traceOwnershipSnapshot || ownershipByPerson}
                 ownershipFractionsByPerson={
-                  traceOwnershipSnapshot ? {} : ownershipFractionsByPerson
+                  traceOwnershipSnapshot
+                    ? traceOwnershipFractionSnapshot || {}
+                    : ownershipFractionsByPerson
                 }
                 currentOwnershipByPerson={traceOwnershipSnapshot || currentOwnershipByPerson}
                 historicalLawWarningsByPerson={historicalLawWarningsByPerson}
@@ -1283,6 +1301,7 @@ export function App({
                     : currentTree.settings.personCardFields
                 }
                 propertyValue={activeProperty.saleValue}
+                propertyId={activeProperty.id}
                 ownershipSnapshotActive={Boolean(traceOwnershipSnapshot)}
                 toolbar={
                   <>
@@ -1341,23 +1360,27 @@ export function App({
                   })
                 }
                 onPropertyChange={updateActiveProperty}
-                onPropertySelect={(activePropertyId) =>
+                onPropertySelect={(activePropertyId) => {
+                  setTraceOwnershipSnapshot(null);
+                  setTraceOwnershipFractionSnapshot(null);
                   setTree({
                     ...currentTree,
                     settings: { ...currentTree.settings, activePropertyId },
-                  })
-                }
+                  });
+                }}
                 onFocusEvent={showTraceEventOnTree}
                 expanded={propertyPanelExpanded}
                 initialOwnerSelectionActive={Boolean(initialOwnerPick)}
                 hideCollapsedTrigger
                 onOpenProperty={() => {
                   setTraceOwnershipSnapshot(null);
+                  setTraceOwnershipFractionSnapshot(null);
                   setPropertyPanelExpanded(false);
                   setWorkspaceView("property");
                 }}
                 onOpenTax={() => {
                   setTraceOwnershipSnapshot(null);
+                  setTraceOwnershipFractionSnapshot(null);
                   setPropertyPanelExpanded(false);
                   setWorkspaceView("tax");
                 }}

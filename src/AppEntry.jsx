@@ -70,6 +70,7 @@ export function AppEntry() {
   return (
     <TermsBoundary session={session} onSignOut={signOut}>
       <App
+        key={session.user.id}
         localOnlyMode={false}
         session={session}
         onChangePassword={changePassword}

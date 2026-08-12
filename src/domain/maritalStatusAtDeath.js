@@ -1,4 +1,6 @@
 import { isValidIsoDate } from "./dateFormat.js";
+import { isMarkedDeceased, isRecordedDeceased } from "./deceasedStatus.js";
+import { isPotentialParentSurvivalUnresolved } from "./potentialParentSurvival.js";
 import {
   findPartnerRelationship,
   PARTNER_RELATIONSHIP_TYPES,
@@ -9,20 +11,6 @@ export const MARITAL_STATUS_AT_DEATH_SOURCES = Object.freeze({
   AUTOMATIC: "automatic",
   MANUAL: "manual",
 });
-
-function isMarkedDeceased(person = {}) {
-  return (
-    person.isDeceased === true ||
-    (Array.isArray(person.designations) &&
-      person.designations.some(
-        (designation) => String(designation).trim().toLowerCase() === "deceased",
-      ))
-  );
-}
-
-function isRecordedDeceased(person = {}) {
-  return isMarkedDeceased(person) || isValidIsoDate(person.dateOfDeath);
-}
 
 /**
  * Derives whether no legal spouse survived a person. `null` means the recorded
@@ -56,7 +44,7 @@ export function deriveNoSurvivingSpouseAtDeath(people = [], personId) {
       if (relationshipEndDate <= deathDate) continue;
     }
 
-    if (spouse.survivalStatusRequired === true) {
+    if (isPotentialParentSurvivalUnresolved(spouse)) {
       survivalUnresolved = true;
       continue;
     }
@@ -79,6 +67,26 @@ export function deriveNoSurvivingSpouseAtDeath(people = [], personId) {
  */
 export function synchroniseMaritalStatusAtDeath(people = []) {
   return people.map((person) => {
+    const derived = deriveNoSurvivingSpouseAtDeath(people, person.id);
+
+    // A manual answer is useful only while the evidence is incomplete. Once
+    // the recorded relationships and death dates establish the answer, those
+    // facts must replace even an earlier manual choice; otherwise a surviving
+    // spouse can remain silently excluded from the succession.
+    if (derived !== null) {
+      if (
+        person.unmarriedOrWidowedAtDeath === derived &&
+        person.unmarriedOrWidowedAtDeathSource === MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC
+      ) {
+        return person;
+      }
+      return {
+        ...person,
+        unmarriedOrWidowedAtDeath: derived,
+        unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC,
+      };
+    }
+
     if (person.unmarriedOrWidowedAtDeathSource === MARITAL_STATUS_AT_DEATH_SOURCES.MANUAL) {
       return person;
     }
@@ -90,24 +98,11 @@ export function synchroniseMaritalStatusAtDeath(people = []) {
         unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.MANUAL,
       };
     }
-    const derived = deriveNoSurvivingSpouseAtDeath(people, person.id);
-    if (derived === null) {
-      if (person.unmarriedOrWidowedAtDeathSource !== MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC) {
-        return person;
-      }
-      if (person.unmarriedOrWidowedAtDeath === false) return person;
-      return { ...person, unmarriedOrWidowedAtDeath: false };
-    }
-    if (
-      person.unmarriedOrWidowedAtDeath === derived &&
-      person.unmarriedOrWidowedAtDeathSource === MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC
-    ) {
+
+    if (person.unmarriedOrWidowedAtDeathSource !== MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC) {
       return person;
     }
-    return {
-      ...person,
-      unmarriedOrWidowedAtDeath: derived,
-      unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC,
-    };
+    if (person.unmarriedOrWidowedAtDeath === false) return person;
+    return { ...person, unmarriedOrWidowedAtDeath: false };
   });
 }

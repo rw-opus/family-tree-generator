@@ -131,8 +131,7 @@ export function declarationCoverage(heirs = [], declarations = []) {
       records.length > 0 &&
       unusableDeclarationCount === 0 &&
       compareFractions(exactDeclaredFraction, ZERO_FRACTION) > 0 &&
-      declaredValue > 0 &&
-      status !== "over";
+      declaredValue > 0;
     return {
       heirId: heir.id,
       name: heir.name || "Unnamed heir",

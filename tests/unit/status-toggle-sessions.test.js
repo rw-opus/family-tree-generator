@@ -244,7 +244,7 @@ describe("status toggle sessions", () => {
     expect(ended.people.find((person) => person.id === "existing-parent").spouseIds).toEqual([]);
   });
 
-  it("removes only session-created inter-vivos transfers and restores tracked fields", () => {
+  it("removes only session-created inter-vivos transfers and cleans the legacy basis marker", () => {
     const base = caseFixture();
     delete base.people[0].inheritanceBasis;
     let current = beginStatusToggleSession(base, {
@@ -287,12 +287,7 @@ describe("status toggle sessions", () => {
     });
 
     expect(ended.properties[0].transfers.map((transfer) => transfer.id)).toEqual(["existing"]);
-    expect(
-      Object.hasOwn(
-        ended.people.find((person) => person.id === "owner"),
-        "inheritanceBasis",
-      ),
-    ).toBe(false);
+    expect(ended.people.find((person) => person.id === "owner").inheritanceBasis).toBe("intestacy");
     expect(ended.people.some((person) => person.id === "buyer")).toBe(false);
   });
 
@@ -342,6 +337,58 @@ describe("status toggle sessions", () => {
       isDeceased: false,
       designations: ["Owner"],
       dateOfDeath: "",
+    });
+  });
+
+  it("does not roll back a concurrent succession basis when an overlapping transfer session ends", () => {
+    let current = beginStatusToggleSession(caseFixture(), {
+      type: "deceased",
+      personId: "owner",
+      propertyId: "property",
+    });
+    current = beginStatusToggleSession(current, {
+      type: "inter-vivos",
+      personId: "owner",
+      propertyId: "property",
+    });
+    current = {
+      ...current,
+      people: current.people.map((person) =>
+        person.id === "owner"
+          ? {
+              ...person,
+              isDeceased: true,
+              designations: ["Deceased", "Owner"],
+              dateOfDeath: "2020-01-01",
+              inheritanceBasis: "intestacy",
+            }
+          : person,
+      ),
+    };
+
+    const withoutTransferDisclosure = endStatusToggleSession(current, {
+      type: "inter-vivos",
+      personId: "owner",
+      propertyId: "property",
+      activeFamilyGroupId: "family",
+    });
+
+    expect(withoutTransferDisclosure.people.find((person) => person.id === "owner")).toMatchObject({
+      isDeceased: true,
+      inheritanceBasis: "intestacy",
+    });
+    expect(statusToggleSession(withoutTransferDisclosure, "inter-vivos", "owner")).toBeNull();
+    expect(statusToggleSession(withoutTransferDisclosure, "deceased", "owner")).not.toBeNull();
+
+    const restoredAlive = endStatusToggleSession(withoutTransferDisclosure, {
+      type: "deceased",
+      personId: "owner",
+      propertyId: "property",
+      activeFamilyGroupId: "family",
+    });
+    expect(restoredAlive.people.find((person) => person.id === "owner")).toMatchObject({
+      isDeceased: false,
+      inheritanceBasis: "will",
     });
   });
 

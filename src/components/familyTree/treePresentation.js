@@ -1,4 +1,5 @@
 import { hasDesignation, personDisplayName } from "../../domain/people.js";
+import { isRecordedDeceased } from "../../domain/deceasedStatus.js";
 
 export const PARTNER_LINK_WIDTH = 40;
 
@@ -13,7 +14,7 @@ export function compactNodeWidth(value = "") {
 }
 
 export function isDeceasedPerson(person, variant = "") {
-  return Boolean(person.isDeceased) || hasDesignation(person, "Deceased") || variant === "deceased";
+  return isRecordedDeceased(person) || hasDesignation(person, "Deceased") || variant === "deceased";
 }
 
 export function personCardName(person, people, displayNamesById) {

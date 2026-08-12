@@ -170,7 +170,10 @@ export function TaxCalculationPanel({
                               {declaration.notaryName
                                 ? ` · ${displayNotaryName(declaration.notaryName)}`
                                 : ""}
-                              {` · ${money.format(declaration.declaredValue)}`}
+                              {` · CM fraction ${fractionLabel(
+                                declaration.declaredShare,
+                                declaration.declaredShareFraction,
+                              )} · ${money.format(declaration.declaredValue)}`}
                             </small>
                           ))}
                         </td>

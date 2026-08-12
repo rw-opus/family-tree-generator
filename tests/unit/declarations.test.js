@@ -123,7 +123,7 @@ describe("succession declarations", () => {
     expect(declarationCoverage([heir], [declaration("complete", 2)])[0].status).toBe("complete");
     expect(declarationCoverage([heir], [declaration("over", 3)])[0]).toMatchObject({
       status: "over",
-      hasUsableDeclaredValues: false,
+      hasUsableDeclaredValues: true,
     });
   });
 });

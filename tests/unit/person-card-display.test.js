@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTreeCardHistoricalWarningsByPerson,
   buildTreeCardOwnershipByPerson,
+  buildTreeCardOwnershipFractionsByPerson,
   DEFAULT_PERSON_CARD_FIELDS,
   normalisePersonCardFields,
 } from "../../src/domain/personCardDisplay.js";
@@ -53,6 +54,47 @@ describe("person-card ownership display", () => {
       "living-owner": 0.5,
       "unresolved-deceased": 0.5,
       "first-deceased": 0.75,
+    });
+  });
+
+  it("combines every exact tranche before showing a person's fraction", () => {
+    const fractions = buildTreeCardOwnershipFractionsByPerson(
+      [
+        {
+          personId: "living-owner",
+          share: 1 / 12,
+          shareFraction: { numerator: 1, denominator: 12 },
+        },
+        {
+          personId: "living-owner",
+          share: 1 / 6,
+          shareFraction: { numerator: 1, denominator: 6 },
+        },
+        {
+          personId: "unresolved-deceased",
+          share: 1 / 10,
+          shareFraction: { numerator: 1, denominator: 10 },
+        },
+      ],
+      [
+        {
+          deceasedId: "deceased",
+          amount: 1 / 3,
+          amountFraction: { numerator: 1, denominator: 3 },
+        },
+        { deceasedId: "deceased", amount: 1 / 4 },
+        {
+          deceasedId: "unresolved-deceased",
+          amount: 1 / 2,
+          amountFraction: { numerator: 1, denominator: 2 },
+        },
+      ],
+    );
+
+    expect(fractions).toEqual({
+      "living-owner": { numerator: 1, denominator: 4 },
+      deceased: { numerator: 7, denominator: 12 },
+      "unresolved-deceased": { numerator: 1, denominator: 2 },
     });
   });
 

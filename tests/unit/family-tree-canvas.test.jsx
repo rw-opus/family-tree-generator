@@ -4,6 +4,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FamilyTreeCanvas } from "../../src/components/FamilyTreeCanvas.jsx";
 import { CARD_WIDTH } from "../../src/components/familyTree/treeLayout.js";
+import {
+  buildTreeCardOwnershipByPerson,
+  buildTreeCardOwnershipFractionsByPerson,
+} from "../../src/domain/personCardDisplay.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -435,6 +439,148 @@ describe("FamilyTreeCanvas", () => {
     expect(details).toContain("UK will");
   });
 
+  it("hides an impossible will behind a red warning and shows it as soon as its date is corrected", () => {
+    const testator = person("testator", "Joseph Borg", {
+      isDeceased: true,
+      dateOfDeath: "2020-07-18",
+      inheritanceBasis: "will",
+      wills: [
+        {
+          id: "will-1",
+          date: "2021-07-18",
+          notaryName: "Ivan Barbara",
+        },
+      ],
+    });
+    const fields = { willDetails: true };
+
+    renderCanvas({ people: [testator], personCardFields: fields });
+
+    let card = container.querySelector('[data-person-id="testator"]');
+    expect(card.classList).toContain("will-details-invalid");
+    expect(card.textContent).toContain("Fix will date");
+    expect(card.textContent).not.toContain("18/07/2021");
+    expect(card.textContent).not.toContain("Not. Ivan Barbara");
+    expect(
+      [...card.querySelectorAll(".family-node-detail")].map((detail) => detail.textContent.trim()),
+    ).not.toContain("Will");
+
+    renderCanvas({
+      people: [
+        {
+          ...testator,
+          wills: [{ ...testator.wills[0], date: "2019-07-18" }],
+        },
+      ],
+      personCardFields: fields,
+    });
+
+    card = container.querySelector('[data-person-id="testator"]');
+    expect(card.classList).not.toContain("will-details-invalid");
+    expect(card.textContent).not.toContain("Fix will date");
+    expect(card.textContent).toContain("Will 18/07/2019");
+    expect(card.textContent).toContain("Not. Ivan Barbara");
+  });
+
+  it("shows causa mortis details only for a deceased person and the active property", () => {
+    const declarations = [
+      {
+        id: "cm-property-a",
+        status: "complete",
+        propertyId: "property-a",
+        date: "2020-08-20",
+        notaryName: "Maria Vella",
+      },
+      {
+        id: "cm-property-b",
+        status: "complete",
+        propertyId: "property-b",
+        date: "2021-09-21",
+        notaryName: "Paul Borg",
+      },
+    ];
+    const livingPerson = person("owner", "Joseph Borg", {
+      causaMortisDeclarations: declarations,
+    });
+    const fields = { causaMortisDetails: true };
+
+    renderCanvas({
+      people: [livingPerson],
+      personCardFields: fields,
+      propertyId: "property-a",
+    });
+
+    let card = container.querySelector('[data-person-id="owner"]');
+    expect(card.textContent).not.toContain("CM");
+    expect(card.textContent).not.toContain("Not. Maria Vella");
+    expect(card.textContent).not.toContain("Not. Paul Borg");
+
+    renderCanvas({
+      people: [
+        {
+          ...livingPerson,
+          isDeceased: true,
+          dateOfDeath: "2020-07-18",
+        },
+      ],
+      personCardFields: fields,
+      propertyId: "property-a",
+    });
+
+    card = container.querySelector('[data-person-id="owner"]');
+    expect(card.textContent).toContain("CM 20/08/2020");
+    expect(card.textContent).toContain("Not. Maria Vella");
+    expect(card.textContent).not.toContain("21/09/2021");
+    expect(card.textContent).not.toContain("Not. Paul Borg");
+
+    renderCanvas({
+      people: [
+        {
+          ...livingPerson,
+          isDeceased: true,
+          dateOfDeath: "2020-07-18",
+        },
+      ],
+      personCardFields: fields,
+      propertyId: "property-b",
+    });
+
+    card = container.querySelector('[data-person-id="owner"]');
+    expect(card.textContent).toContain("CM 21/09/2021");
+    expect(card.textContent).toContain("Not. Paul Borg");
+    expect(card.textContent).not.toContain("20/08/2020");
+    expect(card.textContent).not.toContain("Not. Maria Vella");
+  });
+
+  it("keeps an exact multi-tranche fraction consistent with its displayed percentage", () => {
+    const transmissions = [
+      {
+        deceasedId: "owner",
+        amount: 1 / 3,
+        amountFraction: { numerator: 1, denominator: 3 },
+      },
+      {
+        deceasedId: "owner",
+        amount: 1 / 4,
+        amountFraction: { numerator: 1, denominator: 4 },
+      },
+    ];
+
+    renderCanvas({
+      people: [person("owner", "Joseph Borg", { isDeceased: true })],
+      ownershipByPerson: buildTreeCardOwnershipByPerson([], transmissions),
+      ownershipFractionsByPerson: buildTreeCardOwnershipFractionsByPerson([], transmissions),
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipPercentage: true,
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="owner"]');
+    expect(card.querySelector(".family-node-ownership").textContent).toContain("7/12");
+    expect(card.querySelector(".family-node-ownership").textContent).toContain("58.33%");
+  });
+
   it("shows a deceased share and prints exactly the selected card details", () => {
     const onPrint = vi.fn();
     const people = [
@@ -487,6 +633,111 @@ describe("FamilyTreeCanvas", () => {
     expect(printedTree.querySelector('[data-person-id="testator"]').textContent).toBe(
       card.textContent,
     );
+  });
+
+  it("immediately reflects every person-card field when its source data changes", () => {
+    const basePerson = person("owner", "Joseph Borg", {
+      sex: "Male",
+      isDeceased: false,
+    });
+    const fields = {
+      ownershipFraction: true,
+      ownershipPercentage: true,
+      ownershipValue: true,
+      dateOfDeath: true,
+      successionBasis: true,
+      willDetails: true,
+      causaMortisDetails: true,
+    };
+
+    renderCanvas({
+      people: [basePerson],
+      ownershipByPerson: { owner: 0.5 },
+      ownershipFractionsByPerson: { owner: { numerator: 1, denominator: 2 } },
+      currentOwnershipByPerson: { owner: 0.5 },
+      propertyValue: 200000,
+      personCardFields: fields,
+    });
+
+    let card = container.querySelector('[data-person-id="owner"]');
+    expect(card.textContent).toContain("Joseph");
+    expect(card.textContent).toContain("Borg");
+    expect(card.textContent).toContain("1/2");
+    expect(card.textContent).toContain("50%");
+    expect(card.textContent).toContain("Current value €100,000.00");
+    expect(card.textContent).not.toContain("d.");
+
+    renderCanvas({
+      people: [
+        {
+          ...basePerson,
+          givenNames: "Giuseppe",
+          surname: "Vella",
+          fullName: "Giuseppe Vella",
+          surnameAtBirth: "Borg",
+          sex: "Female",
+          isDeceased: true,
+          designations: ["Deceased"],
+          dateOfDeath: "2020-07-18",
+          inheritanceBasis: "will",
+          wills: [{ id: "will", date: "2012-07-18", notaryName: "Ivan Barbara" }],
+          causaMortisDeclarations: [
+            {
+              id: "cm",
+              status: "complete",
+              date: "2020-08-20",
+              notaryName: "Maria Vella",
+            },
+          ],
+        },
+      ],
+      ownershipByPerson: { owner: 0.75 },
+      ownershipFractionsByPerson: { owner: { numerator: 3, denominator: 4 } },
+      currentOwnershipByPerson: {},
+      propertyValue: 300000,
+      personCardFields: fields,
+      causaMortisCoverageByPerson: { owner: [{ status: "under" }] },
+    });
+
+    card = container.querySelector('[data-person-id="owner"]');
+    expect(card.textContent).toContain("Giuseppe");
+    expect(card.textContent).toContain("Vella");
+    expect(card.textContent).toContain("Born Borg");
+    expect(card.classList).toContain("female");
+    expect(card.classList).toContain("deceased");
+    expect(card.classList).toContain("cm-share-incomplete");
+    expect(card.textContent).toContain("3/4");
+    expect(card.textContent).toContain("75%");
+    expect(card.textContent).not.toContain("Current value");
+    expect(card.textContent).toContain("d. 18/07/2020");
+    expect(card.textContent).toContain("Testate");
+    expect(card.textContent).toContain("Will 18/07/2012");
+    expect(card.textContent).toContain("Not. Ivan Barbara");
+    expect(card.textContent).toContain("CM 20/08/2020");
+    expect(card.textContent).toContain("Not. Maria Vella");
+
+    renderCanvas({
+      people: [basePerson],
+      ownershipByPerson: { owner: 0.75 },
+      ownershipFractionsByPerson: { owner: { numerator: 3, denominator: 4 } },
+      currentOwnershipByPerson: { owner: 0.75 },
+      propertyValue: 400000,
+      personCardFields: {
+        ...fields,
+        ownershipFraction: false,
+        dateOfDeath: false,
+        successionBasis: false,
+        willDetails: false,
+        causaMortisDetails: false,
+      },
+    });
+
+    card = container.querySelector('[data-person-id="owner"]');
+    expect(card.textContent).not.toContain("3/4");
+    expect(card.textContent).toContain("75%");
+    expect(card.textContent).toContain("Current value €300,000.00");
+    expect(card.textContent).not.toContain("Will");
+    expect(card.textContent).not.toContain("CM");
   });
 
   it("shows the current holding value only for a person who still owns the share", () => {

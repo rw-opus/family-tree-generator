@@ -21,6 +21,8 @@ import {
   partnerRelationshipStatusAt,
 } from "./partnerRelationships.js";
 import { applyLegacyProtectedPortionsToWill } from "./legacyLegitim.js";
+import { isPotentialParentSurvivalUnresolved } from "./potentialParentSurvival.js";
+import { isRecordedDeceased } from "./deceasedStatus.js";
 import { validateRelationshipDateChronology, validateWillDateChronology } from "./chronology.js";
 import { applyPortions, selectTranchePortions } from "./trancheOwnership.js";
 import { operativeWill, personWills } from "./wills.js";
@@ -40,16 +42,11 @@ const SURVIVAL_UNRESOLVED_DESTINATIONS = new Set([
 ]);
 
 export function isPersonDeceased(person = {}) {
-  return (
-    Boolean(person.isDeceased) ||
-    (person.designations || []).some(
-      (designation) => String(designation).toLowerCase() === "deceased",
-    )
-  );
+  return isRecordedDeceased(person);
 }
 
 function wasAliveAt(person, date) {
-  if (person.survivalStatusRequired === true) return false;
+  if (isPotentialParentSurvivalUnresolved(person)) return false;
   if (date && person.dateOfBirth && person.dateOfBirth > date) return false;
   if (!isPersonDeceased(person)) return true;
   if (!date || !person.dateOfDeath) return false;
@@ -278,12 +275,13 @@ function nearestAscendantStatus(person, atDate, peopleById) {
     const unique = entries.map((entry) => entry.person);
     const provisional = unique.filter(
       (candidate) =>
-        candidate.isPotentialIntestateParent === true && candidate.survivalStatusRequired === true,
+        candidate.isPotentialIntestateParent === true &&
+        isPotentialParentSurvivalUnresolved(candidate),
     );
     const missing = unique.filter(
       (candidate) =>
         !provisional.includes(candidate) &&
-        (candidate.survivalStatusRequired === true ||
+        (isPotentialParentSurvivalUnresolved(candidate) ||
           (isPersonDeceased(candidate) && !candidate.dateOfDeath)),
     );
     if (missing.length) return { living: [], missing };
@@ -394,7 +392,7 @@ export function missingPotentialIntestateParents(people = [], deceasedId) {
 
   if (linkedMarriagesMissingEndDates(people, deceased.id, atDate).length) return [];
   const spouses = linkedLegalSpousesFor(people, deceased.id, atDate);
-  if (spouses.some((spouse) => spouse.survivalStatusRequired === true)) return [];
+  if (spouses.some(isPotentialParentSurvivalUnresolved)) return [];
   if (linkedSpousesMissingDeathDates(people, deceased.id, atDate).length) return [];
   if (spouses.some((spouse) => wasAliveAt(spouse, atDate))) return [];
 

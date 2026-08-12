@@ -40,7 +40,10 @@ const rowXml = (cells, styleId) =>
 const declarationSummary = (declaration) =>
   `${isoDateToDisplay(declaration.date) || declaration.date || "Undated"}${
     declaration.notaryName ? ` · ${displayNotaryName(declaration.notaryName)}` : ""
-  }: EUR ${Number(declaration.declaredValue || 0).toFixed(2)}`;
+  }: CM fraction ${fractionLabel(
+    declaration.declaredShare,
+    declaration.declaredShareFraction,
+  )}; EUR ${Number(declaration.declaredValue || 0).toFixed(2)}`;
 
 const taxChoiceRows = (report) =>
   report.vendors.flatMap((vendor) =>

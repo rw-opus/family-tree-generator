@@ -1,4 +1,6 @@
 import { isLegacyHistoricalLawWarning } from "./successionRules.js";
+import { addFractions, ZERO_FRACTION } from "./fractions.js";
+import { approximateFraction } from "./ownership.js";
 
 export const DEFAULT_PERSON_CARD_FIELDS = Object.freeze({
   ownershipFraction: true,
@@ -64,18 +66,55 @@ export function buildTreeCardOwnershipByPerson(currentOwners = [], transmissions
 }
 
 export function buildTreeCardOwnershipFractionsByPerson(currentOwners = [], transmissions = []) {
-  const fractionsByPerson = {};
+  const currentFractions = new Map();
+  const invalidCurrentIds = new Set();
   currentOwners.forEach((owner) => {
-    if (owner?.personId && owner.shareFraction?.denominator) {
-      fractionsByPerson[owner.personId] = owner.shareFraction;
+    const personId = String(owner?.personId || "");
+    const share = Number(owner?.share);
+    if (!personId || !Number.isFinite(share) || share <= 0 || invalidCurrentIds.has(personId))
+      return;
+    const fraction = owner.shareFraction?.denominator
+      ? owner.shareFraction
+      : approximateFraction(share);
+    const combined = addFractions(currentFractions.get(personId) || ZERO_FRACTION, fraction);
+    if (combined.error) {
+      currentFractions.delete(personId);
+      invalidCurrentIds.add(personId);
+      return;
     }
+    currentFractions.set(personId, combined);
   });
+
+  const historicalFractions = new Map();
+  const invalidHistoricalIds = new Set();
   transmissions.forEach((transmission) => {
-    if (transmission?.deceasedId && transmission.amountFraction?.denominator) {
-      fractionsByPerson[transmission.deceasedId] = transmission.amountFraction;
+    const deceasedId = String(transmission?.deceasedId || "");
+    const amount = Number(transmission?.amount);
+    if (
+      !deceasedId ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      invalidHistoricalIds.has(deceasedId)
+    ) {
+      return;
     }
+    const fraction = transmission.amountFraction?.denominator
+      ? transmission.amountFraction
+      : approximateFraction(amount);
+    const combined = addFractions(historicalFractions.get(deceasedId) || ZERO_FRACTION, fraction);
+    if (combined.error) {
+      historicalFractions.delete(deceasedId);
+      invalidHistoricalIds.add(deceasedId);
+      return;
+    }
+    historicalFractions.set(deceasedId, combined);
   });
-  return fractionsByPerson;
+
+  // A completed succession's historical holding is the fraction the deceased
+  // owned immediately before it passed on. It intentionally supersedes any
+  // unresolved current-ledger balance for the same person, matching the numeric
+  // card map above.
+  return Object.fromEntries([...currentFractions, ...historicalFractions]);
 }
 
 /**

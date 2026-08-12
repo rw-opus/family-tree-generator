@@ -80,6 +80,7 @@ export function FamilyTreeCanvas({
   onFocusPerson,
   personCardFields,
   propertyValue = 0,
+  propertyId = "",
   ownershipSnapshotActive = false,
   zoom = 100,
   onZoomChange,
@@ -413,6 +414,7 @@ export function FamilyTreeCanvas({
       causaMortisCoverageByPerson={causaMortisCoverageByPerson}
       personCardFields={personCardFields}
       propertyValue={propertyValue}
+      propertyId={propertyId}
       ownershipSnapshotActive={ownershipSnapshotActive}
       selectedPersonId={selectedPersonId}
       onSelectPerson={onSelectPerson}

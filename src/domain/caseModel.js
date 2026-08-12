@@ -1,6 +1,8 @@
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
 import { synchroniseMaritalStatusAtDeath } from "./maritalStatusAtDeath.js";
 import { normalisePersonNameFields, personGivenNames } from "./people.js";
+import { synchroniseDeceasedStatus } from "./deceasedStatus.js";
+import { synchronisePotentialParentSurvival } from "./potentialParentSurvival.js";
 import { personWithWills } from "./wills.js";
 import {
   INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
@@ -82,8 +84,11 @@ function normalizePeople(people = []) {
     result.push(personWithWills(normalisePersonNameFields({ ...cloneValue(person), id })));
     return result;
   }, []);
+  const survivalNormalised = normalized
+    .map(synchroniseDeceasedStatus)
+    .map(synchronisePotentialParentSurvival);
   return {
-    people: synchroniseMaritalStatusAtDeath(normalizePartnerRelationships(normalized)),
+    people: synchroniseMaritalStatusAtDeath(normalizePartnerRelationships(survivalNormalised)),
     warnings,
   };
 }

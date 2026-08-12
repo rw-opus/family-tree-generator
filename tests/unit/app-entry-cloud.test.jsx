@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,23 +17,35 @@ const authHarness = vi.hoisted(() => ({
 }));
 
 vi.mock("../../src/App.jsx", () => ({
-  App: ({ localOnlyMode, onChangePassword, session }) => (
-    <div data-testid="authenticated-application">
-      <span data-local-only-mode={String(localOnlyMode)} data-user-id={session?.user?.id || ""} />
-      <button
-        type="button"
-        data-testid="change-password"
-        onClick={() =>
-          onChangePassword({
-            currentPassword: "current-password",
-            newPassword: "new-secure-password",
-          })
-        }
-      >
-        Change password
-      </button>
-    </div>
-  ),
+  App: ({ localOnlyMode, onChangePassword, session }) => {
+    const [draft, setDraft] = useState("");
+    return (
+      <div data-testid="authenticated-application">
+        <span
+          data-local-only-mode={String(localOnlyMode)}
+          data-user-id={session?.user?.id || ""}
+          data-access-token={session?.access_token || ""}
+        />
+        <input
+          aria-label="Unsaved tree draft"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button
+          type="button"
+          data-testid="change-password"
+          onClick={() =>
+            onChangePassword({
+              currentPassword: "current-password",
+              newPassword: "new-secure-password",
+            })
+          }
+        >
+          Change password
+        </button>
+      </div>
+    );
+  },
 }));
 
 vi.mock("../../src/components/AuthScreen.jsx", () => ({
@@ -132,5 +144,34 @@ describe("authenticated application entry", () => {
     });
 
     expect(container.textContent).toContain("Password reset");
+  });
+
+  it("preserves the mounted workspace when Supabase refreshes the same user's token", async () => {
+    await act(async () => {
+      root.render(<AppEntry />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const draft = container.querySelector('input[aria-label="Unsaved tree draft"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        draft,
+        "pending edit",
+      );
+      draft.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    act(() => {
+      authHarness.listener("TOKEN_REFRESHED", {
+        access_token: "refreshed-token",
+        user: { id: "user-1", email: "user@example.com" },
+      });
+    });
+
+    expect(container.querySelector('input[aria-label="Unsaved tree draft"]').value).toBe(
+      "pending edit",
+    );
+    expect(container.querySelector("span").dataset.accessToken).toBe("refreshed-token");
   });
 });

@@ -21,12 +21,17 @@ const percentage = (share) =>
     maximumFractionDigits: 2,
   })}%`;
 
-const fraction = (share) => {
-  const result = approximateFraction(Math.max(0, Number(share) || 0));
+const fraction = (share, exactFraction = null) => {
+  const result = exactFraction?.denominator
+    ? exactFraction
+    : approximateFraction(Math.max(0, Number(share) || 0));
   return `${result.numerator}/${result.denominator}`;
 };
 
-const shareLabel = (share) => `${fraction(share)} (${percentage(share)})`;
+const shareLabel = (share, exactFraction = null) => {
+  const exactShare = exactFraction?.denominator ? fractionToNumber(exactFraction) : share;
+  return `${fraction(share, exactFraction)} (${percentage(exactShare)})`;
+};
 
 const initialOwnerShare = (owner) => {
   const numerator = fractionComponentNumber(owner.shareNumerator);
@@ -52,6 +57,13 @@ const ownershipSnapshot = (holdings) =>
     [...holdings.entries()]
       .filter(([, share]) => compareFractions(share, ZERO_FRACTION) > 0)
       .map(([ownerId, share]) => [ownerId, fractionToNumber(share)]),
+  );
+
+const ownershipFractionSnapshot = (holdings) =>
+  Object.fromEntries(
+    [...holdings.entries()]
+      .filter(([, share]) => compareFractions(share, ZERO_FRACTION) > 0)
+      .map(([ownerId, share]) => [ownerId, share]),
   );
 
 const addHolding = (holdings, ownerId, share) => {
@@ -114,19 +126,25 @@ export function buildSuccessionTrace({
     addHolding(initialHoldings, owner.personId, initialOwnerFraction(owner)),
   );
   const initialOwnershipSnapshot = ownershipSnapshot(initialHoldings);
+  const initialOwnershipFractionSnapshot = ownershipFractionSnapshot(initialHoldings);
 
   const initialEvents = (property.owners || [])
     .filter((owner) => owner.personId && initialOwnerShare(owner) > 0)
     .map((owner, index) => {
       const share = initialOwnerShare(owner);
+      const shareFraction = initialOwnerFraction(owner);
       return {
         id: `initial-${owner.id || index}`,
         type: "initial",
         personId: owner.personId,
         ownershipSnapshot: initialOwnershipSnapshot,
+        ownershipFractionSnapshot: initialOwnershipFractionSnapshot,
         date: "",
         title: "Initial ownership",
-        description: `${partyName(owner.personId)} starts with ${shareLabel(share)} of ${propertyName}${
+        description: `${partyName(owner.personId)} starts with ${shareLabel(
+          share,
+          shareFraction,
+        )} of ${propertyName}${
           saleValue ? `, currently worth ${money.format(saleValue * share)}` : ""
         }.`,
       };
@@ -136,11 +154,20 @@ export function buildSuccessionTrace({
     (transmission, index) => {
       const deceased = peopleById.get(transmission.deceasedId);
       const estateShare = Math.max(0, Number(transmission.amount) || 0);
+      const estateFraction =
+        transmission.amountFraction || approximateFraction(Math.max(0, estateShare));
       const recipients = allocationEntries(transmission.allocations)
         .filter(([, allocatedShare]) => Number(allocatedShare) > 0)
         .map(([recipientId, allocatedShare]) => {
           const resultingShare = estateShare * Number(allocatedShare);
-          return `${partyName(recipientId)} receives ${shareLabel(resultingShare)}`;
+          const allocationFraction =
+            transmission.exactAllocations?.get?.(recipientId) ||
+            approximateFraction(Number(allocatedShare) || 0);
+          const resultingFraction = multiplyFractions(estateFraction, allocationFraction);
+          return `${partyName(recipientId)} receives ${shareLabel(
+            resultingShare,
+            resultingFraction.error ? null : resultingFraction,
+          )}`;
         });
       const basis = transmission.basis === "will" ? "under the will" : "by intestacy";
       return {
@@ -159,6 +186,7 @@ export function buildSuccessionTrace({
         title: `Succession of ${partyName(transmission.deceasedId)}`,
         description: `${partyName(transmission.deceasedId)} held ${shareLabel(
           estateShare,
+          estateFraction.error ? null : estateFraction,
         )}. On death, that holding passes ${basis}${
           recipients.length ? `: ${recipients.join("; ")}` : ", but the recipients are unresolved"
         }.`,
@@ -182,9 +210,10 @@ export function buildSuccessionTrace({
       },
       date: entry.date || "",
       title: Number(entry.consideration) > 0 ? "Property share sale" : "Ownership transfer",
-      description: `${partyName(entry.sellerId)} transfers ${shareLabel(entry.amount)} of ${
-        property.address || "the property"
-      } to ${partyName(entry.buyerId)}${
+      description: `${partyName(entry.sellerId)} transfers ${shareLabel(
+        entry.amount,
+        entry.amountFraction,
+      )} of ${property.address || "the property"} to ${partyName(entry.buyerId)}${
         Number(entry.consideration) > 0 ? ` for ${money.format(Number(entry.consideration))}` : ""
       }.`,
     }));
@@ -198,13 +227,22 @@ export function buildSuccessionTrace({
   const runningHoldings = new Map(initialHoldings);
   const tracedLegalEvents = legalEvents.map((event) => {
     const snapshotBeforeEvent = ownershipSnapshot(runningHoldings);
+    const fractionSnapshotBeforeEvent = ownershipFractionSnapshot(runningHoldings);
     if (event.change.kind === "succession") applySuccession(runningHoldings, event.change);
     if (event.change.kind === "transfer") applyTransfer(runningHoldings, event.change);
     const snapshotForCards =
       event.change.kind === "succession" ? snapshotBeforeEvent : ownershipSnapshot(runningHoldings);
+    const fractionSnapshotForCards =
+      event.change.kind === "succession"
+        ? fractionSnapshotBeforeEvent
+        : ownershipFractionSnapshot(runningHoldings);
     const publicEvent = { ...event };
     delete publicEvent.change;
-    return { ...publicEvent, ownershipSnapshot: snapshotForCards };
+    return {
+      ...publicEvent,
+      ownershipSnapshot: snapshotForCards,
+      ownershipFractionSnapshot: fractionSnapshotForCards,
+    };
   });
 
   const currentOwners = (propertyReport.ledger?.owners || []).filter(
@@ -219,6 +257,11 @@ export function buildSuccessionTrace({
           ownershipSnapshot: Object.fromEntries(
             currentOwners.map((owner) => [owner.id, Number(owner.share) || 0]),
           ),
+          ownershipFractionSnapshot: Object.fromEntries(
+            currentOwners
+              .filter((owner) => owner.shareFraction?.denominator)
+              .map((owner) => [owner.id, owner.shareFraction]),
+          ),
           date: property.saleDate || "",
           title: "Proposed property sale",
           description: `${propertyName} is being sold for ${money.format(saleValue)}${
@@ -226,9 +269,10 @@ export function buildSuccessionTrace({
               ? `. Current allocation: ${currentOwners
                   .map(
                     (owner) =>
-                      `${owner.name || partyName(owner.id)} ${shareLabel(owner.share)}, worth ${money.format(
-                        saleValue * owner.share,
-                      )}`,
+                      `${owner.name || partyName(owner.id)} ${shareLabel(
+                        owner.share,
+                        owner.shareFraction,
+                      )}, worth ${money.format(saleValue * owner.share)}`,
                   )
                   .join("; ")}`
               : ""

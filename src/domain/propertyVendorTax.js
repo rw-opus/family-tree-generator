@@ -1,5 +1,9 @@
 import { declarationCoverage } from "./declarations.js";
-import { causaMortisDeclaredShare, validateCausaMortisDeclaration } from "./causaMortisCoverage.js";
+import {
+  allocateCausaMortisDeclaration,
+  isCompletedCausaMortisDeclaration,
+  validateCausaMortisDeclaration,
+} from "./causaMortisCoverage.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "./article5A.js";
 import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
 import { approximateFraction, buildPropertyLedger } from "./ownership.js";
@@ -183,52 +187,80 @@ export function buildDonationSourcesByOwner(
 }
 
 const declarationAppliesToOwner = (declaration, ownerId) => {
-  const declarantIds = (declaration.declarantPersonIds || []).filter(Boolean);
-  return !declarantIds.length || declarantIds.includes(ownerId);
+  const declarantIds = [...new Set((declaration.declarantPersonIds || []).filter(Boolean))];
+  return Boolean(ownerId) && declarantIds.includes(ownerId);
 };
 
-const matchingPersonDeclarations = (person, propertyId, ownerId) =>
+const completedPersonDeclarations = (person, propertyId) =>
   (person?.causaMortisDeclarations || []).filter(
     (declaration) =>
+      isCompletedCausaMortisDeclaration(declaration) &&
       (!propertyId || !declaration.propertyId || declaration.propertyId === propertyId) &&
-      declarationAppliesToOwner(declaration, ownerId) &&
       validateCausaMortisDeclaration(declaration, {
         valueRequired: true,
         dateOfDeath: person?.dateOfDeath || "",
       }) === "",
   );
 
-const declarationAllocationWeight = (declaration, source, inheritanceSourcesByOwner) => {
-  const declarantIds = [...new Set((declaration.declarantPersonIds || []).filter(Boolean))];
-  if (!declarantIds.length) return Number(source.allocationShare) || 0;
+const matchingPersonDeclarations = (person, propertyId, ownerId) =>
+  completedPersonDeclarations(person, propertyId).filter((declaration) =>
+    declarationAppliesToOwner(declaration, ownerId),
+  );
 
-  const declaredRecipientShare = declarantIds.reduce((total, ownerId) => {
-    const matchingSource = (inheritanceSourcesByOwner.get(ownerId) || []).find(
-      (candidate) => candidate.deceasedId === source.deceasedId,
-    );
-    return total + (Number(matchingSource?.share) || 0);
-  }, 0);
-  if (!(declaredRecipientShare > 0)) return 0;
-  return (Number(source.share) || 0) / declaredRecipientShare;
+const declarationAllocationForSource = (declaration, source, inheritanceSourcesByOwner) => {
+  const declarantIds = [...new Set((declaration.declarantPersonIds || []).filter(Boolean))];
+  const requiredFractionsByDeclarant = new Map();
+  declarantIds.forEach((ownerId) => {
+    const inheritedFraction = (inheritanceSourcesByOwner.get(ownerId) || [])
+      .filter((candidate) => candidate.deceasedId === source.deceasedId)
+      .reduce(
+        (total, candidate) =>
+          addFractions(
+            total,
+            candidate.shareFraction || approximateFraction(Number(candidate.share) || 0),
+          ),
+        ZERO_FRACTION,
+      );
+    if (!inheritedFraction.error && compareFractions(inheritedFraction, ZERO_FRACTION) > 0) {
+      requiredFractionsByDeclarant.set(ownerId, inheritedFraction);
+    }
+  });
+  const allocation = allocateCausaMortisDeclaration(
+    declaration,
+    requiredFractionsByDeclarant,
+  ).allocations.find((item) => item.personId === source.ownerId);
+  if (!allocation || compareFractions(allocation.declaredFraction, ZERO_FRACTION) <= 0) {
+    return null;
+  }
+  return allocation;
 };
 
 const declarationRowsForSource = (source, property, peopleById, inheritanceSourcesByOwner) => {
   const deceased = peopleById.get(source.deceasedId);
-  return matchingPersonDeclarations(deceased, property.id, source.ownerId).map((declaration) => {
-    const allocationWeight = declarationAllocationWeight(
-      declaration,
-      source,
-      inheritanceSourcesByOwner,
-    );
-    return {
-      id: declaration.id,
-      date: declaration.date || "",
-      notaryName: declaration.notaryName || "",
-      declaredShare: causaMortisDeclaredShare(declaration) * allocationWeight,
-      declaredValue:
-        Math.max(0, Number(declaration.immovablePropertyValue) || 0) * allocationWeight,
-    };
-  });
+  return matchingPersonDeclarations(deceased, property.id, source.ownerId)
+    .map((declaration) => {
+      const allocation = declarationAllocationForSource(
+        declaration,
+        source,
+        inheritanceSourcesByOwner,
+      );
+      if (!allocation) return null;
+      return {
+        id: declaration.id,
+        date: declaration.date || "",
+        notaryName: declaration.notaryName || "",
+        declaredShare: allocation.declaredShare,
+        declaredShareFraction: allocation.declaredFraction,
+        declaredValue: allocation.declaredValue,
+      };
+    })
+    .filter(Boolean);
+};
+
+const sourceHasCompletedPersonDeclarations = (source, property, peopleById) => {
+  if (!source) return false;
+  const deceased = peopleById.get(source.deceasedId);
+  return completedPersonDeclarations(deceased, property.id).length > 0;
 };
 
 const transferSourceForLot = (ledger, lot) =>
@@ -275,9 +307,36 @@ const displayRowFromLot = ({
     (total, declaration) => total + declaration.declaredValue,
     0,
   );
+  const hasModernDeclarationsForSource = sourceHasCompletedPersonDeclarations(
+    source,
+    property,
+    peopleById,
+  );
+  const hasUsableLegacyDeclaration = Boolean(
+    row.useDeclarationValues && row.declaredCoverage?.hasUsableDeclaredValues,
+  );
+  const storedBasisIsCausaMortis =
+    row.effectiveLot?.acquisitionValueBasis === "cm-declared" ||
+    row.lot?.acquisitionValueBasis === "cm-declared";
+  const suppressNonDeclarantStoredValue = Boolean(
+    source &&
+    hasModernDeclarationsForSource &&
+    !declarations.length &&
+    !hasUsableLegacyDeclaration &&
+    storedBasisIsCausaMortis,
+  );
+  const hasStoredAcquisitionValue =
+    row.effectiveLot?.acquisitionValue !== "" &&
+    row.effectiveLot?.acquisitionValue !== null &&
+    row.effectiveLot?.acquisitionValue !== undefined &&
+    Number.isFinite(Number(row.effectiveLot.acquisitionValue));
   const acquisitionValue = declarations.length
     ? declaredValueFromCards
-    : Math.max(0, Number(row.effectiveLot?.acquisitionValue) || 0);
+    : suppressNonDeclarantStoredValue
+      ? ""
+      : hasStoredAcquisitionValue
+        ? Math.max(0, Number(row.effectiveLot.acquisitionValue))
+        : "";
   const normalisedLotFraction = lotShare !== storedShare ? approximateFraction(lotShare) : null;
   const effectiveLot = {
     ...row.effectiveLot,
@@ -289,14 +348,17 @@ const displayRowFromLot = ({
       : {}),
     transferValue: attributedSaleValue,
     consideration: attributedSaleValue,
-    acquisitionValue:
-      acquisitionValue || row.effectiveLot?.acquisitionValue === 0 ? acquisitionValue : "",
-    acquisitionValueBasis:
-      acquisitionValue || declarations.length
-        ? "cm-declared"
-        : row.effectiveLot?.acquisitionValueBasis || "",
+    acquisitionValue: acquisitionValue !== "" ? acquisitionValue : "",
+    acquisitionValueBasis: declarations.length
+      ? "cm-declared"
+      : suppressNonDeclarantStoredValue
+        ? ""
+        : acquisitionValue !== ""
+          ? row.effectiveLot?.acquisitionValueBasis || "cm-declared"
+          : row.effectiveLot?.acquisitionValueBasis || "",
     cmValueEligibilityConfirmed:
-      declarations.length > 0 || Boolean(row.effectiveLot?.cmValueEligibilityConfirmed),
+      declarations.length > 0 ||
+      (!suppressNonDeclarantStoredValue && Boolean(row.effectiveLot?.cmValueEligibilityConfirmed)),
   };
   const result = saleTaxLot(effectiveLot, { deedTransferValue });
   const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
@@ -313,9 +375,9 @@ const displayRowFromLot = ({
     donorAcquisitionDate: row.selectedDonationSource?.donorAcquisitionDate || "",
     donorAcquisitionDateDerived: Boolean(row.donationDatesDerived),
     declarations,
-    declaredValue: acquisitionValue,
+    declaredValue: acquisitionValue === "" ? 0 : acquisitionValue,
     attributedSaleValue,
-    difference: attributedSaleValue - acquisitionValue,
+    difference: attributedSaleValue - (acquisitionValue === "" ? 0 : acquisitionValue),
     methods: result.methods || [],
     selectedMethod,
     tax,
@@ -808,13 +870,21 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
     const declaredFraction = approximateFraction(
       declaredCoverage?.declaredFraction ?? declaredCoverage?.publishedFraction ?? 0,
     );
+    const requiredDeclaredFraction =
+      declaredCoverage?.exactRequiredFraction || exactShareFromRecord(sourcedLot);
+    const assessedDeclaredFraction =
+      !requiredDeclaredFraction.error &&
+      compareFractions(requiredDeclaredFraction, ZERO_FRACTION) > 0 &&
+      compareFractions(declaredFraction, requiredDeclaredFraction) > 0
+        ? requiredDeclaredFraction
+        : declaredFraction;
     const effectiveLot = useDeclarationValues
       ? {
           ...sourcedLot,
           acquisitionValue: declaredCoverage.declaredValue ?? declaredCoverage.publishedValue,
           acquisitionValueBasis: lot.acquisitionValueBasis || "cm-declared",
-          shareNumerator: declaredFraction.numerator,
-          shareDenominator: declaredFraction.denominator,
+          shareNumerator: assessedDeclaredFraction.numerator,
+          shareDenominator: assessedDeclaredFraction.denominator,
         }
       : preCausaMortisCutoff
         ? {

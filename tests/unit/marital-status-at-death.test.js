@@ -196,9 +196,38 @@ describe("marital status at death", () => {
     expect(synchroniseMaritalStatusAtDeath(people)).toEqual(people);
   });
 
-  it("preserves a checked answer saved before automatic derivation existed", () => {
+  it("lets conclusive spouse facts override a stale manual no-spouse answer", () => {
+    const [subject, spouse] = marriedPeople({
+      subject: {
+        unmarriedOrWidowedAtDeath: true,
+        unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.MANUAL,
+      },
+    });
+
+    expect(synchroniseMaritalStatusAtDeath([subject, spouse])[0]).toMatchObject({
+      unmarriedOrWidowedAtDeath: false,
+      unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC,
+    });
+  });
+
+  it("also repairs a stale legacy answer once spouse survival is conclusive", () => {
     const [subject, spouse] = marriedPeople({
       subject: { unmarriedOrWidowedAtDeath: true },
+    });
+
+    expect(synchroniseMaritalStatusAtDeath([subject, spouse])[0]).toMatchObject({
+      unmarriedOrWidowedAtDeath: false,
+      unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC,
+    });
+  });
+
+  it("preserves a manual answer only while spouse survival is unresolved", () => {
+    const [subject, spouse] = marriedPeople({
+      subject: {
+        unmarriedOrWidowedAtDeath: true,
+        unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.MANUAL,
+      },
+      spouse: { isDeceased: true, dateOfDeath: "" },
     });
 
     expect(synchroniseMaritalStatusAtDeath([subject, spouse])[0]).toMatchObject({

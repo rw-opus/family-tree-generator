@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 import {
   editedIntestacyAllocations,
@@ -107,9 +107,14 @@ export function IntestateHeirConfirmation({
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const rows = deceased.intestateHeirs || [];
-  const calculatedEntries = [...(calculated?.shares || new Map()).entries()];
+  const calculatedEntries = useMemo(
+    () => [...(calculated?.shares || new Map()).entries()],
+    [calculated?.shares],
+  );
   const [editingHeirs, setEditingHeirs] = useState(false);
   const [draftRows, setDraftRows] = useState([]);
+  const [draftContextSignature, setDraftContextSignature] = useState("");
+  const [draftRowsModified, setDraftRowsModified] = useState(false);
   const calculatedShares = new Map(calculatedEntries);
   const calculatedPersonIds = new Set(calculatedShares.keys());
   const selectedPersonIds = new Set(draftRows.map((row) => row.personId).filter(Boolean));
@@ -167,24 +172,39 @@ export function IntestateHeirConfirmation({
     calculated,
     outsideParties,
   );
+  const currentContextSignature = intestacyLegalContextSignature(deceased, calculated);
+  const draftContextStale =
+    editingHeirs &&
+    Boolean(draftContextSignature) &&
+    draftContextSignature !== currentContextSignature;
   const totalComplete = readiness.totalComplete;
   const rowsCanOverride = editedAllocation.valid;
   const footerIsValid = draftRows.length === 0 || totalComplete;
-  const draftCanApply = readiness.valid;
+  const draftCanApply = readiness.valid && !draftContextStale;
 
   const patchDeceased = (patch) => onUpdatePerson(deceased.id, patch);
-  const calculatedDraftRows = () =>
-    calculatedEntries.map(([personId, share]) => ({
-      id: crypto.randomUUID(),
-      personId,
-      ...shareFromPercentage(share * 100),
-    }));
+  const calculatedDraftRows = useCallback(
+    () =>
+      calculatedEntries.map(([personId, share]) => ({
+        id: crypto.randomUUID(),
+        personId,
+        ...shareFromPercentage(share * 100),
+      })),
+    [calculatedEntries],
+  );
   const beginEditing = () => {
     setDraftRows(rows.length ? rows.map((row) => ({ ...row })) : calculatedDraftRows());
+    setDraftContextSignature(currentContextSignature);
+    // Existing saved rows are already a deliberate override. If the legal
+    // context changes while they are open, retain them for review but do not
+    // silently re-sign them against the new facts.
+    setDraftRowsModified(rows.length > 0);
     setEditingHeirs(true);
   };
   const cancelEditing = () => {
     setDraftRows([]);
+    setDraftContextSignature("");
+    setDraftRowsModified(false);
     setShowOutsidePartyCreator(false);
     setEditingHeirs(false);
   };
@@ -205,16 +225,19 @@ export function IntestateHeirConfirmation({
     });
     cancelEditing();
   };
-  const updateRow = (rowId, patch) =>
+  const updateRow = (rowId, patch) => {
+    setDraftRowsModified(true);
     setDraftRows((currentRows) =>
       currentRows.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
     );
+  };
   const updateRowPercentage = (rowId, percentage) =>
     updateRow(rowId, shareFromPercentageInput(percentage));
   const updateRowFraction = (row, patch) => updateRow(row.id, shareFromFractionInput(row, patch));
   const addPerson = (personId) => {
     if (!personId || selectedPersonIds.has(personId)) return;
     const suggestedShare = calculatedShares.get(personId);
+    setDraftRowsModified(true);
     setDraftRows((currentRows) => [
       ...currentRows,
       {
@@ -232,8 +255,20 @@ export function IntestateHeirConfirmation({
     addPerson(party.id);
   };
   useEffect(() => {
+    if (!draftContextStale || draftRowsModified) return;
+
+    // An untouched draft was only a copy of the automatic proposal. Keep that
+    // copy in step when a spouse/death/family fact changes while the editor is
+    // open. Once the user has changed any row, preserve it and require an
+    // explicit restart instead of applying it under a different legal basis.
+    setDraftRows(calculatedDraftRows());
+    setDraftContextSignature(currentContextSignature);
+  }, [calculatedDraftRows, currentContextSignature, draftContextStale, draftRowsModified]);
+  useEffect(() => {
     setEditingHeirs(false);
     setDraftRows([]);
+    setDraftContextSignature("");
+    setDraftRowsModified(false);
     setShowOutsidePartyCreator(false);
   }, [deceased.id]);
 
@@ -328,6 +363,12 @@ export function IntestateHeirConfirmation({
               Cancel
             </button>
           </div>
+          {draftContextStale && (
+            <small className="succession-warning" role="alert">
+              The death or family facts changed while these edits were open. Cancel and reopen Edit
+              Beneficiaries before applying them.
+            </small>
+          )}
           {draftRows.map((row) => {
             const person = peopleById.get(row.personId) || outsidePartiesById.get(row.personId);
             const fraction = fractionForShare(row);
@@ -381,11 +422,12 @@ export function IntestateHeirConfirmation({
                   type="button"
                   className="icon-button"
                   aria-label={`Remove ${displayName(person)} from edited heirs`}
-                  onClick={() =>
+                  onClick={() => {
+                    setDraftRowsModified(true);
                     setDraftRows((currentRows) =>
                       currentRows.filter((candidate) => candidate.id !== row.id),
-                    )
-                  }
+                    );
+                  }}
                 >
                   <Trash2 size={14} />
                 </button>

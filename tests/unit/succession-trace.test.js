@@ -113,4 +113,31 @@ describe("succession trace", () => {
     expect(successions[1].ownershipSnapshot).toEqual({ second: 1 });
     expect(events.at(-1).ownershipSnapshot).toEqual({ third: 1 });
   });
+
+  it("preserves a twelve-digit exact fraction in trace cards and printable descriptions", () => {
+    const people = [{ id: "owner", fullName: "Exact Owner" }];
+    const property = {
+      id: "house",
+      address: "Exact fraction property",
+      owners: [
+        {
+          id: "initial-owner",
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 999999999983,
+        },
+      ],
+    };
+    const propertyReport = {
+      ownership: { transmissions: [] },
+      ledger: { entries: [], owners: [] },
+    };
+
+    const [event] = buildSuccessionTrace({ property, people, propertyReport });
+
+    expect(event.ownershipFractionSnapshot).toEqual({
+      owner: { numerator: 1, denominator: 999999999983 },
+    });
+    expect(event.description).toContain("1/999999999983");
+  });
 });

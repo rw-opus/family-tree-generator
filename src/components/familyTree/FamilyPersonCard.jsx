@@ -7,6 +7,8 @@ import {
 } from "../../domain/partnerRelationships.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../../domain/article5A.js";
 import { displayNotaryName } from "../../domain/notary.js";
+import { isPotentialParentSurvivalUnresolved } from "../../domain/potentialParentSurvival.js";
+import { validateWillDateChronology } from "../../domain/chronology.js";
 import { displayWillDate, operativeWill, personWills } from "../../domain/wills.js";
 import {
   formattedDate,
@@ -42,12 +44,16 @@ function formattedCurrency(value) {
   }).format(value);
 }
 
-function availableCausaMortisDetails(person) {
+function availableCausaMortisDetails(person, propertyId = "") {
   if (person.dateOfDeath && person.dateOfDeath < INHERITANCE_CAUSA_MORTIS_CUTOFF) {
     return [];
   }
   return (person.causaMortisDeclarations || [])
-    .filter((declaration) => declaration.status === "complete")
+    .filter(
+      (declaration) =>
+        declaration.status === "complete" &&
+        (!propertyId || !declaration.propertyId || declaration.propertyId === propertyId),
+    )
     .map((declaration) => ({
       date: formattedDate(declaration.date),
       notaryName: displayNotaryName(declaration.notaryName),
@@ -67,6 +73,7 @@ export function FamilyPersonCard({
   causaMortisCoverageByPerson,
   personCardFields = DEFAULT_PERSON_CARD_FIELDS,
   propertyValue,
+  propertyId = "",
   ownershipSnapshotActive = false,
   selectedPersonId,
   onSelectPerson,
@@ -92,12 +99,17 @@ export function FamilyPersonCard({
     ? ownershipParts(ownership, fields, ownershipFractionsByPerson[person.id])
     : [];
   const currentOwnershipValue = Number(propertyValue) * currentOwnership;
-  const causaMortisDetails = availableCausaMortisDetails(person);
+  const causaMortisDetails = availableCausaMortisDetails(person, propertyId);
   const isTestate = person.inheritanceBasis === "will";
   const recordedWills = personWills(person).filter(
     (will) => will.date || will.notaryName || will.description,
   );
+  const validRecordedWills = recordedWills.filter(
+    (will) => validateWillDateChronology(will.date, person.dateOfDeath) === "",
+  );
   const latestWill = operativeWill(person);
+  const willDetailsActionRequired =
+    isDeceased && isTestate && (validRecordedWills.length !== recordedWills.length || !latestWill);
   const spousesMissingDeathDates =
     isDeceased && !isTestate ? linkedSpousesMissingDeathDates(people, person.id) : [];
   const missingSpouseNames = spousesMissingDeathDates.map((spouse) =>
@@ -113,7 +125,7 @@ export function FamilyPersonCard({
           .filter(
             ({ partner, relationship }) =>
               partner &&
-              partner.survivalStatusRequired !== true &&
+              !isPotentialParentSurvivalUnresolved(partner) &&
               partnerRelationshipStatusAt(relationship, person.dateOfDeath || "") === "active" &&
               (!isPersonDeceased(partner) ||
                 (Boolean(person.dateOfDeath) &&
@@ -146,7 +158,7 @@ export function FamilyPersonCard({
       ? `. No spouse survived is selected, so ${excludedSpouseNames.join(", ")} is excluded from the succession`
       : ""
   }`;
-  const survivalStatusRequired = person.survivalStatusRequired === true;
+  const survivalStatusRequired = isPotentialParentSurvivalUnresolved(person);
   const surnameAtBirthReviewRequired = person.surnameAtBirthReviewRequired === true;
   const historicalLawWarning = isDeceased
     ? (historicalLawWarningsByPerson[person.id] || []).join(" ")
@@ -155,7 +167,8 @@ export function FamilyPersonCard({
     incompleteCausaMortis.length > 0 ||
     survivalStatusRequired ||
     surnameAtBirthReviewRequired ||
-    spouseAtDeathConflict;
+    spouseAtDeathConflict ||
+    willDetailsActionRequired;
   const actionRequiredGuidance = [
     missingDataActionRequired &&
       "Action required: open this person's card and update the missing detail.",
@@ -173,6 +186,7 @@ export function FamilyPersonCard({
     survivalStatusRequired && "survival-status-required",
     surnameAtBirthReviewRequired && "surname-at-birth-review-required",
     spouseAtDeathConflict && "spouse-at-death-conflict",
+    willDetailsActionRequired && "will-details-invalid",
     historicalLawWarning && "historical-law-review-required",
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
@@ -231,6 +245,9 @@ export function FamilyPersonCard({
       {!person.isPlaceholder && historicalLawWarning && (
         <div className="family-node-law-alert">Check historical law</div>
       )}
+      {!person.isPlaceholder && willDetailsActionRequired && (
+        <div className="family-node-will-alert">Fix will date</div>
+      )}
       {!person.isPlaceholder && shareParts.length > 0 && (
         <div className="family-node-ownership">{shareParts.join(" · ")}</div>
       )}
@@ -253,10 +270,10 @@ export function FamilyPersonCard({
         fields.willDetails &&
         isDeceased &&
         isTestate &&
-        recordedWills.length > 0 &&
+        validRecordedWills.length > 0 &&
         (stackedLegalDetails ? (
           <>
-            {recordedWills.map((will) => (
+            {validRecordedWills.map((will) => (
               <div className="family-node-will-details" key={will.id}>
                 {will.date && (
                   <div className="family-node-detail">Will {displayWillDate(will.date)}</div>
@@ -284,6 +301,7 @@ export function FamilyPersonCard({
           </>
         ))}
       {!person.isPlaceholder &&
+        isDeceased &&
         stackedLegalDetails &&
         fields.causaMortisDetails &&
         causaMortisDetails.map((declaration, index) => (
@@ -301,6 +319,7 @@ export function FamilyPersonCard({
           </div>
         ))}
       {!person.isPlaceholder &&
+        isDeceased &&
         !stackedLegalDetails &&
         fields.causaMortisDetails &&
         causaMortisDetails.length > 0 && (

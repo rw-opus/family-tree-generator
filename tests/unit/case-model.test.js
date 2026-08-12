@@ -319,6 +319,126 @@ describe("case model migration", () => {
     expect(result.people[0].motherId).toBe("mother");
   });
 
+  it("repairs a stale potential-parent warning when a valid death date is recorded", () => {
+    const result = normalizeCase({
+      id: "resolved-potential-parent",
+      people: [
+        { id: "michael", fullName: "Michael Wadge", motherId: "mother" },
+        {
+          id: "mother",
+          fullName: "Mother of Michael",
+          isPotentialIntestateParent: true,
+          potentialParentAddedExplicitly: true,
+          survivalStatusRequired: true,
+          survivalStatusConfirmed: "",
+          survivalStatusReferencePersonId: "michael",
+          isDeceased: true,
+          designations: ["Parent", "Deceased"],
+          dateOfDeath: "2020-04-12",
+        },
+      ],
+    });
+
+    expect(result.people.find((person) => person.id === "mother")).toMatchObject({
+      survivalStatusRequired: false,
+      survivalStatusConfirmed: "death-date-recorded",
+      dateOfDeath: "2020-04-12",
+    });
+  });
+
+  it("treats a valid saved death date as the authoritative deceased status", () => {
+    const result = normalizeCase({
+      id: "date-only-deceased",
+      people: [
+        {
+          id: "owner",
+          fullName: "Date Only Owner",
+          isDeceased: false,
+          designations: ["Owner"],
+          dateOfDeath: "2020-04-12",
+        },
+      ],
+    });
+
+    expect(result.people[0]).toMatchObject({
+      isDeceased: true,
+      dateOfDeath: "2020-04-12",
+      designations: ["Deceased", "Owner"],
+    });
+  });
+
+  it("canonicalises a legacy lowercase deceased designation on restore", () => {
+    const result = normalizeCase({
+      id: "legacy-lowercase-deceased",
+      people: [
+        {
+          id: "owner",
+          fullName: "Legacy Owner",
+          designations: ["Owner", "deceased"],
+        },
+      ],
+    });
+
+    expect(result.people[0]).toMatchObject({
+      isDeceased: true,
+      designations: ["Deceased", "Owner"],
+    });
+  });
+
+  it("keeps a deceased potential parent unresolved while the death date is missing", () => {
+    const result = normalizeCase({
+      id: "unresolved-potential-parent",
+      people: [
+        { id: "michael", fullName: "Michael Wadge", motherId: "mother" },
+        {
+          id: "mother",
+          fullName: "Mother of Michael",
+          isPotentialIntestateParent: true,
+          potentialParentAddedExplicitly: true,
+          survivalStatusRequired: true,
+          survivalStatusConfirmed: "",
+          survivalStatusReferencePersonId: "michael",
+          isDeceased: true,
+          designations: ["Parent", "Deceased"],
+          dateOfDeath: "",
+        },
+      ],
+    });
+
+    expect(result.people.find((person) => person.id === "mother")).toMatchObject({
+      survivalStatusRequired: true,
+      survivalStatusConfirmed: "",
+      dateOfDeath: "",
+    });
+  });
+
+  it("repairs a stale potential-parent warning after an explicit living confirmation", () => {
+    const result = normalizeCase({
+      id: "living-potential-parent",
+      people: [
+        { id: "michael", fullName: "Michael Wadge", motherId: "mother" },
+        {
+          id: "mother",
+          fullName: "Mother of Michael",
+          isPotentialIntestateParent: true,
+          potentialParentAddedExplicitly: true,
+          survivalStatusRequired: true,
+          survivalStatusConfirmed: "alive",
+          survivalStatusReferencePersonId: "michael",
+          isDeceased: false,
+          designations: ["Parent"],
+          dateOfDeath: "",
+        },
+      ],
+    });
+
+    expect(result.people.find((person) => person.id === "mother")).toMatchObject({
+      survivalStatusRequired: false,
+      survivalStatusConfirmed: "alive",
+      isDeceased: false,
+    });
+  });
+
   it("preserves a legacy potential parent once the record contains user data", () => {
     const result = normalizeCase({
       id: "edited-parent",

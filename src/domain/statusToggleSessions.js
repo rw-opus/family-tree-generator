@@ -38,7 +38,10 @@ export const DECEASED_STATUS_FIELDS = Object.freeze([
   "causaMortisDeclarations",
 ]);
 
-export const INTER_VIVOS_STATUS_FIELDS = Object.freeze(["inheritanceBasis"]);
+// The transfer disclosure no longer owns a Person field. In particular it must
+// not snapshot/restore `inheritanceBasis`, because the deceased workflow may
+// legitimately change that field while both disclosures are open.
+export const INTER_VIVOS_STATUS_FIELDS = Object.freeze([]);
 
 export const STATUS_TOGGLE_SESSION_ID_FIELD = "statusToggleSessionId";
 export const STATUS_TOGGLE_SESSION_TYPE_FIELD = "statusToggleSessionType";
@@ -230,7 +233,12 @@ function restoreOrCleanPerson(caseData, { session, type, personId }) {
     ...caseData,
     people: caseData.people.map((person) => {
       if (person.id !== personId) return person;
-      if (session) return restoreFields(person, session.personFields);
+      if (session) {
+        const restored = restoreFields(person, session.personFields);
+        return type === STATUS_TOGGLE_TYPES.INTER_VIVOS
+          ? legacyInterVivosCleanup(restored)
+          : restored;
+      }
       return type === STATUS_TOGGLE_TYPES.DECEASED
         ? legacyDeceasedCleanup(person)
         : legacyInterVivosCleanup(person);

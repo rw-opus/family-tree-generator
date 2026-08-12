@@ -24,6 +24,7 @@ const peopleWithDeclarations = (declarations = [], dateOfDeath = "2020-01-01") =
     willHeirs: [{ id: "heir-record", personId: "child", sharePercent: 100 }],
     causaMortisDeclarations: declarations.map((declaration) => ({
       date: "2020-02-01",
+      declarantPersonIds: ["child"],
       ...declaration,
     })),
   },
@@ -50,6 +51,7 @@ describe("buildCausaMortisShareCoverage", () => {
             declaredShareNumerator: 3,
             declaredShareDenominator: 4,
             date: "2020-02-01",
+            declarantPersonIds: ["child"],
           },
         ],
       },
@@ -132,6 +134,79 @@ describe("buildCausaMortisShareCoverage", () => {
       declaredShare: 0.75,
       status: "over",
     });
+  });
+
+  it("keeps one declarant's excess separate from another heir's missing share", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willDate: "2019-01-01",
+        willHeirs: [
+          { id: "a-share", personId: "a", shareNumerator: 1, shareDenominator: 2 },
+          { id: "b-share", personId: "b", shareNumerator: 1, shareDenominator: 4 },
+          { id: "c-share", personId: "c", shareNumerator: 1, shareDenominator: 4 },
+        ],
+        causaMortisDeclarations: [
+          {
+            id: "cm-ab",
+            status: "complete",
+            propertyId: "property-1",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            immovablePropertyValue: "1200",
+            date: "2020-02-01",
+            notaryName: "Maria Vella",
+            declarantPersonIds: ["a", "b"],
+          },
+        ],
+      },
+      { id: "a", fullName: "Heir A" },
+      { id: "b", fullName: "Heir B" },
+      { id: "c", fullName: "Heir C" },
+    ];
+    const wholeProperty = {
+      id: "property-1",
+      address: "1 Republic Street",
+      owners: [{ id: "initial", personId: "deceased", sharePercent: 100 }],
+    };
+
+    const row = buildCausaMortisShareCoverage(people, [wholeProperty]).rows[0];
+
+    expect(row).toMatchObject({
+      status: "mixed",
+      requiredFraction: { numerator: 1, denominator: 1 },
+      declaredFraction: { numerator: 1, denominator: 1 },
+      missingFraction: { numerator: 1, denominator: 4 },
+      excessFraction: { numerator: 1, denominator: 4 },
+      underDeclaredRecipientIds: ["c"],
+      overDeclaredRecipientIds: ["a", "b"],
+    });
+    expect(row.recipientCoverage).toEqual([
+      expect.objectContaining({
+        personId: "a",
+        requiredFraction: { numerator: 1, denominator: 2 },
+        declaredFraction: { numerator: 2, denominator: 3 },
+        declaredValue: 800,
+        status: "over",
+      }),
+      expect.objectContaining({
+        personId: "b",
+        requiredFraction: { numerator: 1, denominator: 4 },
+        declaredFraction: { numerator: 1, denominator: 3 },
+        declaredValue: 400,
+        status: "over",
+      }),
+      expect.objectContaining({
+        personId: "c",
+        declaredFraction: { numerator: 0, denominator: 1 },
+        declaredValue: 0,
+        status: "under",
+      }),
+    ]);
   });
 
   it("treats a legacy unassigned declaration as belonging to the sole property", () => {

@@ -153,6 +153,72 @@ describe("PersonInspector", () => {
     });
   });
 
+  it("does not show an unresolved-survival alert for a potential parent with a valid death date", () => {
+    let latestPeople = [];
+    const initialPeople = [
+      {
+        id: "child",
+        fullName: "Michael Borg",
+        givenNames: "Michael",
+        surname: "Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-04-12",
+        fatherId: "father",
+        designations: ["Deceased"],
+        spouseIds: [],
+      },
+      {
+        id: "father",
+        fullName: "Father of Michael",
+        givenNames: "Father of Michael",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-04-12",
+        designations: ["Parent", "Deceased"],
+        spouseIds: [],
+        isPotentialIntestateParent: true,
+        potentialParentAddedExplicitly: true,
+        survivalStatusRequired: true,
+        survivalStatusConfirmed: "",
+        survivalStatusReferencePersonId: "child",
+      },
+    ];
+
+    function Harness() {
+      const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="father"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    expect(container.textContent).not.toContain("Establish whether this parent survived");
+
+    const deathDate = container.querySelector(".succession-death-date input");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        deathDate,
+        "11/04/2020",
+      );
+      deathDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(latestPeople.find((person) => person.id === "father")).toMatchObject({
+      dateOfDeath: "2020-04-11",
+      survivalStatusRequired: false,
+      survivalStatusConfirmed: "death-date-recorded",
+    });
+    expect(container.textContent).not.toContain("Establish whether this parent survived");
+  });
+
   it("adds a father around the selected person without moving the selection", () => {
     const onChange = vi.fn();
     const onSelectPerson = vi.fn();
@@ -512,6 +578,116 @@ describe("PersonInspector", () => {
       gedcomUnmarriedParents: true,
     });
     expect(container.textContent).not.toContain("The imported parents are recorded as unmarried");
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        birthSurnameInput,
+        "",
+      );
+      birthSurnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(latestPerson).toMatchObject({
+      surnameAtBirth: "",
+      surnameAtBirthReviewRequired: true,
+      gedcomUnmarriedParents: true,
+    });
+    expect(container.textContent).toContain("The imported parents are recorded as unmarried");
+  });
+
+  it("resolves an ordinary blank birth surname when sex changes from Other to Female to Male", () => {
+    let latestPerson;
+
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          givenNames: "Joseph",
+          surname: "Borg",
+          fullName: "Joseph Borg",
+          surnameAtBirth: "",
+          surnameAtBirthReviewRequired: false,
+          sex: "Other",
+          spouseIds: [],
+        },
+      ]);
+      latestPerson = people[0];
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    const sexRadio = (label) =>
+      [...container.querySelectorAll('[role="group"][aria-label="Sex"] label')]
+        .find((element) => element.textContent.includes(label))
+        .querySelector('input[type="radio"]');
+
+    act(() => sexRadio("Female").click());
+    expect(latestPerson).toMatchObject({
+      sex: "Female",
+      surnameAtBirth: "",
+      surnameAtBirthReviewRequired: true,
+    });
+
+    act(() => sexRadio("Male").click());
+    expect(latestPerson).toMatchObject({
+      sex: "Male",
+      surnameAtBirth: "Borg",
+      surnameAtBirthReviewRequired: false,
+    });
+    expect(container.textContent).not.toContain("The imported parents are recorded as unmarried");
+  });
+
+  it("keeps a GEDCOM-unmarried birth surname review unresolved after changing sex to Male", () => {
+    let latestPerson;
+
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          givenNames: "Joseph",
+          surname: "Borg",
+          fullName: "Joseph Borg",
+          surnameAtBirth: "",
+          surnameAtBirthReviewRequired: false,
+          gedcomUnmarriedParents: true,
+          sex: "Other",
+          spouseIds: [],
+        },
+      ]);
+      latestPerson = people[0];
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    const sexRadio = (label) =>
+      [...container.querySelectorAll('[role="group"][aria-label="Sex"] label')]
+        .find((element) => element.textContent.includes(label))
+        .querySelector('input[type="radio"]');
+
+    act(() => sexRadio("Female").click());
+    act(() => sexRadio("Male").click());
+
+    expect(latestPerson).toMatchObject({
+      sex: "Male",
+      surnameAtBirth: "",
+      surnameAtBirthReviewRequired: true,
+      gedcomUnmarriedParents: true,
+    });
+    expect(container.textContent).toContain("The imported parents are recorded as unmarried");
   });
 
   it("asks which partnership applies when a person has several partners", () => {
@@ -2701,8 +2877,9 @@ describe("PersonInspector", () => {
     expect(onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations).toHaveLength(1);
   });
 
-  it("counts a declaration only after OK and enables another only for a remaining share", () => {
+  it("counts a declaration only after OK and keeps additional declaration entry available", () => {
     const property = { id: "property-1", address: "1 Republic Street" };
+    let latestPeople = [];
     const initialPeople = [
       {
         id: "deceased",
@@ -2731,6 +2908,7 @@ describe("PersonInspector", () => {
 
     function Harness() {
       const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
       const completedShare = (people[0].causaMortisDeclarations || [])
         .filter((declaration) => declaration.status === "complete")
         .reduce(
@@ -2822,9 +3000,232 @@ describe("PersonInspector", () => {
     act(() => okButton().click());
 
     expect(container.textContent).toContain("Declared 1/2");
-    expect(declarationActionButton().disabled).toBe(true);
+    expect(declarationActionButton().disabled).toBe(false);
     expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
-    expect(declarationActionButton().title).toBe("No undeclared share remains.");
+    expect(declarationActionButton().title).toContain("another Declaration Causa Mortis");
+
+    act(() => declarationActionButton().click());
+    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
+    expect(container.textContent).toContain("Declaration Causa Mortis 3");
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
+
+    act(() => declarationActionButton().click());
+    expect(declarationActionButton().textContent).toContain("Open CM Declaration");
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
+
+    act(() => declarationActionButton().click());
+    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
+    expect(container.textContent).toContain("Declaration Causa Mortis 3");
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
+  });
+
+  it("allows an additional causa mortis declaration when completed declarations exceed coverage", () => {
+    const property = { id: "property-1", address: "Unnamed property" };
+    let latestPeople = [];
+    const initialPeople = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+        causaMortisDeclarations: [
+          {
+            id: "cm-1",
+            status: "complete",
+            propertyId: property.id,
+            declaredShareNumerator: 103,
+            declaredShareDenominator: 360,
+            date: "2021-01-01",
+            notaryName: "Maria Vella",
+            immovablePropertyValue: "34000",
+            declarantPersonIds: ["child"],
+          },
+        ],
+        designations: ["Deceased"],
+        spouseIds: [],
+        siblingIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Maria Borg",
+        sex: "Female",
+        fatherId: "deceased",
+        designations: [],
+        spouseIds: [],
+        siblingIds: [],
+      },
+    ];
+
+    function Harness() {
+      const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
+      const completedShare = (people[0].causaMortisDeclarations || [])
+        .filter((declaration) => declaration.status === "complete")
+        .reduce(
+          (total, declaration) =>
+            total +
+            Number(declaration.declaredShareNumerator) /
+              Number(declaration.declaredShareDenominator),
+          0,
+        );
+      const requiredShare = 11 / 45;
+      const difference = completedShare - requiredShare;
+      return (
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          causaMortisCoverage={[
+            {
+              personId: "deceased",
+              propertyId: property.id,
+              propertyAddress: property.address,
+              requiredShare,
+              declaredShare: completedShare,
+              difference,
+              status: Math.abs(difference) < 1e-10 ? "complete" : difference < 0 ? "under" : "over",
+            },
+          ]}
+          selectedPersonId="deceased"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    const declarationActionButton = () =>
+      [...container.querySelectorAll("button")].find((button) =>
+        button.textContent.includes("CM Declaration"),
+      );
+    expect(container.querySelector(".causa-mortis-coverage-row.over")).not.toBeNull();
+    expect(declarationActionButton().disabled).toBe(false);
+
+    act(() => declarationActionButton().click());
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(2);
+    expect(container.textContent).toContain("Declaration Causa Mortis 2");
+
+    const setInput = (selector, value) => {
+      const input = container.querySelector(selector);
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    setInput('input[aria-label="Causa mortis share numerator 2"]', "1");
+    setInput('input[aria-label="Causa mortis share denominator 2"]', "360");
+    setInput('input[aria-label="Date of Declaration Causa Mortis 2"]', "2022-01-01");
+    setInput('input[aria-label="Notary for Declaration Causa Mortis 2"]', "Paul Galea");
+    setInput('input[aria-label="Immovable property value declared causa mortis 2"]', "1000");
+
+    const okButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "OK" && !button.disabled,
+    );
+    act(() => okButton.click());
+
+    expect(latestPeople[0].causaMortisDeclarations[1].status).toBe("complete");
+    expect(container.querySelector(".causa-mortis-coverage-row.over")).not.toBeNull();
+    expect(declarationActionButton().disabled).toBe(false);
+  });
+
+  it("starts an additional declaration when the red causa mortis coverage warning is pressed", () => {
+    let latestPeople = [];
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "intestacy",
+      causaMortisDeclarations: [
+        {
+          id: "cm-1",
+          status: "complete",
+          propertyId: "property-1",
+          declaredShareNumerator: 1,
+          declaredShareDenominator: 4,
+          date: "2021-01-01",
+          notaryName: "Maria Vella",
+          immovablePropertyValue: "100000",
+          declarantPersonIds: ["child-a"],
+        },
+      ],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const childA = {
+      id: "child-a",
+      fullName: "Maria Borg",
+      sex: "Female",
+      fatherId: "deceased",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const childB = {
+      ...childA,
+      id: "child-b",
+      fullName: "Paul Borg",
+      sex: "Male",
+    };
+
+    function Harness() {
+      const [people, setPeople] = useState([deceased, childA, childB]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[
+            {
+              personId: "deceased",
+              propertyId: "property-1",
+              propertyAddress: "1 Republic Street",
+              requiredShare: 0.5,
+              declaredShare: 0.25,
+              difference: -0.25,
+              remainingFraction: { numerator: 1, denominator: 4 },
+              underDeclaredRecipientIds: ["child-b"],
+              status: "under",
+            },
+          ]}
+          selectedPersonId="deceased"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    const warning = () => container.querySelector(".causa-mortis-coverage-row.under");
+    const declarationActionButton = () =>
+      [...container.querySelectorAll("button")].find((button) =>
+        button.textContent.includes("CM Declaration"),
+      );
+    expect(warning().tagName).toBe("BUTTON");
+    expect(warning().type).toBe("button");
+    act(() => warning().click());
+
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(2);
+    expect(latestPeople[0].causaMortisDeclarations[1]).toMatchObject({
+      status: "draft",
+      propertyId: "property-1",
+      declaredShareNumerator: 1,
+      declaredShareDenominator: 4,
+      declarantPersonIds: ["child-b"],
+    });
+    expect(container.textContent).toContain("Declaration Causa Mortis 2");
+
+    act(() => declarationActionButton().click());
+    expect(container.textContent).not.toContain("Declaration Causa Mortis 2");
+    act(() => warning().click());
+
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(2);
+    expect(container.textContent).toContain("Declaration Causa Mortis 2");
   });
 
   it("makes the declared value optional when every identified heir is deceased", () => {
@@ -3500,6 +3901,64 @@ describe("PersonInspector provenance designation", () => {
       "initial-o1",
       "transfer-t1",
     ]);
+  });
+
+  it("keeps a newly created transfer acquirer's name through case normalisation", () => {
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    const onRecordDonation = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
+    const acquirerSource = container.querySelector('select[aria-label="Acquirer source"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirerSource,
+        "new",
+      );
+      acquirerSource.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const acquirerName = container.querySelector('input[aria-label="New acquirer full name"]');
+    const donationDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        acquirerName,
+        "maria elena vella",
+      );
+      acquirerName.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "01/01/2021",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    act(() => submit.click());
+
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    const payload = onRecordDonation.mock.calls[0][0];
+    const normalised = normaliseCase({ id: "case", people: payload.people });
+    const acquirer = normalised.people.find((person) => person.id === payload.transfer.buyerId);
+    expect(acquirer).toMatchObject({
+      givenNames: "Maria Elena",
+      surname: "Vella",
+      fullName: "Maria Elena Vella",
+    });
   });
 
   it("records all of the share held on the entered deed date", () => {
@@ -4284,7 +4743,7 @@ describe("PersonInspector reversible status controls", () => {
           sex: "Male",
           designations: ["Owner"],
           isDeceased: false,
-          dateOfDeath: "2020-01-01",
+          dateOfDeath: "",
           inheritanceBasis: "intestacy",
           fatherId: "",
           fatherExplicitlyUnassigned: false,
@@ -4363,6 +4822,14 @@ describe("PersonInspector reversible status controls", () => {
       );
 
     act(() => deceasedCheckbox().click());
+    const deathDate = container.querySelector(".succession-death-date input");
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        deathDate,
+        "01/01/2020",
+      );
+      deathDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     const addParents = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Add missing parents"),
     );
