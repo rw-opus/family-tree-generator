@@ -50,7 +50,9 @@ describe("tranche holdings", () => {
 
   it("rejects a transfer larger than the holding", () => {
     const result = selectTranchePortions(twoInheritedQuarters(), frac(2, 3), { rateFor });
-    expect(result.error).toBe("The seller does not own enough to complete this transfer.");
+    expect(result.error).toBe(
+      "The seller is marked as having attempted to sell or donate a larger share than the calculator shows they owned on that date.",
+    );
   });
 
   it("rejects a zero transfer", () => {

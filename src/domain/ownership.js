@@ -12,6 +12,19 @@ import { validateTransferDateChronology } from "./chronology.js";
 
 const value = (input) => Math.max(0, Number(input) || 0);
 
+const sellerPronoun = (seller) => {
+  if (seller?.type === "company") return "it";
+  const sex = String(seller?.sex || "")
+    .trim()
+    .toLowerCase();
+  if (sex === "male") return "he";
+  if (sex === "female") return "she";
+  return "they";
+};
+
+const excessiveTransferMessage = (seller) =>
+  `${seller?.name || "The seller"} is marked as having attempted to sell or donate a larger share than the calculator shows ${sellerPronoun(seller)} owned on that date.`;
+
 export function approximateFraction(decimal) {
   if (!Number.isFinite(decimal) || decimal === 0) return { numerator: 0, denominator: 1 };
   const sign = decimal < 0 ? -1 : 1;
@@ -148,6 +161,7 @@ function resolveTransfers(parties, startingHoldings, transfers) {
   const entries = transfers.map((transfer) => {
     const cleanTransfer = { ...transfer };
     delete cleanTransfer.error;
+    const seller = parties.find((party) => party.id === transfer.sellerId);
     const sellerHolding = holdings.get(transfer.sellerId) || ZERO_FRACTION;
     const transferFraction = normaliseFraction(transfer.numerator, transfer.denominator);
     if (!transfer.sellerId || !transfer.buyerId)
@@ -175,10 +189,9 @@ function resolveTransfers(parties, startingHoldings, transfers) {
     if (compareFractions(amountFraction, sellerHolding) > 0)
       return {
         ...cleanTransfer,
-        error: "The seller does not own enough to complete this transfer.",
+        error: excessiveTransferMessage(seller),
         amount: 0,
       };
-    const seller = parties.find((party) => party.id === transfer.sellerId);
     const provenanceAcquisitionDates = (transfer.provenance || [])
       .map((entry) => entry?.acquiredOn)
       .filter(Boolean);
@@ -293,6 +306,7 @@ export function buildOwnershipLedger(
       id: heir.id,
       personId: heir.personId || "",
       name: heir.name || "Unnamed family member",
+      sex: heir.sex || "",
       type: "individual",
       source: "family",
     })),
@@ -302,6 +316,7 @@ export function buildOwnershipLedger(
         id: person.id,
         personId: person.id,
         name: person.fullName || "Unnamed family member",
+        sex: person.sex || "",
         dateOfDeath: person.dateOfDeath || "",
         type: "individual",
         source: "family-tree",
@@ -335,6 +350,7 @@ export function buildPropertyLedger(
       id: person.id,
       personId: person.id,
       name: person.fullName || "Unnamed family member",
+      sex: person.sex || "",
       dateOfDeath: person.dateOfDeath || "",
       type: "individual",
       source: "family-tree",

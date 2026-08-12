@@ -3649,8 +3649,8 @@ describe("PersonInspector provenance designation", () => {
   });
 
   const people = [
-    { id: "seller", fullName: "Joseph Borg", spouseIds: [], designations: [] },
-    { id: "other", fullName: "Maria Vella", spouseIds: [], designations: [] },
+    { id: "seller", fullName: "Joseph Borg", sex: "Male", spouseIds: [], designations: [] },
+    { id: "other", fullName: "Maria Vella", sex: "Female", spouseIds: [], designations: [] },
   ];
   const property = {
     id: "prop",
@@ -4106,7 +4106,7 @@ describe("PersonInspector provenance designation", () => {
     expect(invalidRecord).not.toBeNull();
     expect(invalidRecord.textContent).toContain("Invalid");
     expect(invalidRecord.textContent).toContain(
-      "The seller does not own enough to complete this transfer.",
+      "Joseph Borg is marked as having attempted to sell or donate a larger share than the calculator shows he owned on that date.",
     );
     expect(container.querySelector(".person-donation-form")).toBeNull();
   });

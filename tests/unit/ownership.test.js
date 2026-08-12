@@ -208,7 +208,7 @@ describe("ownership transfer ledger", () => {
   it("rejects a transfer greater than the seller's holding", () => {
     const ledger = buildOwnershipLedger(
       [
-        { id: "a", sharePercent: 25 },
+        { id: "a", name: "Joseph Borg", sex: "Male", sharePercent: 25 },
         { id: "b", sharePercent: 75 },
       ],
       [],
@@ -224,7 +224,9 @@ describe("ownership transfer ledger", () => {
         },
       ],
     );
-    expect(ledger.entries[0].error).toContain("does not own enough");
+    expect(ledger.entries[0].error).toBe(
+      "Joseph Borg is marked as having attempted to sell or donate a larger share than the calculator shows he owned on that date.",
+    );
     expect(ledger.owners.find((owner) => owner.id === "a").share).toBe(0.25);
   });
   it("drops a stale stored error when a transfer later becomes valid", () => {

@@ -70,7 +70,10 @@ export function selectTranchePortions(
     return { error: "The transferred fraction must be greater than zero." };
   }
   if (compareFractions(amount, held) > 0) {
-    return { error: "The seller does not own enough to complete this transfer." };
+    return {
+      error:
+        "The seller is marked as having attempted to sell or donate a larger share than the calculator shows they owned on that date.",
+    };
   }
 
   // Selling the whole holding is not a choice at all: every tranche goes, each carrying its own
