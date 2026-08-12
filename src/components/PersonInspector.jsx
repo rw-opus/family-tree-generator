@@ -968,7 +968,6 @@ export function PersonInspector({
     selectedPerson?.dateOfDeath
       ? `${isDonation ? "Donation" : "Sale"} date must be on or before ${displayName(selectedPerson)}'s date of death (${isoDateToDisplay(selectedPerson.dateOfDeath)}).`
       : rawTransferCapacityError;
-  const transferMeasurementError = transferCapacityError || transferCalculation?.error || "";
   const displayedTransferError =
     transferCapacityError || (definedTransferHasInput ? transferCalculation?.error || "" : "");
   // The provenance question is exceptional: it only arises when part of the holding is
@@ -1937,7 +1936,6 @@ export function PersonInspector({
             <button
               type="submit"
               className="primary-button"
-              disabled={Boolean(transferMeasurementError)}
               aria-describedby={displayedTransferError ? "lifetime-transfer-error" : undefined}
             >
               {isDonation ? "Record donation" : "Record sale"}

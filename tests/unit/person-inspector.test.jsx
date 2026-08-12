@@ -4264,7 +4264,7 @@ describe("PersonInspector provenance designation", () => {
       (button) => button.textContent.trim() === "Record donation",
     );
     const transferLimit = container.querySelector(".person-donation-form .transfer-limit");
-    expect(submit.disabled).toBe(true);
+    expect(submit.disabled).toBe(false);
     expect(submit.getAttribute("aria-describedby")).toBe("lifetime-transfer-error");
     expect(container.querySelector('[role="alert"]').textContent).toContain(
       "Donation date must be on or before Joseph Borg's date of death (20/03/2025).",
@@ -4291,6 +4291,127 @@ describe("PersonInspector provenance designation", () => {
       numerator: "1",
       denominator: "16",
       date: "2025-03-19",
+    });
+  });
+
+  it("keeps a second transfer actionable and explains a sale dated after death", () => {
+    const deceasedPeople = [
+      {
+        id: "seller",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2025-03-20",
+        inheritanceBasis: "intestacy",
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+      { id: "mathea", fullName: "Mathea Wadge", spouseIds: [], designations: [] },
+      { id: "harvey", fullName: "Harvey Wadge", spouseIds: [], designations: [] },
+    ];
+    const propertyAfterFirstDonation = {
+      id: "two-transfer-property",
+      owners: [
+        {
+          id: "owner",
+          personId: "seller",
+          numerator: 1,
+          denominator: 16,
+          sharePercent: 6.25,
+        },
+      ],
+      declarations: [],
+      transfers: [
+        {
+          id: "first-donation",
+          kind: "donation",
+          sellerId: "seller",
+          buyerId: "mathea",
+          numerator: 1,
+          denominator: 32,
+          amountType: "whole-property",
+          date: "2020-05-25",
+        },
+      ],
+      saleLots: [],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(
+      propertyAfterFirstDonation,
+      deceasedPeople,
+      [],
+    );
+    const onRecordDonation = vi.fn();
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={deceasedPeople}
+          properties={[propertyAfterFirstDonation]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    const addAnother = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Add another transfer",
+    );
+    act(() => addAnother.click());
+
+    const type = container.querySelector('select[aria-label="Type of contract"]');
+    const acquirer = container.querySelector('select[aria-label="Existing acquirer"]');
+    const saleDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(type, "sale");
+      type.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const updatedSaleDate = container.querySelector('input[aria-label="Sale date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirer,
+        "harvey",
+      );
+      acquirer.dispatchEvent(new Event("change", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        updatedSaleDate || saleDate,
+        "25/05/2026",
+      );
+      (updatedSaleDate || saleDate).dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record sale",
+    );
+    expect(submit.disabled).toBe(false);
+    expect(container.querySelector("#lifetime-transfer-error").textContent).toContain(
+      "Sale date must be on or before Joseph Borg's date of death (20/03/2025).",
+    );
+    expect(container.querySelector(".transfer-limit").textContent).toContain(
+      "Unavailable on 25/05/2026",
+    );
+    act(() => submit.click());
+    expect(onRecordDonation).not.toHaveBeenCalled();
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        updatedSaleDate || saleDate,
+        "25/05/2024",
+      );
+      (updatedSaleDate || saleDate).dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector("#lifetime-transfer-error")).toBeNull();
+    expect(container.querySelector(".transfer-limit").textContent).toContain("1/32");
+    act(() => submit.click());
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    expect(onRecordDonation.mock.calls[0][0].transfer).toMatchObject({
+      kind: "sale",
+      buyerId: "harvey",
+      numerator: "1",
+      denominator: "32",
+      date: "2024-05-25",
     });
   });
 
@@ -4338,9 +4459,12 @@ describe("PersonInspector provenance designation", () => {
     const submit = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Record donation",
     );
-    expect(submit.disabled).toBe(true);
+    expect(submit.disabled).toBe(false);
     act(() => submit.click());
     expect(onRecordDonation).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      "The transferred share cannot be greater than this person's current holding.",
+    );
   });
 
   it("prevents a defined percentage from exceeding the transferor's exact holding", () => {
@@ -4391,7 +4515,11 @@ describe("PersonInspector provenance designation", () => {
     const submit = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Record donation",
     );
-    expect(submit.disabled).toBe(true);
+    expect(submit.disabled).toBe(false);
+    act(() => submit.click());
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      "The transferred share cannot be greater than this person's current holding.",
+    );
   });
 });
 

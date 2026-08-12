@@ -198,7 +198,8 @@ function resolveTransfers(parties, startingHoldings, transfers) {
     const acquisitionDates = provenanceAcquisitionDates.length
       ? provenanceAcquisitionDates
       : acquisitionDatesByParty.get(transfer.sellerId) || [];
-    const eventLabel = transfer.kind === "donation" ? "Donation" : "Transfer";
+    const eventLabel =
+      transfer.kind === "donation" ? "Donation" : transfer.kind === "sale" ? "Sale" : "Transfer";
     const chronologyError = validateTransferDateChronology({
       transferDate: transfer.date,
       acquisitionDates,
