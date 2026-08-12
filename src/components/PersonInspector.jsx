@@ -83,10 +83,7 @@ import {
 } from "../domain/propertyVendorTax.js";
 import { selectTranchePortions } from "../domain/trancheOwnership.js";
 import { tagStatusCreatedRecord } from "../domain/statusToggleSessions.js";
-import {
-  deriveNoSurvivingSpouseAtDeath,
-  MARITAL_STATUS_AT_DEATH_SOURCES,
-} from "../domain/maritalStatusAtDeath.js";
+import { MARITAL_STATUS_AT_DEATH_SOURCES } from "../domain/maritalStatusAtDeath.js";
 import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
@@ -209,7 +206,6 @@ export function PersonInspector({
   const [childPartnerId, setChildPartnerId] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [causaMortisErrors, setCausaMortisErrors] = useState({});
-  const [causaMortisDraftOpen, setCausaMortisDraftOpen] = useState(true);
   const [willOutsidePartyOpen, setWillOutsidePartyOpen] = useState(false);
   const [ownershipDisplay, setOwnershipDisplay] = useState(shareDisplayMode(shareDisplay));
   const [donationOpen, setDonationOpen] = useState(false);
@@ -295,13 +291,6 @@ export function PersonInspector({
     setWillOutsidePartyOpen(false);
     setDonationOpen(Boolean(interVivosStatusSession) && !hasSavedOutgoingTransfer);
     setDonationDraft(blankDonationDraft());
-    setCausaMortisDraftOpen(
-      Boolean(
-        selectedPerson?.causaMortisDeclarations?.some(
-          (declaration) => !isCompletedCausaMortisDeclaration(declaration),
-        ),
-      ),
-    );
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
   }, [interVivosStatusSession, properties, selectedPerson]);
 
@@ -530,7 +519,6 @@ export function PersonInspector({
   };
 
   const updateCausaMortisDeclaration = (declarationId, patch) => {
-    setCausaMortisDraftOpen(true);
     setCausaMortisErrors((current) => {
       if (!current[declarationId]) return current;
       const next = { ...current };
@@ -547,7 +535,6 @@ export function PersonInspector({
   };
 
   const addCausaMortisDeclaration = (requestedPropertyId = "") => {
-    if (!canAddCausaMortisDeclaration) return;
     const requestedCoverage = requestedPropertyId
       ? causaMortisCoverage.find((row) => row.propertyId === requestedPropertyId)
       : null;
@@ -583,7 +570,6 @@ export function PersonInspector({
           declarationCandidates.some((candidate) => candidate.id === personId),
         )
       : declarationCandidates.map((person) => person.id);
-    setCausaMortisDraftOpen(true);
     updateSelected({
       causaMortisDeclarations: [
         ...(selectedPerson.causaMortisDeclarations || []),
@@ -611,18 +597,10 @@ export function PersonInspector({
   };
 
   const handleCausaMortisDeclarationAction = () => {
-    if (hasDraftCausaMortisDeclaration) {
-      setCausaMortisDraftOpen((open) => !open);
-      return;
-    }
     addCausaMortisDeclaration();
   };
 
   const handleCausaMortisCoverageAction = (propertyId) => {
-    if (hasDraftCausaMortisDeclaration) {
-      setCausaMortisDraftOpen(true);
-      return;
-    }
     addCausaMortisDeclaration(propertyId);
   };
 
@@ -1353,14 +1331,7 @@ export function PersonInspector({
       }),
     );
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
-  const hasDraftCausaMortisDeclaration = causaMortisDeclarations.some(
-    (declaration) => !isCompletedCausaMortisDeclaration(declaration),
-  );
   const canStartFirstCausaMortisDeclaration = causaMortisDeclarations.length === 0;
-  const canAddCausaMortisDeclaration = !hasDraftCausaMortisDeclaration;
-  const visibleCausaMortisDeclarations = causaMortisDeclarations.filter(
-    (declaration) => isCompletedCausaMortisDeclaration(declaration) || causaMortisDraftOpen,
-  );
   const suggestedWillHeirsConfirmed =
     selectedPerson.willHeirsConfirmed === true &&
     selectedPerson.willHeirsConfirmationSource === "suggested";
@@ -1450,7 +1421,6 @@ export function PersonInspector({
       : "Complete the initial ownership, selling price and acquisition details.";
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
-  const derivedNoSurvivingSpouse = deriveNoSurvivingSpouseAtDeath(people, selectedPerson.id);
   const partnerRelationshipsById = new Map(
     linkedPartners.map((partner) => [
       partner.id,
@@ -2453,23 +2423,10 @@ export function PersonInspector({
                   No spouse survived
                 </span>
               </label>
-              {derivedNoSurvivingSpouse !== null &&
-                selectedPerson.unmarriedOrWidowedAtDeathSource ===
-                  MARITAL_STATUS_AT_DEATH_SOURCES.AUTOMATIC && (
-                  <small className="succession-marital-status-note">
-                    Set from recorded spouse and death details.
-                  </small>
-                )}
-              {selectedPerson.unmarriedOrWidowedAtDeath === true && (
-                <small
-                  className={`succession-marital-status-note${
-                    excludedSpouseNames ? " succession-warning" : ""
-                  }`}
-                  role={excludedSpouseNames ? "alert" : undefined}
-                >
-                  {excludedSpouseNames
-                    ? `${excludedSpouseNames} is excluded from this succession while this setting is selected. Clear it if the linked spouse survived.`
-                    : "No spouse is included in this succession."}
+              {selectedPerson.unmarriedOrWidowedAtDeath === true && excludedSpouseNames && (
+                <small className="succession-marital-status-note succession-warning" role="alert">
+                  {excludedSpouseNames} is excluded from this succession while this setting is
+                  selected. Clear it if the linked spouse survived.
                 </small>
               )}
               {lifetimeTransferSection}
@@ -2812,21 +2769,13 @@ export function PersonInspector({
                           className="secondary-button"
                           onClick={handleCausaMortisDeclarationAction}
                           title={
-                            hasDraftCausaMortisDeclaration
-                              ? causaMortisDraftOpen
-                                ? "Close the unfinished Declaration Causa Mortis form."
-                                : "Reopen the unfinished Declaration Causa Mortis form."
-                              : canStartFirstCausaMortisDeclaration
-                                ? "Record the first Declaration Causa Mortis."
-                                : "Insert another Declaration Causa Mortis."
+                            canStartFirstCausaMortisDeclaration
+                              ? "Record the first Declaration Causa Mortis."
+                              : "Insert another Declaration Causa Mortis."
                           }
                         >
                           <FilePlus2 size={14} />
-                          {hasDraftCausaMortisDeclaration
-                            ? causaMortisDraftOpen
-                              ? "Close CM Declaration"
-                              : "Open CM Declaration"
-                            : "Insert CM Declaration"}
+                          Insert CM Declaration
                         </button>
                       </div>
 
@@ -2933,11 +2882,7 @@ export function PersonInspector({
                         <small className="causa-mortis-empty">No declaration recorded.</small>
                       )}
 
-                      {hasDraftCausaMortisDeclaration && !causaMortisDraftOpen && (
-                        <small className="causa-mortis-empty">Draft declaration closed.</small>
-                      )}
-
-                      {visibleCausaMortisDeclarations.map((declaration, index) => {
+                      {causaMortisDeclarations.map((declaration, index) => {
                         const chronologyError = declaration.date
                           ? validateCausaMortisDateChronology(
                               declaration.date,

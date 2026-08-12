@@ -1669,6 +1669,8 @@ describe("PersonInspector", () => {
     );
     expect(maritalStatus).not.toBeNull();
     expect(maritalStatus.checked).toBe(false);
+    expect(container.textContent).not.toContain("Set from recorded spouse and death details.");
+    expect(container.textContent).not.toContain("No spouse is included in this succession.");
 
     act(() => maritalStatus.click());
     expect(onChange.mock.calls.at(-1)[0].find((person) => person.id === "deceased")).toMatchObject({
@@ -2430,7 +2432,7 @@ describe("PersonInspector", () => {
     ).not.toBeNull();
     expect(
       [...container.querySelectorAll("button")].find((button) =>
-        button.textContent.includes("Close CM Declaration"),
+        button.textContent.includes("Insert CM Declaration"),
       ).disabled,
     ).toBe(false);
     expect(
@@ -2877,7 +2879,7 @@ describe("PersonInspector", () => {
     expect(onChange.mock.calls.at(-1)[0][0].causaMortisDeclarations).toHaveLength(1);
   });
 
-  it("counts a declaration only after OK and keeps additional declaration entry available", () => {
+  it("counts a declaration only after OK and keeps every additional draft visible", () => {
     const property = { id: "property-1", address: "1 Republic Street" };
     let latestPeople = [];
     const initialPeople = [
@@ -2949,16 +2951,8 @@ describe("PersonInspector", () => {
         button.textContent.includes("CM Declaration"),
       );
     act(() => declarationActionButton().click());
-    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
+    expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
     expect(container.textContent).toContain("Declared 0/1");
-    expect(container.querySelector(".causa-mortis-card")).not.toBeNull();
-
-    act(() => declarationActionButton().click());
-    expect(declarationActionButton().textContent).toContain("Open CM Declaration");
-    expect(container.querySelector(".causa-mortis-card")).toBeNull();
-
-    act(() => declarationActionButton().click());
-    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
     expect(container.querySelector(".causa-mortis-card")).not.toBeNull();
 
     const setInput = (selector, value) => {
@@ -2992,7 +2986,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).not.toContain("Completed");
 
     act(() => declarationActionButton().click());
-    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
+    expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
 
     setInput('input[aria-label="Date of Declaration Causa Mortis 2"]', "2021-04-02");
     setInput('input[aria-label="Notary for Declaration Causa Mortis 2"]', "Dr Paul Galea");
@@ -3005,18 +2999,11 @@ describe("PersonInspector", () => {
     expect(declarationActionButton().title).toContain("another Declaration Causa Mortis");
 
     act(() => declarationActionButton().click());
-    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
+    expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
     expect(container.textContent).toContain("Declaration Causa Mortis 3");
     expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
-
-    act(() => declarationActionButton().click());
-    expect(declarationActionButton().textContent).toContain("Open CM Declaration");
-    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
-
-    act(() => declarationActionButton().click());
-    expect(declarationActionButton().textContent).toContain("Close CM Declaration");
-    expect(container.textContent).toContain("Declaration Causa Mortis 3");
-    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
+    expect(container.textContent).toContain("Declaration Causa Mortis 1");
+    expect(container.textContent).toContain("Declaration Causa Mortis 2");
   });
 
   it("allows an additional causa mortis declaration when completed declarations exceed coverage", () => {
@@ -3221,11 +3208,93 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Declaration Causa Mortis 2");
 
     act(() => declarationActionButton().click());
-    expect(container.textContent).not.toContain("Declaration Causa Mortis 2");
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
+    expect(container.textContent).toContain("Declaration Causa Mortis 3");
     act(() => warning().click());
 
-    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(2);
+    expect(latestPeople[0].causaMortisDeclarations).toHaveLength(4);
     expect(container.textContent).toContain("Declaration Causa Mortis 2");
+    expect(container.textContent).toContain("Declaration Causa Mortis 4");
+  });
+
+  it.each([
+    ["an unfinished draft", "draft"],
+    ["a legacy declaration without a status", undefined],
+  ])("allows another causa mortis declaration beside %s", (_description, status) => {
+    const onChange = vi.fn();
+    const existingDeclaration = {
+      id: "existing-cm",
+      ...(status ? { status } : {}),
+      propertyId: "property-1",
+      declaredShareNumerator: 1,
+      declaredShareDenominator: 4,
+      date: "2021-01-01",
+      notaryName: "Maria Vella",
+      immovablePropertyValue: "100000",
+      declarantPersonIds: ["child"],
+    };
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "intestacy",
+      causaMortisDeclarations: [existingDeclaration],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const child = {
+      id: "child",
+      fullName: "Maria Borg",
+      sex: "Female",
+      fatherId: "deceased",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, child]}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[
+            {
+              personId: "deceased",
+              propertyId: "property-1",
+              propertyAddress: "1 Republic Street",
+              requiredShare: 0.5,
+              declaredShare: 0,
+              difference: -0.5,
+              status: "under",
+            },
+          ]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const insertButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Insert CM Declaration"),
+    );
+    expect(insertButton.disabled).toBe(false);
+    expect(container.textContent).toContain("Declaration Causa Mortis 1");
+
+    act(() => insertButton.click());
+
+    const updatedDeceased = onChange.mock.calls
+      .at(-1)[0]
+      .find((person) => person.id === "deceased");
+    expect(updatedDeceased.causaMortisDeclarations).toHaveLength(2);
+    expect(updatedDeceased.causaMortisDeclarations[0]).toEqual(existingDeclaration);
+    expect(updatedDeceased.causaMortisDeclarations[1]).toMatchObject({
+      status: "draft",
+      propertyId: "property-1",
+    });
   });
 
   it("makes the declared value optional when every identified heir is deceased", () => {
@@ -4822,6 +4891,153 @@ describe("PersonInspector deceased property flow", () => {
     expect(statusToggleSession(latestCase, "inter-vivos", "owner", "property")).toBeNull();
     expect(container.querySelector(".lifetime-transfer-step")).toBeNull();
     expect(container.querySelector(".estate-balance-step").textContent).toContain("1/1");
+  });
+
+  it("allows repeated pre-death donations and a CM declaration for an inherited share", () => {
+    const initialCase = normaliseCase({
+      id: "inherited-share-case",
+      title: "Borg family",
+      activeFamilyGroupId: "family",
+      people: [
+        {
+          id: "ancestor",
+          fullName: "Anthony Borg",
+          sex: "Male",
+          isDeceased: true,
+          dateOfDeath: "2010-01-01",
+          inheritanceBasis: "intestacy",
+          designations: ["Deceased"],
+          spouseIds: [],
+        },
+        {
+          id: "owner",
+          fullName: "Joseph Borg",
+          sex: "Male",
+          fatherId: "ancestor",
+          isDeceased: true,
+          dateOfDeath: "2025-01-01",
+          inheritanceBasis: "intestacy",
+          designations: ["Deceased"],
+          spouseIds: [],
+        },
+        {
+          id: "heir",
+          fullName: "Paul Borg",
+          sex: "Male",
+          fatherId: "owner",
+          spouseIds: [],
+        },
+        { id: "buyer-a", fullName: "Maria Vella", sex: "Female", spouseIds: [] },
+        { id: "buyer-b", fullName: "Anna Galea", sex: "Female", spouseIds: [] },
+      ],
+      familyGroups: [
+        {
+          id: "family",
+          title: "Borg family",
+          rootPersonId: "ancestor",
+          personIds: ["ancestor", "owner", "heir", "buyer-a", "buyer-b"],
+        },
+      ],
+      properties: [
+        {
+          id: "property",
+          address: "1 Republic Street",
+          saleValue: 1_000_000,
+          owners: [{ id: "initial-owner", personId: "ancestor", sharePercent: 100 }],
+          declarations: [],
+          transfers: [],
+          saleLots: [],
+        },
+      ],
+      outsideParties: [],
+    });
+    let latestCase = initialCase;
+
+    function Harness() {
+      const [caseData, setCaseData] = useState(initialCase);
+      latestCase = caseData;
+      const recordTransfer = (payload) =>
+        setCaseData((current) =>
+          normaliseCase({
+            ...current,
+            people: payload.people,
+            properties: current.properties.map((property) =>
+              property.id === payload.propertyId
+                ? {
+                    ...property,
+                    transfers: [...(property.transfers || []), payload.transfer],
+                  }
+                : property,
+            ),
+          }),
+        );
+      return (
+        <PersonInspector
+          people={caseData.people}
+          properties={caseData.properties}
+          outsideParties={caseData.outsideParties}
+          selectedPersonId="owner"
+          onChange={(people) => setCaseData((current) => normaliseCase({ ...current, people }))}
+          onRecordDonation={recordTransfer}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    const setSelect = (selector, value) => {
+      const select = container.querySelector(selector);
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+          select,
+          value,
+        );
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    };
+    const setInput = (selector, value) => {
+      const input = container.querySelector(selector);
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    const recordDefinedDonation = (buyerId, date) => {
+      setSelect('select[aria-label="Transfer measurement"]', "defined-share");
+      setSelect('select[aria-label="Existing acquirer"]', buyerId);
+      setInput('input[aria-label="Transfer numerator"]', "1");
+      setInput('input[aria-label="Transfer denominator"]', "4");
+      setInput('input[aria-label="Donation date"]', date);
+      const submit = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent.trim() === "Record donation",
+      );
+      act(() => submit.click());
+    };
+
+    act(() => root.render(<Harness />));
+    expect(container.querySelector(".estate-balance-step").textContent).toContain("1/1");
+
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
+    recordDefinedDonation("buyer-a", "01/01/2015");
+    expect(latestCase.properties[0].transfers).toHaveLength(1);
+    expect(container.querySelector(".estate-balance-step").textContent).toContain("3/4");
+
+    const addAnother = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Add another transfer",
+    );
+    act(() => addAnother.click());
+    recordDefinedDonation("buyer-b", "01/01/2020");
+    expect(latestCase.properties[0].transfers).toHaveLength(2);
+    expect(container.querySelector(".estate-balance-step").textContent).toContain("1/2");
+
+    const insertCm = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Insert CM Declaration"),
+    );
+    expect(insertCm).not.toBeUndefined();
+    act(() => insertCm.click());
+    expect(
+      latestCase.people.find((person) => person.id === "owner").causaMortisDeclarations,
+    ).toHaveLength(1);
+    expect(container.textContent).toContain("Declaration Causa Mortis 1");
   });
 });
 
