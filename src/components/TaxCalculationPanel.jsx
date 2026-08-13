@@ -18,6 +18,23 @@ const fractionLabel = (share, exactFraction) => {
   return `${fraction.numerator}/${fraction.denominator}`;
 };
 
+const hasRecordedMoney = (value) =>
+  String(value ?? "").trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0;
+
+const declarationHasValue = (declaration = {}) =>
+  declaration.hasDeclaredValue === true ||
+  declaration.valueRecorded === true ||
+  Number(declaration.declaredValue) > 0;
+
+const rowHasDeclaredValue = (row = {}) =>
+  row.hasDeclaredValue === true ||
+  row.valueRecorded === true ||
+  (row.declarations || []).some(declarationHasValue) ||
+  (row.sourceKind === "inheritance" &&
+    Boolean(row.selectedMethod) &&
+    Number(row.declaredValue) === 0) ||
+  Number(row.declaredValue) > 0;
+
 export function TaxCalculationPanel({
   property,
   people,
@@ -33,6 +50,7 @@ export function TaxCalculationPanel({
     propertyReport: vendorReport,
   });
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const hasSellingPrice = hasRecordedMoney(property.saleValue);
 
   return (
     <section className="tax-calculation-panel" aria-label="Tax Calculation">
@@ -122,7 +140,9 @@ export function TaxCalculationPanel({
                   <small>Total ownership {fractionLabel(vendor.share, vendor.shareFraction)}</small>
                 </span>
                 <span>
-                  <strong>{money.format(vendor.attributedSaleValue)}</strong>
+                  <strong>
+                    {hasSellingPrice ? money.format(vendor.attributedSaleValue) : "Not entered"}
+                  </strong>
                   <small>attributed selling price</small>
                 </span>
               </header>
@@ -173,14 +193,25 @@ export function TaxCalculationPanel({
                               {` · CM fraction ${fractionLabel(
                                 declaration.declaredShare,
                                 declaration.declaredShareFraction,
-                              )} · ${money.format(declaration.declaredValue)}`}
+                              )}`}
+                              {declarationHasValue(declaration)
+                                ? ` · ${money.format(declaration.declaredValue)}`
+                                : ""}
                             </small>
                           ))}
                         </td>
                         <td data-label="Fraction">{fractionLabel(row.share, row.shareFraction)}</td>
-                        <td data-label="CM value">{money.format(row.declaredValue)}</td>
-                        <td data-label="Sale price">{money.format(row.attributedSaleValue)}</td>
-                        <td data-label="Difference">{money.format(row.difference)}</td>
+                        <td data-label="CM value">
+                          {rowHasDeclaredValue(row) ? money.format(row.declaredValue) : "—"}
+                        </td>
+                        <td data-label="Sale price">
+                          {hasSellingPrice ? money.format(row.attributedSaleValue) : "—"}
+                        </td>
+                        <td data-label="Difference">
+                          {hasSellingPrice && rowHasDeclaredValue(row)
+                            ? money.format(row.difference)
+                            : "—"}
+                        </td>
                         <td data-label="Tax choices">
                           {row.methods.length ? (
                             row.methods.map((method) => {
@@ -196,7 +227,11 @@ export function TaxCalculationPanel({
                               );
                             })
                           ) : (
-                            <small className="attention">{row.warning || "Incomplete"}</small>
+                            <small className="attention">
+                              {hasSellingPrice
+                                ? row.warning || "Optional tax details not supplied"
+                                : "Selling price not supplied (optional)"}
+                            </small>
                           )}
                         </td>
                         <td data-label="Applied tax">
@@ -213,19 +248,22 @@ export function TaxCalculationPanel({
               <footer>
                 <span>
                   Tax payable{" "}
-                  <strong>{vendor.tax == null ? "Pending" : money.format(vendor.tax)}</strong>
+                  <strong>
+                    {vendor.tax == null ? "Not calculated" : money.format(vendor.tax)}
+                  </strong>
                 </span>
                 <span>
                   Net balance{" "}
-                  <strong>{vendor.net == null ? "Pending" : money.format(vendor.net)}</strong>
+                  <strong>
+                    {vendor.net == null ? "Not calculated" : money.format(vendor.net)}
+                  </strong>
                 </span>
               </footer>
               {vendor.incompleteRowCount > 0 && (
                 <p className="tax-calculation-warning">
-                  {vendor.incompleteRowCount} source fraction
-                  {vendor.incompleteRowCount === 1 ? " needs" : "s need"} more acquisition or{" "}
-                  <abbr title="Declaration Causa Mortis">CM</abbr> data before its tax can be
-                  finalised.
+                  Tax is not calculated for {vendor.incompleteRowCount} source{" "}
+                  {vendor.incompleteRowCount === 1 ? "fraction" : "fractions"}. Monetary tax details
+                  are optional.
                 </p>
               )}
             </article>
@@ -238,15 +276,20 @@ export function TaxCalculationPanel({
       {report.vendors.length > 0 && (
         <div className="tax-calculation-total">
           <span>
-            Total sale value <strong>{money.format(report.totalSaleValue)}</strong>
+            Total sale value{" "}
+            <strong>{hasSellingPrice ? money.format(report.totalSaleValue) : "Not entered"}</strong>
           </span>
           <span>
             Total tax{" "}
-            <strong>{report.totalTax == null ? "Pending" : money.format(report.totalTax)}</strong>
+            <strong>
+              {report.totalTax == null ? "Not calculated" : money.format(report.totalTax)}
+            </strong>
           </span>
           <span>
             Total net{" "}
-            <strong>{report.totalNet == null ? "Pending" : money.format(report.totalNet)}</strong>
+            <strong>
+              {report.totalNet == null ? "Not calculated" : money.format(report.totalNet)}
+            </strong>
           </span>
         </div>
       )}

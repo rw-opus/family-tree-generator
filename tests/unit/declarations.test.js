@@ -83,7 +83,7 @@ describe("succession declarations", () => {
     expect(coverage).toMatchObject({
       declarationCount: 1,
       declaredFraction: 0,
-      declaredValue: 0,
+      declaredValue: "",
       status: "invalid",
       unusableDeclarationCount: 1,
       hasUsableDeclaredValues: false,
@@ -93,7 +93,7 @@ describe("succession declarations", () => {
     );
   });
 
-  it("rejects malformed fractions and zero declared values regardless of status", () => {
+  it("rejects malformed fractions but accepts blank or explicit zero declared values", () => {
     const malformed = {
       status: "published",
       date: "2026-01-01",
@@ -104,9 +104,24 @@ describe("succession declarations", () => {
       ...malformed,
       participants: [{ heirId: "a", numerator: 1, denominator: 2, declaredValue: 0 }],
     };
+    const blankValue = {
+      ...malformed,
+      participants: [{ heirId: "a", numerator: 1, denominator: 2, declaredValue: "" }],
+    };
 
     expect(validateDeclaration(malformed)).toContain("ownership fraction");
-    expect(validateDeclaration(zeroValue)).toContain("positive declared value");
+    expect(validateDeclaration(zeroValue)).toBe("");
+    expect(validateDeclaration(blankValue)).toBe("");
+    expect(declarationCoverage([{ id: "a", share: 0.5 }], [zeroValue])[0]).toMatchObject({
+      status: "complete",
+      declaredValue: 0,
+      hasUsableDeclaredValues: true,
+    });
+    expect(declarationCoverage([{ id: "a", share: 0.5 }], [blankValue])[0]).toMatchObject({
+      status: "complete",
+      declaredValue: "",
+      hasUsableDeclaredValues: false,
+    });
     const [coverage] = declarationCoverage([{ id: "a", share: 0.5 }], [malformed]);
     expect(coverage).toMatchObject({
       declaredFraction: 0,

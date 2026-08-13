@@ -964,6 +964,26 @@ export function App({
     setStatus(transfer.kind === "donation" ? "Donation recorded." : "Sale recorded.");
   };
 
+  const updateInterVivosTransfer = ({ people, propertyId, transferId, transfer }) => {
+    setTree((current) => {
+      const base = reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people);
+      return {
+        ...base,
+        properties: (base.properties || []).map((property) =>
+          property.id === propertyId
+            ? {
+                ...property,
+                transfers: (property.transfers || []).map((candidate) =>
+                  candidate.id === transferId ? { ...transfer, id: transferId } : candidate,
+                ),
+              }
+            : property,
+        ),
+      };
+    });
+    setStatus(transfer.kind === "donation" ? "Donation updated." : "Sale updated.");
+  };
+
   const deleteInterVivosTransfer = ({ propertyId, transferId }) => {
     setTree((current) => {
       const base = normaliseTree(current);
@@ -1053,7 +1073,7 @@ export function App({
         candidate.id === propertyId ? result.property : candidate,
       ),
     });
-    setStatus("Donation acquisition value saved.");
+    setStatus("Donation Value saved.");
   };
 
   const beginInitialOwnerTreePick = (ownerId) => {
@@ -1294,6 +1314,7 @@ export function App({
                 onDeletePerson={removePerson}
                 onChange={updatePeople}
                 onRecordDonation={recordDonation}
+                onUpdateInterVivosTransfer={updateInterVivosTransfer}
                 onDeleteInterVivosTransfer={deleteInterVivosTransfer}
                 deceasedStatusSession={deceasedStatusSession}
                 interVivosStatusSession={interVivosStatusSession}

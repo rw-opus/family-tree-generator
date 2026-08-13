@@ -203,7 +203,8 @@ describe("buildCausaMortisShareCoverage", () => {
       expect.objectContaining({
         personId: "c",
         declaredFraction: { numerator: 0, denominator: 1 },
-        declaredValue: 0,
+        declaredValue: "",
+        hasDeclaredValue: false,
         status: "under",
       }),
     ]);
@@ -324,12 +325,15 @@ describe("validateCausaMortisDeclaration", () => {
     ).toBe("Select at least one declarant or heir.");
   });
 
-  it("allows an omitted value only when it is explicitly optional", () => {
+  it("allows an omitted value while validating any value that is supplied", () => {
     const withoutValue = { ...completeDeclaration, immovablePropertyValue: "" };
-    expect(validateCausaMortisDeclaration(withoutValue)).toBe(
-      "Enter the immovable-property value declared.",
-    );
-    expect(validateCausaMortisDeclaration(withoutValue, { valueRequired: false })).toBe("");
+    expect(validateCausaMortisDeclaration(withoutValue)).toBe("");
+    expect(
+      validateCausaMortisDeclaration({
+        ...completeDeclaration,
+        immovablePropertyValue: "not a number",
+      }),
+    ).toBe("Enter a valid immovable-property value.");
   });
 
   it("accepts a recorded fraction larger than the inherited share", () => {

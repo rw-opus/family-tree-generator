@@ -52,7 +52,7 @@ describe("vendor tax Excel export", () => {
           },
         ],
       },
-      { address: "1 Republic Street" },
+      { address: "1 Republic Street", saleValue: 480 },
       [
         {
           id: "initial-owner",
@@ -92,29 +92,32 @@ describe("vendor tax Excel export", () => {
   });
 
   it("keeps negative sale-to-declaration differences visible in the workings", () => {
-    const xml = vendorTaxSpreadsheetXml({
-      vendors: [
-        {
-          id: "vendor",
-          name: "Maria Borg",
-          share: 1,
-          attributedSaleValue: 90,
-          tax: 0,
-          rows: [
-            {
-              provenance: "Inherited from Joseph Borg",
-              share: 1,
-              declarations: [],
-              declaredValue: 100,
-              attributedSaleValue: 90,
-              difference: -10,
-              methods: [],
-              warning: "Incomplete",
-            },
-          ],
-        },
-      ],
-    });
+    const xml = vendorTaxSpreadsheetXml(
+      {
+        vendors: [
+          {
+            id: "vendor",
+            name: "Maria Borg",
+            share: 1,
+            attributedSaleValue: 90,
+            tax: 0,
+            rows: [
+              {
+                provenance: "Inherited from Joseph Borg",
+                share: 1,
+                declarations: [],
+                declaredValue: 100,
+                attributedSaleValue: 90,
+                difference: -10,
+                methods: [],
+                warning: "Incomplete",
+              },
+            ],
+          },
+        ],
+      },
+      { saleValue: 90 },
+    );
 
     expect(xml).toContain('<Data ss:Type="Number">-10</Data>');
   });
@@ -142,11 +145,101 @@ describe("vendor tax Excel export", () => {
           },
         ],
       },
-      {},
+      { saleValue: 0 },
     );
 
     expect(xml).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
     expect(xml).not.toContain("<script>");
     expect(xml).not.toContain("\u0000");
+  });
+
+  it("leaves omitted monetary inputs blank and calculated sale fields unavailable", () => {
+    const xml = vendorTaxSpreadsheetXml(
+      {
+        vendors: [
+          {
+            id: "vendor",
+            name: "Maria Borg",
+            share: 0.25,
+            shareFraction: { numerator: 1, denominator: 4 },
+            attributedSaleValue: 0,
+            tax: null,
+            rows: [
+              {
+                provenance: "Inherited from Joseph Borg",
+                share: 0.25,
+                shareFraction: { numerator: 1, denominator: 4 },
+                declarations: [
+                  {
+                    date: "2020-01-02",
+                    declaredShare: 0.25,
+                    declaredShareFraction: { numerator: 1, denominator: 4 },
+                    declaredValue: "",
+                  },
+                ],
+                declaredValue: "",
+                attributedSaleValue: 0,
+                difference: 0,
+                methods: [],
+                warning: "Tax information is incomplete",
+              },
+            ],
+          },
+        ],
+      },
+      { address: "1 Republic Street", saleValue: "" },
+    );
+
+    expect(xml).toContain("CM fraction 1/4; declared value not recorded");
+    expect(xml).toContain("Not calculated");
+    expect(xml).not.toContain("CM fraction 1/4; EUR 0.00");
+    expect(xml).not.toContain('<Data ss:Type="Number">0</Data>');
+  });
+
+  it("preserves monetary zero when the user entered zero explicitly", () => {
+    const xml = vendorTaxSpreadsheetXml(
+      {
+        vendors: [
+          {
+            id: "vendor",
+            name: "Maria Borg",
+            share: 1,
+            attributedSaleValue: 0,
+            tax: 0,
+            rows: [
+              {
+                provenance: "Inherited from Joseph Borg",
+                share: 1,
+                declarations: [
+                  {
+                    declaredShare: 1,
+                    declaredShareFraction: { numerator: 1, denominator: 1 },
+                    declaredValue: 0,
+                  },
+                ],
+                declaredValue: 0,
+                attributedSaleValue: 0,
+                difference: 0,
+                methods: [
+                  {
+                    key: "zero-tax",
+                    label: "Zero tax",
+                    rate: 0,
+                    basis: 0,
+                    tax: 0,
+                  },
+                ],
+                selectedMethod: { key: "zero-tax" },
+                tax: 0,
+              },
+            ],
+          },
+        ],
+      },
+      { saleValue: 0 },
+    );
+
+    expect(xml).toContain("CM fraction 1/1; EUR 0.00");
+    expect(xml).toContain('<Data ss:Type="Number">0</Data>');
   });
 });

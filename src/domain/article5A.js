@@ -8,6 +8,8 @@ export const INHERITANCE_CAUSA_MORTIS_CUTOFF = "1992-11-25";
 const PRE_2004_CUTOFF = "2004-01-01";
 
 const number = (value) => Math.max(0, Number(value) || 0);
+const isMissingMoney = (value) =>
+  value === undefined || value === null || String(value).trim() === "";
 const validDate = (value) => {
   const text = String(value || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
@@ -770,7 +772,7 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
     (acquisitionType === "donation" && !donationWithinFiveYears && !lot.isProject);
 
   if (usesIncreaseMethod) {
-    if (lot.acquisitionValue === "" || lot.acquisitionValue === undefined) {
+    if (isMissingMoney(lot.acquisitionValue)) {
       return {
         ...base,
         methods: [],
@@ -782,7 +784,20 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
         warning:
           acquisitionType === "inheritance"
             ? "Enter the causa mortis acquisition value for this fraction."
-            : "Enter the acquisition value for this donated fraction.",
+            : "Enter the Donation Value stated in the contract for this donated fraction.",
+      };
+    }
+    const numericAcquisitionValue = Number(lot.acquisitionValue);
+    if (!Number.isFinite(numericAcquisitionValue) || numericAcquisitionValue < 0) {
+      return {
+        ...base,
+        methods: [],
+        selected: "",
+        recommended: "",
+        lowest: "",
+        status: "incomplete",
+        warnings: [],
+        warning: "Enter a valid non-negative acquisition value or leave it blank.",
       };
     }
     if (acquisitionType === "inheritance") {
@@ -833,8 +848,7 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
         lowest: "",
         status: "incomplete",
         warnings: [],
-        warning:
-          "Choose whether the donated fraction's acquisition value is its market value at donation, deed value or final assessment.",
+        warning: "Confirm the Donation Value stated in the contract for this donated fraction.",
       };
     }
     const increaseMethod = method({

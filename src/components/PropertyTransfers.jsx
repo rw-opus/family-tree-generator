@@ -376,7 +376,7 @@ export function PropertyTransfers({
               />
             </label>
             <label>
-              Consideration (€)
+              Consideration (€) (optional)
               <input
                 type="number"
                 min="0"

@@ -115,6 +115,30 @@ const blankDonationDraft = () => ({
   error: "",
 });
 
+const transferDraftFromRecord = (transfer = {}) => ({
+  ...blankDonationDraft(),
+  kind: transfer.kind === "sale" ? "sale" : "donation",
+  doneeMode: "existing",
+  doneeId: transfer.buyerId || "",
+  numerator: String(transfer.numerator ?? ""),
+  denominator: String(transfer.denominator ?? ""),
+  amountType: "defined-share",
+  shareInputMode: "fraction",
+  date: transfer.date || "",
+  designation: Object.fromEntries(
+    (transfer.provenance || [])
+      .filter((portion) => portion?.trancheId)
+      .map((portion) => [
+        portion.trancheId,
+        {
+          checked: true,
+          numerator: String(portion.numerator ?? ""),
+          denominator: String(portion.denominator ?? ""),
+        },
+      ]),
+  ),
+});
+
 function initials(name) {
   const value = String(name || "").trim();
   if (!value) return "?";
@@ -180,6 +204,7 @@ export function PersonInspector({
   onChange,
   onOutsidePartiesChange,
   onRecordDonation,
+  onUpdateInterVivosTransfer,
   onDeleteInterVivosTransfer,
   deceasedStatusSession = null,
   interVivosStatusSession = null,
@@ -203,6 +228,7 @@ export function PersonInspector({
   const [ownershipDisplay, setOwnershipDisplay] = useState(shareDisplayMode(shareDisplay));
   const [donationOpen, setDonationOpen] = useState(false);
   const [donationDraft, setDonationDraft] = useState(blankDonationDraft);
+  const [editingTransferId, setEditingTransferId] = useState("");
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
@@ -290,6 +316,7 @@ export function PersonInspector({
     setWillOutsidePartyOpen(false);
     setDonationOpen(Boolean(interVivosStatusSession) && !hasSavedOutgoingTransfer);
     setDonationDraft(blankDonationDraft());
+    setEditingTransferId("");
     setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
   }, [interVivosStatusSession, properties, selectedPerson]);
 
@@ -517,22 +544,6 @@ export function PersonInspector({
     });
   };
 
-  const updateCausaMortisDeclaration = (declarationId, patch) => {
-    setCausaMortisErrors((current) => {
-      if (!current[declarationId]) return current;
-      const next = { ...current };
-      delete next[declarationId];
-      return next;
-    });
-    updateSelected({
-      causaMortisDeclarations: (selectedPerson.causaMortisDeclarations || []).map((declaration) =>
-        declaration.id === declarationId
-          ? { ...declaration, ...patch, status: "draft" }
-          : declaration,
-      ),
-    });
-  };
-
   const addCausaMortisDeclaration = (requestedPropertyId = "") => {
     const requestedCoverage = requestedPropertyId
       ? causaMortisCoverage.find((row) => row.propertyId === requestedPropertyId)
@@ -607,13 +618,12 @@ export function PersonInspector({
     const propertyId = declaration.propertyId || (properties.length === 1 ? properties[0].id : "");
     const normalizedDeclaration = { ...declaration, propertyId };
     const error = validateCausaMortisDeclaration(normalizedDeclaration, {
-      valueRequired: !allSuccessionHeirsDeceased,
       dateOfDeath: selectedPerson.dateOfDeath || "",
     });
 
     if (error) {
       setCausaMortisErrors((current) => ({ ...current, [declaration.id]: error }));
-      return;
+      return false;
     }
 
     setCausaMortisErrors((current) => {
@@ -631,6 +641,7 @@ export function PersonInspector({
           : current,
       ),
     });
+    return true;
   };
 
   const removeCausaMortisDeclaration = (declarationId) => {
@@ -643,15 +654,6 @@ export function PersonInspector({
       causaMortisDeclarations: (selectedPerson.causaMortisDeclarations || []).filter(
         (declaration) => declaration.id !== declarationId,
       ),
-    });
-  };
-
-  const toggleCausaMortisDeclarant = (declaration, personId) => {
-    const current = new Set(declaration.declarantPersonIds || []);
-    if (current.has(personId)) current.delete(personId);
-    else current.add(personId);
-    updateCausaMortisDeclaration(declaration.id, {
-      declarantPersonIds: [...current],
     });
   };
 
@@ -797,6 +799,18 @@ export function PersonInspector({
   };
 
   const activeProperty = properties[0] || null;
+  const workingTransferProperty = useMemo(
+    () =>
+      activeProperty && editingTransferId
+        ? {
+            ...activeProperty,
+            transfers: (activeProperty.transfers || []).filter(
+              (transfer) => transfer.id !== editingTransferId,
+            ),
+          }
+        : activeProperty,
+    [activeProperty, editingTransferId],
+  );
   const propertyVendorReport = useMemo(
     () =>
       vendorReport ||
@@ -804,6 +818,13 @@ export function PersonInspector({
         ? buildPropertyVendorTaxReport(activeProperty, people, outsideParties)
         : null),
     [activeProperty, outsideParties, people, vendorReport],
+  );
+  const workingTransferReport = useMemo(
+    () =>
+      editingTransferId && workingTransferProperty
+        ? buildPropertyVendorTaxReport(workingTransferProperty, people, outsideParties)
+        : propertyVendorReport,
+    [editingTransferId, outsideParties, people, propertyVendorReport, workingTransferProperty],
   );
   const recordedOutgoingInterVivosTransfers = useMemo(
     () =>
@@ -814,11 +835,11 @@ export function PersonInspector({
   );
   const estateTransmissionFractions = useMemo(
     () =>
-      (propertyVendorReport?.ownership?.transmissions || [])
+      (workingTransferReport?.ownership?.transmissions || [])
         .filter((transmission) => transmission.deceasedId === selectedPerson?.id)
         .map((transmission) => transmission.amountFraction)
         .filter((fraction) => fraction && !fraction.error),
-    [propertyVendorReport, selectedPerson?.id],
+    [workingTransferReport, selectedPerson?.id],
   );
   const calculatedEstateShareFraction = useMemo(
     () =>
@@ -831,7 +852,7 @@ export function PersonInspector({
   const selectedIsDeceased = isPersonDeceased(selectedPerson);
   const isDonation = donationDraft.kind !== "sale";
   const currentLedgerHolding =
-    (propertyVendorReport?.ledger?.owners || []).find(
+    (workingTransferReport?.ledger?.owners || []).find(
       (candidate) => candidate.id === selectedPerson?.id,
     )?.shareFraction || ZERO_FRACTION;
   const interVivosDisclosureOpen =
@@ -843,30 +864,34 @@ export function PersonInspector({
     : currentLedgerHolding;
   const transferCapacityPreview = useMemo(
     () =>
-      activeProperty && selectedPerson?.id && donationDraft.date
-        ? previewPropertyTransferCapacity(activeProperty, people, outsideParties, {
+      workingTransferProperty && selectedPerson?.id && donationDraft.date
+        ? previewPropertyTransferCapacity(workingTransferProperty, people, outsideParties, {
             sellerId: selectedPerson.id,
             date: donationDraft.date,
             kind: donationDraft.kind,
           })
         : null,
     [
-      activeProperty,
       donationDraft.date,
       donationDraft.kind,
       outsideParties,
       people,
       selectedPerson?.id,
+      workingTransferProperty,
     ],
   );
   const provenanceTranches = useMemo(() => {
     if (transferCapacityPreview && !transferCapacityPreview.error) {
       return transferCapacityPreview.tranches;
     }
-    return activeProperty
-      ? ownerProvenanceTranches(propertyVendorReport || {}, activeProperty, selectedPerson.id)
+    return workingTransferProperty
+      ? ownerProvenanceTranches(
+          workingTransferReport || {},
+          workingTransferProperty,
+          selectedPerson.id,
+        )
       : [];
-  }, [activeProperty, propertyVendorReport, selectedPerson.id, transferCapacityPreview]);
+  }, [selectedPerson.id, transferCapacityPreview, workingTransferProperty, workingTransferReport]);
   // Once a date has been entered, the dated preview is authoritative even when it
   // reports an error. Falling back to the balance at death/current balance would
   // misleadingly present that share as available on an impossible transfer date.
@@ -877,7 +902,11 @@ export function PersonInspector({
     recordedOutgoingInterVivosTransfers.length > 0 &&
     compareFractions(baseTransferHolding, ZERO_FRACTION) === 0;
   const canDonate =
-    Boolean(activeProperty && onRecordDonation && donorLedgerHolding) &&
+    Boolean(
+      activeProperty &&
+      (editingTransferId ? onUpdateInterVivosTransfer : onRecordDonation) &&
+      donorLedgerHolding,
+    ) &&
     (donationOpen || compareFractions(baseTransferHolding, ZERO_FRACTION) > 0);
   // Store every new transfer as an exact fraction of the whole property. In particular,
   // "all" means the balance displayed now; it must not be recalculated against a different
@@ -962,6 +991,22 @@ export function PersonInspector({
   const setDonationField = (patch) =>
     setDonationDraft((current) => ({ ...current, ...patch, error: "" }));
 
+  const openTransferEditor = (transferId) => {
+    const transfer = (activeProperty?.transfers || []).find(
+      (candidate) => candidate.id === transferId,
+    );
+    if (!transfer) return;
+    setEditingTransferId(transfer.id);
+    setDonationDraft(transferDraftFromRecord(transfer));
+    setDonationOpen(true);
+  };
+
+  const closeTransferEditor = () => {
+    setEditingTransferId("");
+    setDonationDraft(blankDonationDraft());
+    setDonationOpen(false);
+  };
+
   const transferProvenance = (amount) => {
     if (!provenanceTranches.length) return { provenance: [] };
     const asRecord = (portion) => ({
@@ -1006,7 +1051,12 @@ export function PersonInspector({
 
   const submitDonation = (event) => {
     event.preventDefault();
-    if (!canDonate) return;
+    if (!canDonate) {
+      return setDonationDraft((draft) => ({
+        ...draft,
+        error: "This transfer cannot be edited until its property share is available.",
+      }));
+    }
     const calculation = draftTransferCalculation();
     if (calculation.error) {
       return setDonationDraft((draft) => ({ ...draft, error: calculation.error }));
@@ -1062,49 +1112,95 @@ export function PersonInspector({
       }
     }
 
-    const transfer = tagStatusCreatedRecord(
-      {
-        id: crypto.randomUUID(),
-        // The contract type travels with the transfer because it governs the acquirer's own
-        // tax position on a later resale: a donation triggers the Article 5A(5)(b) rules,
-        // while a sale stands on its own date and price.
-        kind: isDonation ? "donation" : "sale",
-        sellerId: selectedPerson.id,
-        buyerId: acquirer ? acquirer.id : donationDraft.doneeId,
-        numerator: String(fraction.numerator),
-        denominator: String(fraction.denominator),
-        amountType: storedAmountType,
-        date: donationDraft.date,
-        consideration: "",
-        ...(acquirer ? { createdBuyerPersonId: acquirer.id } : {}),
-        // Which acquisitions the transferred share comes from — designated by the notary
-        // when the question arises, attributed automatically when it answers itself.
-        provenance: provenanceResult.provenance,
-      },
-      interVivosStatusSession,
-      { role: "transfer" },
-    );
-    const prospectiveEntry = buildPropertyVendorTaxReport(
+    const originalTransfer = editingTransferId
+      ? (activeProperty.transfers || []).find((transfer) => transfer.id === editingTransferId)
+      : null;
+    if (editingTransferId && !originalTransfer) {
+      return setDonationDraft((draft) => ({
+        ...draft,
+        error: "This saved transfer could not be found. Close and reopen the person card.",
+      }));
+    }
+
+    const transferRecord = {
+      ...(originalTransfer || {}),
+      id: originalTransfer?.id || crypto.randomUUID(),
+      // The contract type travels with the transfer because it governs the acquirer's own
+      // tax position on a later resale: a donation triggers the Article 5A(5)(b) rules,
+      // while a sale stands on its own date and price.
+      kind: isDonation ? "donation" : "sale",
+      sellerId: selectedPerson.id,
+      buyerId: acquirer ? acquirer.id : donationDraft.doneeId,
+      numerator: String(fraction.numerator),
+      denominator: String(fraction.denominator),
+      amountType: storedAmountType,
+      date: donationDraft.date,
+      consideration: originalTransfer?.consideration || "",
+      ...(acquirer
+        ? { createdBuyerPersonId: acquirer.id }
+        : originalTransfer?.createdBuyerPersonId
+          ? { createdBuyerPersonId: originalTransfer.createdBuyerPersonId }
+          : {}),
+      // Which acquisitions the transferred share comes from — designated by the notary
+      // when the question arises, attributed automatically when it answers itself.
+      provenance: provenanceResult.provenance,
+    };
+    if (
+      originalTransfer?.createdBuyerPersonId &&
+      transferRecord.buyerId !== originalTransfer.createdBuyerPersonId
+    ) {
+      delete transferRecord.createdBuyerPersonId;
+    }
+    const transfer = originalTransfer
+      ? transferRecord
+      : tagStatusCreatedRecord(transferRecord, interVivosStatusSession, { role: "transfer" });
+    const prospectiveTransfers = originalTransfer
+      ? (activeProperty.transfers || []).map((candidate) =>
+          candidate.id === originalTransfer.id ? transfer : candidate,
+        )
+      : [...(activeProperty.transfers || []), transfer];
+    const prospectiveReport = buildPropertyVendorTaxReport(
       {
         ...activeProperty,
-        transfers: [...(activeProperty.transfers || []), transfer],
+        transfers: prospectiveTransfers,
       },
       nextPeople,
       outsideParties,
-    ).ledger.entries.find((entry) => entry.id === transfer.id);
+    );
+    const prospectiveEntry = prospectiveReport.ledger.entries.find(
+      (entry) => entry.id === transfer.id,
+    );
     if (!prospectiveEntry || prospectiveEntry.error) {
       return setDonationDraft((draft) => ({
         ...draft,
         error: prospectiveEntry?.error || "The transfer could not be validated.",
       }));
     }
-    onRecordDonation({
+    const existingInvalidIds = new Set(
+      (propertyVendorReport?.ledger?.entries || [])
+        .filter((entry) => entry.error)
+        .map((entry) => entry.id),
+    );
+    const newlyInvalidTransfer = prospectiveReport.ledger.entries.find(
+      (entry) => entry.id !== transfer.id && entry.error && !existingInvalidIds.has(entry.id),
+    );
+    if (newlyInvalidTransfer) {
+      return setDonationDraft((draft) => ({
+        ...draft,
+        error: `This change would invalidate the later transfer dated ${
+          isoDateToDisplay(newlyInvalidTransfer.date) || "an unknown date"
+        }. ${newlyInvalidTransfer.error}`,
+      }));
+    }
+    const payload = {
       people: nextPeople,
       propertyId: activeProperty.id,
+      transferId: transfer.id,
       transfer,
-    });
-    setDonationDraft(blankDonationDraft());
-    setDonationOpen(false);
+    };
+    if (originalTransfer) onUpdateInterVivosTransfer(payload);
+    else onRecordDonation(payload);
+    closeTransferEditor();
   };
 
   const createOutsideParty = (party) => {
@@ -1350,12 +1446,6 @@ export function PersonInspector({
             : automaticIntestacy?.shares
           )?.keys() || []),
         ];
-  const successionHeirs = successionHeirIds
-    .map((personId) => peopleById.get(personId) || outsidePartiesById.get(personId))
-    .filter(Boolean);
-  const allSuccessionHeirsDeceased =
-    successionHeirs.length > 0 &&
-    successionHeirs.every((person) => peopleById.has(person.id) && isPersonDeceased(person));
   const declarationCandidateIds = new Set(successionHeirIds);
   const declarationCandidates = [...people, ...outsideParties]
     .filter((party) => declarationCandidateIds.has(party.id))
@@ -1632,7 +1722,7 @@ export function PersonInspector({
         <small>
           {hasDisplayedPropertyShare && (propertySaleValue > 0 || displayedPropertyShare === 0)
             ? `Current value ${money.format(displayedPropertyValue)}`
-            : "Enter initial ownership and selling price to calculate the value."}
+            : "Current value not calculated (selling price is optional)."}
         </small>
       </div>
       {!isDeceased && (
@@ -1664,8 +1754,12 @@ export function PersonInspector({
   // A transfer during life is independent of the person's eventual succession. Completed
   // records stay compact; the editor opens only for the first or next transfer.
   const shareTransferSection =
-    canDonate && donationOpen ? (
-      <div className="person-donation" data-person-section="donation">
+    donationOpen && activeProperty && (editingTransferId || canDonate) ? (
+      <div
+        id={`lifetime-transfer-editor-${selectedPerson.id}`}
+        className="person-donation"
+        data-person-section="donation"
+      >
         <form className="person-donation-form" onSubmit={submitDonation}>
           <label>
             Type of contract
@@ -1693,8 +1787,10 @@ export function PersonInspector({
               value={donationDraft.doneeMode}
               onChange={(event) => setDonationField({ doneeMode: event.target.value })}
             >
-              <option value="existing">Someone on this family tree</option>
-              <option value="new">Someone not on the tree — add them</option>
+              <option value="existing">Choose an existing person or organisation</option>
+              {!editingTransferId && (
+                <option value="new">Someone not on the tree — add them</option>
+              )}
             </select>
           </label>
           {donationDraft.doneeMode === "existing" ? (
@@ -1711,6 +1807,13 @@ export function PersonInspector({
                   .map((person) => (
                     <option key={person.id} value={person.id}>
                       {displayName(person)}
+                    </option>
+                  ))}
+                {outsideParties
+                  .filter((party) => party.id !== selectedPerson.id)
+                  .map((party) => (
+                    <option key={party.id} value={party.id}>
+                      {displayParty(party)}
                     </option>
                   ))}
               </select>
@@ -1940,14 +2043,19 @@ export function PersonInspector({
               className="primary-button"
               aria-describedby={displayedTransferError ? "lifetime-transfer-error" : undefined}
             >
-              {isDonation ? "Record donation" : "Record sale"}
+              {editingTransferId
+                ? isDonation
+                  ? "Save donation"
+                  : "Save sale"
+                : isDonation
+                  ? "Record donation"
+                  : "Record sale"}
             </button>
             <button
               type="button"
               className="secondary-button"
               onClick={() => {
-                setDonationDraft(blankDonationDraft());
-                setDonationOpen(false);
+                closeTransferEditor();
               }}
             >
               Cancel
@@ -1958,7 +2066,10 @@ export function PersonInspector({
     ) : null;
   const setInterVivosDisclosure = (checked) => {
     setDonationOpen(checked);
-    if (!checked) setDonationDraft(blankDonationDraft());
+    if (!checked) {
+      setEditingTransferId("");
+      setDonationDraft(blankDonationDraft());
+    }
     onInterVivosStatusChange?.({
       checked,
       personId: selectedPerson.id,
@@ -1983,29 +2094,39 @@ export function PersonInspector({
                 className={`lifetime-transfer-record${entry.error ? " invalid" : ""}`}
                 key={entry.id}
               >
-                <span>
-                  <strong>{entry.kind === "donation" ? "Donation" : "Sale"}</strong>
-                  <small>
-                    {entry.date ? isoDateToDisplay(entry.date) : "Date not entered"} ·{" "}
-                    {recipient ? displayParty(recipient) : "Unknown recipient"}
-                  </small>
-                </span>
-                <span>
-                  {entry.error ? (
-                    <b>Invalid</b>
-                  ) : (
-                    <>
-                      <b>
-                        {ownershipLabel(
-                          fractionToNumber(amountFraction),
-                          ownershipDisplay,
-                          amountFraction,
-                        )}
-                      </b>
-                      {propertySaleValue > 0 && <small>{money.format(currentValue)}</small>}
-                    </>
-                  )}
-                </span>
+                <button
+                  type="button"
+                  className="lifetime-transfer-summary"
+                  aria-label={`Edit ${entry.kind === "donation" ? "donation" : "sale"} record`}
+                  aria-expanded={editingTransferId === entry.id}
+                  aria-controls={`lifetime-transfer-editor-${selectedPerson.id}`}
+                  onClick={() => openTransferEditor(entry.id)}
+                >
+                  <span>
+                    <strong>{entry.kind === "donation" ? "Donation" : "Sale"}</strong>
+                    <small>
+                      {entry.date ? isoDateToDisplay(entry.date) : "Date not entered"} ·{" "}
+                      {recipient ? displayParty(recipient) : "Unknown recipient"}
+                    </small>
+                  </span>
+                  <span>
+                    {entry.error ? (
+                      <b>Invalid</b>
+                    ) : (
+                      <>
+                        <b>
+                          {ownershipLabel(
+                            fractionToNumber(amountFraction),
+                            ownershipDisplay,
+                            amountFraction,
+                          )}
+                        </b>
+                        {propertySaleValue > 0 && <small>{money.format(currentValue)}</small>}
+                      </>
+                    )}
+                  </span>
+                  <Pencil size={14} aria-hidden="true" />
+                </button>
                 {onDeleteInterVivosTransfer && entry.id && (
                   <button
                     type="button"
@@ -2037,6 +2158,7 @@ export function PersonInspector({
             type="button"
             className="secondary-button lifetime-transfer-add"
             onClick={() => {
+              setEditingTransferId("");
               setDonationDraft(blankDonationDraft());
               setDonationOpen(true);
             }}
@@ -2795,14 +2917,11 @@ export function PersonInspector({
                       candidates={declarationCandidates}
                       candidateLabel={personSelectionLabel}
                       dateOfDeath={selectedPerson.dateOfDeath || ""}
-                      allHeirsDeceased={allSuccessionHeirsDeceased}
                       hasUnknownDeathDate={hasUnknownCausaMortisDeathDate}
                       errors={causaMortisErrors}
                       onAddDeclaration={handleCausaMortisDeclarationAction}
                       onAddDeclarationForProperty={handleCausaMortisCoverageAction}
-                      onUpdateDeclaration={updateCausaMortisDeclaration}
                       onRemoveDeclaration={removeCausaMortisDeclaration}
-                      onToggleDeclarant={toggleCausaMortisDeclarant}
                       onCompleteDeclaration={completeCausaMortisDeclaration}
                     />
                   )}

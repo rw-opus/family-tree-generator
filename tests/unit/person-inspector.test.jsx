@@ -2060,7 +2060,7 @@ describe("PersonInspector", () => {
     act(() => root.render(<Harness />));
 
     const tax = container.querySelector(".final-withholding-tax-section");
-    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("Pending");
+    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("Not calculated");
     setInputValue('input[aria-label="Original acquisition date"]', "01012010");
     const confirmButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Confirm date",
@@ -2122,6 +2122,7 @@ describe("PersonInspector", () => {
   });
 
   it("records a donation-time value and recalculates an older donated share immediately", () => {
+    let latestProperty;
     const people = [
       { id: "donor", fullName: "Joseph Borg", spouseIds: [] },
       { id: "donee", fullName: "Maria Vella", spouseIds: [] },
@@ -2156,6 +2157,7 @@ describe("PersonInspector", () => {
 
     function Harness() {
       const [property, setProperty] = useState(initialProperty);
+      latestProperty = property;
       const confirmDonationValue = ({ personId, row, acquisitionValue, acquisitionValueBasis }) => {
         const result = setDonationAcquisitionValue(
           property,
@@ -2184,15 +2186,19 @@ describe("PersonInspector", () => {
     act(() => root.render(<Harness />));
 
     const tax = container.querySelector(".final-withholding-tax-section");
-    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("Pending");
-    setInputValue('input[aria-label="Donation acquisition value"]', "100000");
+    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("Not calculated");
+    setInputValue('input[aria-label="Donation Value"]', "100000");
     const confirmButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Confirm value",
     );
     act(() => confirmButton.click());
 
     expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("€12,000.00");
-    expect(container.querySelector('input[aria-label="Donation acquisition value"]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Donation Value"]')).toBeNull();
+    expect(latestProperty.transfers[0]).toMatchObject({
+      acquisitionValue: 100000,
+      acquisitionValueBasis: "deed-value",
+    });
   });
 
   it("shows succession fields only for a deceased person", () => {
@@ -2657,7 +2663,8 @@ describe("PersonInspector", () => {
     const valueInput = container.querySelector(
       'input[aria-label="Immovable property value declared causa mortis 1"]',
     );
-    expect(valueInput.required).toBe(true);
+    expect(valueInput.required).toBe(false);
+    expect(valueInput.closest("label").textContent).toContain("Value declared (optional)");
     const declarant = [...container.querySelectorAll(".causa-mortis-declarants label")].find(
       (label) => label.textContent.includes("Maria Borg"),
     );
@@ -3208,6 +3215,167 @@ describe("PersonInspector", () => {
     expect(latestPeople[0].causaMortisDeclarations).toHaveLength(3);
     expect(container.textContent).toContain("Declaration Causa Mortis 1");
     expect(container.textContent).toContain("Declaration Causa Mortis 2");
+  });
+
+  it("edits a completed causa mortis declaration without changing it before Save", () => {
+    const onChange = vi.fn();
+    const completedDeclaration = {
+      id: "cm-1",
+      propertyId: "property-1",
+      declaredShareNumerator: "1",
+      declaredShareDenominator: "2",
+      date: "2021-02-03",
+      notaryName: "Maria Vella",
+      immovablePropertyValue: "",
+      declarantPersonIds: ["child"],
+      status: "complete",
+    };
+    const peopleWithDeclaration = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "heir-record", personId: "child", sharePercent: 100 }],
+        causaMortisDeclarations: [completedDeclaration],
+        designations: ["Deceased"],
+        spouseIds: [],
+        siblingIds: [],
+      },
+      {
+        id: "child",
+        fullName: "Maria Borg",
+        sex: "Female",
+        surnameAtBirth: "Borg",
+        fatherId: "deceased",
+        designations: [],
+        spouseIds: [],
+        siblingIds: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={peopleWithDeclaration}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[
+            {
+              personId: "deceased",
+              propertyId: "property-1",
+              requiredShare: 0.5,
+              declaredShare: 0.5,
+              status: "complete",
+            },
+          ]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const edit = container.querySelector('button[aria-label="Edit Declaration Causa Mortis 1"]');
+    expect(edit).not.toBeNull();
+    expect(container.textContent).not.toContain("€0.00");
+    expect(
+      container.querySelector('input[aria-label="Notary for Declaration Causa Mortis 1"]'),
+    ).toBeNull();
+
+    act(() =>
+      container.querySelector('button[aria-label="Edit Declaration Causa Mortis 1"]').click(),
+    );
+    const optionalValue = container.querySelector(
+      'input[aria-label="Immovable property value declared causa mortis 1"]',
+    );
+    expect(optionalValue.required).toBe(false);
+    expect(optionalValue.closest("label").textContent).toContain("Value declared (optional)");
+    setInputValue('input[aria-label="Notary for Declaration Causa Mortis 1"]', "Paul Galea");
+    expect(onChange).not.toHaveBeenCalled();
+
+    const cancel = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Cancel",
+    );
+    act(() => cancel.click());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Maria Vella");
+    expect(container.textContent).not.toContain("Paul Galea");
+
+    act(() =>
+      container.querySelector('button[aria-label="Edit Declaration Causa Mortis 1"]').click(),
+    );
+    setInputValue('input[aria-label="Notary for Declaration Causa Mortis 1"]', "Paul Galea");
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Save declaration",
+    );
+    act(() => save.click());
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0].causaMortisDeclarations).toEqual([
+      expect.objectContaining({
+        id: "cm-1",
+        status: "complete",
+        notaryName: "Paul Galea",
+        declaredShareNumerator: "1",
+        declaredShareDenominator: "2",
+        declarantPersonIds: ["child"],
+      }),
+    ]);
+  });
+
+  it("keeps a previously saved CM draft when Cancel is pressed", () => {
+    const onChange = vi.fn();
+    const draftDeclaration = {
+      id: "cm-draft",
+      propertyId: "property-1",
+      declaredShareNumerator: "1",
+      declaredShareDenominator: "4",
+      date: "",
+      notaryName: "Draft Notary",
+      immovablePropertyValue: "",
+      declarantPersonIds: ["child"],
+      status: "draft",
+    };
+    const draftPeople = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [{ id: "heir", personId: "child", sharePercent: 100 }],
+        causaMortisDeclarations: [draftDeclaration],
+        designations: ["Deceased"],
+        spouseIds: [],
+      },
+      { id: "child", fullName: "Maria Borg", fatherId: "deceased", spouseIds: [] },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={draftPeople}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    setInputValue('input[aria-label="Notary for Declaration Causa Mortis 1"]', "Changed Notary");
+    const cancel = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Cancel",
+    );
+    act(() => cancel.click());
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(
+      container.querySelector('input[aria-label="Notary for Declaration Causa Mortis 1"]').value,
+    ).toBe("Draft Notary");
+    expect(container.textContent).toContain("Declaration Causa Mortis 1");
   });
 
   it("keeps excess CM coverage out of the summary while allowing another declaration", () => {
@@ -4411,6 +4579,86 @@ describe("PersonInspector provenance designation", () => {
       propertyId: "prop",
       transferId: "saved-sale",
     });
+  });
+
+  it("opens a saved transfer for editing and replaces the same record", () => {
+    const savedProperty = {
+      ...property,
+      transfers: [
+        ...property.transfers,
+        {
+          id: "saved-sale",
+          kind: "sale",
+          sellerId: "seller",
+          buyerId: "other",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2021-01-01",
+        },
+      ],
+    };
+    const onRecordDonation = vi.fn();
+    const onUpdateInterVivosTransfer = vi.fn();
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[savedProperty]}
+          vendorReport={buildPropertyVendorTaxReport(savedProperty, people, [])}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+          onUpdateInterVivosTransfer={onUpdateInterVivosTransfer}
+        />,
+      ),
+    );
+
+    const edit = container.querySelector('button[aria-label="Edit sale record"]');
+    expect(edit).not.toBeNull();
+    act(() => edit.click());
+    expect(edit.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector('input[aria-label="Transfer numerator"]').value).toBe("1");
+    expect(container.querySelector('input[aria-label="Transfer denominator"]').value).toBe("4");
+
+    const setTransferField = (label, value) => {
+      const input = container.querySelector(`input[aria-label="${label}"]`);
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    setTransferField("Transfer numerator", "3");
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Save sale",
+    );
+    act(() => save.click());
+
+    expect(onRecordDonation).not.toHaveBeenCalled();
+    expect(onUpdateInterVivosTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        propertyId: "prop",
+        transferId: "saved-sale",
+        transfer: expect.objectContaining({
+          id: "saved-sale",
+          numerator: "3",
+          denominator: "4",
+          buyerId: "other",
+          date: "2021-01-01",
+        }),
+      }),
+    );
+
+    act(() => edit.click());
+    setTransferField("Transfer denominator", "5");
+    const cancel = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Cancel",
+    );
+    act(() => cancel.click());
+    expect(onUpdateInterVivosTransfer).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".person-donation-form")).toBeNull();
   });
 
   it("shows an invalid saved transfer and its error instead of hiding it", () => {

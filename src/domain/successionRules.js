@@ -118,5 +118,5 @@ export function isLegacyHistoricalLawWarning(value = "") {
 }
 
 export function article815ReviewWarning() {
-  return "This succession opened while former Civil Code article 815 was in force. Confirm whether any proposed heir was conceived and born outside marriage; if so, enter the historically adjusted heir shares manually until that status is recorded by the calculator.";
+  return "Note: Shares can be adjusted — e.g., if a child was born outside marriage. Former Civil Code article 815 was in force at the date of succession.";
 }

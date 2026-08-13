@@ -81,6 +81,29 @@ describe("Properties section views", () => {
     expect(container.textContent).toContain("Tax Calculation");
   });
 
+  it("keeps exact ownership available when every monetary value is omitted", () => {
+    act(() =>
+      root.render(
+        <Properties
+          properties={[{ ...properties[0], saleValue: "" }]}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain(
+      "Value of the property being sold today (€) (optional)",
+    );
+    expect(container.textContent).toContain("Consideration (€) (optional)");
+    expect(container.textContent).toContain("1/1");
+    expect(container.textContent).toContain("Total sale value Not entered");
+    expect(container.textContent).toContain("Not calculated");
+    expect(container.textContent).not.toContain("€0.00");
+  });
+
   it.each([
     [
       "property",

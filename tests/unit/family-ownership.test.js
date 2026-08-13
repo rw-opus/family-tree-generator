@@ -1282,7 +1282,9 @@ describe("automatic family ownership", () => {
     const allocation = intestateAllocations(people, "owner");
 
     expect(allocation.shares.get("child")).toBe(1);
-    expect(allocation.warnings.join(" ")).toContain("former Civil Code article 815");
+    expect(allocation.warnings).toContain(
+      "Note: Shares can be adjusted — e.g., if a child was born outside marriage. Former Civil Code article 815 was in force at the date of succession.",
+    );
   });
 
   it("keeps a signed but unapplied edit inactive until it is deliberately applied", () => {
