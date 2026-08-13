@@ -14,6 +14,10 @@ import {
   setDonationAcquisitionValue,
   setLivingInitialOwnerAcquisitionDate,
 } from "../../src/domain/propertyVendorTax.js";
+import {
+  appliedTaxMethodDescription,
+  appliedTaxMethodDescriptions,
+} from "../../src/domain/vendorSettlement.js";
 import { addFractions, ZERO_FRACTION } from "../../src/domain/fractions.js";
 
 describe("lifetime transfers before succession", () => {
@@ -111,6 +115,150 @@ describe("lifetime transfers before succession", () => {
     expect(owners.buyer).toBeCloseTo(0.5);
     expect(owners.heir).toBeCloseTo(0.5);
     expect(owners.deceased || 0).toBe(0);
+  });
+});
+
+describe("tax calculation summary metadata", () => {
+  it("does not report a completed zero total when there are no vendors", () => {
+    const report = buildTaxCalculationReport(
+      { id: "property", saleValue: 1000, owners: [], transfers: [], saleLots: [] },
+      [],
+      [],
+    );
+
+    expect(report).toMatchObject({
+      vendors: [],
+      totalSaleValue: null,
+      totalTax: null,
+      totalNet: null,
+      totalsComplete: false,
+      taxStatus: "pending",
+    });
+  });
+
+  it("reports safe calculated subtotals without presenting an incomplete grand total", () => {
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 1000,
+      owners: [
+        {
+          id: "first-title",
+          personId: "first-owner",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2020-01-01",
+        },
+        {
+          id: "second-title",
+          personId: "second-owner",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+    const report = buildTaxCalculationReport(
+      property,
+      [
+        { id: "first-owner", fullName: "Maria Borg", spouseIds: [] },
+        { id: "second-owner", fullName: "Joseph Borg", spouseIds: [] },
+      ],
+      [],
+    );
+    const firstVendor = report.vendors.find((vendor) => vendor.id === "first-owner");
+    const secondVendor = report.vendors.find((vendor) => vendor.id === "second-owner");
+
+    expect(firstVendor).toMatchObject({
+      taxStatus: "complete",
+      completeSourceCount: 1,
+      incompleteSourceCount: 0,
+      calculatedSaleValueSubtotal: 500,
+      calculatedTaxSubtotal: 40,
+      calculatedNetSubtotal: 460,
+      unassessedSaleValue: 0,
+    });
+    expect(secondVendor).toMatchObject({
+      taxStatus: "pending",
+      completeSourceCount: 0,
+      incompleteSourceCount: 1,
+      calculatedSaleValueSubtotal: 0,
+      calculatedTaxSubtotal: 0,
+      calculatedNetSubtotal: 0,
+      unassessedSaleValue: 500,
+    });
+    expect(report).toMatchObject({
+      taxStatus: "partial",
+      totalSaleValue: 1000,
+      totalTax: null,
+      totalNet: null,
+      totalsComplete: false,
+      completeSourceCount: 1,
+      incompleteSourceCount: 1,
+      calculatedSaleValueSubtotal: 500,
+      calculatedTaxSubtotal: 40,
+      calculatedNetSubtotal: 460,
+      unassessedSaleValue: 500,
+    });
+  });
+
+  it("does not turn a missing selling value into an assessed zero-value source", () => {
+    const report = buildTaxCalculationReport(
+      {
+        id: "property",
+        saleValue: "",
+        owners: [
+          {
+            id: "title",
+            personId: "owner",
+            sharePercent: 100,
+            acquisitionDate: "2020-01-01",
+          },
+        ],
+        transfers: [],
+        declarations: [],
+        saleLots: [],
+      },
+      [{ id: "owner", fullName: "Maria Borg", spouseIds: [] }],
+      [],
+    );
+
+    expect(report).toMatchObject({
+      taxStatus: "pending",
+      completeSourceCount: 0,
+      incompleteSourceCount: 1,
+      calculatedSaleValueSubtotal: 0,
+      calculatedTaxSubtotal: 0,
+      calculatedNetSubtotal: 0,
+      unassessedSaleValue: null,
+      totalTax: null,
+      totalNet: null,
+    });
+  });
+
+  it("describes flat, blended, exempt and manual methods without inventing a rate", () => {
+    const flat = { label: "8% of transfer value", rate: 0.08 };
+    const blended = { label: "Housing relief: half rate on first €200,000", rate: null };
+    const exempt = { label: "Exempt qualifying family donation", rate: null };
+    const manual = { label: "Manual assessment", rate: null };
+
+    expect(appliedTaxMethodDescription(flat)).toBe("8% of transfer value");
+    expect(appliedTaxMethodDescription(blended)).toBe(
+      "Housing relief: half rate on first €200,000",
+    );
+    expect(appliedTaxMethodDescription(exempt)).toBe("Exempt qualifying family donation");
+    expect(appliedTaxMethodDescription(manual)).toBe("Manual assessment");
+    expect(appliedTaxMethodDescription({ rule: "5A(4)(a)" })).toBe("Rule 5A(4)(a)");
+    expect(
+      appliedTaxMethodDescriptions([
+        { selectedMethod: flat },
+        { selectedMethod: flat },
+        { selectedMethod: blended },
+        { selectedMethod: null },
+      ]),
+    ).toEqual(["8% of transfer value", "Housing relief: half rate on first €200,000"]);
   });
 });
 
@@ -989,6 +1137,15 @@ describe("property vendor tax reports", () => {
     ).toEqual({ numerator: 1, denominator: 1 });
     expect(vendor.incompleteRowCount).toBe(1);
     expect(vendor.tax).toBeNull();
+    expect(vendor).toMatchObject({
+      taxStatus: "partial",
+      completeSourceCount: 1,
+      incompleteSourceCount: 1,
+      calculatedSaleValueSubtotal: 120000,
+      calculatedTaxSubtotal: 9600,
+      calculatedNetSubtotal: 110400,
+      unassessedSaleValue: 120000,
+    });
   });
 
   it("fills a matched legacy purchase lot from the saved original-owner acquisition date", () => {

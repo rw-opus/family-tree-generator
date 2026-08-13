@@ -7275,6 +7275,22 @@ body.a3-print-preview-open {
   color: #fff;
 }
 
+.tax-calculation-total.partial {
+  background: #234f3d;
+}
+
+.tax-calculation-total-note {
+  margin: -4px 0 0;
+  border: 1px solid #e2c98f;
+  border-radius: 8px;
+  background: #fff8e8;
+  padding: 0.65rem 0.75rem;
+  color: #704a12;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 @media (max-width: 680px) {
   .tax-calculation-heading,
   .tax-calculation-vendor > header {

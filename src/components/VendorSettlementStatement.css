@@ -1,0 +1,411 @@
+body.vendor-settlement-open {
+  overflow: hidden;
+}
+
+.vendor-settlement-open-button {
+  white-space: nowrap;
+}
+
+.vendor-settlement-dialog {
+  position: fixed;
+  z-index: 5000;
+  inset: 0;
+  overflow: auto;
+  background: rgba(17, 39, 31, 0.68);
+  padding: clamp(0.5rem, 2vw, 1.5rem);
+}
+
+.vendor-settlement-sheet {
+  width: min(1180px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(5, 35, 25, 0.24);
+  padding: clamp(1rem, 2.5vw, 2rem);
+  color: var(--ink, #1b2b25);
+}
+
+.vendor-settlement-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 2px solid var(--forest, #00562f);
+  padding-bottom: 1rem;
+}
+
+.vendor-settlement-header h2,
+.vendor-settlement-header p {
+  margin: 0;
+}
+
+.vendor-settlement-header h2 {
+  margin-block: 0.2rem;
+  color: var(--forest, #00562f);
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+.vendor-settlement-header > div:first-child > p:last-child {
+  color: var(--muted, #65736c);
+  font-weight: 700;
+}
+
+.vendor-settlement-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vendor-settlement-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+
+.vendor-settlement-summary > div {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid #dce6e1;
+  border-radius: 10px;
+  background: #f7faf8;
+  padding: 0.75rem;
+}
+
+.vendor-settlement-summary span,
+.vendor-settlement-table th {
+  color: var(--muted, #65736c);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vendor-settlement-summary strong {
+  color: var(--forest, #00562f);
+  font-size: 1rem;
+}
+
+.vendor-settlement-table-wrap {
+  overflow-x: auto;
+}
+
+.vendor-settlement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.vendor-settlement-table th,
+.vendor-settlement-table td {
+  border: 1px solid #dce6e1;
+  padding: 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.vendor-settlement-table tbody tr:nth-child(even) {
+  background: #f8fbf9;
+}
+
+.vendor-settlement-table tfoot {
+  border-top: 2px solid var(--forest, #00562f);
+  background: #eef8f2;
+  font-weight: 800;
+}
+
+.vendor-settlement-person-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--forest, #00562f);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.vendor-settlement-methods {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 12rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vendor-settlement-methods li {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.vendor-settlement-methods span {
+  border-radius: 999px;
+  background: #e7f4eb;
+  padding: 0.1rem 0.35rem;
+  color: var(--forest, #00562f);
+  font-size: 0.67rem;
+  font-weight: 800;
+}
+
+.vendor-settlement-methods b {
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.vendor-settlement-pending {
+  color: #986213;
+  font-weight: 800;
+}
+
+.vendor-settlement-status {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.69rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.vendor-settlement-status.complete {
+  background: #ddf4e6;
+  color: #155f36;
+}
+
+.vendor-settlement-status.pending {
+  background: #fff3d6;
+  color: #80510d;
+}
+
+.vendor-settlement-warning,
+.vendor-settlement-disclaimer,
+.vendor-settlement-empty {
+  margin: 0.8rem 0 0;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  line-height: 1.4;
+}
+
+.vendor-settlement-warning {
+  border: 1px solid #e6c876;
+  background: #fff8e7;
+  color: #714b0e;
+  font-weight: 700;
+}
+
+.vendor-settlement-disclaimer {
+  border-left: 4px solid #b7811c;
+  background: #fffaf0;
+  color: #655534;
+  font-size: 0.74rem;
+}
+
+@media (max-width: 760px) {
+  .vendor-settlement-dialog {
+    padding: 0;
+  }
+
+  .vendor-settlement-sheet {
+    border-radius: 0;
+    padding: 0.85rem;
+  }
+
+  .vendor-settlement-header {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    align-items: center;
+    background: #fff;
+  }
+
+  .vendor-settlement-header .eyebrow,
+  .vendor-settlement-header > div:first-child > p:last-child {
+    display: none;
+  }
+
+  .vendor-settlement-header h2 {
+    font-size: 1.15rem;
+  }
+
+  .vendor-settlement-actions .secondary-button {
+    padding-inline: 0.65rem;
+    font-size: 0.75rem;
+  }
+
+  .vendor-settlement-summary {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+
+  .vendor-settlement-summary > div {
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .vendor-settlement-table-wrap {
+    overflow: visible;
+  }
+
+  .vendor-settlement-table,
+  .vendor-settlement-table tbody,
+  .vendor-settlement-table tfoot,
+  .vendor-settlement-table tr,
+  .vendor-settlement-table td,
+  .vendor-settlement-table th {
+    display: block;
+  }
+
+  .vendor-settlement-table thead {
+    display: none;
+  }
+
+  .vendor-settlement-table tbody {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .vendor-settlement-table tbody tr,
+  .vendor-settlement-table tfoot tr {
+    overflow: hidden;
+    border: 1px solid #dce6e1;
+    border-radius: 10px;
+  }
+
+  .vendor-settlement-table tbody td,
+  .vendor-settlement-table tfoot td {
+    display: grid;
+    grid-template-columns: minmax(7.4rem, 42%) 1fr;
+    gap: 0.5rem;
+    border: 0;
+    border-bottom: 1px solid #e5ece8;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .vendor-settlement-table tbody td::before,
+  .vendor-settlement-table tfoot td::before {
+    content: attr(data-label);
+    color: var(--muted, #65736c);
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .vendor-settlement-table tbody td:last-child,
+  .vendor-settlement-table tfoot td:last-child {
+    border-bottom: 0;
+  }
+
+  .vendor-settlement-table tfoot {
+    display: block;
+    margin-top: 0.75rem;
+    border: 0;
+  }
+
+  .vendor-settlement-table tfoot th {
+    padding: 0.6rem;
+    border: 0;
+    color: var(--forest, #00562f);
+  }
+
+  .vendor-settlement-table tfoot td[aria-label="Applied tax methods total"] {
+    display: none;
+  }
+}
+
+@media print {
+  body.vendor-settlement-open {
+    overflow: visible;
+    background: #fff;
+  }
+
+  body.vendor-settlement-open > *:not(.vendor-settlement-dialog) {
+    display: none !important;
+  }
+
+  .vendor-settlement-dialog {
+    position: static;
+    overflow: visible;
+    background: #fff;
+    padding: 0;
+  }
+
+  .vendor-settlement-sheet {
+    width: 100%;
+    min-height: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .vendor-settlement-actions {
+    display: none;
+  }
+
+  .vendor-settlement-summary {
+    break-inside: avoid;
+  }
+
+  .vendor-settlement-table-wrap {
+    overflow: visible;
+  }
+
+  .vendor-settlement-table {
+    display: table;
+    font-size: 8pt;
+  }
+
+  .vendor-settlement-table thead {
+    display: table-header-group;
+  }
+
+  .vendor-settlement-table tbody {
+    display: table-row-group;
+  }
+
+  .vendor-settlement-table tfoot {
+    display: table-footer-group;
+  }
+
+  .vendor-settlement-table tr {
+    display: table-row;
+  }
+
+  .vendor-settlement-table th,
+  .vendor-settlement-table td {
+    display: table-cell;
+  }
+
+  .vendor-settlement-table td::before {
+    display: none;
+  }
+
+  .vendor-settlement-table tfoot td[aria-label="Applied tax methods total"] {
+    display: table-cell;
+  }
+
+  .vendor-settlement-table th,
+  .vendor-settlement-table td {
+    padding: 5pt;
+  }
+
+  .vendor-settlement-table tr {
+    break-inside: avoid;
+  }
+
+  .vendor-settlement-person-link {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .vendor-settlement-warning,
+  .vendor-settlement-disclaimer {
+    break-inside: avoid;
+  }
+}
