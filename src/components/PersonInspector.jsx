@@ -85,6 +85,7 @@ import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirCon
 import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
 import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 import { CausaMortisSection } from "./personInspector/CausaMortisSection.jsx";
+import { FinalWithholdingTaxSection } from "./personInspector/FinalWithholdingTaxSection.jsx";
 
 const relationshipActions = [
   { key: "father", label: "Father", icon: UserRound },
@@ -184,6 +185,8 @@ export function PersonInspector({
   interVivosStatusSession = null,
   onDeceasedStatusChange,
   onInterVivosStatusChange,
+  onConfirmInitialAcquisition,
+  onConfirmDonationAcquisitionValue,
   onSelectPerson,
   onDeletePerson,
 }) {
@@ -253,13 +256,19 @@ export function PersonInspector({
     () => (selectedPerson ? missingPotentialIntestateParents(people, selectedPerson.id) : []),
     [people, selectedPerson],
   );
-  const selectedVendorTax = useMemo(() => {
-    if (!selectedPerson || !properties[0]) return null;
-    const report =
+  const resolvedTaxCalculationReport = useMemo(() => {
+    if (!properties[0]) return null;
+    return (
       taxCalculationReport ||
-      buildTaxCalculationReport(properties[0], people, outsideParties, vendorReport);
-    return report.vendors.find((vendor) => vendor.id === selectedPerson.id) || null;
-  }, [outsideParties, people, properties, selectedPerson, taxCalculationReport, vendorReport]);
+      buildTaxCalculationReport(properties[0], people, outsideParties, vendorReport)
+    );
+  }, [outsideParties, people, properties, taxCalculationReport, vendorReport]);
+  const selectedVendorTax = useMemo(() => {
+    if (!selectedPerson || !resolvedTaxCalculationReport) return null;
+    return (
+      resolvedTaxCalculationReport.vendors.find((vendor) => vendor.id === selectedPerson.id) || null
+    );
+  }, [resolvedTaxCalculationReport, selectedPerson]);
 
   useEffect(() => {
     const nextPersonId = selectedPerson?.id || "";
@@ -1244,6 +1253,42 @@ export function PersonInspector({
   const ownership = hasOwnership ? ownershipByPerson[selectedPerson.id] : 0;
   const isDeceased =
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
+  const currentInitialTaxRecordIds = new Set(
+    (selectedVendorTax?.rows || [])
+      .filter((row) => row.sourceKind === "initial")
+      .map((row) => row.originalOwnerRecordId)
+      .filter(Boolean),
+  );
+  const hasUnresolvedDownstreamDonation = (resolvedTaxCalculationReport?.vendors || []).some(
+    (vendor) =>
+      (vendor.rows || []).some(
+        (row) =>
+          row.sourceKind === "donation" &&
+          row.provenancePersonId === selectedPerson.id &&
+          !row.donorAcquisitionDate,
+      ),
+  );
+  const needsOriginalAcquisitionResolution =
+    Boolean(selectedVendorTax && selectedVendorTax.tax == null) || hasUnresolvedDownstreamDonation;
+  const originalAcquisitionResolutionRows = isDeceased
+    ? []
+    : (properties[0]?.owners || [])
+        .filter(
+          (owner) =>
+            needsOriginalAcquisitionResolution &&
+            owner.personId === selectedPerson.id &&
+            !owner.acquisitionDate &&
+            !currentInitialTaxRecordIds.has(owner.id),
+        )
+        .map((owner) => ({
+          id: `original-acquisition-${owner.id || selectedPerson.id}`,
+          sourceKind: "initial",
+          provenance: "Original ownership",
+          originalOwnerId: selectedPerson.id,
+          originalOwnerRecordId: owner.id || "",
+          requiresOriginalAcquisitionDate: true,
+          warning: "Enter this living original owner's acquisition date for the donated share.",
+        }));
   const survivalReferencePerson = peopleById.get(selectedPerson.survivalStatusReferencePersonId);
   const identityIssues = personIdentityIssues(selectedPerson);
   const identityComplete = identityIssues.length === 0;
@@ -1392,22 +1437,6 @@ export function PersonInspector({
     fullyTransferredInterVivos || estateTransmissionFractions.length > 0;
   const estateShareAtDeath = fractionToNumber(estateShareAtDeathFraction);
   const estateValueAtDeath = propertySaleValue * estateShareAtDeath;
-  const finalWithholdingTaxLabel = selectedVendorTax
-    ? selectedVendorTax.tax == null
-      ? "Pending"
-      : money.format(selectedVendorTax.tax)
-    : isDeceased
-      ? "Not applicable"
-      : "Not yet calculated";
-  const finalWithholdingTaxNote = selectedVendorTax
-    ? selectedVendorTax.tax == null
-      ? `${selectedVendorTax.incompleteRowCount} source fraction${
-          selectedVendorTax.incompleteRowCount === 1 ? " needs" : "s need"
-        } acquisition or CM details.`
-      : "Calculated from this vendor's share; review the Tax Calculation panel for the workings."
-    : isDeceased
-      ? "Only living current vendors are included in the sale calculation."
-      : "Complete the initial ownership, selling price and acquisition details.";
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
   const partnerRelationshipsById = new Map(
@@ -1607,13 +1636,27 @@ export function PersonInspector({
         </small>
       </div>
       {!isDeceased && (
-        <div className="person-final-withholding-tax">
-          <span>Final Withholding Tax</span>
-          <span>
-            <strong>{finalWithholdingTaxLabel}</strong>
-            <small>{finalWithholdingTaxNote}</small>
-          </span>
-        </div>
+        <FinalWithholdingTaxSection
+          vendorTax={selectedVendorTax}
+          additionalResolutionRows={originalAcquisitionResolutionRows}
+          onOpenSourcePerson={onSelectPerson}
+          onConfirmInitialAcquisition={({ row, acquisitionDate }) =>
+            onConfirmInitialAcquisition?.({
+              propertyId: properties[0]?.id || "",
+              personId: selectedPerson.id,
+              row,
+              acquisitionDate,
+            })
+          }
+          onConfirmDonationAcquisitionValue={({ row, ...details }) =>
+            onConfirmDonationAcquisitionValue?.({
+              propertyId: properties[0]?.id || "",
+              personId: selectedPerson.id,
+              row,
+              ...details,
+            })
+          }
+        />
       )}
     </section>
   );

@@ -1312,9 +1312,10 @@ function propertyStartingTranches(property = {}) {
       }
       return {
         trancheId: `initial-${owner.id || owner.personId}`,
+        ownerRecordId: owner.id || "",
         personId: owner.personId,
         fraction,
-        acquiredOn: "",
+        acquiredOn: owner.acquisitionDate || "",
         cause: "initial",
         provenance: "Initial ownership",
         via: "starting",
@@ -1480,10 +1481,25 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
               : `transfer-${transfer.id}:${portion.tranche.trancheId}`,
           personId: transfer.buyerId,
           fraction: portion.fraction,
+          sourceTransferId: transfer.id || "",
+          originalTransferredFraction: entry.amountFraction,
           acquiredOn: transfer.date || "",
           previousAcquiredOn: portion.tranche.acquiredOn || "",
+          previousOwnerId: transfer.sellerId || "",
+          previousOwnerName: partyName(transfer.sellerId),
+          previousOwnerDeceased: isPersonDeceased(peopleById.get(transfer.sellerId)),
           previousCause: portion.tranche.cause || "",
           previousProvenance: portion.tranche.provenance || "",
+          acquisitionValue:
+            transfer.kind === "donation" &&
+            transfer.acquisitionValue !== "" &&
+            transfer.acquisitionValue !== null &&
+            transfer.acquisitionValue !== undefined &&
+            Number.isFinite(Number(transfer.acquisitionValue))
+              ? Math.max(0, Number(transfer.acquisitionValue))
+              : "",
+          acquisitionValueBasis:
+            transfer.kind === "donation" ? transfer.acquisitionValueBasis || "" : "",
           upstreamTrancheId: portion.tranche.trancheId,
           cause: transfer.kind === "donation" ? "donation" : "purchase",
           provenance:

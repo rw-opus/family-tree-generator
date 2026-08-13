@@ -819,6 +819,24 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
         };
       }
     }
+    if (
+      acquisitionType === "donation" &&
+      !["market-at-donation", "deed-value", "final-assessment"].includes(
+        lot.acquisitionValueBasis || "",
+      )
+    ) {
+      return {
+        ...base,
+        methods: [],
+        selected: "",
+        recommended: "",
+        lowest: "",
+        status: "incomplete",
+        warnings: [],
+        warning:
+          "Choose whether the donated fraction's acquisition value is its market value at donation, deed value or final assessment.",
+      };
+    }
     const increaseMethod = method({
       key: "increase-12",
       label: "12% of transfer value less acquisition value",

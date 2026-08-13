@@ -11,7 +11,10 @@ import {
   propertyStartingOwnershipStatus,
   provenanceLabel,
   remainingInitialOwnershipShare,
+  setDonationAcquisitionValue,
+  setLivingInitialOwnerAcquisitionDate,
 } from "../../src/domain/propertyVendorTax.js";
+import { addFractions, ZERO_FRACTION } from "../../src/domain/fractions.js";
 
 describe("lifetime transfers before succession", () => {
   it("moves an inherited partial share to its buyer and passes only the balance to heirs", () => {
@@ -385,6 +388,737 @@ describe("provenance labels", () => {
 });
 
 describe("property vendor tax reports", () => {
+  it("resolves a living original owner's exact initial fraction from its acquisition date", () => {
+    const people = [{ id: "owner", fullName: "Maria Borg" }];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 250000,
+      owners: [
+        {
+          id: "original-title",
+          personId: "owner",
+          shareNumerator: 5,
+          shareDenominator: 12,
+        },
+      ],
+      transfers: [],
+      saleLots: [],
+    };
+
+    const pending = buildTaxCalculationReport(property, people, []).vendors[0].rows[0];
+    expect(pending).toMatchObject({
+      provenance: "Initial ownership",
+      shareFraction: { numerator: 5, denominator: 12 },
+      acquisitionDate: "",
+      requiresOriginalAcquisitionDate: true,
+      selectedMethod: null,
+    });
+    expect(pending.warning).toBe("Enter the acquisition date.");
+
+    const updated = setLivingInitialOwnerAcquisitionDate(property, people, "owner", "2010-01-01");
+    expect(updated.error).toBe("");
+    expect(updated.property.owners[0].acquisitionDate).toBe("2010-01-01");
+
+    const vendor = buildTaxCalculationReport(updated.property, people, []).vendors[0];
+    expect(vendor.rows[0]).toMatchObject({
+      provenance: "Initial ownership",
+      shareFraction: { numerator: 5, denominator: 12 },
+      acquisitionDate: "2010-01-01",
+      requiresOriginalAcquisitionDate: false,
+      selectedMethod: { key: "whole-8" },
+    });
+    expect(vendor.tax).toBeCloseTo((250000 * 5 * 0.08) / 12);
+  });
+
+  it("calculates a current buyer's purchased tranche from the recorded transfer date", () => {
+    const people = [
+      { id: "seller", fullName: "Joseph Borg" },
+      { id: "buyer", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [{ id: "original-title", personId: "seller", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "purchase",
+          kind: "sale",
+          sellerId: "seller",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+        },
+      ],
+      saleLots: [],
+    };
+
+    const vendor = buildTaxCalculationReport(property, people, []).vendors.find(
+      (candidate) => candidate.id === "buyer",
+    );
+
+    expect(vendor.rows).toHaveLength(1);
+    expect(vendor.rows[0]).toMatchObject({
+      provenance: "Acquired from Joseph Borg",
+      provenancePersonId: "seller",
+      provenancePersonName: "Joseph Borg",
+      sourceKind: "purchase",
+      acquisitionDate: "2020-01-01",
+      shareFraction: { numerator: 1, denominator: 1 },
+      selectedMethod: { key: "whole-8" },
+    });
+    expect(vendor.incompleteRowCount).toBe(0);
+    expect(vendor.tax).toBeCloseTo(16000);
+  });
+
+  it("resolves a donee's pending look-through after the former original owner enters a date", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [{ id: "original-title", personId: "donor", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2024-01-01",
+        },
+      ],
+      saleLots: [],
+    };
+
+    const pendingVendor = buildTaxCalculationReport(property, people, []).vendors.find(
+      (candidate) => candidate.id === "donee",
+    );
+    expect(pendingVendor.rows[0]).toMatchObject({
+      provenance: "Donated by Joseph Borg",
+      provenancePersonId: "donor",
+      provenancePersonName: "Joseph Borg",
+      sourceKind: "donation",
+      acquisitionDate: "2024-01-01",
+      donorAcquisitionDate: "",
+      selectedMethod: null,
+    });
+    expect(pendingVendor.rows[0].warning).toMatch(/donor's preceding acquisition date/i);
+
+    const updated = setLivingInitialOwnerAcquisitionDate(
+      property,
+      people,
+      "donor",
+      "2000-01-01",
+      [],
+      "original-title",
+    );
+    expect(updated.error).toBe("");
+    expect(updated.property.owners[0].acquisitionDate).toBe("2000-01-01");
+
+    const resolvedVendor = buildTaxCalculationReport(updated.property, people, []).vendors.find(
+      (candidate) => candidate.id === "donee",
+    );
+    expect(resolvedVendor.rows[0]).toMatchObject({
+      sourceKind: "donation",
+      donorAcquisitionDate: "2000-01-01",
+      donorAcquisitionDateDerived: true,
+      selectedMethod: { key: "whole-10" },
+    });
+    expect(resolvedVendor.incompleteRowCount).toBe(0);
+    expect(resolvedVendor.tax).toBeCloseTo(20000);
+  });
+
+  it("requires and then applies a donation-date acquisition value after five years", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+        },
+      ],
+      saleLots: [],
+    };
+
+    const pending = buildTaxCalculationReport(property, people, []).vendors[0];
+    expect(pending.rows[0]).toMatchObject({
+      sourceKind: "donation",
+      sourceTransferId: "gift",
+      requiresDonationAcquisitionValue: true,
+      selectedMethod: null,
+    });
+    expect(pending.rows[0].warning).toMatch(/acquisition value for this donated fraction/i);
+
+    for (const blankValue of ["", null]) {
+      const blankProperty = {
+        ...property,
+        transfers: [
+          {
+            ...property.transfers[0],
+            acquisitionValue: blankValue,
+            acquisitionValueBasis: "",
+          },
+        ],
+      };
+      const blankRow = buildTaxCalculationReport(blankProperty, people, []).vendors[0].rows[0];
+      expect(blankRow).toMatchObject({
+        requiresDonationAcquisitionValue: true,
+        selectedMethod: null,
+      });
+    }
+
+    const zeroWithoutBasis = {
+      ...property,
+      transfers: [{ ...property.transfers[0], acquisitionValue: 0 }],
+    };
+    expect(
+      buildTaxCalculationReport(zeroWithoutBasis, people, []).vendors[0].rows[0],
+    ).toMatchObject({
+      declaredValue: 0,
+      requiresDonationAcquisitionValue: true,
+      selectedMethod: null,
+    });
+
+    const zeroWithBasis = {
+      ...property,
+      transfers: [
+        {
+          ...property.transfers[0],
+          acquisitionValue: 0,
+          acquisitionValueBasis: "market-at-donation",
+        },
+      ],
+    };
+    expect(buildTaxCalculationReport(zeroWithBasis, people, []).vendors[0].rows[0]).toMatchObject({
+      declaredValue: 0,
+      requiresDonationAcquisitionValue: false,
+      selectedMethod: { key: "elected-whole-10" },
+    });
+
+    const updated = setDonationAcquisitionValue(
+      property,
+      "donee",
+      "gift",
+      100000,
+      "market-at-donation",
+    );
+    expect(updated.error).toBe("");
+    expect(updated.property.transfers[0]).toMatchObject({
+      acquisitionValue: 100000,
+      acquisitionValueBasis: "market-at-donation",
+    });
+    const resolved = buildTaxCalculationReport(updated.property, people, []).vendors[0];
+    expect(resolved.rows[0]).toMatchObject({
+      sourceTransferId: "gift",
+      declaredValue: 100000,
+      requiresDonationAcquisitionValue: false,
+      selectedMethod: { key: "increase-12" },
+    });
+    expect(resolved.rows[0].tax).toBeCloseTo(12000);
+  });
+
+  it("does not require a donation acquisition value within five years", () => {
+    const people = [
+      {
+        id: "donor",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2025-01-01",
+      },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2024-01-01",
+        },
+      ],
+      saleLots: [],
+    };
+
+    const row = buildTaxCalculationReport(property, people, []).vendors[0].rows[0];
+    expect(row).toMatchObject({
+      sourceTransferId: "gift",
+      provenancePersonDeceased: true,
+      requiresDonationAcquisitionValue: false,
+      declaredValue: 0,
+      selectedMethod: { key: "whole-10" },
+    });
+  });
+
+  it("apportions one donation value to the exact current remainder", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+      { id: "buyer", fullName: "Paul Galea" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 300000,
+      owners: [
+        {
+          id: "title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2019-01-01",
+          acquisitionValue: 120000,
+          acquisitionValueBasis: "deed-value",
+        },
+        {
+          id: "partial-sale",
+          kind: "sale",
+          sellerId: "donee",
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 4,
+          amountType: "whole-property",
+          date: "2022-01-01",
+        },
+      ],
+      saleLots: [],
+    };
+
+    const donee = buildTaxCalculationReport(property, people, []).vendors.find(
+      (candidate) => candidate.id === "donee",
+    );
+    expect(donee.shareFraction).toEqual({ numerator: 3, denominator: 4 });
+    expect(donee.rows[0]).toMatchObject({
+      sourceTransferId: "gift",
+      shareFraction: { numerator: 3, denominator: 4 },
+      declaredValue: 90000,
+      selectedMethod: { key: "increase-12" },
+    });
+  });
+
+  it("updates only the targeted donation and rejects sales or the wrong donee", () => {
+    const property = {
+      transfers: [
+        { id: "first", kind: "donation", buyerId: "donee-a" },
+        { id: "second", kind: "donation", buyerId: "donee-b" },
+        { id: "sale", kind: "sale", buyerId: "donee-a" },
+      ],
+    };
+
+    const updated = setDonationAcquisitionValue(
+      property,
+      "donee-b",
+      "second",
+      45000,
+      "final-assessment",
+    );
+    expect(updated.error).toBe("");
+    expect(updated.property.transfers).toEqual([
+      property.transfers[0],
+      expect.objectContaining({
+        id: "second",
+        acquisitionValue: 45000,
+        acquisitionValueBasis: "final-assessment",
+      }),
+      property.transfers[2],
+    ]);
+    expect(
+      setDonationAcquisitionValue(property, "donee-a", "sale", 100, "deed-value").error,
+    ).toMatch(/only.*donation/i);
+    expect(
+      setDonationAcquisitionValue(property, "donee-a", "second", 100, "deed-value").error,
+    ).toMatch(/could not be found/i);
+    expect(
+      setDonationAcquisitionValue(property, "donee-a", "first", -1, "deed-value").error,
+    ).toMatch(/valid donation acquisition value/i);
+    expect(
+      setDonationAcquisitionValue(property, "donee-a", "first", 100, "cm-declared").error,
+    ).toMatch(/market value.*deed value.*final assessment/i);
+  });
+
+  it("keeps a living owner's initial and inherited fractions as separate tax sources", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willDate: "2019-12-01",
+        willHeirs: [{ id: "legacy", personId: "owner", sharePercent: 100 }],
+        spouseIds: [],
+      },
+      { id: "owner", fullName: "Maria Borg" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 240000,
+      owners: [
+        {
+          id: "living-half",
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+        {
+          id: "deceased-half",
+          personId: "deceased",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+      ],
+      transfers: [],
+      saleLots: [],
+    };
+
+    const vendor = buildTaxCalculationReport(property, people, []).vendors[0];
+
+    expect(vendor.shareFraction).toEqual({ numerator: 1, denominator: 1 });
+    expect(vendor.rows).toHaveLength(2);
+    expect(vendor.rows[0]).toMatchObject({
+      provenance: "Initial ownership",
+      shareFraction: { numerator: 1, denominator: 2 },
+      acquisitionDate: "2010-01-01",
+      selectedMethod: { key: "whole-8" },
+    });
+    expect(vendor.rows[1]).toMatchObject({
+      provenance: "Inherited from Joseph Borg",
+      provenancePersonId: "deceased",
+      shareFraction: { numerator: 1, denominator: 2 },
+      inheritanceDate: "2020-01-01",
+      selectedMethod: null,
+    });
+    expect(vendor.incompleteRowCount).toBe(1);
+    expect(vendor.tax).toBeNull();
+  });
+
+  it("synthesizes exact residual initial and inherited fractions beside a stored legacy lot", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "1990-01-01",
+        inheritanceBasis: "will",
+        willDate: "1989-12-01",
+        willHeirs: [{ id: "legacy", personId: "vendor", sharePercent: 100 }],
+        spouseIds: [],
+      },
+      { id: "vendor", fullName: "Maria Borg" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 240000,
+      owners: [
+        {
+          id: "living-half",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+        {
+          id: "deceased-half",
+          personId: "deceased",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "legacy-inherited-quarter",
+          ownerId: "vendor",
+          acquisitionType: "inheritance",
+          inheritanceSourceDeceasedId: "deceased",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 4,
+          transferValue: 60000,
+        },
+      ],
+    };
+
+    const vendor = buildTaxCalculationReport(property, people, []).vendors[0];
+    const fractions = vendor.rows.map((row) => row.shareFraction);
+
+    expect(vendor.rows).toHaveLength(3);
+    expect(fractions).toEqual([
+      { numerator: 1, denominator: 4 },
+      { numerator: 1, denominator: 2 },
+      { numerator: 1, denominator: 4 },
+    ]);
+    expect(
+      fractions.reduce((total, fraction) => addFractions(total, fraction), ZERO_FRACTION),
+    ).toEqual({ numerator: 1, denominator: 1 });
+    expect(vendor.rows.map((row) => row.provenance)).toEqual([
+      "Inherited from Joseph Borg",
+      "Initial ownership",
+      "Inherited from Joseph Borg",
+    ]);
+    expect(vendor.rows.map((row) => row.selectedMethod?.key)).toEqual([
+      "inheritance-7",
+      "whole-8",
+      "inheritance-7",
+    ]);
+    expect(vendor.incompleteRowCount).toBe(0);
+  });
+
+  it("clamps an oversized stored inherited lot to its exact current provenance fraction", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "1990-01-01",
+        inheritanceBasis: "will",
+        willDate: "1989-12-01",
+        willHeirs: [{ id: "legacy", personId: "vendor", sharePercent: 100 }],
+        spouseIds: [],
+      },
+      { id: "vendor", fullName: "Maria Borg" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 240000,
+      owners: [
+        {
+          id: "living-half",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+        {
+          id: "deceased-half",
+          personId: "deceased",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "oversized-inherited-lot",
+          ownerId: "vendor",
+          acquisitionType: "inheritance",
+          inheritanceSourceDeceasedId: "deceased",
+          transferDate: "2026-08-13",
+          shareNumerator: 3,
+          shareDenominator: 4,
+          transferValue: 180000,
+        },
+      ],
+    };
+
+    const vendor = buildTaxCalculationReport(property, people, []).vendors[0];
+
+    expect(vendor.rows).toHaveLength(2);
+    expect(vendor.rows[0]).toMatchObject({
+      shareFraction: { numerator: 1, denominator: 2 },
+      selectedMethod: null,
+      tax: null,
+      net: null,
+    });
+    expect(vendor.rows[0].warning).toMatch(/records 3\/4.*only 1\/2.*Correct/i);
+    expect(vendor.rows[1]).toMatchObject({
+      provenance: "Initial ownership",
+      shareFraction: { numerator: 1, denominator: 2 },
+      selectedMethod: { key: "whole-8" },
+    });
+    expect(
+      vendor.rows.reduce((total, row) => addFractions(total, row.shareFraction), ZERO_FRACTION),
+    ).toEqual({ numerator: 1, denominator: 1 });
+    expect(vendor.incompleteRowCount).toBe(1);
+    expect(vendor.tax).toBeNull();
+  });
+
+  it("fills a matched legacy purchase lot from the saved original-owner acquisition date", () => {
+    const people = [{ id: "owner", fullName: "Maria Borg" }];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [{ id: "title", personId: "owner", sharePercent: 100 }],
+      transfers: [],
+      saleLots: [
+        {
+          id: "legacy-purchase",
+          ownerId: "owner",
+          acquisitionType: "purchase",
+          acquisitionDate: "",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          transferValue: 200000,
+        },
+      ],
+    };
+
+    const pending = buildTaxCalculationReport(property, people, []).vendors[0];
+    expect(pending.rows[0]).toMatchObject({ selectedMethod: null });
+    expect(pending.rows[0].warning).toBe("Enter the acquisition date.");
+
+    const updated = setLivingInitialOwnerAcquisitionDate(
+      property,
+      people,
+      "owner",
+      "2010-01-01",
+      [],
+      "title",
+    );
+    const resolved = buildTaxCalculationReport(updated.property, people, []).vendors[0];
+
+    expect(resolved.rows).toHaveLength(1);
+    expect(resolved.rows[0]).toMatchObject({
+      shareFraction: { numerator: 1, denominator: 1 },
+      acquisitionDate: "2010-01-01",
+      selectedMethod: { key: "whole-8" },
+    });
+    expect(resolved.incompleteRowCount).toBe(0);
+    expect(resolved.tax).toBeCloseTo(16000);
+  });
+
+  it("records separate acquisition dates for separate original-title fractions", () => {
+    const people = [{ id: "owner", fullName: "Maria Borg" }];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "first-title",
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+        {
+          id: "second-title",
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+      ],
+      transfers: [],
+      saleLots: [],
+    };
+
+    const updated = setLivingInitialOwnerAcquisitionDate(
+      property,
+      people,
+      "owner",
+      "2010-01-01",
+      [],
+      "first-title",
+    );
+
+    expect(updated.error).toBe("");
+    expect(updated.property.owners).toEqual([
+      expect.objectContaining({ id: "first-title", acquisitionDate: "2010-01-01" }),
+      expect.not.objectContaining({ acquisitionDate: expect.anything() }),
+    ]);
+    const vendor = buildTaxCalculationReport(updated.property, people, []).vendors[0];
+    expect(vendor.rows).toHaveLength(2);
+    expect(vendor.rows.map((row) => row.originalOwnerRecordId)).toEqual([
+      "first-title",
+      "second-title",
+    ]);
+    expect(vendor.rows.map((row) => row.selectedMethod?.key || null)).toEqual(["whole-8", null]);
+  });
+
+  it("does not accept an original acquisition date for a deceased or non-original owner", () => {
+    const property = {
+      id: "property",
+      owners: [{ id: "title", personId: "deceased", sharePercent: 100 }],
+      transfers: [],
+    };
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+        unmarriedOrWidowedAtDeath: true,
+        spouseIds: [],
+      },
+      { id: "heir", fullName: "Maria Borg", fatherId: "deceased" },
+    ];
+
+    expect(
+      setLivingInitialOwnerAcquisitionDate(property, people, "deceased", "2010-01-01"),
+    ).toMatchObject({ error: expect.stringMatching(/date of death.*CM/i) });
+    expect(
+      setLivingInitialOwnerAcquisitionDate(property, people, "heir", "2010-01-01"),
+    ).toMatchObject({ error: expect.stringMatching(/not recorded as an original owner/i) });
+
+    const inheritedRow = buildTaxCalculationReport(property, people, []).vendors[0].rows[0];
+    expect(inheritedRow).toMatchObject({
+      provenance: "Inherited from Joseph Borg",
+      provenancePersonId: "deceased",
+      inheritanceDate: "2020-01-01",
+    });
+    expect(inheritedRow).not.toHaveProperty("requiresOriginalAcquisitionDate", true);
+  });
+
   it("defaults a selected initial owner to the exact unallocated title", () => {
     const owners = [
       {

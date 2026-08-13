@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonInspector } from "../../src/components/PersonInspector.jsx";
 import { normaliseCase } from "../../src/domain/caseModel.js";
 import { findPartnerRelationship } from "../../src/domain/partnerRelationships.js";
-import { buildPropertyVendorTaxReport } from "../../src/domain/propertyVendorTax.js";
+import {
+  buildPropertyVendorTaxReport,
+  setDonationAcquisitionValue,
+  setLivingInitialOwnerAcquisitionDate,
+} from "../../src/domain/propertyVendorTax.js";
 import {
   beginStatusToggleSession,
   endStatusToggleSession,
@@ -2000,10 +2004,195 @@ describe("PersonInspector", () => {
       ),
     );
 
-    const tax = container.querySelector(".person-final-withholding-tax");
+    const tax = container.querySelector(".final-withholding-tax-section");
     expect(tax.textContent).toContain("Final Withholding Tax");
     expect(tax.querySelector("strong").textContent).toBe("€2,400.00");
-    expect(tax.querySelector("small").textContent).toContain("Tax Calculation panel");
+    expect(tax.querySelector("small").textContent).toContain("recorded source fractions");
+  });
+
+  it("asks only a living original owner for an acquisition date and recalculates immediately", () => {
+    const people = [{ id: "owner", fullName: "Maria Borg", spouseIds: [] }];
+    const initialProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "250000",
+      owners: [
+        {
+          id: "original-title",
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+    let savedProperty = initialProperty;
+
+    function Harness() {
+      const [property, setProperty] = useState(initialProperty);
+      const confirmAcquisition = ({ personId, acquisitionDate }) => {
+        const result = setLivingInitialOwnerAcquisitionDate(
+          property,
+          people,
+          personId,
+          acquisitionDate,
+        );
+        expect(result.error).toBe("");
+        savedProperty = result.property;
+        setProperty(result.property);
+      };
+      return (
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          ownershipByPerson={{ owner: 1 }}
+          ownershipFractionsByPerson={{ owner: { numerator: 1, denominator: 1 } }}
+          selectedPersonId="owner"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onConfirmInitialAcquisition={confirmAcquisition}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    const tax = container.querySelector(".final-withholding-tax-section");
+    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("Pending");
+    setInputValue('input[aria-label="Original acquisition date"]', "01012010");
+    const confirmButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Confirm date",
+    );
+    act(() => confirmButton.click());
+
+    expect(savedProperty.owners[0].acquisitionDate).toBe("2010-01-01");
+    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("€20,000.00");
+    expect(container.querySelector('input[aria-label="Original acquisition date"]')).toBeNull();
+  });
+
+  it("routes an inherited pending fraction to the deceased owner's CM details", () => {
+    const onSelectPerson = vi.fn();
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willDate: "2019-12-01",
+        willHeirs: [{ id: "share", personId: "heir", sharePercent: 100 }],
+        spouseIds: [],
+      },
+      { id: "heir", fullName: "Maria Borg", spouseIds: [] },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "250000",
+      owners: [{ id: "title", personId: "deceased", sharePercent: 100 }],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          ownershipByPerson={{ heir: 1 }}
+          ownershipFractionsByPerson={{ heir: { numerator: 1, denominator: 1 } }}
+          selectedPersonId="heir"
+          onChange={vi.fn()}
+          onSelectPerson={onSelectPerson}
+          onConfirmInitialAcquisition={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector('input[aria-label="Original acquisition date"]')).toBeNull();
+    const cmButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Open Joseph Borg CM details"),
+    );
+    expect(cmButton).not.toBeUndefined();
+    act(() => cmButton.click());
+    expect(onSelectPerson).toHaveBeenCalledWith("deceased");
+  });
+
+  it("records a donation-time value and recalculates an older donated share immediately", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg", spouseIds: [] },
+      { id: "donee", fullName: "Maria Vella", spouseIds: [] },
+    ];
+    const initialProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "200000",
+      owners: [
+        {
+          id: "original-title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          amountType: "seller-holding",
+          numerator: 1,
+          denominator: 1,
+          date: "2010-01-01",
+        },
+      ],
+      declarations: [],
+      saleLots: [],
+    };
+
+    function Harness() {
+      const [property, setProperty] = useState(initialProperty);
+      const confirmDonationValue = ({ personId, row, acquisitionValue, acquisitionValueBasis }) => {
+        const result = setDonationAcquisitionValue(
+          property,
+          personId,
+          row.sourceTransferId,
+          acquisitionValue,
+          acquisitionValueBasis,
+        );
+        expect(result.error).toBe("");
+        setProperty(result.property);
+      };
+      return (
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          ownershipByPerson={{ donee: 1 }}
+          ownershipFractionsByPerson={{ donee: { numerator: 1, denominator: 1 } }}
+          selectedPersonId="donee"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onConfirmDonationAcquisitionValue={confirmDonationValue}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    const tax = container.querySelector(".final-withholding-tax-section");
+    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("Pending");
+    setInputValue('input[aria-label="Donation acquisition value"]', "100000");
+    const confirmButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Confirm value",
+    );
+    act(() => confirmButton.click());
+
+    expect(tax.querySelector(".fwt-status-row strong").textContent).toBe("€12,000.00");
+    expect(container.querySelector('input[aria-label="Donation acquisition value"]')).toBeNull();
   });
 
   it("shows succession fields only for a deceased person", () => {

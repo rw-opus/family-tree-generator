@@ -144,6 +144,7 @@ describe("Income Tax Act Article 5A", () => {
       acquisitionDate: "2010-06-01",
       previousAcquisitionDate: "2000-01-01",
       acquisitionValue: 100000,
+      acquisitionValueBasis: "market-at-donation",
     });
 
     // The donation is post-2004, but the donor acquired pre-2004: the election is 10%, not 8%.
@@ -162,6 +163,7 @@ describe("Income Tax Act Article 5A", () => {
       acquisitionDate: "2010-06-01",
       previousAcquisitionDate: "2000-01-01",
       acquisitionValue: 40000,
+      acquisitionValueBasis: "deed-value",
     });
 
     // 12% of the 260,000 increase is 31,200; the elected 10% flat rate is 30,000 and wins.
@@ -177,6 +179,7 @@ describe("Income Tax Act Article 5A", () => {
       acquisitionType: "donation",
       acquisitionDate: "2010-06-01",
       acquisitionValue: 100000,
+      acquisitionValueBasis: "final-assessment",
     });
 
     expect(result.methods.map((item) => item.key)).toEqual(["increase-12"]);

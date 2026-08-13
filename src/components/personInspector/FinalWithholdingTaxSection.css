@@ -1,0 +1,136 @@
+.final-withholding-tax-section {
+  display: grid;
+  gap: 0.4rem;
+  border-top: 1px solid #dce5e0;
+  padding-top: 0.45rem;
+  color: #526158;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.fwt-status-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.fwt-status-row strong {
+  color: var(--forest);
+  font-size: 0.76rem;
+}
+
+.fwt-summary {
+  color: var(--muted);
+  font-size: 0.59rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.fwt-pending-sources {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fwt-pending-source {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid #e4c77c;
+  border-radius: 7px;
+  background: #fff9ea;
+  padding: 0.45rem;
+}
+
+.fwt-pending-source > b {
+  color: var(--ink);
+  font-size: 0.64rem;
+}
+
+.fwt-pending-source > span {
+  color: #765c25;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.fwt-source-link {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  padding: 0.1rem 0;
+  color: var(--forest);
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.fwt-initial-acquisition,
+.fwt-donation-value {
+  display: grid;
+  gap: 0.25rem;
+  border-top: 1px solid #ead8a8;
+  padding-top: 0.35rem;
+}
+
+.fwt-acquisition-field {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.fwt-acquisition-field > span:first-child {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.fwt-money-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.fwt-money-input > span {
+  color: var(--muted);
+}
+
+.fwt-initial-acquisition .date-input-field,
+.fwt-initial-acquisition input,
+.fwt-donation-value input,
+.fwt-donation-value select {
+  width: 100%;
+  min-width: 0;
+}
+
+.fwt-initial-acquisition input,
+.fwt-initial-acquisition button,
+.fwt-donation-value input,
+.fwt-donation-value select,
+.fwt-donation-value button {
+  min-height: 2.1rem;
+  border: 1px solid #b9cbc1;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.35rem 0.5rem;
+  color: var(--ink);
+  font: inherit;
+}
+
+.fwt-initial-acquisition button,
+.fwt-donation-value button {
+  justify-self: start;
+  border-color: var(--forest);
+  color: var(--forest);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.fwt-initial-acquisition button:disabled,
+.fwt-donation-value button:disabled {
+  border-color: #cdd6d1;
+  color: #8b9891;
+  cursor: default;
+}
