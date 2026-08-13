@@ -39,6 +39,8 @@ import {
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
   propertyStartingOwnershipStatus,
+  setDonationAcquisitionValue,
+  setLivingInitialOwnerAcquisitionDate,
 } from "./domain/propertyVendorTax.js";
 import {
   beginStatusToggleSession,
@@ -997,6 +999,63 @@ export function App({
       ),
     });
 
+  const confirmInitialOwnerAcquisition = ({ propertyId, personId, row, acquisitionDate }) => {
+    const property = currentTree.properties.find((candidate) => candidate.id === propertyId);
+    if (!property) {
+      setStatus("The property could not be found.");
+      return;
+    }
+    const result = setLivingInitialOwnerAcquisitionDate(
+      property,
+      currentTree.people,
+      personId,
+      acquisitionDate,
+      currentTree.outsideParties,
+      row?.originalOwnerRecordId || "",
+    );
+    if (result.error) {
+      setStatus(result.error);
+      return;
+    }
+    updatePropertyWorkspace({
+      properties: currentTree.properties.map((candidate) =>
+        candidate.id === propertyId ? result.property : candidate,
+      ),
+    });
+    setStatus("Original acquisition date saved.");
+  };
+
+  const confirmDonationAcquisitionValue = ({
+    propertyId,
+    personId,
+    row,
+    acquisitionValue,
+    acquisitionValueBasis,
+  }) => {
+    const property = currentTree.properties.find((candidate) => candidate.id === propertyId);
+    if (!property) {
+      setStatus("The property could not be found.");
+      return;
+    }
+    const result = setDonationAcquisitionValue(
+      property,
+      personId,
+      row?.sourceTransferId || "",
+      acquisitionValue,
+      acquisitionValueBasis,
+    );
+    if (result.error) {
+      setStatus(result.error);
+      return;
+    }
+    updatePropertyWorkspace({
+      properties: currentTree.properties.map((candidate) =>
+        candidate.id === propertyId ? result.property : candidate,
+      ),
+    });
+    setStatus("Donation acquisition value saved.");
+  };
+
   const beginInitialOwnerTreePick = (ownerId) => {
     setInitialOwnerPick({ propertyId: activeProperty.id, ownerId });
     setTraceOwnershipSnapshot(null);
@@ -1240,6 +1299,8 @@ export function App({
                 interVivosStatusSession={interVivosStatusSession}
                 onDeceasedStatusChange={changeDeceasedStatus}
                 onInterVivosStatusChange={changeInterVivosStatus}
+                onConfirmInitialAcquisition={confirmInitialOwnerAcquisition}
+                onConfirmDonationAcquisitionValue={confirmDonationAcquisitionValue}
                 onOutsidePartiesChange={(outsideParties) =>
                   setTree((current) => ({ ...normaliseTree(current), outsideParties }))
                 }

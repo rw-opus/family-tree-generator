@@ -2174,38 +2174,6 @@ textarea {
   text-align: right;
 }
 
-.person-final-withholding-tax {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.65rem;
-  border-top: 1px solid #dce5e0;
-  padding-top: 0.45rem;
-  color: #526158;
-  font-size: 0.64rem;
-  font-weight: 800;
-}
-
-.person-final-withholding-tax > span:last-child {
-  display: grid;
-  justify-items: end;
-  gap: 0.12rem;
-  max-width: 65%;
-  text-align: right;
-}
-
-.person-final-withholding-tax strong {
-  color: var(--forest);
-  font-size: 0.76rem;
-}
-
-.person-final-withholding-tax small {
-  color: var(--muted);
-  font-size: 0.59rem;
-  font-weight: 500;
-  line-height: 1.3;
-}
-
 .person-succession {
   display: grid;
   gap: 0.5rem;

@@ -11,6 +11,7 @@ import { deedTransferTotals, saleTaxLot, vendorTaxSummary } from "./propertyTax.
 import {
   addFractions,
   compareFractions,
+  divideFractions,
   fractionToNumber,
   multiplyFractions,
   normaliseFraction,
@@ -18,6 +19,12 @@ import {
   WHOLE_FRACTION,
   ZERO_FRACTION,
 } from "./fractions.js";
+
+export const DONATION_ACQUISITION_VALUE_BASES = Object.freeze([
+  "market-at-donation",
+  "deed-value",
+  "final-assessment",
+]);
 
 const exactShareFromRecord = (record = {}) => {
   const exact = normaliseFraction(record.shareNumerator, record.shareDenominator);
@@ -331,9 +338,17 @@ const displayRowFromLot = ({
   fallbackShare = 0,
   deedTransferValue = 0,
   declarationRequiredFraction = null,
+  shareFractionOverride = null,
+  coverageWarning = "",
+  acquisitionDateOverride = "",
 }) => {
   const storedShare = Number(row.result?.share) || 0;
-  const lotShare = storedShare > 0 ? storedShare : Number(fallbackShare) || 0;
+  const hasShareOverride = Boolean(shareFractionOverride && !shareFractionOverride.error);
+  const lotShare = hasShareOverride
+    ? fractionToNumber(shareFractionOverride)
+    : storedShare > 0
+      ? storedShare
+      : Number(fallbackShare) || 0;
   const propertySaleValue = Math.max(0, Number(property.saleValue) || 0);
   const attributedSaleValue =
     propertySaleValue && lotShare
@@ -382,7 +397,11 @@ const displayRowFromLot = ({
       : hasStoredAcquisitionValue
         ? Math.max(0, Number(row.effectiveLot.acquisitionValue))
         : "";
-  const normalisedLotFraction = lotShare !== storedShare ? approximateFraction(lotShare) : null;
+  const normalisedLotFraction = hasShareOverride
+    ? shareFractionOverride
+    : lotShare !== storedShare
+      ? approximateFraction(lotShare)
+      : null;
   const effectiveLot = {
     ...row.effectiveLot,
     ...(normalisedLotFraction
@@ -391,6 +410,7 @@ const displayRowFromLot = ({
           shareDenominator: normalisedLotFraction.denominator,
         }
       : {}),
+    ...(acquisitionDateOverride ? { acquisitionDate: acquisitionDateOverride } : {}),
     transferValue: attributedSaleValue,
     consideration: attributedSaleValue,
     acquisitionValue: acquisitionValue !== "" ? acquisitionValue : "",
@@ -406,8 +426,9 @@ const displayRowFromLot = ({
       (!suppressNonDeclarantStoredValue && Boolean(row.effectiveLot?.cmValueEligibilityConfirmed)),
   };
   const result = saleTaxLot(effectiveLot, { deedTransferValue });
-  const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
-  const tax = selectedMethod?.tax || 0;
+  const calculatedMethod = result.methods.find((method) => method.key === result.selected) || null;
+  const selectedMethod = coverageWarning ? null : calculatedMethod;
+  const tax = selectedMethod ? selectedMethod.tax : null;
   return {
     id: row.lot.id,
     share: lotShare,
@@ -416,7 +437,10 @@ const displayRowFromLot = ({
       ? `Donated by ${row.selectedDonationSource.donorName}`
       : provenanceLabel(source, row.lot, ledger),
     provenancePersonId: source?.deceasedId || row.selectedDonationSource?.donorId || "",
-    inheritanceDate: source?.inheritanceDate || result.acquisitionDate || "",
+    provenancePersonName: source?.deceasedName || row.selectedDonationSource?.donorName || "",
+    sourceKind: source ? "inheritance" : row.selectedDonationSource ? "donation" : "direct",
+    acquisitionDate: result.acquisitionDate || "",
+    inheritanceDate: source?.inheritanceDate || "",
     donorAcquisitionDate: row.selectedDonationSource?.donorAcquisitionDate || "",
     donorAcquisitionDateDerived: Boolean(row.donationDatesDerived),
     declarations,
@@ -426,8 +450,8 @@ const displayRowFromLot = ({
     methods: result.methods || [],
     selectedMethod,
     tax,
-    net: attributedSaleValue - tax,
-    warning: result.warning || "",
+    net: tax === null ? null : attributedSaleValue - tax,
+    warning: coverageWarning || result.warning || "",
   };
 };
 
@@ -470,13 +494,16 @@ const syntheticInheritedRow = ({
     { deedTransferValue },
   );
   const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
-  const tax = selectedMethod?.tax || 0;
+  const tax = selectedMethod?.tax ?? null;
   return {
     id: `${vendor.id}-${source.deceasedId}-${index}`,
     share: source.share,
     shareFraction: source.shareFraction,
     provenance: `Inherited from ${source.deceasedName}`,
     provenancePersonId: source.deceasedId,
+    provenancePersonName: source.deceasedName,
+    sourceKind: "inheritance",
+    acquisitionType: "inheritance",
     inheritanceDate: source.inheritanceDate,
     declarations,
     declaredValue,
@@ -485,8 +512,119 @@ const syntheticInheritedRow = ({
     methods: result.methods || [],
     selectedMethod,
     tax,
-    net: attributedSaleValue - tax,
+    net: tax === null ? null : attributedSaleValue - tax,
     warning: result.warning || "",
+  };
+};
+
+const syntheticInitialOwnerRow = ({ property, vendor, tranche, index, deedTransferValue = 0 }) => {
+  const shareFraction = tranche.fraction || ZERO_FRACTION;
+  const share = fractionToNumber(shareFraction);
+  const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
+  const acquisitionDate = String(tranche.acquiredOn || "");
+  const result = saleTaxLot(
+    {
+      id: `${vendor.id}-initial-${index}`,
+      ownerId: vendor.id,
+      acquisitionType: "purchase",
+      acquisitionDate,
+      transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
+      shareNumerator: shareFraction.numerator,
+      shareDenominator: shareFraction.denominator,
+      transferValue: attributedSaleValue,
+      consideration: attributedSaleValue,
+    },
+    { deedTransferValue },
+  );
+  const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
+  const tax = selectedMethod?.tax ?? null;
+  return {
+    id: `${vendor.id}-initial-${index}`,
+    share,
+    shareFraction,
+    provenance: "Initial ownership",
+    provenancePersonId: "",
+    sourceKind: "initial",
+    acquisitionType: "purchase",
+    acquisitionDate,
+    originalOwnerId: vendor.id,
+    originalOwnerRecordId: tranche.ownerRecordId || "",
+    requiresOriginalAcquisitionDate: !acquisitionDate,
+    inheritanceDate: "",
+    declarations: [],
+    declaredValue: 0,
+    attributedSaleValue,
+    difference: attributedSaleValue,
+    methods: result.methods || [],
+    selectedMethod,
+    tax,
+    net: tax === null ? null : attributedSaleValue - tax,
+    warning: result.warning || "",
+  };
+};
+
+const syntheticTransferredRow = ({ property, vendor, tranche, index, deedTransferValue = 0 }) => {
+  const shareFraction = tranche.fraction || ZERO_FRACTION;
+  const share = fractionToNumber(shareFraction);
+  const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
+  const isDonation = tranche.cause === "donation";
+  const acquisitionDate = String(tranche.acquiredOn || "");
+  const donorAcquisitionDate = isDonation ? String(tranche.previousAcquiredOn || "") : "";
+  const originalTransferredFraction = tranche.originalTransferredFraction || shareFraction;
+  const valueAllocation = divideFractions(shareFraction, originalTransferredFraction);
+  const donationAcquisitionValue =
+    isDonation && tranche.acquisitionValue !== "" && !valueAllocation.error
+      ? Math.max(0, Number(tranche.acquisitionValue) || 0) * fractionToNumber(valueAllocation)
+      : "";
+  const result = saleTaxLot(
+    {
+      id: `${vendor.id}-transfer-${index}`,
+      ownerId: vendor.id,
+      acquisitionType: isDonation ? "donation" : "purchase",
+      acquisitionDate,
+      previousAcquisitionDate: donorAcquisitionDate,
+      acquisitionValue: donationAcquisitionValue,
+      acquisitionValueBasis: isDonation ? tranche.acquisitionValueBasis || "" : "",
+      transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
+      shareNumerator: shareFraction.numerator,
+      shareDenominator: shareFraction.denominator,
+      transferValue: attributedSaleValue,
+      consideration: attributedSaleValue,
+    },
+    { deedTransferValue },
+  );
+  const selectedMethod = result.methods.find((method) => method.key === result.selected) || null;
+  const tax = selectedMethod?.tax ?? null;
+  return {
+    id: `${vendor.id}-transfer-${index}`,
+    share,
+    shareFraction,
+    provenance: tranche.provenance || (isDonation ? "Donated share" : "Purchased share"),
+    provenancePersonId: tranche.previousOwnerId || "",
+    provenancePersonName: tranche.previousOwnerName || "",
+    provenancePersonDeceased: Boolean(tranche.previousOwnerDeceased),
+    sourceKind: isDonation ? "donation" : "purchase",
+    sourceTransferId: tranche.sourceTransferId || transferRootId(tranche.trancheId).slice(9),
+    acquisitionType: isDonation ? "donation" : "purchase",
+    acquisitionDate,
+    donorAcquisitionDate,
+    donorAcquisitionDateDerived: Boolean(donorAcquisitionDate),
+    inheritanceDate: "",
+    declarations: [],
+    declaredValue: donationAcquisitionValue === "" ? 0 : donationAcquisitionValue,
+    attributedSaleValue,
+    difference:
+      attributedSaleValue - (donationAcquisitionValue === "" ? 0 : donationAcquisitionValue),
+    methods: result.methods || [],
+    selectedMethod,
+    tax,
+    net: tax === null ? null : attributedSaleValue - tax,
+    warning: result.warning || "",
+    requiresDonationAcquisitionValue:
+      isDonation &&
+      /(?:enter the acquisition value for this donated fraction|choose whether the donated fraction's acquisition value)/i.test(
+        result.warning || "",
+      ),
   };
 };
 
@@ -510,6 +648,152 @@ const smallestFraction = (...fractions) => {
   );
 };
 
+const positiveFraction = (fraction) =>
+  fraction && !fraction.error && compareFractions(fraction, ZERO_FRACTION) > 0;
+
+const transferRootId = (trancheId = "") => String(trancheId).split(":")[0];
+
+const candidateTranchesForStoredRow = (item, tranches) => {
+  const { row, source } = item;
+  const lot = row.lot || {};
+  if (source) {
+    return tranches.filter(
+      (tranche) =>
+        tranche.cause === "inheritance" && tranche.trancheId === `inheritance-${source.deceasedId}`,
+    );
+  }
+  if (row.selectedDonationSource) {
+    const transferId = `transfer-${row.selectedDonationSource.transferId}`;
+    return tranches.filter(
+      (tranche) => tranche.cause === "donation" && transferRootId(tranche.trancheId) === transferId,
+    );
+  }
+
+  const acquisitionType = String(lot.acquisitionType || "");
+  const acquisitionDate = String(lot.acquisitionDate || lot.inheritanceDate || "");
+  if (acquisitionType === "inheritance") {
+    return tranches.filter(
+      (tranche) =>
+        tranche.cause === "inheritance" &&
+        (!acquisitionDate || tranche.acquiredOn === acquisitionDate),
+    );
+  }
+  if (acquisitionType === "donation") {
+    return tranches.filter(
+      (tranche) =>
+        tranche.cause === "donation" &&
+        (!acquisitionDate || tranche.acquiredOn === acquisitionDate),
+    );
+  }
+  if (acquisitionType && acquisitionType !== "inheritance") {
+    const purchased = tranches.filter(
+      (tranche) =>
+        tranche.cause === "purchase" &&
+        (!acquisitionDate || tranche.acquiredOn === acquisitionDate),
+    );
+    if (purchased.length) return purchased;
+    return tranches.filter(
+      (tranche) =>
+        tranche.cause === "initial" && (!acquisitionDate || tranche.acquiredOn === acquisitionDate),
+    );
+  }
+  return tranches;
+};
+
+const candidatesIdentifyOneSource = (item, candidates) => {
+  if (!candidates.length) return false;
+  if (item.source || item.row.selectedDonationSource) return true;
+  const identities = new Set(
+    candidates.map((tranche) => {
+      if (tranche.cause === "inheritance") return tranche.trancheId;
+      if (["purchase", "donation"].includes(tranche.cause)) {
+        return transferRootId(tranche.trancheId);
+      }
+      return tranche.ownerRecordId || tranche.trancheId;
+    }),
+  );
+  return identities.size === 1;
+};
+
+/**
+ * Legacy sale lots and calculated ownership tranches can coexist. Consume a stored lot only from
+ * a provenance source it identifies unambiguously. Ambiguous candidates are blocked from
+ * synthesis so the remaining fraction becomes an explicit unresolved row instead of being
+ * silently counted twice or attributed to the wrong acquisition.
+ */
+const fractionText = (fraction) =>
+  positiveFraction(fraction) ? `${fraction.numerator}/${fraction.denominator}` : "0/1";
+
+const allocateStoredRowCoverage = (currentTranches, resolvedStoredRows) => {
+  if (!currentTranches.length) {
+    return { residualTranches: [], storedRows: resolvedStoredRows };
+  }
+  const residual = new Map(currentTranches.map((tranche) => [tranche.trancheId, { ...tranche }]));
+  const blocked = new Set();
+  const storedRowsWithCoverage = [];
+
+  resolvedStoredRows.forEach((item) => {
+    const candidates = candidateTranchesForStoredRow(item, [...residual.values()]).filter(
+      (tranche) => positiveFraction(tranche.fraction),
+    );
+    const requested = item.shareFraction;
+    const available = candidates.reduce(
+      (total, candidate) => addFractions(total, candidate.fraction),
+      ZERO_FRACTION,
+    );
+    const sourceIsUnambiguous = candidatesIdentifyOneSource(item, candidates);
+    if (!sourceIsUnambiguous) {
+      candidates.forEach((tranche) => blocked.add(tranche.trancheId));
+      const assessedFraction =
+        positiveFraction(available) && compareFractions(requested, available) > 0
+          ? available
+          : requested;
+      const fractionExceedsOwnership = compareFractions(requested, assessedFraction) > 0;
+      storedRowsWithCoverage.push({
+        ...item,
+        shareFraction: assessedFraction,
+        coverageWarning: fractionExceedsOwnership
+          ? `This stored tax lot records ${fractionText(requested)}, but only ${fractionText(assessedFraction)} is supported by the current ownership provenance. Correct the stored tax-lot fraction.`
+          : "This stored tax lot cannot be matched to one current provenance source. Confirm its acquisition source before relying on the tax calculation.",
+      });
+      return;
+    }
+
+    let remaining = requested;
+    let assessedFraction = ZERO_FRACTION;
+    for (const candidate of candidates) {
+      if (!positiveFraction(remaining)) break;
+      const consumed =
+        compareFractions(candidate.fraction, remaining) <= 0 ? candidate.fraction : remaining;
+      assessedFraction = addFractions(assessedFraction, consumed);
+      const left = subtractFractions(candidate.fraction, consumed);
+      remaining = subtractFractions(remaining, consumed);
+      if (!positiveFraction(left)) residual.delete(candidate.trancheId);
+      else residual.set(candidate.trancheId, { ...candidate, fraction: left });
+    }
+    const fractionExceedsOwnership = compareFractions(requested, assessedFraction) > 0;
+    storedRowsWithCoverage.push({
+      ...item,
+      shareFraction: assessedFraction,
+      acquisitionDateOverride:
+        !item.row.effectiveLot?.acquisitionDate && !item.row.lot?.acquisitionDate
+          ? [...new Set(candidates.map((candidate) => candidate.acquiredOn).filter(Boolean))][0] ||
+            ""
+          : "",
+      coverageWarning: fractionExceedsOwnership
+        ? `This stored tax lot records ${fractionText(requested)}, but only ${fractionText(assessedFraction)} is supported by the current ownership provenance. Correct the stored tax-lot fraction.`
+        : "",
+    });
+  });
+
+  return {
+    residualTranches: [...residual.values()].filter(
+      (tranche) => positiveFraction(tranche.fraction) && !blocked.has(tranche.trancheId),
+    ),
+    storedRows: storedRowsWithCoverage,
+  };
+};
+
 /** Read-only vendor information used by the Tax Calculation screen and export. */
 export function buildTaxCalculationReport(
   property = {},
@@ -522,16 +806,21 @@ export function buildTaxCalculationReport(
   const vendors = report.livingVendors.map((vendor) => {
     const storedRows = report.saleRows.filter((row) => row.lot.ownerId === vendor.id);
     const inheritanceSources = report.inheritanceSourcesByOwner.get(vendor.id) || [];
+    const currentTranches = report.ownership?.tranchesByOwner?.get?.(vendor.id) || [];
     // The vendor's whole transfer value on this deed. Value-banded reliefs draw on the band in
     // proportion to each row, so every row of one vendor must share this figure.
     const deedTransferValue = Math.max(0, Number(property.saleValue) || 0) * vendor.share;
     const resolvedStoredRows = storedRows.map((row) => {
+      const acquisitionType =
+        row.effectiveLot?.acquisitionType || row.lot.acquisitionType || "inheritance";
       const source =
-        row.selectedInheritanceSource ||
-        inheritanceSources.find(
-          (candidate) => candidate.deceasedId === row.lot.inheritanceSourceDeceasedId,
-        ) ||
-        (inheritanceSources.length === 1 ? inheritanceSources[0] : null);
+        acquisitionType === "inheritance"
+          ? row.selectedInheritanceSource ||
+            inheritanceSources.find(
+              (candidate) => candidate.deceasedId === row.lot.inheritanceSourceDeceasedId,
+            ) ||
+            (inheritanceSources.length === 1 ? inheritanceSources[0] : null)
+          : null;
       const fallbackShare = storedRows.length === 1 ? vendor.share : 0;
       return {
         row,
@@ -540,8 +829,11 @@ export function buildTaxCalculationReport(
         shareFraction: saleRowShareFraction(row, fallbackShare),
       };
     });
+    const storedCoverage = allocateStoredRowCoverage(currentTranches, resolvedStoredRows);
+    const residualTranches = storedCoverage.residualTranches;
+    const assessedStoredRows = storedCoverage.storedRows;
     const storedRowsBySource = new Map();
-    resolvedStoredRows.forEach((item) => {
+    assessedStoredRows.forEach((item) => {
       if (!item.source) return;
       const sourceKey = item.source.deceasedId || item.source;
       const sourceRows = storedRowsBySource.get(sourceKey) || [];
@@ -588,9 +880,32 @@ export function buildTaxCalculationReport(
         );
       });
     });
-    const rows = storedRows.length
-      ? resolvedStoredRows.map(({ row, source, fallbackShare }) => {
-          return displayRowFromLot({
+    const currentInheritanceFractions = new Map(
+      residualTranches
+        .filter((tranche) => tranche.cause === "inheritance")
+        .map((tranche) => [tranche.trancheId, tranche.fraction]),
+    );
+    const currentInheritanceSources = inheritanceSources
+      .map((source) => {
+        const currentFraction = currentInheritanceFractions.get(`inheritance-${source.deceasedId}`);
+        if (!currentFraction) return currentTranches.length || storedRows.length ? null : source;
+        return {
+          ...source,
+          shareFraction: currentFraction,
+          share: fractionToNumber(currentFraction),
+        };
+      })
+      .filter(Boolean);
+    const currentInitialTranches = residualTranches.filter(
+      (tranche) => tranche.cause === "initial",
+    );
+    const currentTransferTranches = residualTranches.filter((tranche) =>
+      ["purchase", "donation"].includes(tranche.cause),
+    );
+    const rows = [
+      ...assessedStoredRows.map(
+        ({ row, source, fallbackShare, shareFraction, coverageWarning, acquisitionDateOverride }) =>
+          displayRowFromLot({
             property,
             row,
             source,
@@ -602,19 +917,41 @@ export function buildTaxCalculationReport(
             declarationRequiredFraction: source
               ? declarationShareByRow.get(row) || ZERO_FRACTION
               : null,
-          });
-        })
-      : inheritanceSources.map((source, index) =>
-          syntheticInheritedRow({
-            property,
-            vendor,
-            source,
-            index,
-            peopleById,
-            inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
-            deedTransferValue,
+            shareFractionOverride: shareFraction,
+            coverageWarning,
+            acquisitionDateOverride,
           }),
-        );
+      ),
+      ...currentInitialTranches.map((tranche, index) =>
+        syntheticInitialOwnerRow({
+          property,
+          vendor,
+          tranche,
+          index,
+          deedTransferValue,
+        }),
+      ),
+      ...currentInheritanceSources.map((source, index) =>
+        syntheticInheritedRow({
+          property,
+          vendor,
+          source,
+          index,
+          peopleById,
+          inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
+          deedTransferValue,
+        }),
+      ),
+      ...currentTransferTranches.map((tranche, index) =>
+        syntheticTransferredRow({
+          property,
+          vendor,
+          tranche,
+          index,
+          deedTransferValue,
+        }),
+      ),
+    ];
     const coveredFraction = rows.reduce(
       (total, row) => addFractions(total, row.shareFraction || approximateFraction(row.share)),
       ZERO_FRACTION,
@@ -624,15 +961,17 @@ export function buildTaxCalculationReport(
     if (!missingFraction.error && compareFractions(missingFraction, ZERO_FRACTION) > 0) {
       const share = fractionToNumber(missingFraction);
       const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
+      const hasIncomingTransfer = report.ledger.entries.some(
+        (entry) => !entry.error && entry.buyerId === vendor.id,
+      );
       rows.push({
         id: `${vendor.id}-unresolved`,
         share,
         shareFraction: missingFraction,
-        provenance: report.ledger.entries.some(
-          (entry) => !entry.error && entry.buyerId === vendor.id,
-        )
+        provenance: hasIncomingTransfer
           ? "Transferred share — acquisition details incomplete"
           : "Initial ownership — acquisition details incomplete",
+        sourceKind: hasIncomingTransfer ? "transfer" : "unresolved",
         inheritanceDate: "",
         declarations: [],
         declaredValue: 0,
@@ -707,7 +1046,7 @@ export function ownerProvenanceTranches(report = {}, property = {}, ownerId = ""
       trancheId: `initial-${owner.id || ownerId}`,
       personId: ownerId,
       fraction: share,
-      acquiredOn: "",
+      acquiredOn: owner.acquisitionDate || "",
       cause: "initial",
       provenance: "Initial ownership",
     });
@@ -857,6 +1196,112 @@ export function assignInitialOwnerPerson(owners = [], ownerId = "", personId = "
         : remainingInitialOwnershipShare(owners, ownerId);
     return { ...owner, ...sharePatch, personId };
   });
+}
+
+const validIsoDate = (value) => {
+  const text = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const parsed = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
+};
+
+/**
+ * Records the date for a living original owner's initial-title record.
+ * Inherited acquisitions deliberately cannot use this path: their acquisition date is the
+ * deceased owner's date of death. The owner need not still hold the title because a later donee
+ * can require this date for Article 5A look-through.
+ */
+export function setLivingInitialOwnerAcquisitionDate(
+  property = {},
+  people = [],
+  personId = "",
+  acquisitionDate = "",
+  _outsideParties = [],
+  ownerRecordId = "",
+) {
+  if (!validIsoDate(acquisitionDate)) {
+    return { property, error: "Enter a valid original acquisition date." };
+  }
+  const person = people.find((candidate) => candidate.id === personId);
+  if (!person) {
+    return { property, error: "The original owner could not be found on the family tree." };
+  }
+  if (isPersonDeceased(person)) {
+    return {
+      property,
+      error:
+        "An inherited share uses the deceased owner's date of death; complete the relevant CM details instead.",
+    };
+  }
+  const matchingOwnerRecords = (property.owners || []).filter(
+    (owner) =>
+      owner.personId === personId && (!ownerRecordId || String(owner.id || "") === ownerRecordId),
+  );
+  if (!matchingOwnerRecords.length) {
+    return {
+      property,
+      error: "This person is not recorded as an original owner of this property.",
+    };
+  }
+  const effectiveSaleDate = validIsoDate(property.saleDate)
+    ? property.saleDate
+    : new Date().toISOString().slice(0, 10);
+  if (acquisitionDate > effectiveSaleDate) {
+    return { property, error: "The acquisition date cannot be after the intended sale date." };
+  }
+
+  return {
+    property: {
+      ...property,
+      owners: (property.owners || []).map((owner) =>
+        owner.personId === personId && (!ownerRecordId || owner.id === ownerRecordId)
+          ? { ...owner, acquisitionDate }
+          : owner,
+      ),
+    },
+    error: "",
+  };
+}
+
+/** Records the donation-date value used for a particular donee's Article 5A source fraction. */
+export function setDonationAcquisitionValue(
+  property = {},
+  buyerId = "",
+  transferId = "",
+  acquisitionValue = "",
+  acquisitionValueBasis = "",
+) {
+  const numericValue = Number(acquisitionValue);
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return { property, error: "Enter a valid donation acquisition value." };
+  }
+  if (!DONATION_ACQUISITION_VALUE_BASES.includes(acquisitionValueBasis)) {
+    return {
+      property,
+      error: "Choose market value at donation, deed value or final assessment.",
+    };
+  }
+  const transfers = property.transfers || [];
+  const targetIndex = transfers.findIndex(
+    (transfer) => transfer.id === transferId && transfer.buyerId === buyerId,
+  );
+  if (targetIndex < 0) {
+    return { property, error: "The selected donation transfer could not be found for this donee." };
+  }
+  if (transfers[targetIndex].kind !== "donation") {
+    return { property, error: "Acquisition value can only be recorded against a donation." };
+  }
+  return {
+    property: {
+      ...property,
+      transfers: transfers.map((transfer, index) =>
+        index === targetIndex
+          ? { ...transfer, acquisitionValue: numericValue, acquisitionValueBasis }
+          : transfer,
+      ),
+    },
+    error: "",
+  };
 }
 
 export function buildPropertyVendorTaxReport(property = {}, people = [], outsideParties = []) {
