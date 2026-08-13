@@ -1,10 +1,12 @@
 import {
   addFractions,
   compareFractions,
+  divideFractions,
   fractionComponentNumber,
   fractionToNumber,
   normaliseFraction,
   subtractFractions,
+  WHOLE_FRACTION,
   ZERO_FRACTION,
 } from "./fractions.js";
 import { approximateFraction } from "./ownership.js";
@@ -65,6 +67,35 @@ function expectedFraction(heir = {}) {
   if (heir.shareFraction?.denominator) return heir.shareFraction;
   const exact = normaliseFraction(heir.shareNumerator, heir.shareDenominator);
   return exact.error ? approximateFraction(expectedShare(heir)) : exact;
+}
+
+/**
+ * Return the proportion of a declaration that can be used as a tax basis.
+ *
+ * Recorded CM figures remain untouched. When the declared fraction exceeds the inherited
+ * fraction, tax calculations use the same required/declared factor for both the fraction and
+ * its value. Keeping one shared factor prevents an excess value from being attributed to a
+ * smaller inherited share.
+ */
+export function declarationAssessmentFactor(declaredFraction, requiredFraction) {
+  const declaredComparison = compareFractions(declaredFraction, ZERO_FRACTION);
+  const requiredComparison = compareFractions(requiredFraction, ZERO_FRACTION);
+  const isCapped =
+    declaredComparison > 0 &&
+    requiredComparison >= 0 &&
+    compareFractions(declaredFraction, requiredFraction) > 0;
+  if (!isCapped) {
+    return { fraction: WHOLE_FRACTION, value: 1, isCapped: false };
+  }
+
+  const exactFactor = divideFractions(requiredFraction, declaredFraction);
+  const numericFactor = fractionToNumber(requiredFraction) / fractionToNumber(declaredFraction);
+  const fraction = exactFactor.error ? approximateFraction(numericFactor) : exactFactor;
+  return {
+    fraction,
+    value: fraction.error ? numericFactor : fractionToNumber(fraction),
+    isCapped: true,
+  };
 }
 
 export function validateDeclaration(declaration) {

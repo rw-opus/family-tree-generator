@@ -332,12 +332,12 @@ describe("validateCausaMortisDeclaration", () => {
     expect(validateCausaMortisDeclaration(withoutValue, { valueRequired: false })).toBe("");
   });
 
-  it("rejects a fraction larger than the remaining share", () => {
+  it("accepts a recorded fraction larger than the inherited share", () => {
     expect(
       validateCausaMortisDeclaration(completeDeclaration, {
         availableShare: 0.2,
       }),
-    ).toBe("The declared fraction is greater than the deceased's remaining share.");
+    ).toBe("");
   });
 
   it("requires the declaration date to be after a known death", () => {

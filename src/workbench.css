@@ -2960,8 +2960,7 @@ textarea {
 
 .causa-mortis-heading small,
 .causa-mortis-empty,
-.causa-mortis-declarants > small,
-.causa-mortis-value-note {
+.causa-mortis-declarants > small {
   color: var(--muted);
   font-size: 0.59rem;
   line-height: 1.35;
@@ -3020,7 +3019,6 @@ textarea {
 }
 
 .causa-mortis-coverage-row.under,
-.causa-mortis-coverage-row.over,
 .causa-mortis-coverage-row.mixed,
 .causa-mortis-coverage-row.allocation-unresolved,
 .causa-mortis-coverage-row.date-unknown {
@@ -3030,8 +3028,6 @@ textarea {
 
 .causa-mortis-coverage-row.under strong,
 .causa-mortis-coverage-row.under b,
-.causa-mortis-coverage-row.over strong,
-.causa-mortis-coverage-row.over b,
 .causa-mortis-coverage-row.mixed strong,
 .causa-mortis-coverage-row.mixed b,
 .causa-mortis-coverage-row.allocation-unresolved strong,
@@ -3039,6 +3035,16 @@ textarea {
 .causa-mortis-coverage-row.date-unknown strong,
 .causa-mortis-coverage-row.date-unknown b {
   color: #a12828;
+}
+
+.causa-mortis-over-advice {
+  margin: 0;
+  border-left: 3px solid #c89635;
+  background: #fff9ed;
+  padding: 0.38rem 0.48rem;
+  color: #705018;
+  font-size: 0.58rem;
+  line-height: 1.4;
 }
 
 .causa-mortis-card {
@@ -3149,14 +3155,6 @@ textarea {
   margin-left: auto;
   color: var(--muted);
   font-size: 0.52rem;
-}
-
-.causa-mortis-value-note.required {
-  color: #9b551d;
-}
-
-.causa-mortis-value-note.optional {
-  color: #28704d;
 }
 
 .causa-mortis-card-actions {
@@ -3970,16 +3968,12 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  max-width: min(330px, calc(100vw - 1.5rem));
   margin: 0;
-  border: 1px solid #e0b4b0;
-  border-radius: 7px;
-  background: rgba(255, 250, 249, 0.96);
-  box-shadow: 0 3px 10px rgba(73, 31, 27, 0.08);
   color: #78241d;
-  padding: 0.32rem 0.48rem;
-  font-size: 0.61rem;
-  line-height: 1.3;
+  padding: 0;
+  font-size: 0.58rem;
+  font-weight: 750;
+  line-height: 1.2;
   pointer-events: none;
 }
 
@@ -3990,11 +3984,6 @@ textarea {
   border: 2px solid #b42318;
   border-radius: 3px;
   background: #fee4e2;
-}
-
-.tree-required-data-key strong {
-  color: #78241d;
-  white-space: nowrap;
 }
 
 .tree-property-panel {
@@ -6218,13 +6207,7 @@ body.a3-print-preview-open {
 
   .tree-required-data-key {
     right: 0.55rem;
-    max-width: calc(50% - 0.75rem);
-    padding: 0.28rem 0.4rem;
     font-size: 0.56rem;
-  }
-
-  .tree-required-data-key strong {
-    white-space: normal;
   }
 
   .tree-navigation-tools {

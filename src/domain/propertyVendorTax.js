@@ -1,4 +1,4 @@
-import { declarationCoverage } from "./declarations.js";
+import { declarationAssessmentFactor, declarationCoverage } from "./declarations.js";
 import {
   allocateCausaMortisDeclaration,
   isCompletedCausaMortisDeclaration,
@@ -235,9 +235,15 @@ const declarationAllocationForSource = (declaration, source, inheritanceSourcesB
   return allocation;
 };
 
-const declarationRowsForSource = (source, property, peopleById, inheritanceSourcesByOwner) => {
+const declarationRowsForSource = (
+  source,
+  property,
+  peopleById,
+  inheritanceSourcesByOwner,
+  requiredShareFraction = null,
+) => {
   const deceased = peopleById.get(source.deceasedId);
-  return matchingPersonDeclarations(deceased, property.id, source.ownerId)
+  const recordedRows = matchingPersonDeclarations(deceased, property.id, source.ownerId)
     .map((declaration) => {
       const allocation = declarationAllocationForSource(
         declaration,
@@ -255,6 +261,38 @@ const declarationRowsForSource = (source, property, peopleById, inheritanceSourc
       };
     })
     .filter(Boolean);
+  const recordedFraction = recordedRows.reduce(
+    (total, row) => addFractions(total, row.declaredShareFraction),
+    ZERO_FRACTION,
+  );
+  const requiredFraction =
+    requiredShareFraction?.denominator !== undefined
+      ? requiredShareFraction
+      : source.shareFraction || approximateFraction(Number(source.share) || 0);
+  const assessment = declarationAssessmentFactor(recordedFraction, requiredFraction);
+
+  return recordedRows
+    .map((row) => {
+      const assessedFraction = multiplyFractions(row.declaredShareFraction, assessment.fraction);
+      const usableAssessedFraction = assessedFraction.error
+        ? approximateFraction(row.declaredShare * assessment.value)
+        : assessedFraction;
+      return {
+        ...row,
+        recordedDeclaredShare: row.declaredShare,
+        recordedDeclaredShareFraction: row.declaredShareFraction,
+        recordedDeclaredValue: row.declaredValue,
+        declaredShare: fractionToNumber(usableAssessedFraction),
+        declaredShareFraction: usableAssessedFraction,
+        declaredValue: row.declaredValue * assessment.value,
+        assessmentFactor: assessment.value,
+      };
+    })
+    .filter(
+      (row) =>
+        !row.declaredShareFraction.error &&
+        compareFractions(row.declaredShareFraction, ZERO_FRACTION) > 0,
+    );
 };
 
 const sourceHasCompletedPersonDeclarations = (source, property, peopleById) => {
@@ -292,6 +330,7 @@ const displayRowFromLot = ({
   inheritanceSourcesByOwner,
   fallbackShare = 0,
   deedTransferValue = 0,
+  declarationRequiredFraction = null,
 }) => {
   const storedShare = Number(row.result?.share) || 0;
   const lotShare = storedShare > 0 ? storedShare : Number(fallbackShare) || 0;
@@ -301,7 +340,13 @@ const displayRowFromLot = ({
       ? propertySaleValue * lotShare
       : Number(row.result?.transferValue) || 0;
   const declarations = source
-    ? declarationRowsForSource(source, property, peopleById, inheritanceSourcesByOwner)
+    ? declarationRowsForSource(
+        source,
+        property,
+        peopleById,
+        inheritanceSourcesByOwner,
+        declarationRequiredFraction,
+      )
     : [];
   const declaredValueFromCards = declarations.reduce(
     (total, declaration) => total + declaration.declaredValue,
@@ -445,6 +490,26 @@ const syntheticInheritedRow = ({
   };
 };
 
+const saleRowShareFraction = (row, fallbackShare = 0) => {
+  const recordedFraction = exactShareFromRecord(row.lot);
+  if (!recordedFraction.error && compareFractions(recordedFraction, ZERO_FRACTION) > 0) {
+    return recordedFraction;
+  }
+  return approximateFraction(Number(row.result?.share) || Number(fallbackShare) || 0);
+};
+
+const smallestFraction = (...fractions) => {
+  if (
+    !fractions.length ||
+    fractions.some((fraction) => !Number.isFinite(compareFractions(fraction, ZERO_FRACTION)))
+  ) {
+    return ZERO_FRACTION;
+  }
+  return fractions.reduce((smallest, fraction) =>
+    compareFractions(fraction, smallest) < 0 ? fraction : smallest,
+  );
+};
+
 /** Read-only vendor information used by the Tax Calculation screen and export. */
 export function buildTaxCalculationReport(
   property = {},
@@ -460,14 +525,71 @@ export function buildTaxCalculationReport(
     // The vendor's whole transfer value on this deed. Value-banded reliefs draw on the band in
     // proportion to each row, so every row of one vendor must share this figure.
     const deedTransferValue = Math.max(0, Number(property.saleValue) || 0) * vendor.share;
+    const resolvedStoredRows = storedRows.map((row) => {
+      const source =
+        row.selectedInheritanceSource ||
+        inheritanceSources.find(
+          (candidate) => candidate.deceasedId === row.lot.inheritanceSourceDeceasedId,
+        ) ||
+        (inheritanceSources.length === 1 ? inheritanceSources[0] : null);
+      const fallbackShare = storedRows.length === 1 ? vendor.share : 0;
+      return {
+        row,
+        source,
+        fallbackShare,
+        shareFraction: saleRowShareFraction(row, fallbackShare),
+      };
+    });
+    const storedRowsBySource = new Map();
+    resolvedStoredRows.forEach((item) => {
+      if (!item.source) return;
+      const sourceKey = item.source.deceasedId || item.source;
+      const sourceRows = storedRowsBySource.get(sourceKey) || [];
+      sourceRows.push(item);
+      storedRowsBySource.set(sourceKey, sourceRows);
+    });
+    // A CM deed does not identify which later tax lot consumed each part of its fraction. Allocate
+    // the usable CM fraction pro rata across rows sharing the same inheritance source. The pool is
+    // capped by the recorded deed, the inherited source and the rows actually being assessed, so
+    // split rows can neither duplicate an under-declaration nor revive an over-declaration.
+    const declarationShareByRow = new Map();
+    storedRowsBySource.forEach((sourceRows) => {
+      const source = sourceRows[0].source;
+      const requestedFraction = sourceRows.reduce(
+        (total, item) => addFractions(total, item.shareFraction),
+        ZERO_FRACTION,
+      );
+      const recordedDeclarations = declarationRowsForSource(
+        source,
+        property,
+        peopleById,
+        report.inheritanceSourcesByOwner,
+      );
+      const recordedFraction = recordedDeclarations.reduce(
+        (total, declaration) =>
+          addFractions(
+            total,
+            declaration.recordedDeclaredShareFraction || declaration.declaredShareFraction,
+          ),
+        ZERO_FRACTION,
+      );
+      const sourceFraction = source.shareFraction || approximateFraction(Number(source.share) || 0);
+      const assessableFraction = smallestFraction(
+        requestedFraction,
+        recordedFraction,
+        sourceFraction,
+      );
+      const assessment = declarationAssessmentFactor(requestedFraction, assessableFraction);
+      sourceRows.forEach((item) => {
+        const assessedFraction = multiplyFractions(item.shareFraction, assessment.fraction);
+        declarationShareByRow.set(
+          item.row,
+          assessedFraction.error ? ZERO_FRACTION : assessedFraction,
+        );
+      });
+    });
     const rows = storedRows.length
-      ? storedRows.map((row) => {
-          const source =
-            row.selectedInheritanceSource ||
-            inheritanceSources.find(
-              (candidate) => candidate.deceasedId === row.lot.inheritanceSourceDeceasedId,
-            ) ||
-            (inheritanceSources.length === 1 ? inheritanceSources[0] : null);
+      ? resolvedStoredRows.map(({ row, source, fallbackShare }) => {
           return displayRowFromLot({
             property,
             row,
@@ -475,8 +597,11 @@ export function buildTaxCalculationReport(
             ledger: report.ledger,
             peopleById,
             inheritanceSourcesByOwner: report.inheritanceSourcesByOwner,
-            fallbackShare: storedRows.length === 1 ? vendor.share : 0,
+            fallbackShare,
             deedTransferValue,
+            declarationRequiredFraction: source
+              ? declarationShareByRow.get(row) || ZERO_FRACTION
+              : null,
           });
         })
       : inheritanceSources.map((source, index) =>
@@ -867,21 +992,28 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       Boolean(declaredCoverage?.hasUsablePublishedValues);
     const useDeclarationValues =
       !preCausaMortisCutoff && lot.useDeclaredValues !== false && Boolean(hasUsableDeclaredValues);
-    const declaredFraction = approximateFraction(
-      declaredCoverage?.declaredFraction ?? declaredCoverage?.publishedFraction ?? 0,
-    );
+    const declaredFraction =
+      declaredCoverage?.exactDeclaredFraction ||
+      approximateFraction(
+        declaredCoverage?.declaredFraction ?? declaredCoverage?.publishedFraction ?? 0,
+      );
     const requiredDeclaredFraction =
       declaredCoverage?.exactRequiredFraction || exactShareFromRecord(sourcedLot);
-    const assessedDeclaredFraction =
-      !requiredDeclaredFraction.error &&
-      compareFractions(requiredDeclaredFraction, ZERO_FRACTION) > 0 &&
-      compareFractions(declaredFraction, requiredDeclaredFraction) > 0
-        ? requiredDeclaredFraction
-        : declaredFraction;
+    const declarationAssessment = declarationAssessmentFactor(
+      declaredFraction,
+      requiredDeclaredFraction,
+    );
+    const assessedDeclaredFraction = multiplyFractions(
+      declaredFraction,
+      declarationAssessment.fraction,
+    );
+    const recordedDeclaredValue =
+      declaredCoverage?.declaredValue ?? declaredCoverage?.publishedValue ?? 0;
+    const assessedDeclaredValue = recordedDeclaredValue * declarationAssessment.value;
     const effectiveLot = useDeclarationValues
       ? {
           ...sourcedLot,
-          acquisitionValue: declaredCoverage.declaredValue ?? declaredCoverage.publishedValue,
+          acquisitionValue: assessedDeclaredValue,
           acquisitionValueBasis: lot.acquisitionValueBasis || "cm-declared",
           shareNumerator: assessedDeclaredFraction.numerator,
           shareDenominator: assessedDeclaredFraction.denominator,
@@ -899,6 +1031,9 @@ export function buildPropertyVendorTaxReport(property = {}, people = [], outside
       lot,
       effectiveLot,
       declaredCoverage,
+      assessedDeclaredFraction,
+      assessedDeclaredValue,
+      declarationAssessmentFactor: declarationAssessment.value,
       useDeclarationValues,
       // Compatibility alias for callers saved before DCM status was removed.
       usePublishedValues: useDeclarationValues,

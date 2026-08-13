@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { declarationCoverage, validateDeclaration } from "../../src/domain/declarations.js";
+import {
+  declarationAssessmentFactor,
+  declarationCoverage,
+  validateDeclaration,
+} from "../../src/domain/declarations.js";
 
 describe("succession declarations", () => {
   it("allows separate and additional declarations by different heirs", () => {
@@ -124,6 +128,29 @@ describe("succession declarations", () => {
     expect(declarationCoverage([heir], [declaration("over", 3)])[0]).toMatchObject({
       status: "over",
       hasUsableDeclaredValues: true,
+    });
+  });
+
+  it("provides one proportional tax factor for an excess fraction and its value", () => {
+    expect(
+      declarationAssessmentFactor(
+        { numerator: 3, denominator: 4 },
+        { numerator: 1, denominator: 2 },
+      ),
+    ).toEqual({
+      fraction: { numerator: 2, denominator: 3 },
+      value: 2 / 3,
+      isCapped: true,
+    });
+    expect(
+      declarationAssessmentFactor(
+        { numerator: 1, denominator: 4 },
+        { numerator: 1, denominator: 2 },
+      ),
+    ).toEqual({
+      fraction: { numerator: 1, denominator: 1 },
+      value: 1,
+      isCapped: false,
     });
   });
 });

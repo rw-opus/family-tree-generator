@@ -802,24 +802,30 @@ describe("property vendor tax reports", () => {
     const vendorC = report.vendors.find((vendor) => vendor.id === "c");
 
     expect(vendorA.rows[0]).toMatchObject({
-      declaredValue: 800,
+      declaredValue: 600,
       declarations: [
         {
           id: "cm-ab",
-          declaredShare: 2 / 3,
-          declaredShareFraction: { numerator: 2, denominator: 3 },
-          declaredValue: 800,
+          recordedDeclaredShare: 2 / 3,
+          recordedDeclaredValue: 800,
+          declaredShare: 1 / 2,
+          declaredShareFraction: { numerator: 1, denominator: 2 },
+          declaredValue: 600,
+          assessmentFactor: 3 / 4,
         },
       ],
     });
     expect(vendorB.rows[0]).toMatchObject({
-      declaredValue: 400,
+      declaredValue: 300,
       declarations: [
         {
           id: "cm-ab",
-          declaredShare: 1 / 3,
-          declaredShareFraction: { numerator: 1, denominator: 3 },
-          declaredValue: 400,
+          recordedDeclaredShare: 1 / 3,
+          recordedDeclaredValue: 400,
+          declaredShare: 1 / 4,
+          declaredShareFraction: { numerator: 1, denominator: 4 },
+          declaredValue: 300,
+          assessmentFactor: 3 / 4,
         },
       ],
     });
@@ -830,6 +836,218 @@ describe("property vendor tax reports", () => {
       selectedMethod: null,
     });
     expect(vendorC.tax).toBeNull();
+  });
+
+  it("proportionately caps each modern deed when several deeds exceed one inherited share", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        dateOfDeath: "2020-01-01",
+        causaMortisDeclarations: [
+          {
+            id: "cm-first",
+            status: "complete",
+            propertyId: "property",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 2,
+            immovablePropertyValue: "600",
+            date: "2020-02-01",
+            notaryName: "Notary One",
+            declarantPersonIds: ["child"],
+          },
+          {
+            id: "cm-additional",
+            status: "complete",
+            propertyId: "property",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 4,
+            immovablePropertyValue: "300",
+            date: "2020-03-01",
+            notaryName: "Notary Two",
+            declarantPersonIds: ["child"],
+          },
+        ],
+      },
+      { id: "child", fullName: "Maria Borg" },
+    ];
+    const source = {
+      deceasedId: "deceased",
+      deceasedName: "Joseph Borg",
+      ownerId: "child",
+      inheritanceDate: "2020-01-01",
+      share: 0.5,
+      shareFraction: { numerator: 1, denominator: 2 },
+      allocationShare: 1,
+    };
+    const vendorReport = {
+      livingVendors: [
+        {
+          id: "child",
+          name: "Maria Borg",
+          share: 0.5,
+          shareFraction: { numerator: 1, denominator: 2 },
+        },
+      ],
+      saleRows: [],
+      inheritanceSourcesByOwner: new Map([["child", [source]]]),
+      ledger: { entries: [], parties: [] },
+      taxSummary: { excludedLotCount: 0 },
+    };
+
+    const report = buildTaxCalculationReport(
+      { id: "property", saleValue: 2000 },
+      people,
+      [],
+      vendorReport,
+    );
+    const declarations = report.vendors[0].rows[0].declarations;
+
+    expect(declarations).toEqual([
+      expect.objectContaining({
+        id: "cm-first",
+        recordedDeclaredValue: 600,
+        declaredShareFraction: { numerator: 1, denominator: 3 },
+        declaredValue: 400,
+        assessmentFactor: 2 / 3,
+      }),
+      expect.objectContaining({
+        id: "cm-additional",
+        recordedDeclaredValue: 300,
+        declaredShareFraction: { numerator: 1, denominator: 6 },
+        declaredValue: 200,
+        assessmentFactor: 2 / 3,
+      }),
+    ]);
+    expect(report.vendors[0].rows[0].declaredValue).toBe(600);
+    expect(report.vendors[0].rows[0]).toMatchObject({
+      attributedSaleValue: 1000,
+      selectedMethod: { key: "increase-12", tax: 48 },
+      tax: 48,
+    });
+  });
+
+  it("uses only the CM value attributable to stored rows sold from an inherited source", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        dateOfDeath: "2020-01-01",
+        causaMortisDeclarations: [
+          {
+            id: "cm",
+            status: "complete",
+            propertyId: "property",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 2,
+            immovablePropertyValue: "100000",
+            date: "2020-02-01",
+            notaryName: "Notary One",
+            declarantPersonIds: ["child"],
+          },
+        ],
+      },
+      { id: "child", fullName: "Maria Borg" },
+    ];
+    const source = {
+      deceasedId: "deceased",
+      deceasedName: "Joseph Borg",
+      ownerId: "child",
+      inheritanceDate: "2020-01-01",
+      share: 0.5,
+      shareFraction: { numerator: 1, denominator: 2 },
+    };
+    const storedRow = (id) => ({
+      lot: {
+        id,
+        ownerId: "child",
+        inheritanceSourceDeceasedId: "deceased",
+        shareNumerator: 1,
+        shareDenominator: 4,
+      },
+      effectiveLot: {
+        id,
+        ownerId: "child",
+        acquisitionType: "inheritance",
+        inheritanceDate: "2020-01-01",
+        transferDate: "2026-08-01",
+        shareNumerator: 1,
+        shareDenominator: 4,
+      },
+      result: { share: 0.25 },
+      selectedInheritanceSource: source,
+    });
+    const vendorReport = (rows, share) => ({
+      livingVendors: [
+        {
+          id: "child",
+          name: "Maria Borg",
+          share,
+          shareFraction: share === 0.5 ? { numerator: 1, denominator: 2 } : undefined,
+        },
+      ],
+      saleRows: rows,
+      inheritanceSourcesByOwner: new Map([["child", [source]]]),
+      ledger: { entries: [], parties: [] },
+      taxSummary: { excludedLotCount: 0 },
+    });
+
+    const partialReport = buildTaxCalculationReport(
+      { id: "property", saleValue: 200000 },
+      people,
+      [],
+      vendorReport([storedRow("partial")], 0.25),
+    );
+    expect(partialReport.vendors[0].rows[0]).toMatchObject({
+      shareFraction: { numerator: 1, denominator: 4 },
+      declaredValue: 50000,
+      declarations: [
+        {
+          recordedDeclaredValue: 100000,
+          declaredShareFraction: { numerator: 1, denominator: 4 },
+          declaredValue: 50000,
+          assessmentFactor: 0.5,
+        },
+      ],
+    });
+
+    const splitReport = buildTaxCalculationReport(
+      { id: "property", saleValue: 200000 },
+      people,
+      [],
+      vendorReport([storedRow("first-quarter"), storedRow("second-quarter")], 0.5),
+    );
+    expect(splitReport.vendors[0].rows.map((row) => row.declaredValue)).toEqual([50000, 50000]);
+    expect(splitReport.vendors[0].rows.reduce((total, row) => total + row.declaredValue, 0)).toBe(
+      100000,
+    );
+
+    const underDeclaredPeople = [
+      {
+        ...people[0],
+        causaMortisDeclarations: [
+          {
+            ...people[0].causaMortisDeclarations[0],
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 4,
+            immovablePropertyValue: "50000",
+          },
+        ],
+      },
+      people[1],
+    ];
+    const underDeclaredReport = buildTaxCalculationReport(
+      { id: "property", saleValue: 200000 },
+      underDeclaredPeople,
+      [],
+      vendorReport([storedRow("under-first"), storedRow("under-second")], 0.5),
+    );
+    expect(underDeclaredReport.vendors[0].rows.map((row) => row.declaredValue)).toEqual([
+      25000, 25000,
+    ]);
+    expect(
+      underDeclaredReport.vendors[0].rows.reduce((total, row) => total + row.declaredValue, 0),
+    ).toBe(50000);
   });
 
   it("recalculates a legacy zero-share row after assigning the vendor's sole share", () => {
@@ -1372,6 +1590,7 @@ describe("property vendor tax reports", () => {
           shareNumerator: 1,
           shareDenominator: 2,
           acquisitionValue: 0,
+          transferValue: 500,
           useDeclaredValues: true,
           cmValueEligibilityConfirmed: true,
         },
@@ -1403,8 +1622,11 @@ describe("property vendor tax reports", () => {
     expect(rowA).toMatchObject({
       useDeclarationValues: true,
       declaredCoverage: { status: "over", hasUsableDeclaredValues: true },
+      assessedDeclaredFraction: { numerator: 1, denominator: 2 },
+      assessedDeclaredValue: 200,
+      declarationAssessmentFactor: 2 / 3,
       effectiveLot: {
-        acquisitionValue: 300,
+        acquisitionValue: 200,
         shareNumerator: 1,
         shareDenominator: 2,
       },
@@ -1412,6 +1634,10 @@ describe("property vendor tax reports", () => {
     expect(rowB).toMatchObject({
       useDeclarationValues: false,
       declaredCoverage: { status: "under", declaredValue: 0 },
+    });
+    expect(rowA.result).toMatchObject({
+      selected: "increase-12",
+      methods: expect.arrayContaining([expect.objectContaining({ key: "increase-12", tax: 36 })]),
     });
   });
 
