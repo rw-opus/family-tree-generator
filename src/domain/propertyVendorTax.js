@@ -1327,17 +1327,18 @@ export function setLivingInitialOwnerAcquisitionDate(
   people = [],
   personId = "",
   acquisitionDate = "",
-  _outsideParties = [],
+  outsideParties = [],
   ownerRecordId = "",
 ) {
   if (!validIsoDate(acquisitionDate)) {
     return { property, error: "Enter a valid original acquisition date." };
   }
   const person = people.find((candidate) => candidate.id === personId);
-  if (!person) {
-    return { property, error: "The original owner could not be found on the family tree." };
+  const outsideOwner = outsideParties.find((candidate) => candidate.id === personId);
+  if (!person && !outsideOwner) {
+    return { property, error: "The original owner could not be found." };
   }
-  if (isPersonDeceased(person)) {
+  if (person && isPersonDeceased(person)) {
     return {
       property,
       error:

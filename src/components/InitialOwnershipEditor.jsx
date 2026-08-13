@@ -1,4 +1,5 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Building2, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import {
   assignInitialOwnerPerson,
@@ -11,6 +12,7 @@ import {
   shareFromFractionInput,
   shareFromPercentageInput,
 } from "../domain/shares.js";
+import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 
 const makeOwner = (owners = []) => ({
   id: crypto.randomUUID(),
@@ -21,12 +23,14 @@ const makeOwner = (owners = []) => ({
 export function InitialOwnershipEditor({
   property,
   people,
+  outsideParties = [],
   onChange,
-  compact = false,
   heading = "Initial owner/s of the property",
   helperText = "Select any person already on the family tree and enter the fraction originally owned.",
   onPickFromTree,
+  onCreateOutsideParty,
 }) {
+  const [outsidePartyOpen, setOutsidePartyOpen] = useState(false);
   const owners = property.owners || [];
   const status = propertyStartingOwnershipStatus(property);
   const totalLabel = status.enteredTotalPercent.toLocaleString("en-MT", {
@@ -56,7 +60,7 @@ export function InitialOwnershipEditor({
   };
 
   return (
-    <div className={`initial-ownership-editor ${compact ? "compact" : ""}`}>
+    <div className="initial-ownership-editor">
       <div className="section-heading initial-ownership-heading">
         <div>
           <p className="eyebrow">Initial title</p>
@@ -104,6 +108,23 @@ export function InitialOwnershipEditor({
                       {personChoiceLabel(person, people)}
                     </option>
                   ))}
+                  {outsideParties.length > 0 && (
+                    <optgroup label="Outside individuals and companies">
+                      {[...outsideParties]
+                        .sort((left, right) =>
+                          String(left.name || "").localeCompare(String(right.name || ""), "en-MT", {
+                            sensitivity: "base",
+                            numeric: true,
+                          }),
+                        )
+                        .map((party) => (
+                          <option key={party.id} value={party.id}>
+                            {party.name || "Unnamed party"}
+                            {party.type === "company" ? " (company)" : " (outside individual)"}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
                 </select>
                 {onPickFromTree && (
                   <button
@@ -193,7 +214,33 @@ export function InitialOwnershipEditor({
             Select from tree
           </button>
         )}
+        {onCreateOutsideParty && (
+          <button
+            type="button"
+            className="secondary-button"
+            aria-expanded={outsidePartyOpen}
+            onClick={() => setOutsidePartyOpen((open) => !open)}
+          >
+            <Building2 size={16} /> Add outside owner
+          </button>
+        )}
       </div>
+      {outsidePartyOpen && (
+        <OutsidePartyCreator
+          submitLabel="Add owner"
+          helperText="The individual or company remains outside the family tree but can hold a property share."
+          ariaLabelPrefix="Outside owner"
+          onCreate={(party) => {
+            const availableOwner = owners.find((owner) => !owner.personId);
+            const nextOwners = availableOwner
+              ? assignInitialOwnerPerson(owners, availableOwner.id, party.id)
+              : [...owners, { ...makeOwner(owners), personId: party.id }];
+            onCreateOutsideParty(party, nextOwners);
+            setOutsidePartyOpen(false);
+          }}
+          onCancel={() => setOutsidePartyOpen(false)}
+        />
+      )}
     </div>
   );
 }

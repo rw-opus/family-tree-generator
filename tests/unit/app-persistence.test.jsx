@@ -340,23 +340,45 @@ describe("App local recovery", () => {
     act(() => pickFromTree.click());
 
     expect(container.querySelector(".initial-owner-tree-picker")).not.toBeNull();
-    expect(container.querySelector(".tree-property-panel").classList).toContain("expanded");
-    expect(container.querySelector(".tree-property-panel").classList).toContain(
-      "initial-owner-selection-active",
-    );
     expect(container.querySelector(".ownership-tax-button")).not.toBeNull();
     expect(container.querySelector(".context-dashboard")).toBeNull();
 
+    // Opening the property workspace cancels tree-pick mode instead of leaving a silent
+    // selection armed for the next person tapped after returning to the tree.
+    act(() => container.querySelector(".ownership-tax-button").click());
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Back to Tree"))
+        .click(),
+    );
+    act(() => container.querySelector('[data-person-id="person-2"]').click());
+    expect(container.querySelector(".context-dashboard")).not.toBeNull();
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Back to Tree")
+        .click(),
+    );
+
+    act(() => container.querySelector(".ownership-tax-button").click());
+    act(() =>
+      container.querySelector('button[aria-label="Select initial owner from tree"]').click(),
+    );
     act(() => container.querySelector('[data-person-id="person-2"]').click());
 
     expect(container.querySelector(".initial-owner-tree-picker")).toBeNull();
-    expect(container.querySelector(".tree-property-panel").classList).toContain("expanded");
+    expect(container.querySelector(".property-workspace-page")).not.toBeNull();
+    expect(container.querySelector(".context-dashboard")).toBeNull();
     expect(container.querySelector('select[aria-label="Initial owner"]').value).toBe("person-2");
+    expect(container.querySelector(".share-status").textContent).toContain("must equal 100%");
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Back to Tree"))
+        .click(),
+    );
     expect(
       container.querySelector('[data-person-id="person-2"] .family-node-ownership').textContent,
     ).toContain("1/2");
-    expect(container.querySelector(".share-status").textContent).toContain("must equal 100%");
-    expect(container.querySelector(".context-dashboard")).toBeNull();
   });
 
   it("lets the tree zoom out to a 25% overview", async () => {
@@ -430,28 +452,90 @@ describe("App local recovery", () => {
     openCurrentFamily();
 
     expect(container.querySelector(".ownership-tax-button").textContent).toContain(
-      "Ownership & Tax",
+      "Property & Tax",
     );
+    act(() => container.querySelector('[data-person-id="person-1"]').click());
+    expect(container.querySelector(".context-dashboard")).not.toBeNull();
     act(() => container.querySelector(".ownership-tax-button").click());
-    const openProperty = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Open property setup"),
-    );
-    expect(openProperty).not.toBeUndefined();
-    act(() => openProperty.click());
-
     expect(container.querySelector(".property-workspace-page")).not.toBeNull();
-    const setupTab = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Setup",
+    const setupLink = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Property & initial ownership",
     );
-    expect(setupTab.className).toContain("active");
+    expect(setupLink.className).toContain("active");
+    expect(container.textContent).toContain("Current ownership & history");
+    expect(container.textContent).toContain("Tax Calculation");
+    expect(container.textContent).not.toContain("Record a sale or transfer");
 
     const backToTree = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Open family tree"),
+      button.textContent.includes("Back to Tree"),
     );
     act(() => backToTree.click());
     expect(container.querySelector(".property-workspace-page")).toBeNull();
-    expect(container.querySelector(".tree-property-panel")).toBeNull();
     expect(container.querySelector(".ownership-tax-button")).not.toBeNull();
+    expect(container.querySelector(".context-dashboard")).toBeNull();
+    expect(container.querySelector(".family-node.selected")).toBeNull();
+  });
+
+  it("opens an outside provenance owner from a family recipient's tax details", () => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "outside-source-tree",
+          title: "Outside source family",
+          people: [{ id: "donee", fullName: "Maria Borg", spouseIds: [] }],
+          outsideParties: [{ id: "company", name: "Harbour Holdings Limited", type: "company" }],
+          properties: [
+            {
+              id: "property",
+              saleDate: "2026-08-13",
+              saleValue: "250000",
+              owners: [
+                {
+                  id: "company-title",
+                  personId: "company",
+                  shareNumerator: 1,
+                  shareDenominator: 1,
+                },
+              ],
+              transfers: [
+                {
+                  id: "company-gift",
+                  kind: "donation",
+                  sellerId: "company",
+                  buyerId: "donee",
+                  numerator: 1,
+                  denominator: 1,
+                  amountType: "whole-property",
+                  date: "2025-01-01",
+                },
+              ],
+              declarations: [],
+              saleLots: [],
+            },
+          ],
+        },
+      ],
+      "outside-source-tree",
+      window.localStorage,
+    );
+    act(() => root.render(<App />));
+    openCurrentFamily();
+    act(() => container.querySelector('[data-person-id="donee"]').click());
+
+    const sourceButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Open Harbour Holdings Limited original acquisition details"),
+    );
+    expect(sourceButton).toBeTruthy();
+    act(() => sourceButton.click());
+
+    expect(container.querySelector(".property-workspace-page")).not.toBeNull();
+    expect(container.querySelector(".property-workspace-menu button.active").textContent).toContain(
+      "Current ownership & history",
+    );
+    expect(container.querySelector("#outside-owner-title").textContent).toBe(
+      "Harbour Holdings Limited",
+    );
+    expect(container.querySelector('input[aria-label="Original acquisition date"]')).not.toBeNull();
   });
 
   it("does not create a replacement family after the last family is deleted", async () => {

@@ -102,9 +102,11 @@ const shareDisplayMode = (value) =>
 const blankDonationDraft = () => ({
   kind: "donation",
   doneeMode: "existing",
+  doneeType: "individual",
   doneeId: "",
   doneeName: "",
   doneeSex: "",
+  doneeRegistrationNumber: "",
   numerator: "",
   denominator: "",
   percentage: "",
@@ -115,13 +117,13 @@ const blankDonationDraft = () => ({
   error: "",
 });
 
-const transferDraftFromRecord = (transfer = {}) => ({
+const transferDraftFromRecord = (transfer = {}, amountFraction = null) => ({
   ...blankDonationDraft(),
   kind: transfer.kind === "sale" ? "sale" : "donation",
   doneeMode: "existing",
   doneeId: transfer.buyerId || "",
-  numerator: String(transfer.numerator ?? ""),
-  denominator: String(transfer.denominator ?? ""),
+  numerator: String(amountFraction?.numerator ?? transfer.numerator ?? ""),
+  denominator: String(amountFraction?.denominator ?? transfer.denominator ?? ""),
   amountType: "defined-share",
   shareInputMode: "fraction",
   date: transfer.date || "",
@@ -213,6 +215,7 @@ export function PersonInspector({
   onConfirmInitialAcquisition,
   onConfirmDonationAcquisitionValue,
   onSelectPerson,
+  onSelectOutsideOwner,
   onDeletePerson,
 }) {
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
@@ -996,8 +999,11 @@ export function PersonInspector({
       (candidate) => candidate.id === transferId,
     );
     if (!transfer) return;
+    const ledgerEntry = recordedOutgoingInterVivosTransfers.find(
+      (entry) => entry.id === transferId,
+    );
     setEditingTransferId(transfer.id);
-    setDonationDraft(transferDraftFromRecord(transfer));
+    setDonationDraft(transferDraftFromRecord(transfer, ledgerEntry?.amountFraction));
     setDonationOpen(true);
   };
 
@@ -1022,6 +1028,17 @@ export function PersonInspector({
         (tranche) => donationDraft.designation[tranche.trancheId]?.checked,
       );
       if (!chosen.length) {
+        const legacyTransfer = (activeProperty?.transfers || []).find(
+          (transfer) => transfer.id === editingTransferId,
+        );
+        if (legacyTransfer && !(legacyTransfer.provenance || []).length) {
+          const selection = selectTranchePortions(provenanceTranches, amount, {
+            strategy: "pro-rata",
+          });
+          return selection.error
+            ? { error: selection.error }
+            : { provenance: selection.portions.map(asRecord) };
+        }
         return { error: "Choose which provenance is being transferred." };
       }
       const designation = chosen.map((tranche) => {
@@ -1078,28 +1095,48 @@ export function PersonInspector({
 
     let acquirer = null;
     let nextPeople = people;
+    let nextOutsideParties = outsideParties;
     if (donationDraft.doneeMode === "new") {
       const name = donationDraft.doneeName.trim();
       if (!name) {
-        return setDonationDraft((d) => ({ ...d, error: "Enter the acquirer's full name." }));
+        return setDonationDraft((d) => ({
+          ...d,
+          error:
+            donationDraft.doneeType === "company"
+              ? "Enter the company's name."
+              : "Enter the acquirer's full name.",
+        }));
       }
-      // An unrelated acquirer joins the tree with no family links: the layout places every
-      // disconnected group side by side, so this person starts a mini tree next to the
-      // family and can gain a spouse and children from their own card later.
-      acquirer = tagStatusCreatedRecord(
-        {
-          ...createPerson(isDonation ? "Donee" : "Buyer"),
-          givenNames: givenNamesFromFullName(name),
-          surname: surnameFromFullName(name),
-          fullName: name,
-          surnameAtBirth: donationDraft.doneeSex === "Male" ? surnameFromFullName(name) : "",
-          surnameAtBirthReviewRequired: donationDraft.doneeSex === "Female",
-          sex: donationDraft.doneeSex,
-        },
-        interVivosStatusSession,
-        { role: "transfer-acquirer" },
-      );
-      nextPeople = [...people, acquirer];
+      if (donationDraft.doneeType === "company") {
+        acquirer = tagStatusCreatedRecord(
+          {
+            id: crypto.randomUUID(),
+            type: "company",
+            name,
+            registrationNumber: donationDraft.doneeRegistrationNumber.trim(),
+          },
+          interVivosStatusSession,
+          { role: "transfer-acquirer" },
+        );
+        nextOutsideParties = [...outsideParties, acquirer];
+      } else {
+        // An unrelated individual joins the tree with no family links. This gives them a
+        // person card from which a later onward sale or donation can be recorded.
+        acquirer = tagStatusCreatedRecord(
+          {
+            ...createPerson(isDonation ? "Donee" : "Buyer"),
+            givenNames: givenNamesFromFullName(name),
+            surname: surnameFromFullName(name),
+            fullName: name,
+            surnameAtBirth: donationDraft.doneeSex === "Male" ? surnameFromFullName(name) : "",
+            surnameAtBirthReviewRequired: donationDraft.doneeSex === "Female",
+            sex: donationDraft.doneeSex,
+          },
+          interVivosStatusSession,
+          { role: "transfer-acquirer" },
+        );
+        nextPeople = [...people, acquirer];
+      }
     } else {
       if (!donationDraft.doneeId) {
         return setDonationDraft((d) => ({ ...d, error: "Select who acquires the share." }));
@@ -1136,7 +1173,7 @@ export function PersonInspector({
       amountType: storedAmountType,
       date: donationDraft.date,
       consideration: originalTransfer?.consideration || "",
-      ...(acquirer
+      ...(acquirer && donationDraft.doneeType !== "company"
         ? { createdBuyerPersonId: acquirer.id }
         : originalTransfer?.createdBuyerPersonId
           ? { createdBuyerPersonId: originalTransfer.createdBuyerPersonId }
@@ -1165,7 +1202,7 @@ export function PersonInspector({
         transfers: prospectiveTransfers,
       },
       nextPeople,
-      outsideParties,
+      nextOutsideParties,
     );
     const prospectiveEntry = prospectiveReport.ledger.entries.find(
       (entry) => entry.id === transfer.id,
@@ -1194,6 +1231,7 @@ export function PersonInspector({
     }
     const payload = {
       people: nextPeople,
+      outsideParties: nextOutsideParties,
       propertyId: activeProperty.id,
       transferId: transfer.id,
       transfer,
@@ -1729,7 +1767,17 @@ export function PersonInspector({
         <FinalWithholdingTaxSection
           vendorTax={selectedVendorTax}
           additionalResolutionRows={originalAcquisitionResolutionRows}
-          onOpenSourcePerson={onSelectPerson}
+          onOpenSourcePerson={
+            onSelectPerson || onSelectOutsideOwner
+              ? (sourceId) => {
+                  if (outsidePartiesById.has(sourceId)) {
+                    onSelectOutsideOwner?.(sourceId);
+                    return;
+                  }
+                  onSelectPerson?.(sourceId);
+                }
+              : undefined
+          }
           onConfirmInitialAcquisition={({ row, acquisitionDate }) =>
             onConfirmInitialAcquisition?.({
               propertyId: properties[0]?.id || "",
@@ -1801,19 +1849,28 @@ export function PersonInspector({
                 value={donationDraft.doneeId}
                 onChange={(event) => setDonationField({ doneeId: event.target.value })}
               >
-                <option value="">Select a person</option>
-                {people
-                  .filter((person) => person.id !== selectedPerson.id)
-                  .map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {displayName(person)}
-                    </option>
-                  ))}
+                <option value="">Select a person or organisation</option>
+                {sortPeopleForChoice(
+                  people.filter((person) => person.id !== selectedPerson.id),
+                  people,
+                ).map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {personChoiceLabel(person, people)}
+                  </option>
+                ))}
                 {outsideParties
                   .filter((party) => party.id !== selectedPerson.id)
+                  .slice()
+                  .sort((left, right) =>
+                    displayParty(left).localeCompare(displayParty(right), "en-MT", {
+                      sensitivity: "base",
+                      numeric: true,
+                    }),
+                  )
                   .map((party) => (
                     <option key={party.id} value={party.id}>
                       {displayParty(party)}
+                      {party.type === "company" ? " (company)" : ""}
                     </option>
                   ))}
               </select>
@@ -1821,26 +1878,60 @@ export function PersonInspector({
           ) : (
             <>
               <label>
-                {isDonation ? "Donee's full name" : "Buyer's full name"}
+                Acquirer type
+                <select
+                  aria-label="New acquirer type"
+                  value={donationDraft.doneeType}
+                  onChange={(event) =>
+                    setDonationField({
+                      doneeType: event.target.value,
+                      doneeSex: "",
+                      doneeRegistrationNumber: "",
+                    })
+                  }
+                >
+                  <option value="individual">Individual</option>
+                  <option value="company">Company</option>
+                </select>
+              </label>
+              <label>
+                {donationDraft.doneeType === "company"
+                  ? "Company name"
+                  : isDonation
+                    ? "Donee's full name"
+                    : "Buyer's full name"}
                 <input
                   aria-label="New acquirer full name"
                   value={donationDraft.doneeName}
                   onChange={(event) => setDonationField({ doneeName: event.target.value })}
-                  placeholder="Full name"
+                  placeholder={donationDraft.doneeType === "company" ? "Company name" : "Full name"}
                 />
               </label>
-              <label>
-                Sex (optional)
-                <select
-                  aria-label="New acquirer sex"
-                  value={donationDraft.doneeSex}
-                  onChange={(event) => setDonationField({ doneeSex: event.target.value })}
-                >
-                  <option value="">Not recorded</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                </select>
-              </label>
+              {donationDraft.doneeType === "company" ? (
+                <label>
+                  Registration number (optional)
+                  <input
+                    aria-label="New company registration number"
+                    value={donationDraft.doneeRegistrationNumber}
+                    onChange={(event) =>
+                      setDonationField({ doneeRegistrationNumber: event.target.value })
+                    }
+                  />
+                </label>
+              ) : (
+                <label>
+                  Sex (optional)
+                  <select
+                    aria-label="New acquirer sex"
+                    value={donationDraft.doneeSex}
+                    onChange={(event) => setDonationField({ doneeSex: event.target.value })}
+                  >
+                    <option value="">Not recorded</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </label>
+              )}
             </>
           )}
           <label>

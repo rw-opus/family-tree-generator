@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
+import "./LegalNotice.css";
 
 export const LEGAL_NOTICE_LAST_UPDATED = "04/08/2026";
 // Change this value whenever the notice changes so every user must accept it again.
@@ -148,6 +150,11 @@ export function PublicLegalPage({ page }) {
   return (
     <main className="legal-page">
       <div className="legal-page-card">
+        <nav className="legal-page-navigation" aria-label="Legal page navigation">
+          <a className="library-secondary-button legal-back-link" href="/">
+            <ArrowLeft size={16} aria-hidden="true" /> Back to Family Tree Generator
+          </a>
+        </nav>
         <p className="library-kicker">Family Tree Generator</p>
         <h1>{privacy ? "Privacy Notice" : "Terms, Disclaimer and Limitation of Liability"}</h1>
         <p className="legal-page-subtitle">
@@ -159,7 +166,7 @@ export function PublicLegalPage({ page }) {
           {privacy ? <PrivacyNoticeContent /> : <LegalNoticeContent />}
         </div>
         <a className="library-primary-button legal-home-link" href="/">
-          Return to sign in
+          <ArrowLeft size={16} aria-hidden="true" /> Back to Family Tree Generator
         </a>
       </div>
     </main>

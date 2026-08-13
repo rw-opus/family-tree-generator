@@ -31,7 +31,7 @@ const properties = [
   },
 ];
 
-describe("Properties section views", () => {
+describe("unified Property & Tax workspace", () => {
   let container;
   let root;
 
@@ -46,22 +46,7 @@ describe("Properties section views", () => {
     container.remove();
   });
 
-  const renderSection = (section) => {
-    act(() =>
-      root.render(
-        <Properties
-          properties={properties}
-          people={people}
-          outsideParties={[]}
-          singleProperty
-          section={section}
-          onChange={vi.fn()}
-        />,
-      ),
-    );
-  };
-
-  it("preserves the complete view by default", () => {
+  it("renders setup, current ownership and tax together", () => {
     act(() =>
       root.render(
         <Properties
@@ -76,9 +61,12 @@ describe("Properties section views", () => {
 
     expect(container.textContent).toContain("Initial owner/s of the property");
     expect(container.textContent).toContain("Value of the property being sold today");
-    expect(container.textContent).toContain("Calculated title after inheritance");
-    expect(container.textContent).toContain("Ownership transfers");
+    expect(container.textContent).toContain("Current ownership & history");
+    expect(container.textContent).toContain("Current ownership");
     expect(container.textContent).toContain("Tax Calculation");
+    expect(container.querySelector("#property-workspace-setup")).not.toBeNull();
+    expect(container.querySelector("#property-workspace-ownership")).not.toBeNull();
+    expect(container.querySelector("#property-workspace-tax")).not.toBeNull();
   });
 
   it("keeps exact ownership available when every monetary value is omitted", () => {
@@ -97,42 +85,29 @@ describe("Properties section views", () => {
     expect(container.textContent).toContain(
       "Value of the property being sold today (€) (optional)",
     );
-    expect(container.textContent).toContain("Consideration (€) (optional)");
+    expect(container.textContent).not.toContain("Consideration (€) (optional)");
     expect(container.textContent).toContain("1/1");
     expect(container.textContent).toContain("Total sale value Not entered");
     expect(container.textContent).toContain("Not calculated");
     expect(container.textContent).not.toContain("€0.00");
   });
 
-  it.each([
-    [
-      "property",
-      ["Value of the property being sold today", "Initial owner/s of the property"],
-      ["Calculated title after inheritance", "Ownership transfers", "Tax Calculation"],
-    ],
-    [
-      "ownership",
-      ["Calculated title after inheritance", "Ownership transfers"],
-      [
-        "Value of the property being sold today",
-        "Initial owner/s of the property",
-        "Tax Calculation",
-      ],
-    ],
-    [
-      "tax",
-      ["Tax Calculation"],
-      [
-        "Value of the property being sold today",
-        "Initial owner/s of the property",
-        "Ownership transfers",
-      ],
-    ],
-  ])("renders only the %s section", (section, visibleText, hiddenText) => {
-    renderSection(section);
+  it("does not provide a second place to create, delete or edit a transfer", () => {
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          onChange={vi.fn()}
+        />,
+      ),
+    );
 
-    visibleText.forEach((text) => expect(container.textContent).toContain(text));
-    hiddenText.forEach((text) => expect(container.textContent).not.toContain(text));
+    expect(container.textContent).not.toContain("Record a sale or transfer");
+    expect(container.textContent).not.toContain("Add an outside buyer or company");
+    expect(container.querySelector('button[aria-label="Remove transfer"]')).toBeNull();
   });
 
   it("updates today's property value without exposing property-level declarations", () => {
@@ -144,14 +119,14 @@ describe("Properties section views", () => {
           people={people}
           outsideParties={[]}
           singleProperty
-          section="property"
           onChange={onChange}
         />,
       ),
     );
 
-    expect(container.textContent).not.toContain("Declarations of succession");
-    expect(container.textContent).not.toContain("Declaration Causa Mortis");
+    const setupSection = container.querySelector("#property-workspace-setup");
+    expect(setupSection.textContent).not.toContain("Declarations of succession");
+    expect(setupSection.textContent).not.toContain("Declaration Causa Mortis");
 
     const saleValue = container.querySelector(
       'input[aria-label="Value of the property being sold today"]',
@@ -346,11 +321,115 @@ describe("Properties section views", () => {
       ),
     );
 
-    expect(container.querySelector("select")).toBeNull();
+    expect(container.querySelector("#property-workspace-tax select")).toBeNull();
     expect(container.textContent).toContain("Manually assessed tax: €5.00");
     expect(container.textContent).toContain("Buyer Limited");
     expect(container.textContent).not.toContain("Inheritance date");
     expect(container.textContent).not.toContain("Accumulated causa mortis value");
+  });
+
+  it("opens an outside source owner from a tax-provenance link", () => {
+    const onSelectOutsideOwner = vi.fn();
+    const donor = { id: "company", name: "Donor Limited", type: "company" };
+    const donatedProperty = {
+      ...properties[0],
+      saleDate: "2026-08-13",
+      owners: [
+        {
+          id: "company-title",
+          personId: "company",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionDate: "2020-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "company-gift",
+          kind: "donation",
+          sellerId: "company",
+          buyerId: "owner",
+          numerator: 1,
+          denominator: 1,
+          amountType: "whole-property",
+          date: "2025-01-01",
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[donatedProperty]}
+          people={people}
+          outsideParties={[donor]}
+          singleProperty
+          onSelectOutsideOwner={onSelectOutsideOwner}
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    const provenanceLink = container.querySelector(".tax-provenance-link");
+    expect(provenanceLink.textContent).toContain("Donor Limited");
+    act(() => provenanceLink.click());
+    expect(onSelectOutsideOwner).toHaveBeenCalledWith("company");
+  });
+
+  it("persists tax details entered from an outside owner's card", () => {
+    const company = { id: "company", name: "Buyer Limited", type: "company" };
+    const companyProperty = {
+      ...properties[0],
+      saleDate: "2026-08-13",
+      owners: [
+        {
+          id: "company-title",
+          personId: "company",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+    const onChange = vi.fn();
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[companyProperty]}
+          people={[]}
+          outsideParties={[company]}
+          singleProperty
+          onChange={onChange}
+        />,
+      ),
+    );
+
+    act(() =>
+      container.querySelector('button[aria-label="Open Buyer Limited owner card"]').click(),
+    );
+    const acquisitionDate = container.querySelector(
+      'input[aria-label="Original acquisition date"]',
+    );
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    act(() => {
+      setValue.call(acquisitionDate, "01/01/2010");
+      acquisitionDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Confirm date")
+        .click(),
+    );
+
+    expect(onChange).toHaveBeenCalledWith({
+      properties: [
+        expect.objectContaining({
+          id: "property",
+          owners: [expect.objectContaining({ acquisitionDate: "2010-01-01" })],
+        }),
+      ],
+      outsideParties: [company],
+    });
   });
 
   it("shows automatic 7% treatment without causa mortis value fields for a pre-cutoff death", () => {
@@ -416,7 +495,7 @@ describe("Properties section views", () => {
     expect(container.textContent).not.toContain("Legal basis of acquisition value");
     expect(container.textContent).not.toContain("Use the accumulated value");
     expect(container.textContent).toContain("d. 24/11/1992");
-    expect(container.querySelector("select")).toBeNull();
+    expect(container.querySelector("#property-workspace-tax select")).toBeNull();
   });
 
   it("blocks calculated ownership until a starting owner is entered", () => {
@@ -433,10 +512,10 @@ describe("Properties section views", () => {
       ),
     );
 
-    expect(container.textContent).toContain("No starting ownership has been set.");
-    expect(container.textContent).toContain("Enter who owned this property before any transfers.");
-    expect(container.textContent).not.toContain("Calculated title after inheritance");
-    expect(container.textContent).not.toContain("Ownership transfers");
+    expect(container.textContent).toContain("No initial ownership has been entered.");
+    expect(container.textContent).toContain("Enter the original owner or owners below.");
+    expect(container.querySelector(".property-ownership-summary")).toBeNull();
+    expect(container.textContent).not.toContain("Record a sale or transfer");
   });
 
   it("shows the actual under-allocation and withholds tax figures", () => {
@@ -465,9 +544,10 @@ describe("Properties section views", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Starting ownership totals 60%.");
+    expect(container.textContent).toContain("Initial ownership totals 60%.");
     expect(container.textContent).toContain("must equal 100%");
-    expect(container.textContent).not.toContain("Tax Calculation");
+    expect(container.textContent).toContain("Tax Calculation");
+    expect(container.querySelector(".property-ownership-summary")).toBeNull();
   });
 
   describe("multi-property workspace", () => {

@@ -8,7 +8,6 @@ import {
   MousePointerClick,
   X,
 } from "lucide-react";
-import { familyViewKey } from "./components/CaseViewTabs.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
@@ -16,7 +15,7 @@ import { EditableTreeTitle } from "./components/EditableTreeTitle.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
-import { TreePropertyPanel } from "./components/TreePropertyPanel.jsx";
+import { TreeToolsPanel } from "./components/TreeToolsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
   casePersonDependencyLabels,
@@ -77,6 +76,8 @@ const makePrimaryProperty = (id = crypto.randomUUID()) => ({
   transfers: [],
   saleLots: [],
 });
+
+const familyViewKey = (groupId) => `family:${groupId}`;
 
 const migratedProperties = (value) => {
   if (Array.isArray(value.properties) && value.properties.length) return value.properties;
@@ -256,14 +257,16 @@ export function App({
   const [billingMessage, setBillingMessage] = useState("");
   const [showLibrary, setShowLibrary] = useState(true);
   const [workspaceView, setWorkspaceView] = useState("tree");
+  const [propertyWorkspaceSection, setPropertyWorkspaceSection] = useState("setup");
   const [activeTreeIsListed, setActiveTreeIsListed] = useState(
     () => startupWorkspace.trees.length > 0,
   );
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
+  const [selectedOutsideOwnerId, setSelectedOutsideOwnerId] = useState("");
   const [traceOwnershipSnapshot, setTraceOwnershipSnapshot] = useState(null);
   const [traceOwnershipFractionSnapshot, setTraceOwnershipFractionSnapshot] = useState(null);
-  const [propertyPanelExpanded, setPropertyPanelExpanded] = useState(false);
+  const [treeToolsExpanded, setTreeToolsExpanded] = useState(false);
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
@@ -276,9 +279,10 @@ export function App({
     setZoom(activation.zoom);
     setActiveFamilyGroupId(activation.activeFamilyGroupId);
     setSelectedPersonId(activation.selectedPersonId);
+    setSelectedOutsideOwnerId("");
     setTraceOwnershipSnapshot(null);
     setTraceOwnershipFractionSnapshot(null);
-    setPropertyPanelExpanded(false);
+    setTreeToolsExpanded(false);
     setInitialOwnerPick(null);
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
@@ -567,7 +571,8 @@ export function App({
     // Otherwise a previously selected history step can mask the user's edits.
     setTraceOwnershipSnapshot(null);
     setTraceOwnershipFractionSnapshot(null);
-    setPropertyPanelExpanded(false);
+    setTreeToolsExpanded(false);
+    setSelectedOutsideOwnerId("");
     const targetGroup =
       findFamilyGroupsForPerson(currentTree, personId).find(
         (group) => group.id === activeFamilyGroupId,
@@ -578,6 +583,24 @@ export function App({
     }
     setSelectedPersonId(personId);
     setDashboardOpen(true);
+  };
+
+  const selectOutsideOwner = (ownerId) => {
+    setSelectedOutsideOwnerId(ownerId);
+    if (!ownerId) return;
+    setTraceOwnershipSnapshot(null);
+    setTraceOwnershipFractionSnapshot(null);
+    setSelectedPersonId("");
+    setDashboardOpen(false);
+    setPropertyWorkspaceSection("ownership");
+    setWorkspaceView("property");
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById("property-workspace-ownership")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
   };
 
   const focusPersonOnTree = (personId) => {
@@ -790,7 +813,10 @@ export function App({
     }
     setActiveTreeIsListed(true);
     activateCase(selectedTree);
-    setWorkspaceView(view);
+    setPropertyWorkspaceSection(
+      view === "tax" ? "tax" : view === "ownership" ? "ownership" : "setup",
+    );
+    setWorkspaceView(view === "tree" ? "tree" : "property");
     setShowLibrary(false);
   };
 
@@ -949,11 +975,12 @@ export function App({
 
   // A donation or sale from the person card may create the acquirer and record the transfer
   // at once. Both changes go through one functional update so neither overwrites the other.
-  const recordDonation = ({ people, propertyId, transfer }) => {
+  const recordDonation = ({ people, outsideParties, propertyId, transfer }) => {
     setTree((current) => {
       const base = reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people);
       return {
         ...base,
+        outsideParties: outsideParties || base.outsideParties,
         properties: (base.properties || []).map((property) =>
           property.id === propertyId
             ? { ...property, transfers: [...(property.transfers || []), transfer] }
@@ -964,11 +991,18 @@ export function App({
     setStatus(transfer.kind === "donation" ? "Donation recorded." : "Sale recorded.");
   };
 
-  const updateInterVivosTransfer = ({ people, propertyId, transferId, transfer }) => {
+  const updateInterVivosTransfer = ({
+    people,
+    outsideParties,
+    propertyId,
+    transferId,
+    transfer,
+  }) => {
     setTree((current) => {
       const base = reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people);
       return {
         ...base,
+        outsideParties: outsideParties || base.outsideParties,
         properties: (base.properties || []).map((property) =>
           property.id === propertyId
             ? {
@@ -1011,13 +1045,6 @@ export function App({
       outsideParties: patch.outsideParties || currentTree.outsideParties,
     });
   };
-
-  const updateActiveProperty = (patch) =>
-    updatePropertyWorkspace({
-      properties: currentTree.properties.map((property) =>
-        property.id === activeProperty.id ? { ...property, ...patch } : property,
-      ),
-    });
 
   const confirmInitialOwnerAcquisition = ({ propertyId, personId, row, acquisitionDate }) => {
     const property = currentTree.properties.find((candidate) => candidate.id === propertyId);
@@ -1080,15 +1107,18 @@ export function App({
     setInitialOwnerPick({ propertyId: activeProperty.id, ownerId });
     setTraceOwnershipSnapshot(null);
     setTraceOwnershipFractionSnapshot(null);
-    setPropertyPanelExpanded(true);
+    setPropertyWorkspaceSection("setup");
     setSelectedPersonId("");
     setDashboardOpen(false);
     setStatus("Select a person on the family tree to make them an initial owner.");
   };
 
-  const cancelInitialOwnerTreePick = ({ reopenPanel = true } = {}) => {
+  const cancelInitialOwnerTreePick = ({ reopenWorkspace = true } = {}) => {
     setInitialOwnerPick(null);
-    setPropertyPanelExpanded(reopenPanel);
+    if (reopenWorkspace) {
+      setPropertyWorkspaceSection("setup");
+      setWorkspaceView("property");
+    }
     setStatus("Initial-owner selection cancelled.");
   };
 
@@ -1126,9 +1156,10 @@ export function App({
       ),
     });
     setInitialOwnerPick(null);
-    setSelectedPersonId(personId);
+    setSelectedPersonId("");
     setDashboardOpen(false);
-    setPropertyPanelExpanded(true);
+    setPropertyWorkspaceSection("setup");
+    setWorkspaceView("property");
     setStatus(`${targetPerson.fullName || "Selected person"} assigned as an initial owner.`);
   };
 
@@ -1145,8 +1176,9 @@ export function App({
   const returnHome = async () => {
     setTraceOwnershipSnapshot(null);
     setTraceOwnershipFractionSnapshot(null);
-    setPropertyPanelExpanded(false);
+    setTreeToolsExpanded(false);
     setInitialOwnerPick(null);
+    setSelectedOutsideOwnerId("");
     if (!cloudMode) {
       setDashboardOpen(false);
       setWorkspaceView("tree");
@@ -1213,57 +1245,103 @@ export function App({
   }
 
   if (workspaceView !== "tree") {
+    const workspaceSectionLinks = [
+      { id: "setup", label: "Property & initial ownership", icon: Landmark },
+      { id: "ownership", label: "Current ownership & history", icon: GitBranch },
+      { id: "tax", label: "Tax Calculation", icon: Calculator },
+    ];
+    const showPropertySection = (sectionId) => {
+      setPropertyWorkspaceSection(sectionId);
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById(`property-workspace-${sectionId}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    };
     return (
       <main className="property-workspace-page">
-        <header className="property-workspace-header">
-          <button type="button" className="tree-home-button" onClick={returnHome}>
-            <House size={16} /> Back to Home
-          </button>
-          <div className="property-workspace-title">
-            <p className="eyebrow">Property ownership and final withholding tax</p>
-            <h1>{currentTree.title}</h1>
-          </div>
-          <button
-            type="button"
-            className="property-tree-button"
-            onClick={() => setWorkspaceView("tree")}
-          >
-            <GitBranch size={16} /> Open family tree
-          </button>
-        </header>
-        <nav className="property-workspace-tabs" aria-label="Property workspace sections">
-          <button
-            type="button"
-            className={workspaceView === "property" ? "active" : ""}
-            onClick={() => setWorkspaceView("property")}
-          >
-            <Landmark size={16} /> Setup
-          </button>
-          <button
-            type="button"
-            className={workspaceView === "ownership" ? "active" : ""}
-            onClick={() => setWorkspaceView("ownership")}
-          >
-            <GitBranch size={16} /> Transfers
-          </button>
-          <button
-            type="button"
-            className={workspaceView === "tax" ? "active" : ""}
-            onClick={() => setWorkspaceView("tax")}
-          >
-            <Calculator size={16} /> Tax Calculation
-          </button>
-        </nav>
+        <div
+          className={`property-workspace-nav-shell${
+            currentTree.properties.length > 1 ? " has-property-selector" : ""
+          }`}
+        >
+          <header className="property-workspace-header">
+            <button
+              type="button"
+              className="property-tree-button property-back-button"
+              onClick={() => {
+                setSelectedOutsideOwnerId("");
+                setInitialOwnerPick(null);
+                closePersonCard();
+                setWorkspaceView("tree");
+              }}
+            >
+              <ArrowLeft size={16} /> Back to Tree
+            </button>
+            <div className="property-workspace-title">
+              <p className="eyebrow">Property &amp; Tax</p>
+              <h1>{currentTree.title}</h1>
+            </div>
+            <button type="button" className="tree-home-button" onClick={returnHome}>
+              <House size={16} /> Home
+            </button>
+          </header>
+          <nav className="property-workspace-menu" aria-label="Property and Tax sections">
+            {workspaceSectionLinks.map(({ id, label, icon: Icon }) => (
+              <button
+                type="button"
+                className={propertyWorkspaceSection === id ? "active" : ""}
+                aria-current={propertyWorkspaceSection === id ? "location" : undefined}
+                key={id}
+                onClick={() => showPropertySection(id)}
+              >
+                <Icon size={16} /> {label}
+              </button>
+            ))}
+          </nav>
+          {currentTree.properties.length > 1 && (
+            <label className="property-workspace-property-selector">
+              <span>Property</span>
+              <select
+                value={activeProperty.id}
+                onChange={(event) => {
+                  setTraceOwnershipSnapshot(null);
+                  setTraceOwnershipFractionSnapshot(null);
+                  setSelectedOutsideOwnerId("");
+                  setTree({
+                    ...currentTree,
+                    settings: {
+                      ...currentTree.settings,
+                      activePropertyId: event.target.value,
+                    },
+                  });
+                }}
+              >
+                {currentTree.properties.map((property, index) => (
+                  <option value={property.id} key={property.id}>
+                    {property.address || `Property ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
         <section className="property-workspace-content">
           <Properties
             properties={activeProperties}
             people={currentTree.people}
             outsideParties={currentTree.outsideParties}
             singleProperty
-            section={workspaceView}
+            selectedOutsideOwnerId={selectedOutsideOwnerId}
+            onSelectOutsideOwner={selectOutsideOwner}
             onSelectPerson={(personId) => {
+              setSelectedOutsideOwnerId("");
               setWorkspaceView("tree");
               selectPerson(personId);
+            }}
+            onPickInitialOwner={(ownerId) => {
+              beginInitialOwnerTreePick(ownerId);
+              setWorkspaceView("tree");
             }}
             onChange={updatePrimaryPropertyWorkspace}
           />
@@ -1311,6 +1389,7 @@ export function App({
                   findFamilyGroupsForPerson(currentTree, selectedPersonId).length
                 }
                 onSelectPerson={selectPerson}
+                onSelectOutsideOwner={selectOutsideOwner}
                 onDeletePerson={removePerson}
                 onChange={updatePeople}
                 onRecordDonation={recordDonation}
@@ -1395,18 +1474,24 @@ export function App({
                     <button
                       type="button"
                       className="ownership-tax-button"
-                      aria-controls="ownership-tax-details"
-                      aria-expanded={propertyPanelExpanded}
-                      onClick={() => setPropertyPanelExpanded((expanded) => !expanded)}
+                      onClick={() => {
+                        setTraceOwnershipSnapshot(null);
+                        setTraceOwnershipFractionSnapshot(null);
+                        setPropertyWorkspaceSection("setup");
+                        setSelectedOutsideOwnerId("");
+                        setInitialOwnerPick(null);
+                        closePersonCard();
+                        setWorkspaceView("property");
+                      }}
                     >
                       <Landmark size={16} />
-                      <span>Ownership &amp; Tax</span>
+                      <span>Property &amp; Tax</span>
                     </button>
                     <EditableTreeTitle value={currentTree.title} onChange={updateTreeTitle} />
                     <PersonFinder
                       people={currentTree.people}
                       onSelectPerson={(personId) => {
-                        setPropertyPanelExpanded(false);
+                        setTreeToolsExpanded(false);
                         focusPersonOnTree(personId);
                       }}
                     />
@@ -1426,14 +1511,11 @@ export function App({
                   </>
                 }
               />
-              <TreePropertyPanel
+              <TreeToolsPanel
                 property={activeProperty}
-                properties={currentTree.properties}
-                activePropertyId={activeProperty.id}
                 people={currentTree.people}
                 outsideParties={currentTree.outsideParties}
                 propertyReport={propertyReport}
-                taxReport={taxCalculationReport}
                 cardFields={currentTree.settings.personCardFields}
                 onCardFieldsChange={(personCardFields) =>
                   setTree({
@@ -1441,35 +1523,11 @@ export function App({
                     settings: { ...currentTree.settings, personCardFields },
                   })
                 }
-                onPropertyChange={updateActiveProperty}
-                onPropertySelect={(activePropertyId) => {
-                  setTraceOwnershipSnapshot(null);
-                  setTraceOwnershipFractionSnapshot(null);
-                  setTree({
-                    ...currentTree,
-                    settings: { ...currentTree.settings, activePropertyId },
-                  });
-                }}
                 onFocusEvent={showTraceEventOnTree}
-                expanded={propertyPanelExpanded}
-                initialOwnerSelectionActive={Boolean(initialOwnerPick)}
-                hideCollapsedTrigger
-                onOpenProperty={() => {
-                  setTraceOwnershipSnapshot(null);
-                  setTraceOwnershipFractionSnapshot(null);
-                  setPropertyPanelExpanded(false);
-                  setWorkspaceView("property");
-                }}
-                onOpenTax={() => {
-                  setTraceOwnershipSnapshot(null);
-                  setTraceOwnershipFractionSnapshot(null);
-                  setPropertyPanelExpanded(false);
-                  setWorkspaceView("tax");
-                }}
                 onSelectPerson={selectPerson}
-                onPickInitialOwner={beginInitialOwnerTreePick}
+                expanded={treeToolsExpanded}
                 onExpandedChange={(expanded) => {
-                  setPropertyPanelExpanded(expanded);
+                  setTreeToolsExpanded(expanded);
                   if (expanded && initialOwnerPick) setInitialOwnerPick(null);
                 }}
               />
