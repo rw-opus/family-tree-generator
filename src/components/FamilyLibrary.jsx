@@ -31,6 +31,11 @@ const accountName = (session) => {
 
 const familyAddedDate = (tree) => tree.createdAt || tree.created_at || tree.updated_at || "";
 
+const routineStorageMessages = new Set([
+  "Automatically saved on this device.",
+  "Saved securely to your workspace.",
+]);
+
 export function FamilyLibrary({
   trees,
   activeTreeId,
@@ -76,6 +81,7 @@ export function FamilyLibrary({
   const signedIn = Boolean(session);
   const allowanceLoading = commercialMode && !entitlement;
   const unlimitedTrees = entitlement?.unlimitedTrees === true;
+  const visibleStorageStatus = routineStorageMessages.has(storageStatus) ? "" : storageStatus;
 
   const closeCreation = () => {
     if (creationBusy) return;
@@ -181,9 +187,9 @@ export function FamilyLibrary({
               <dt>Email address</dt>
               <dd>{session?.user?.email || "Not signed in"}</dd>
             </div>
-            <div>
+            <div className="account-storage-detail">
               <dt>Storage</dt>
-              <dd>{signedIn ? "Secure cloud workspace" : "This device"}</dd>
+              <dd>{signedIn ? "Cloud" : "This device"}</dd>
             </div>
             {commercialMode && entitlement && (
               <>
@@ -221,43 +227,47 @@ export function FamilyLibrary({
                     type="button"
                     className="library-account-action"
                     onClick={() => setPasswordDialogOpen(true)}
+                    aria-label="Change password"
                   >
-                    <KeyRound size={15} /> Change password
+                    <KeyRound size={15} />
+                    <span className="library-action-label-full">Change password</span>
+                    <span className="library-action-label-short" aria-hidden="true">
+                      Password
+                    </span>
                   </button>
                 )}
-                <button type="button" className="library-account-action" onClick={onSignOut}>
+                <button
+                  type="button"
+                  className="library-account-action"
+                  onClick={onSignOut}
+                  aria-label="Sign out"
+                >
                   <LogOut size={15} /> Sign out
                 </button>
               </>
             )}
-            <button type="button" className="library-account-action" onClick={onDownloadBackup}>
-              <Download size={15} /> Download workspace backup
+            <button
+              type="button"
+              className="library-account-action"
+              onClick={onDownloadBackup}
+              aria-label="Download workspace backup"
+            >
+              <Download size={15} />
+              <span className="library-action-label-full">Download workspace backup</span>
+              <span className="library-action-label-short" aria-hidden="true">
+                Backup
+              </span>
             </button>
           </div>
-          {commercialMode && (
-            <div
-              className={`tree-pricing-card ${
-                allowanceLoading ? "loading" : canCreate ? "available" : "payment-needed"
-              }`}
-            >
+          {commercialMode && (allowanceLoading || !canCreate) && (
+            <div className={`tree-pricing-card ${allowanceLoading ? "loading" : "payment-needed"}`}>
               <span className="tree-pricing-icon">
                 <CreditCard size={18} />
               </span>
               <div>
                 <strong>
-                  {allowanceLoading
-                    ? "Checking your tree allowance..."
-                    : unlimitedTrees
-                      ? "Unlimited tree creation"
-                      : canCreate
-                        ? "Tree creation available"
-                        : "Additional tree · €30"}
+                  {allowanceLoading ? "Checking allowance..." : "Additional tree · €30"}
                 </strong>
-                <p>
-                  {unlimitedTrees
-                    ? "This account can create and import any number of family trees."
-                    : "The first five lifetime trees are free. Each later creation or GEDCOM import uses one paid credit. Editing remains free."}
-                </p>
               </div>
               {!allowanceLoading && !canCreate && (
                 <button
@@ -276,9 +286,9 @@ export function FamilyLibrary({
               {billingMessage}
             </p>
           )}
-          {storageStatus && (
+          {visibleStorageStatus && (
             <p className="library-storage-message" aria-live="polite">
-              {storageStatus}
+              {visibleStorageStatus}
             </p>
           )}
           {recoveryAvailable && (
@@ -287,8 +297,12 @@ export function FamilyLibrary({
             </button>
           )}
           <nav className="library-legal-links" aria-label="Legal and privacy information">
-            <a href="/?legal=terms">Terms and tax disclaimer</a>
-            <a href="/?legal=privacy">Privacy Notice</a>
+            <a href="/?legal=terms" aria-label="Terms and tax disclaimer">
+              Terms &amp; disclaimer
+            </a>
+            <a href="/?legal=privacy" aria-label="Privacy Notice">
+              Privacy
+            </a>
           </nav>
         </section>
 
@@ -297,7 +311,6 @@ export function FamilyLibrary({
             <div>
               <p className="library-kicker">Your work</p>
               <h2 id="families-title">Families</h2>
-              <p>Choose a family to open its tree, people and property work.</p>
             </div>
             <div className="library-create-actions">
               <button
@@ -306,17 +319,27 @@ export function FamilyLibrary({
                 onClick={() => setCreationOpen(true)}
                 disabled={!canCreate}
                 title={canCreate ? "Create new family" : "Buy a tree credit to continue"}
+                aria-label="Create new family"
               >
-                <FolderPlus size={16} /> Create new family
+                <FolderPlus size={16} />
+                <span className="library-action-label-full">Create new family</span>
+                <span className="library-action-label-short" aria-hidden="true">
+                  New family
+                </span>
               </button>
               <label
                 className={`library-secondary-button ${canCreate ? "" : "disabled"}`}
                 title={canCreate ? "Import GEDCOM" : "Buy a tree credit to continue"}
               >
-                <FileUp size={16} /> Import GEDCOM
+                <FileUp size={16} />
+                <span className="library-action-label-full">Import GEDCOM</span>
+                <span className="library-action-label-short" aria-hidden="true">
+                  Import
+                </span>
                 <input
                   className="library-file-input"
                   type="file"
+                  aria-label="Import GEDCOM"
                   accept=".ged,.gedcom,text/plain"
                   onChange={importGedcom}
                   disabled={!canCreate}
@@ -402,13 +425,13 @@ export function FamilyLibrary({
                         <span className="family-name-text">{tree.title || "Untitled family"}</span>
                         {(isActive || reviewCount > 0) && (
                           <span className="family-name-badges">
-                            {isActive && <small>Open now</small>}
+                            {isActive && <small className="family-open-badge">Open now</small>}
                             {reviewCount > 0 && (
                               <small
                                 className="family-review-warning"
                                 title={`${reviewCount} import or recovery item${reviewCount === 1 ? "" : "s"} need review`}
                               >
-                                {reviewCount} {reviewCount === 1 ? "item" : "items"} to review
+                                {reviewCount} {reviewCount === 1 ? "review" : "reviews"}
                               </small>
                             )}
                           </span>
@@ -455,13 +478,6 @@ export function FamilyLibrary({
                 : "No families yet. Create a new family or import a GEDCOM file."}
             </p>
           )}
-          {commercialMode && (
-            <p className="library-credit-policy">
-              {unlimitedTrees
-                ? "This account has unlimited tree creation."
-                : "Tree credits are consumed when a tree is generated. Deleting a tree does not restore its free or paid credit."}
-            </p>
-          )}
         </section>
       </div>
 
@@ -491,10 +507,7 @@ export function FamilyLibrary({
                 <X size={16} />
               </button>
             </div>
-            <p className="library-dialog-intro">
-              Name the family and add its first person. You can add parents, partners, children and
-              other details after creation.
-            </p>
+            <p className="library-dialog-intro">Add a family name and its first person.</p>
             <label className="library-dialog-field full-width">
               <span>Family name</span>
               <input
@@ -552,13 +565,11 @@ export function FamilyLibrary({
                 </label>
               ))}
             </fieldset>
-            {commercialMode && (
+            {commercialMode && !unlimitedTrees && (
               <p className="library-credit-notice">
-                {unlimitedTrees
-                  ? "This account has unlimited tree creation."
-                  : entitlement?.freeTreesRemaining > 0
-                    ? "Creating this family uses one of your remaining free trees. Deleting it later will not restore that credit."
-                    : "Creating this family uses one paid tree credit. Deleting it later will not restore that credit."}
+                {entitlement?.freeTreesRemaining > 0
+                  ? `This uses one free tree (${entitlement.freeTreesRemaining} remaining).`
+                  : "This uses one paid tree credit."}
               </p>
             )}
             <div className="library-dialog-actions">

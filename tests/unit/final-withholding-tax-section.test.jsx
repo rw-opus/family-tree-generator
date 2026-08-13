@@ -240,7 +240,7 @@ describe("FinalWithholdingTaxSection", () => {
     });
   });
 
-  it("records the donation-time value separately from the donor's original date", () => {
+  it("records the contract Donation Value without asking for another value basis", () => {
     const onConfirmDonationAcquisitionValue = vi.fn();
     const row = {
       id: "older-donation",
@@ -249,7 +249,7 @@ describe("FinalWithholdingTaxSection", () => {
       provenancePersonId: "joseph",
       sourceTransferId: "gift",
       requiresDonationAcquisitionValue: true,
-      warning: "Enter the acquisition value for this donated fraction.",
+      warning: "Enter the Donation Value stated in the contract for this donated fraction.",
       selectedMethod: null,
       tax: null,
     };
@@ -264,7 +264,16 @@ describe("FinalWithholdingTaxSection", () => {
     );
 
     expect(container.querySelector('input[aria-label="Original acquisition date"]')).toBeNull();
-    const valueInput = container.querySelector('input[aria-label="Donation acquisition value"]');
+    const valueInput = container.querySelector('input[aria-label="Donation Value"]');
+    expect(container.querySelector(".fwt-status-row strong").textContent).toBe("Not calculated");
+    expect(valueInput.closest("label").textContent).toContain("Donation Value (optional)");
+    expect(container.textContent).toContain(
+      "Optional tax details are absent for 1 source fraction",
+    );
+    expect(container.textContent).not.toContain("Value basis");
+    expect(
+      container.querySelector('select[aria-label="Donation acquisition value basis"]'),
+    ).toBeNull();
     const submit = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Confirm value",
     );
@@ -276,7 +285,7 @@ describe("FinalWithholdingTaxSection", () => {
     expect(onConfirmDonationAcquisitionValue).toHaveBeenCalledWith({
       row,
       acquisitionValue: "120000",
-      acquisitionValueBasis: "market-at-donation",
+      acquisitionValueBasis: "deed-value",
     });
   });
 });

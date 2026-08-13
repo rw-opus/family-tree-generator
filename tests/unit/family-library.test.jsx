@@ -225,9 +225,7 @@ describe("FamilyLibrary", () => {
 
   it("validates a signed-in password change before submitting it", async () => {
     const handlers = renderLibrary(root);
-    const openPasswordDialog = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Change password",
-    );
+    const openPasswordDialog = container.querySelector('button[aria-label="Change password"]');
     act(() => openPasswordDialog.click());
     const dialog = container.querySelector("form.account-password-dialog");
 
@@ -251,9 +249,7 @@ describe("FamilyLibrary", () => {
 
   it("submits the current and new passwords and confirms success", async () => {
     const handlers = renderLibrary(root);
-    const openPasswordDialog = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Change password",
-    );
+    const openPasswordDialog = container.querySelector('button[aria-label="Change password"]');
     act(() => openPasswordDialog.click());
     const dialog = container.querySelector("form.account-password-dialog");
 
@@ -276,9 +272,7 @@ describe("FamilyLibrary", () => {
   it("keeps the password dialog usable when the change is rejected", async () => {
     const onChangePassword = vi.fn().mockRejectedValue(new Error("Current password is incorrect."));
     renderLibrary(root, { onChangePassword });
-    const openPasswordDialog = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Change password",
-    );
+    const openPasswordDialog = container.querySelector('button[aria-label="Change password"]');
     act(() => openPasswordDialog.click());
     const dialog = container.querySelector("form.account-password-dialog");
 
@@ -325,7 +319,7 @@ describe("FamilyLibrary", () => {
     const row = container.querySelector(".family-library-row:not(.family-library-table-head)");
     expect(row.classList.contains("is-active")).toBe(true);
     expect(row.querySelector(".family-name-badges").textContent).toContain("Open now");
-    expect(row.querySelector(".family-name-badges").textContent).toContain("2 items to review");
+    expect(row.querySelector(".family-name-badges").textContent).toContain("2 reviews");
     expect(row.querySelector(".family-last-changed-label").textContent).toBe("Added");
 
     act(() => row.querySelector('button[aria-label="Rename Review family"]').click());
@@ -391,7 +385,8 @@ describe("FamilyLibrary", () => {
 
     expect(container.textContent).toContain("Tree allowance");
     expect(container.textContent).toContain("Unlimited");
-    expect(container.textContent).toContain("Unlimited tree creation");
+    expect(container.querySelector(".tree-pricing-card")).toBeNull();
+    expect(container.querySelector(".library-credit-policy")).toBeNull();
     expect(container.textContent).not.toContain("Free trees remaining");
     expect(container.textContent).not.toContain("Buy one tree");
     expect(container.textContent).not.toContain("Tree credits are consumed");
@@ -402,10 +397,7 @@ describe("FamilyLibrary", () => {
     );
     expect(create.disabled).toBe(false);
     act(() => create.click());
-    expect(container.querySelector(".library-credit-notice").textContent).toContain(
-      "unlimited tree creation",
-    );
-    expect(container.querySelector(".library-credit-notice").textContent).not.toContain("credit");
+    expect(container.querySelector(".library-credit-notice")).toBeNull();
 
     const cancelCreate = [...container.querySelectorAll(".family-creation-dialog button")].find(
       (button) => button.textContent.includes("Cancel"),
@@ -413,5 +405,30 @@ describe("FamilyLibrary", () => {
     act(() => cancelCreate.click());
     act(() => container.querySelector('button[aria-label="Delete Vella family"]').click());
     expect(container.querySelector('[role="alertdialog"]').textContent).not.toContain("credit");
+  });
+
+  it("keeps the mobile home content concise without losing accessible actions", () => {
+    renderLibrary(root, {
+      commercialMode: true,
+      entitlement: {
+        totalTreesCreated: 4,
+        unlimitedTrees: true,
+        canCreate: true,
+      },
+      canCreate: true,
+      storageStatus: "Saved securely to your workspace.",
+    });
+
+    expect(container.textContent).not.toContain(
+      "Choose a family to open its tree, people and property work.",
+    );
+    expect(container.textContent).not.toContain("Saved securely to your workspace.");
+    expect(container.textContent.match(/Unlimited/g)).toHaveLength(1);
+    expect(container.querySelector('button[aria-label="Change password"]')).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Download workspace backup"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Create new family"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Import GEDCOM"]')).not.toBeNull();
   });
 });

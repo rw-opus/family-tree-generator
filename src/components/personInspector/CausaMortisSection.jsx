@@ -1,4 +1,5 @@
-import { Check, FilePlus2, Trash2 } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Check, FilePlus2, Pencil, Trash2, X } from "lucide-react";
 import { isCompletedCausaMortisDeclaration } from "../../domain/causaMortisCoverage.js";
 import {
   advisoryCausaMortisCoverage,
@@ -123,23 +124,117 @@ function CausaMortisDeclaration({
   candidates = [],
   candidateLabel,
   dateOfDeath,
-  allHeirsDeceased,
   error,
-  onUpdate,
   onRemove,
-  onToggleDeclarant,
   onComplete,
 }) {
   const number = index + 1;
-  const chronologyError = declaration.date
-    ? validateCausaMortisDateChronology(declaration.date, dateOfDeath)
-    : "";
-  const declarationError = error || chronologyError;
+  const editorId = useId();
   const isComplete = isCompletedCausaMortisDeclaration(declaration);
-  const update = (patch) => onUpdate(declaration.id, patch);
+  const [editing, setEditing] = useState(!isComplete);
+  const [draft, setDraft] = useState(() => ({ ...declaration }));
+  const [submitted, setSubmitted] = useState(false);
+  const summaryRef = useRef(null);
+  const firstFieldRef = useRef(null);
+  const restoreSummaryFocus = useRef(false);
+  const chronologyError = draft.date
+    ? validateCausaMortisDateChronology(draft.date, dateOfDeath)
+    : "";
+  const declarationError = submitted ? error || chronologyError : chronologyError;
+  const update = (patch) => {
+    setSubmitted(false);
+    setDraft((current) => ({ ...current, ...patch, status: "draft" }));
+  };
+
+  useEffect(() => {
+    if (editing) return;
+    setDraft({ ...declaration });
+  }, [declaration, editing]);
+
+  useEffect(() => {
+    if (editing && isComplete) firstFieldRef.current?.focus();
+    if (!editing && restoreSummaryFocus.current) {
+      restoreSummaryFocus.current = false;
+      summaryRef.current?.focus();
+    }
+  }, [editing, isComplete]);
+
+  const openEditor = () => {
+    setDraft({ ...declaration });
+    setSubmitted(false);
+    setEditing(true);
+  };
+
+  const cancelEditor = () => {
+    setSubmitted(false);
+    if (!isComplete) {
+      setDraft({ ...declaration });
+      return;
+    }
+    setDraft({ ...declaration });
+    restoreSummaryFocus.current = true;
+    setEditing(false);
+  };
+
+  const save = () => {
+    setSubmitted(true);
+    if (onComplete({ ...draft, id: declaration.id }) === false) return;
+    restoreSummaryFocus.current = true;
+    setEditing(false);
+  };
+
+  if (!editing && isComplete) {
+    const declaredShare = fractionLabel(
+      {
+        numerator: declaration.declaredShareNumerator,
+        denominator: declaration.declaredShareDenominator,
+      },
+      0,
+    );
+    const rawValue = String(declaration.immovablePropertyValue ?? "").trim();
+    const value = Number(rawValue);
+    return (
+      <div className="causa-mortis-card complete collapsed">
+        <button
+          type="button"
+          ref={summaryRef}
+          className="causa-mortis-summary"
+          aria-label={`Edit Declaration Causa Mortis ${number}`}
+          aria-expanded="false"
+          aria-controls={editorId}
+          onClick={openEditor}
+        >
+          <span>
+            <strong>Declaration Causa Mortis {number}</strong>
+            <small>
+              {[isoDateToDisplay(declaration.date), declaration.notaryName]
+                .filter(Boolean)
+                .join(" · ")}
+            </small>
+          </span>
+          <span>
+            <b>{declaredShare}</b>
+            {rawValue && Number.isFinite(value) && value >= 0 && (
+              <small>{money.format(value)}</small>
+            )}
+          </span>
+          <Pencil size={15} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={`Remove causa mortis declaration ${number}`}
+          onClick={() => onRemove(declaration.id)}
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
+      id={editorId}
       className={`causa-mortis-card ${isComplete ? "complete" : "draft"}${
         chronologyError ? " chronology-invalid" : ""
       }`}
@@ -164,11 +259,12 @@ function CausaMortisDeclaration({
           <input
             aria-label={`Causa mortis share numerator ${number}`}
             type="number"
+            ref={firstFieldRef}
             min="0"
             max={MAX_FRACTION_INTEGER}
             step="1"
             required
-            value={declaration.declaredShareNumerator ?? ""}
+            value={draft.declaredShareNumerator ?? ""}
             onChange={(event) => update({ declaredShareNumerator: event.target.value })}
           />
           <b>/</b>
@@ -179,7 +275,7 @@ function CausaMortisDeclaration({
             max={MAX_FRACTION_INTEGER}
             step="1"
             required
-            value={declaration.declaredShareDenominator ?? ""}
+            value={draft.declaredShareDenominator ?? ""}
             onChange={(event) => update({ declaredShareDenominator: event.target.value })}
           />
         </span>
@@ -190,7 +286,7 @@ function CausaMortisDeclaration({
         <DateInput
           aria-label={`Date of Declaration Causa Mortis ${number}`}
           required
-          value={declaration.date || ""}
+          value={draft.date || ""}
           onChange={(date) => update({ date })}
         />
       </label>
@@ -200,14 +296,14 @@ function CausaMortisDeclaration({
         <input
           aria-label={`Notary for Declaration Causa Mortis ${number}`}
           required
-          value={declaration.notaryName || ""}
+          value={draft.notaryName || ""}
           onChange={(event) => update({ notaryName: event.target.value })}
           placeholder="Notary's full name"
         />
       </label>
 
       <label>
-        <span>Value declared{allHeirsDeceased ? " (optional)" : ""}</span>
+        <span>Value declared (optional)</span>
         <span className="currency-input">
           <b>€</b>
           <input
@@ -215,8 +311,7 @@ function CausaMortisDeclaration({
             type="number"
             min="0"
             step="any"
-            required={!allHeirsDeceased}
-            value={declaration.immovablePropertyValue || ""}
+            value={draft.immovablePropertyValue || ""}
             onChange={(event) => update({ immovablePropertyValue: event.target.value })}
           />
         </span>
@@ -231,8 +326,13 @@ function CausaMortisDeclaration({
               <label key={party.id}>
                 <input
                   type="checkbox"
-                  checked={(declaration.declarantPersonIds || []).includes(party.id)}
-                  onChange={() => onToggleDeclarant(declaration, party.id)}
+                  checked={(draft.declarantPersonIds || []).includes(party.id)}
+                  onChange={() => {
+                    const declarants = new Set(draft.declarantPersonIds || []);
+                    if (declarants.has(party.id)) declarants.delete(party.id);
+                    else declarants.add(party.id);
+                    update({ declarantPersonIds: [...declarants] });
+                  }}
                 />
                 {candidateLabel(party)}
               </label>
@@ -245,14 +345,13 @@ function CausaMortisDeclaration({
 
       <div className="causa-mortis-card-actions">
         {declarationError && <small role="alert">{declarationError}</small>}
-        <button
-          type="button"
-          className="primary-button"
-          disabled={isComplete}
-          onClick={() => onComplete(declaration)}
-        >
+        <button type="button" className="primary-button" onClick={save}>
           <Check size={14} />
-          OK
+          {isComplete ? "Save declaration" : "OK"}
+        </button>
+        <button type="button" className="secondary-button" onClick={cancelEditor}>
+          <X size={14} />
+          Cancel
         </button>
       </div>
     </div>
@@ -266,14 +365,11 @@ export function CausaMortisSection({
   candidates = [],
   candidateLabel,
   dateOfDeath,
-  allHeirsDeceased,
   hasUnknownDeathDate,
   errors = {},
   onAddDeclaration,
   onAddDeclarationForProperty,
-  onUpdateDeclaration,
   onRemoveDeclaration,
-  onToggleDeclarant,
   onCompleteDeclaration,
 }) {
   return (
@@ -317,11 +413,8 @@ export function CausaMortisSection({
           candidates={candidates}
           candidateLabel={candidateLabel}
           dateOfDeath={dateOfDeath}
-          allHeirsDeceased={allHeirsDeceased}
           error={errors[declaration.id]}
-          onUpdate={onUpdateDeclaration}
           onRemove={onRemoveDeclaration}
-          onToggleDeclarant={onToggleDeclarant}
           onComplete={onCompleteDeclaration}
         />
       ))}

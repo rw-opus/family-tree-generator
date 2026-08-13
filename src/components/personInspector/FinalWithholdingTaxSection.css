@@ -99,8 +99,7 @@
 
 .fwt-initial-acquisition .date-input-field,
 .fwt-initial-acquisition input,
-.fwt-donation-value input,
-.fwt-donation-value select {
+.fwt-donation-value input {
   width: 100%;
   min-width: 0;
 }
@@ -108,7 +107,6 @@
 .fwt-initial-acquisition input,
 .fwt-initial-acquisition button,
 .fwt-donation-value input,
-.fwt-donation-value select,
 .fwt-donation-value button {
   min-height: 2.1rem;
   border: 1px solid #b9cbc1;

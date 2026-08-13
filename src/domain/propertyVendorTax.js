@@ -26,6 +26,13 @@ export const DONATION_ACQUISITION_VALUE_BASES = Object.freeze([
   "final-assessment",
 ]);
 
+const optionalMoney = (input) => {
+  const raw = String(input ?? "").trim();
+  if (!raw) return null;
+  const value = Number(input);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
 const exactShareFromRecord = (record = {}) => {
   const exact = normaliseFraction(record.shareNumerator, record.shareDenominator);
   return exact.error ? approximateFraction((Number(record.sharePercent) || 0) / 100) : exact;
@@ -204,7 +211,6 @@ const completedPersonDeclarations = (person, propertyId) =>
       isCompletedCausaMortisDeclaration(declaration) &&
       (!propertyId || !declaration.propertyId || declaration.propertyId === propertyId) &&
       validateCausaMortisDeclaration(declaration, {
-        valueRequired: true,
         dateOfDeath: person?.dateOfDeath || "",
       }) === "",
   );
@@ -265,6 +271,7 @@ const declarationRowsForSource = (
         declaredShare: allocation.declaredShare,
         declaredShareFraction: allocation.declaredFraction,
         declaredValue: allocation.declaredValue,
+        hasDeclaredValue: allocation.hasDeclaredValue,
       };
     })
     .filter(Boolean);
@@ -291,7 +298,8 @@ const declarationRowsForSource = (
         recordedDeclaredValue: row.declaredValue,
         declaredShare: fractionToNumber(usableAssessedFraction),
         declaredShareFraction: usableAssessedFraction,
-        declaredValue: row.declaredValue * assessment.value,
+        declaredValue: row.hasDeclaredValue ? row.declaredValue * assessment.value : "",
+        hasDeclaredValue: row.hasDeclaredValue,
         assessmentFactor: assessment.value,
       };
     })
@@ -349,11 +357,12 @@ const displayRowFromLot = ({
     : storedShare > 0
       ? storedShare
       : Number(fallbackShare) || 0;
-  const propertySaleValue = Math.max(0, Number(property.saleValue) || 0);
+  const propertySaleValue = optionalMoney(property.saleValue);
+  const storedTransferValue =
+    optionalMoney(row.effectiveLot?.consideration) ??
+    optionalMoney(row.effectiveLot?.transferValue);
   const attributedSaleValue =
-    propertySaleValue && lotShare
-      ? propertySaleValue * lotShare
-      : Number(row.result?.transferValue) || 0;
+    propertySaleValue === null ? storedTransferValue : propertySaleValue * lotShare;
   const declarations = source
     ? declarationRowsForSource(
         source,
@@ -363,10 +372,11 @@ const displayRowFromLot = ({
         declarationRequiredFraction,
       )
     : [];
-  const declaredValueFromCards = declarations.reduce(
-    (total, declaration) => total + declaration.declaredValue,
-    0,
-  );
+  const declarationsHaveCompleteValues =
+    declarations.length > 0 && declarations.every((declaration) => declaration.hasDeclaredValue);
+  const declaredValueFromCards = declarationsHaveCompleteValues
+    ? declarations.reduce((total, declaration) => total + declaration.declaredValue, 0)
+    : "";
   const hasModernDeclarationsForSource = sourceHasCompletedPersonDeclarations(
     source,
     property,
@@ -411,10 +421,10 @@ const displayRowFromLot = ({
         }
       : {}),
     ...(acquisitionDateOverride ? { acquisitionDate: acquisitionDateOverride } : {}),
-    transferValue: attributedSaleValue,
-    consideration: attributedSaleValue,
+    transferValue: attributedSaleValue ?? "",
+    consideration: attributedSaleValue ?? "",
     acquisitionValue: acquisitionValue !== "" ? acquisitionValue : "",
-    acquisitionValueBasis: declarations.length
+    acquisitionValueBasis: declarationsHaveCompleteValues
       ? "cm-declared"
       : suppressNonDeclarantStoredValue
         ? ""
@@ -422,7 +432,7 @@ const displayRowFromLot = ({
           ? row.effectiveLot?.acquisitionValueBasis || "cm-declared"
           : row.effectiveLot?.acquisitionValueBasis || "",
     cmValueEligibilityConfirmed:
-      declarations.length > 0 ||
+      declarationsHaveCompleteValues ||
       (!suppressNonDeclarantStoredValue && Boolean(row.effectiveLot?.cmValueEligibilityConfirmed)),
   };
   const result = saleTaxLot(effectiveLot, { deedTransferValue });
@@ -444,13 +454,16 @@ const displayRowFromLot = ({
     donorAcquisitionDate: row.selectedDonationSource?.donorAcquisitionDate || "",
     donorAcquisitionDateDerived: Boolean(row.donationDatesDerived),
     declarations,
-    declaredValue: acquisitionValue === "" ? 0 : acquisitionValue,
+    declaredValue: acquisitionValue,
     attributedSaleValue,
-    difference: attributedSaleValue - (acquisitionValue === "" ? 0 : acquisitionValue),
+    difference:
+      attributedSaleValue === null || acquisitionValue === ""
+        ? null
+        : attributedSaleValue - acquisitionValue,
     methods: result.methods || [],
     selectedMethod,
     tax,
-    net: tax === null ? null : attributedSaleValue - tax,
+    net: tax === null || attributedSaleValue === null ? null : attributedSaleValue - tax,
     warning: coverageWarning || result.warning || "",
   };
 };
@@ -471,10 +484,13 @@ const syntheticInheritedRow = ({
     inheritanceSourcesByOwner,
   );
   const declaredValue = declarations.reduce(
-    (total, declaration) => total + declaration.declaredValue,
+    (total, declaration) => total + (declaration.hasDeclaredValue ? declaration.declaredValue : 0),
     0,
   );
-  const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * source.share;
+  const declarationsHaveCompleteValues =
+    declarations.length > 0 && declarations.every((declaration) => declaration.hasDeclaredValue);
+  const propertySaleValue = optionalMoney(property.saleValue);
+  const attributedSaleValue = propertySaleValue === null ? null : propertySaleValue * source.share;
   const fraction = source.shareFraction || approximateFraction(source.share);
   const result = saleTaxLot(
     {
@@ -485,11 +501,11 @@ const syntheticInheritedRow = ({
       transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
       shareNumerator: fraction.numerator,
       shareDenominator: fraction.denominator,
-      acquisitionValue: declarations.length ? declaredValue : "",
-      acquisitionValueBasis: declarations.length ? "cm-declared" : "",
-      cmValueEligibilityConfirmed: declarations.length > 0,
-      transferValue: attributedSaleValue,
-      consideration: attributedSaleValue,
+      acquisitionValue: declarationsHaveCompleteValues ? declaredValue : "",
+      acquisitionValueBasis: declarationsHaveCompleteValues ? "cm-declared" : "",
+      cmValueEligibilityConfirmed: declarationsHaveCompleteValues,
+      transferValue: attributedSaleValue ?? "",
+      consideration: attributedSaleValue ?? "",
     },
     { deedTransferValue },
   );
@@ -506,13 +522,16 @@ const syntheticInheritedRow = ({
     acquisitionType: "inheritance",
     inheritanceDate: source.inheritanceDate,
     declarations,
-    declaredValue,
+    declaredValue: declarationsHaveCompleteValues ? declaredValue : "",
     attributedSaleValue,
-    difference: attributedSaleValue - declaredValue,
+    difference:
+      attributedSaleValue === null || !declarationsHaveCompleteValues
+        ? null
+        : attributedSaleValue - declaredValue,
     methods: result.methods || [],
     selectedMethod,
     tax,
-    net: tax === null ? null : attributedSaleValue - tax,
+    net: tax === null || attributedSaleValue === null ? null : attributedSaleValue - tax,
     warning: result.warning || "",
   };
 };
@@ -520,7 +539,8 @@ const syntheticInheritedRow = ({
 const syntheticInitialOwnerRow = ({ property, vendor, tranche, index, deedTransferValue = 0 }) => {
   const shareFraction = tranche.fraction || ZERO_FRACTION;
   const share = fractionToNumber(shareFraction);
-  const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
+  const propertySaleValue = optionalMoney(property.saleValue);
+  const attributedSaleValue = propertySaleValue === null ? null : propertySaleValue * share;
   const acquisitionDate = String(tranche.acquiredOn || "");
   const result = saleTaxLot(
     {
@@ -531,8 +551,8 @@ const syntheticInitialOwnerRow = ({ property, vendor, tranche, index, deedTransf
       transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
       shareNumerator: shareFraction.numerator,
       shareDenominator: shareFraction.denominator,
-      transferValue: attributedSaleValue,
-      consideration: attributedSaleValue,
+      transferValue: attributedSaleValue ?? "",
+      consideration: attributedSaleValue ?? "",
     },
     { deedTransferValue },
   );
@@ -552,13 +572,13 @@ const syntheticInitialOwnerRow = ({ property, vendor, tranche, index, deedTransf
     requiresOriginalAcquisitionDate: !acquisitionDate,
     inheritanceDate: "",
     declarations: [],
-    declaredValue: 0,
+    declaredValue: "",
     attributedSaleValue,
-    difference: attributedSaleValue,
+    difference: null,
     methods: result.methods || [],
     selectedMethod,
     tax,
-    net: tax === null ? null : attributedSaleValue - tax,
+    net: tax === null || attributedSaleValue === null ? null : attributedSaleValue - tax,
     warning: result.warning || "",
   };
 };
@@ -566,7 +586,8 @@ const syntheticInitialOwnerRow = ({ property, vendor, tranche, index, deedTransf
 const syntheticTransferredRow = ({ property, vendor, tranche, index, deedTransferValue = 0 }) => {
   const shareFraction = tranche.fraction || ZERO_FRACTION;
   const share = fractionToNumber(shareFraction);
-  const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
+  const propertySaleValue = optionalMoney(property.saleValue);
+  const attributedSaleValue = propertySaleValue === null ? null : propertySaleValue * share;
   const isDonation = tranche.cause === "donation";
   const acquisitionDate = String(tranche.acquiredOn || "");
   const donorAcquisitionDate = isDonation ? String(tranche.previousAcquiredOn || "") : "";
@@ -588,8 +609,8 @@ const syntheticTransferredRow = ({ property, vendor, tranche, index, deedTransfe
       transferDate: property.saleDate || new Date().toISOString().slice(0, 10),
       shareNumerator: shareFraction.numerator,
       shareDenominator: shareFraction.denominator,
-      transferValue: attributedSaleValue,
-      consideration: attributedSaleValue,
+      transferValue: attributedSaleValue ?? "",
+      consideration: attributedSaleValue ?? "",
     },
     { deedTransferValue },
   );
@@ -611,18 +632,20 @@ const syntheticTransferredRow = ({ property, vendor, tranche, index, deedTransfe
     donorAcquisitionDateDerived: Boolean(donorAcquisitionDate),
     inheritanceDate: "",
     declarations: [],
-    declaredValue: donationAcquisitionValue === "" ? 0 : donationAcquisitionValue,
+    declaredValue: donationAcquisitionValue,
     attributedSaleValue,
     difference:
-      attributedSaleValue - (donationAcquisitionValue === "" ? 0 : donationAcquisitionValue),
+      attributedSaleValue === null || donationAcquisitionValue === ""
+        ? null
+        : attributedSaleValue - donationAcquisitionValue,
     methods: result.methods || [],
     selectedMethod,
     tax,
-    net: tax === null ? null : attributedSaleValue - tax,
+    net: tax === null || attributedSaleValue === null ? null : attributedSaleValue - tax,
     warning: result.warning || "",
     requiresDonationAcquisitionValue:
       isDonation &&
-      /(?:enter the acquisition value for this donated fraction|choose whether the donated fraction's acquisition value)/i.test(
+      /(?:enter|confirm) the Donation Value (?:stated in the contract )?for this donated fraction/i.test(
         result.warning || "",
       ),
   };
@@ -809,7 +832,18 @@ export function buildTaxCalculationReport(
     const currentTranches = report.ownership?.tranchesByOwner?.get?.(vendor.id) || [];
     // The vendor's whole transfer value on this deed. Value-banded reliefs draw on the band in
     // proportion to each row, so every row of one vendor must share this figure.
-    const deedTransferValue = Math.max(0, Number(property.saleValue) || 0) * vendor.share;
+    const propertySaleValue = optionalMoney(property.saleValue);
+    const storedDeedValues = storedRows.map(
+      (row) =>
+        optionalMoney(row.effectiveLot?.consideration) ??
+        optionalMoney(row.effectiveLot?.transferValue),
+    );
+    const deedTransferValue =
+      propertySaleValue !== null
+        ? propertySaleValue * vendor.share
+        : storedDeedValues.length && storedDeedValues.every((value) => value !== null)
+          ? storedDeedValues.reduce((total, value) => total + value, 0)
+          : 0;
     const resolvedStoredRows = storedRows.map((row) => {
       const acquisitionType =
         row.effectiveLot?.acquisitionType || row.lot.acquisitionType || "inheritance";
@@ -960,7 +994,7 @@ export function buildTaxCalculationReport(
     const missingFraction = subtractFractions(vendorFraction, coveredFraction);
     if (!missingFraction.error && compareFractions(missingFraction, ZERO_FRACTION) > 0) {
       const share = fractionToNumber(missingFraction);
-      const attributedSaleValue = Math.max(0, Number(property.saleValue) || 0) * share;
+      const attributedSaleValue = propertySaleValue === null ? null : propertySaleValue * share;
       const hasIncomingTransfer = report.ledger.entries.some(
         (entry) => !entry.error && entry.buyerId === vendor.id,
       );
@@ -974,9 +1008,9 @@ export function buildTaxCalculationReport(
         sourceKind: hasIncomingTransfer ? "transfer" : "unresolved",
         inheritanceDate: "",
         declarations: [],
-        declaredValue: 0,
+        declaredValue: "",
         attributedSaleValue,
-        difference: attributedSaleValue,
+        difference: null,
         methods: [],
         selectedMethod: null,
         tax: null,
@@ -984,10 +1018,12 @@ export function buildTaxCalculationReport(
         warning: "The acquisition date and value are needed before tax can be calculated.",
       });
     }
-    const propertySaleValue = Math.max(0, Number(property.saleValue) || 0);
-    const attributedSaleValue = propertySaleValue
-      ? propertySaleValue * vendor.share
-      : rows.reduce((total, row) => total + row.attributedSaleValue, 0);
+    const attributedSaleValue =
+      propertySaleValue !== null
+        ? propertySaleValue * vendor.share
+        : rows.length && rows.every((row) => row.attributedSaleValue !== null)
+          ? rows.reduce((total, row) => total + row.attributedSaleValue, 0)
+          : null;
     const incompleteRowCount = rows.filter((row) => !row.selectedMethod).length;
     const tax = incompleteRowCount
       ? null
@@ -997,14 +1033,18 @@ export function buildTaxCalculationReport(
       rows,
       attributedSaleValue,
       tax,
-      net: tax === null ? null : attributedSaleValue - tax,
+      net: tax === null || attributedSaleValue === null ? null : attributedSaleValue - tax,
       incompleteRowCount,
     };
   });
-  const totalsComplete = vendors.every((vendor) => vendor.incompleteRowCount === 0);
+  const totalsComplete = vendors.every(
+    (vendor) => vendor.incompleteRowCount === 0 && vendor.attributedSaleValue !== null,
+  );
   return {
     vendors,
-    totalSaleValue: vendors.reduce((total, vendor) => total + vendor.attributedSaleValue, 0),
+    totalSaleValue: vendors.every((vendor) => vendor.attributedSaleValue !== null)
+      ? vendors.reduce((total, vendor) => total + vendor.attributedSaleValue, 0)
+      : null,
     totalTax: totalsComplete
       ? vendors.reduce((total, vendor) => total + Number(vendor.tax || 0), 0)
       : null,
@@ -1271,11 +1311,13 @@ export function setDonationAcquisitionValue(
   acquisitionValue = "",
   acquisitionValueBasis = "",
 ) {
+  const rawValue = String(acquisitionValue ?? "").trim();
+  const clearsValue = rawValue === "";
   const numericValue = Number(acquisitionValue);
-  if (!Number.isFinite(numericValue) || numericValue < 0) {
+  if (!clearsValue && (!Number.isFinite(numericValue) || numericValue < 0)) {
     return { property, error: "Enter a valid donation acquisition value." };
   }
-  if (!DONATION_ACQUISITION_VALUE_BASES.includes(acquisitionValueBasis)) {
+  if (!clearsValue && !DONATION_ACQUISITION_VALUE_BASES.includes(acquisitionValueBasis)) {
     return {
       property,
       error: "Choose market value at donation, deed value or final assessment.",
@@ -1296,7 +1338,11 @@ export function setDonationAcquisitionValue(
       ...property,
       transfers: transfers.map((transfer, index) =>
         index === targetIndex
-          ? { ...transfer, acquisitionValue: numericValue, acquisitionValueBasis }
+          ? {
+              ...transfer,
+              acquisitionValue: clearsValue ? "" : numericValue,
+              acquisitionValueBasis: clearsValue ? "" : acquisitionValueBasis,
+            }
           : transfer,
       ),
     },

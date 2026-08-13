@@ -144,7 +144,7 @@ export function Properties({
             {showSaleValue && (
               <div className="form-grid property-sale-value">
                 <label className="full-width">
-                  Value of the property being sold today (€)
+                  Value of the property being sold today (€) (optional)
                   <input
                     aria-label="Value of the property being sold today"
                     type="number"

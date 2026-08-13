@@ -130,7 +130,7 @@ export function TreePropertyPanel({
               <strong>Ownership &amp; Tax</strong>
             </span>
             <span className="tree-property-panel-price">
-              {saleValue ? money.format(saleValue) : "Set selling price"}
+              {saleValue ? money.format(saleValue) : "Selling price not entered"}
               <ChevronDown size={16} />
             </span>
           </button>
@@ -167,7 +167,7 @@ export function TreePropertyPanel({
                   />
                 </label>
                 <label>
-                  <span>Selling price</span>
+                  <span>Selling price (optional)</span>
                   <span className="tree-property-price-input">
                     <b>€</b>
                     <input

@@ -150,6 +150,38 @@ describe("TreePropertyPanel", () => {
     );
   });
 
+  it("treats the selling price as optional without hiding ownership", () => {
+    act(() =>
+      root.render(
+        <TreePropertyPanel
+          property={{ ...property, saleValue: "" }}
+          people={people}
+          outsideParties={[]}
+          propertyReport={propertyReport}
+          cardFields={{}}
+          onCardFieldsChange={vi.fn()}
+          onPropertyChange={vi.fn()}
+          onFocusEvent={vi.fn()}
+          onOpenProperty={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Selling price not entered");
+    act(() => container.querySelector(".tree-property-panel-toggle").click());
+    const sellingPrice = container.querySelector(
+      'input[aria-label="Property selling price on tree"]',
+    );
+    expect(sellingPrice.required).toBe(false);
+    expect(sellingPrice.closest("label").textContent).toContain("Selling price (optional)");
+    const currentTitle = [...container.querySelectorAll("summary")].find((summary) =>
+      summary.textContent.includes("Current owners & values"),
+    );
+    act(() => currentTitle.click());
+    expect(container.textContent).toContain("1/1");
+    expect(container.textContent).toContain("Value not set");
+  });
+
   it("makes legacy additional properties explicitly selectable one at a time", () => {
     const onPropertySelect = vi.fn();
     const secondProperty = { ...property, id: "property-2", address: "2 Merchant Street" };

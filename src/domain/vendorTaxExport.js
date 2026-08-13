@@ -21,13 +21,21 @@ const fractionLabel = (share, exactFraction = null) => {
 const stringCell = (value, styleId = "Text") =>
   `<Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(value)}</Data></Cell>`;
 
+const hasNumericValue = (value) =>
+  value !== null &&
+  value !== undefined &&
+  !(typeof value === "string" && value.trim() === "") &&
+  Number.isFinite(Number(value));
+
 const numberCell = (value, styleId = "Money") =>
-  value == null || !Number.isFinite(Number(value))
+  !hasNumericValue(value)
     ? stringCell("")
     : `<Cell ss:StyleID="${styleId}"><Data ss:Type="Number">${Number(value)}</Data></Cell>`;
 
-const percentageCell = (value) =>
-  value == null ? stringCell("") : numberCell(value, "Percentage");
+const percentageCell = (value) => numberCell(value, "Percentage");
+
+const calculatedMoneyCell = (value, calculationAvailable) =>
+  calculationAvailable ? numberCell(value) : stringCell("Not calculated");
 
 const mergedCell = (value, mergeAcross, styleId = "Text") =>
   `<Cell ss:StyleID="${styleId}" ss:MergeAcross="${mergeAcross}"><Data ss:Type="String">${escapeXml(
@@ -37,15 +45,19 @@ const mergedCell = (value, mergeAcross, styleId = "Text") =>
 const rowXml = (cells, styleId) =>
   `<Row${styleId ? ` ss:StyleID="${styleId}"` : ""}>${cells.join("")}</Row>`;
 
-const declarationSummary = (declaration) =>
-  `${isoDateToDisplay(declaration.date) || declaration.date || "Undated"}${
+const declarationSummary = (declaration) => {
+  const declaredValue = hasNumericValue(declaration.declaredValue)
+    ? `EUR ${Number(declaration.declaredValue).toFixed(2)}`
+    : "declared value not recorded";
+  return `${isoDateToDisplay(declaration.date) || declaration.date || "Undated"}${
     declaration.notaryName ? ` · ${displayNotaryName(declaration.notaryName)}` : ""
   }: CM fraction ${fractionLabel(
     declaration.declaredShare,
     declaration.declaredShareFraction,
-  )}; EUR ${Number(declaration.declaredValue || 0).toFixed(2)}`;
+  )}; ${declaredValue}`;
+};
 
-const taxChoiceRows = (report) =>
+const taxChoiceRows = (report, { sellingPriceAvailable = false } = {}) =>
   report.vendors.flatMap((vendor) =>
     vendor.rows.flatMap((row) => {
       const methods = row.methods.length ? row.methods : [null];
@@ -55,7 +67,10 @@ const taxChoiceRows = (report) =>
 
       return methods.map((method) => {
         const tax = method?.tax ?? row.tax ?? null;
-        const net = tax == null ? null : row.attributedSaleValue - tax;
+        const net =
+          tax == null || !hasNumericValue(row.attributedSaleValue)
+            ? null
+            : Number(row.attributedSaleValue) - Number(tax);
         const applied = Boolean(
           method && row.selectedMethod && method.key === row.selectedMethod.key,
         );
@@ -64,22 +79,22 @@ const taxChoiceRows = (report) =>
         return rowXml([
           stringCell(vendor.name),
           stringCell(fractionLabel(vendor.share, vendor.shareFraction), "CenteredText"),
-          numberCell(vendor.attributedSaleValue),
-          numberCell(vendor.tax),
+          calculatedMoneyCell(vendor.attributedSaleValue, sellingPriceAvailable),
+          calculatedMoneyCell(vendor.tax, sellingPriceAvailable && vendor.tax != null),
           stringCell(row.provenance),
           stringCell(isoDateToDisplay(row.inheritanceDate) || row.inheritanceDate || ""),
           stringCell(fractionLabel(row.share, row.shareFraction), "CenteredText"),
           stringCell(declarations),
           numberCell(row.declaredValue),
-          numberCell(row.attributedSaleValue),
-          numberCell(row.difference),
+          calculatedMoneyCell(row.attributedSaleValue, sellingPriceAvailable),
+          calculatedMoneyCell(row.difference, sellingPriceAvailable),
           stringCell(method?.label || row.warning || "Incomplete"),
           stringCell(choiceStatus, applied ? "AppliedText" : "Text"),
           stringCell(method?.requiresElection ? "Yes" : method ? "No" : ""),
           percentageCell(method?.rate),
-          numberCell(method?.basis ?? null),
-          numberCell(tax),
-          numberCell(net),
+          calculatedMoneyCell(method?.basis ?? null, sellingPriceAvailable && Boolean(method)),
+          calculatedMoneyCell(tax, sellingPriceAvailable && tax != null),
+          calculatedMoneyCell(net, sellingPriceAvailable && net != null),
         ]);
       });
     }),
@@ -120,7 +135,9 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
   ];
   const title = `${property.address || "Property"} — Tax Calculation`;
   const historyRows = successionHistoryRows(historyEvents);
-  const taxRows = taxChoiceRows(report);
+  const taxRows = taxChoiceRows(report, {
+    sellingPriceAvailable: hasNumericValue(property.saleValue),
+  });
   const expandedRowCount = historyRows.length + taxRows.length + 8;
 
   return `<?xml version="1.0" encoding="UTF-8"?>

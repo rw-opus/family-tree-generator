@@ -176,6 +176,10 @@ textarea:focus-visible {
   gap: 0.45rem;
 }
 
+.library-action-label-short {
+  display: none;
+}
+
 .library-account-action:hover {
   background: var(--forest-soft);
 }
@@ -190,12 +194,6 @@ textarea:focus-visible {
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
-}
-
-.family-library-heading p:not(.library-kicker) {
-  margin: 0.35rem 0 0;
-  color: var(--muted);
-  font-size: 0.76rem;
 }
 
 .library-create-actions {
@@ -757,8 +755,6 @@ textarea:focus-visible {
   font-size: 0.76rem;
 }
 
-.tree-pricing-card p,
-.library-credit-policy,
 .library-billing-message {
   margin: 0.25rem 0 0;
   color: var(--muted);
@@ -776,11 +772,6 @@ textarea:focus-visible {
   background: #f4ecf8;
   color: var(--plum);
   padding: 0.5rem 0.6rem;
-}
-
-.library-credit-policy {
-  border-top: 1px solid #e1e8e3;
-  padding-top: 0.7rem;
 }
 
 .library-legal-links {
@@ -2217,13 +2208,13 @@ textarea {
 
 .lifetime-transfer-record {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.25rem;
   border: 1px solid #d7e1db;
   border-radius: 0.5rem;
   background: #fff;
-  padding: 0.38rem 0.45rem;
+  padding: 0.2rem;
 }
 
 .lifetime-transfer-record.invalid {
@@ -2231,20 +2222,41 @@ textarea {
   background: #fff8f7;
 }
 
-.lifetime-transfer-record > span {
+.lifetime-transfer-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  min-width: 0;
+  border: 0;
+  border-radius: 0.38rem;
+  background: transparent;
+  color: inherit;
+  padding: 0.2rem 0.28rem;
+  text-align: left;
+}
+
+.lifetime-transfer-summary:hover,
+.lifetime-transfer-summary:focus-visible {
+  background: var(--forest-soft);
+}
+
+.lifetime-transfer-summary > span {
   display: grid;
   gap: 0.08rem;
   min-width: 0;
 }
 
-.lifetime-transfer-record > span:last-child {
+.lifetime-transfer-summary > span:nth-child(2) {
   justify-items: end;
 }
 
 .lifetime-transfer-delete {
   display: inline-grid;
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 2.75rem;
+  height: 2.75rem;
   place-items: center;
   border: 1px solid #efc9c5;
   border-radius: 0.42rem;
@@ -3035,6 +3047,62 @@ textarea {
   border-color: #b9d9c6;
 }
 
+.causa-mortis-card.collapsed {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem;
+}
+
+.causa-mortis-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  min-width: 0;
+  border: 0;
+  border-radius: 0.38rem;
+  background: transparent;
+  color: inherit;
+  padding: 0.2rem 0.3rem;
+  text-align: left;
+}
+
+.causa-mortis-summary:hover,
+.causa-mortis-summary:focus-visible {
+  background: var(--forest-soft);
+}
+
+.causa-mortis-summary > span {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.causa-mortis-summary > span:nth-child(2) {
+  justify-items: end;
+}
+
+.causa-mortis-summary strong,
+.causa-mortis-summary b {
+  color: var(--forest);
+  font-size: 0.65rem;
+}
+
+.causa-mortis-summary small {
+  color: var(--muted);
+  font-size: 0.59rem;
+  line-height: 1.3;
+}
+
+.causa-mortis-card.collapsed > .icon-button {
+  width: 2.75rem;
+  min-height: 2.75rem;
+  color: #922f2f;
+}
+
 .causa-mortis-card-heading .icon-button {
   width: 28px;
   min-height: 1.8rem;
@@ -3127,7 +3195,7 @@ textarea {
 
 .causa-mortis-card-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.45rem;
   border-top: 1px dashed #dde5e1;
@@ -3147,6 +3215,12 @@ textarea {
   justify-content: center;
   gap: 0.25rem;
   min-width: 4.5rem;
+  min-height: 1.9rem;
+  padding: 0.28rem 0.5rem;
+  font-size: 0.64rem;
+}
+
+.causa-mortis-card-actions .secondary-button {
   min-height: 1.9rem;
   padding: 0.28rem 0.5rem;
   font-size: 0.64rem;
@@ -6475,12 +6549,12 @@ body.a3-print-preview-open {
   }
 
   .family-library-header {
-    min-height: 58px;
-    padding: 0.55rem 0.75rem;
+    min-height: 48px;
+    padding: 0.4rem 0.65rem;
   }
 
   .family-library-brand {
-    font-size: 0.94rem;
+    font-size: 0.88rem;
   }
 
   .library-storage-state {
@@ -6489,61 +6563,122 @@ body.a3-print-preview-open {
 
   .family-library-content {
     grid-template-columns: 1fr;
+    gap: 0.45rem;
     width: min(100% - 1rem, 680px);
-    margin: 0.75rem auto;
+    margin: 0.45rem auto;
   }
 
   .account-summary {
-    padding: 0.8rem;
+    padding: 0.6rem;
+  }
+
+  .account-summary-heading {
+    gap: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+
+  .account-summary-icon {
+    width: 1.85rem;
+    height: 1.85rem;
+  }
+
+  .account-summary h1,
+  .family-library h2 {
+    font-size: 1.05rem;
+  }
+
+  .account-summary .library-kicker,
+  .family-library-heading .library-kicker {
+    display: none;
   }
 
   .account-summary-list {
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-    margin: 0.75rem 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.38rem 0.65rem;
+    margin: 0.5rem 0;
+  }
+
+  .account-summary-list .account-storage-detail {
+    display: none;
   }
 
   .account-summary-list dd {
-    font-size: 0.8rem;
+    font-size: 0.74rem;
+    line-height: 1.2;
   }
 
   .account-summary-list dt {
-    font-size: 0.68rem;
+    font-size: 0.59rem;
   }
 
   .library-account-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(5.3rem, 1fr));
+    gap: 0.3rem;
   }
 
   .library-account-action {
     justify-content: center;
+    min-width: 0;
     min-height: 2.75rem;
-    font-size: 0.75rem;
+    padding-inline: 0.35rem;
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+
+  .library-action-label-full {
+    display: none;
+  }
+
+  .library-action-label-short {
+    display: inline;
+  }
+
+  .tree-pricing-card {
+    margin-top: 0.5rem;
+    padding: 0.55rem;
+  }
+
+  .library-legal-links {
+    gap: 0.25rem 0.7rem;
+    margin-top: 0.45rem;
+    padding-top: 0.35rem;
+  }
+
+  .library-legal-links a {
+    min-height: 2.5rem;
   }
 
   .family-library-heading {
     display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .library-create-actions {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 0.3rem;
   }
 
   .library-primary-button,
   .library-secondary-button {
-    flex: 1 1 10rem;
+    min-width: 0;
+    min-height: 2.75rem;
+    padding-inline: 0.4rem;
   }
 
   .family-library-row {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto auto;
     grid-template-areas:
-      "family family"
+      "family actions"
       "added actions";
-    gap: 0.48rem 0.65rem;
+    gap: 0.08rem 0.35rem;
     min-height: 0;
-    padding: 0.72rem 0.68rem;
+    padding: 0.34rem 0.5rem;
   }
 
   .family-library-row.is-active {
@@ -6560,10 +6695,10 @@ body.a3-print-preview-open {
     min-height: 2.75rem;
     align-content: center;
     justify-items: start;
-    gap: 0.32rem;
-    padding-block: 0.2rem;
-    font-size: 0.9rem;
-    line-height: 1.25;
+    gap: 0.18rem;
+    padding-block: 0;
+    font-size: 0.78rem;
+    line-height: 1.15;
   }
 
   .family-name-text {
@@ -6574,6 +6709,10 @@ body.a3-print-preview-open {
 
   .family-name-badges {
     gap: 0.25rem;
+  }
+
+  .family-open-badge {
+    display: none;
   }
 
   .family-name-button small {
@@ -6602,11 +6741,12 @@ body.a3-print-preview-open {
     grid-area: added;
     align-self: center;
     gap: 0.28rem;
-    font-size: 0.64rem;
+    margin-top: -0.2rem;
+    font-size: 0.6rem;
   }
 
   .family-last-changed-label {
-    display: inline;
+    display: none;
   }
 
   .family-row-actions {
@@ -6618,11 +6758,15 @@ body.a3-print-preview-open {
   }
 
   .family-row-actions .library-row-action {
+    width: 2.75rem;
     min-height: 2.75rem;
     flex: 0 0 auto;
     border-radius: 8px;
-    padding: 0 0.58rem;
-    font-size: 0.67rem;
+    padding: 0;
+  }
+
+  .family-row-actions .library-row-action-label {
+    display: none;
   }
 
   .family-rename-form .library-icon-button {
@@ -6638,6 +6782,14 @@ body.a3-print-preview-open {
   .family-library-search input {
     min-height: 2.75rem;
     font-size: 16px;
+  }
+
+  .family-library {
+    padding: 0.6rem;
+  }
+
+  .family-library-search {
+    margin: 0.5rem 0 0.4rem;
   }
 
   .family-library-page input,

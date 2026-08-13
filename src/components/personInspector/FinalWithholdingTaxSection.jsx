@@ -55,12 +55,10 @@ function InitialAcquisitionResolution({ row, onConfirm }) {
 
 function DonationValueResolution({ row, onConfirm }) {
   const [acquisitionValue, setAcquisitionValue] = useState(row.acquisitionValue ?? "");
-  const [basis, setBasis] = useState(row.acquisitionValueBasis || "market-at-donation");
 
   useEffect(() => {
     setAcquisitionValue(row.acquisitionValue ?? "");
-    setBasis(row.acquisitionValueBasis || "market-at-donation");
-  }, [row.id, row.acquisitionValue, row.acquisitionValueBasis]);
+  }, [row.id, row.acquisitionValue]);
 
   const valueIsValid =
     String(acquisitionValue).trim() !== "" &&
@@ -70,13 +68,13 @@ function DonationValueResolution({ row, onConfirm }) {
   const handleSubmit = (event) => {
     event.preventDefault();
     if (!valueIsValid) return;
-    onConfirm?.({ row, acquisitionValue, acquisitionValueBasis: basis });
+    onConfirm?.({ row, acquisitionValue, acquisitionValueBasis: "deed-value" });
   };
 
   return (
     <form className="fwt-donation-value" onSubmit={handleSubmit}>
       <label className="fwt-acquisition-field" htmlFor={`fwt-donation-value-${row.id}`}>
-        <span>Donation acquisition value</span>
+        <span>Donation Value (optional)</span>
         <span className="fwt-money-input">
           <span aria-hidden="true">€</span>
           <input
@@ -87,22 +85,9 @@ function DonationValueResolution({ row, onConfirm }) {
             step="0.01"
             value={acquisitionValue}
             onChange={(event) => setAcquisitionValue(event.target.value)}
-            aria-label="Donation acquisition value"
+            aria-label="Donation Value"
           />
         </span>
-      </label>
-      <label className="fwt-acquisition-field" htmlFor={`fwt-donation-basis-${row.id}`}>
-        <span>Value basis</span>
-        <select
-          id={`fwt-donation-basis-${row.id}`}
-          value={basis}
-          onChange={(event) => setBasis(event.target.value)}
-          aria-label="Donation acquisition value basis"
-        >
-          <option value="market-at-donation">Market value at donation</option>
-          <option value="deed-value">Value declared for the donation</option>
-          <option value="final-assessment">Final assessment</option>
-        </select>
       </label>
       <button type="submit" disabled={!valueIsValid || !onConfirm}>
         Confirm value
@@ -123,7 +108,9 @@ function PendingSource({
     !isPersonDeceased &&
     row.sourceKind === "initial" &&
     row.requiresOriginalAcquisitionDate === true;
-  const warning = row.warning || "Complete this source fraction before tax can be calculated.";
+  const warning = row.warning
+    ? `${row.warning} Tax values are optional.`
+    : "Optional tax detail not supplied. Ownership fractions are unaffected.";
 
   return (
     <li className="fwt-pending-source">
@@ -178,7 +165,7 @@ export function FinalWithholdingTaxSection({
       <section className="final-withholding-tax-section" aria-label="Final Withholding Tax">
         <div className="fwt-status-row">
           <span>Final Withholding Tax</span>
-          <strong>{isPersonDeceased ? "Not applicable" : "Not yet calculated"}</strong>
+          <strong>{isPersonDeceased ? "Not applicable" : "Not calculated"}</strong>
         </div>
       </section>
     );
@@ -202,7 +189,7 @@ export function FinalWithholdingTaxSection({
   const status = !vendorTax
     ? "Not a current vendor"
     : isPending
-      ? "Pending"
+      ? "Not calculated"
       : money.format(Number(vendorTax.tax) || 0);
 
   return (
@@ -215,9 +202,8 @@ export function FinalWithholdingTaxSection({
       {resolutionRows.length ? (
         <>
           <small className="fwt-summary">
-            {resolutionRows.length} source{" "}
-            {resolutionRows.length === 1 ? "fraction needs" : "fractions need"}
-            completion.
+            Optional tax details are absent for {resolutionRows.length} source{" "}
+            {resolutionRows.length === 1 ? "fraction" : "fractions"}.
           </small>
           <ul className="fwt-pending-sources">
             {resolutionRows.map((row, index) => (

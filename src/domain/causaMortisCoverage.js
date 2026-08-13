@@ -66,7 +66,11 @@ export function allocateCausaMortisDeclaration(
     (personId) => !positiveFraction(requiredFractions.get(personId)),
   );
   const declaredFraction = causaMortisDeclaredFraction(declaration);
-  const declaredValue = Math.max(0, Number(declaration.immovablePropertyValue) || 0);
+  const rawDeclaredValue = String(declaration.immovablePropertyValue ?? "").trim();
+  const numericDeclaredValue = Number(declaration.immovablePropertyValue);
+  const hasDeclaredValue =
+    rawDeclaredValue !== "" && Number.isFinite(numericDeclaredValue) && numericDeclaredValue >= 0;
+  const declaredValue = hasDeclaredValue ? numericDeclaredValue : "";
 
   // Fail closed when one of the selected people has no resolvable entitlement. Otherwise their
   // unknown portion would be silently redistributed among the remaining selected declarants.
@@ -79,6 +83,7 @@ export function allocateCausaMortisDeclaration(
       allocations: [],
       declaredFraction,
       declaredValue,
+      hasDeclaredValue,
       declarantIds,
       unresolvedDeclarantIds,
     };
@@ -93,6 +98,7 @@ export function allocateCausaMortisDeclaration(
       allocations: [],
       declaredFraction,
       declaredValue,
+      hasDeclaredValue,
       declarantIds,
       unresolvedDeclarantIds: declarantIds,
     };
@@ -116,7 +122,8 @@ export function allocateCausaMortisDeclaration(
       weightFraction,
       declaredFraction: allocatedDeclaredFraction,
       declaredShare: fractionToNumber(allocatedDeclaredFraction),
-      declaredValue: declaredValue * fractionToNumber(weightFraction),
+      declaredValue: hasDeclaredValue ? declaredValue * fractionToNumber(weightFraction) : "",
+      hasDeclaredValue,
     };
   });
 
@@ -124,6 +131,7 @@ export function allocateCausaMortisDeclaration(
     allocations,
     declaredFraction,
     declaredValue,
+    hasDeclaredValue,
     declarantIds,
     unresolvedDeclarantIds: [],
   };
@@ -132,10 +140,7 @@ export function allocateCausaMortisDeclaration(
 export const isCompletedCausaMortisDeclaration = (declaration = {}) =>
   declaration.status === "complete";
 
-export function validateCausaMortisDeclaration(
-  declaration = {},
-  { valueRequired = true, dateOfDeath = "" } = {},
-) {
+export function validateCausaMortisDeclaration(declaration = {}, { dateOfDeath = "" } = {}) {
   if (!declaration.propertyId) return "Select the property.";
 
   const share = causaMortisDeclaredShare(declaration);
@@ -149,7 +154,6 @@ export function validateCausaMortisDeclaration(
   }
 
   const rawValue = String(declaration.immovablePropertyValue ?? "").trim();
-  if (valueRequired && !rawValue) return "Enter the immovable-property value declared.";
   if (rawValue && (!Number.isFinite(Number(rawValue)) || Number(rawValue) < 0)) {
     return "Enter a valid immovable-property value.";
   }
@@ -220,6 +224,7 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
       );
       const declaredFractionsByDeclarant = new Map();
       const declaredValuesByDeclarant = new Map();
+      const declarantsMissingValues = new Set();
       const unresolvedDeclarantIds = new Set();
       declarations.forEach((declaration) => {
         const allocation = allocateCausaMortisDeclaration(
@@ -231,10 +236,14 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
         );
         allocation.allocations.forEach((item) => {
           addToFractionMap(declaredFractionsByDeclarant, item.personId, item.declaredFraction);
-          declaredValuesByDeclarant.set(
-            item.personId,
-            (declaredValuesByDeclarant.get(item.personId) || 0) + item.declaredValue,
-          );
+          if (item.hasDeclaredValue) {
+            declaredValuesByDeclarant.set(
+              item.personId,
+              (declaredValuesByDeclarant.get(item.personId) || 0) + item.declaredValue,
+            );
+          } else {
+            declarantsMissingValues.add(item.personId);
+          }
         });
       });
 
@@ -259,7 +268,12 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
             requiredShare: fractionToNumber(recipientRequiredFraction),
             declaredFraction,
             declaredShare: fractionToNumber(declaredFraction),
-            declaredValue: declaredValuesByDeclarant.get(recipientId) || 0,
+            declaredValue: declarantsMissingValues.has(recipientId)
+              ? ""
+              : (declaredValuesByDeclarant.get(recipientId) ?? ""),
+            hasDeclaredValue:
+              !declarantsMissingValues.has(recipientId) &&
+              declaredValuesByDeclarant.has(recipientId),
             missingFraction,
             excessFraction,
             status: comparison === 0 ? "complete" : comparison < 0 ? "under" : "over",

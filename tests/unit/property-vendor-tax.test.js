@@ -576,7 +576,7 @@ describe("property vendor tax reports", () => {
       requiresDonationAcquisitionValue: true,
       selectedMethod: null,
     });
-    expect(pending.rows[0].warning).toMatch(/acquisition value for this donated fraction/i);
+    expect(pending.rows[0].warning).toMatch(/Donation Value stated in the contract/i);
 
     for (const blankValue of ["", null]) {
       const blankProperty = {
@@ -688,7 +688,7 @@ describe("property vendor tax reports", () => {
       sourceTransferId: "gift",
       provenancePersonDeceased: true,
       requiresDonationAcquisitionValue: false,
-      declaredValue: 0,
+      declaredValue: "",
       selectedMethod: { key: "whole-10" },
     });
   });
@@ -1564,7 +1564,7 @@ describe("property vendor tax reports", () => {
       ],
     });
     expect(vendorC.rows[0]).toMatchObject({
-      declaredValue: 0,
+      declaredValue: "",
       declarations: [],
       methods: [],
       selectedMethod: null,
@@ -2367,11 +2367,161 @@ describe("property vendor tax reports", () => {
     });
     expect(rowB).toMatchObject({
       useDeclarationValues: false,
-      declaredCoverage: { status: "under", declaredValue: 0 },
+      declaredCoverage: { status: "under", declaredValue: "" },
     });
     expect(rowA.result).toMatchObject({
       selected: "increase-12",
       methods: expect.arrayContaining([expect.objectContaining({ key: "increase-12", tax: 36 })]),
+    });
+  });
+
+  it("keeps a completed CM fraction with no value while leaving its tax pending", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willDate: "2019-12-01",
+        willHeirs: [{ id: "share", personId: "child", sharePercent: 100 }],
+        causaMortisDeclarations: [
+          {
+            id: "cm-without-value",
+            propertyId: "property",
+            status: "complete",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 1,
+            immovablePropertyValue: "",
+            date: "2020-04-01",
+            notaryName: "Maria Notary",
+            declarantPersonIds: ["child"],
+          },
+        ],
+        spouseIds: [],
+      },
+      { id: "child", fullName: "Maria Borg", fatherId: "deceased", spouseIds: [] },
+    ];
+    const property = {
+      id: "property",
+      saleValue: "120000",
+      owners: [{ personId: "deceased", sharePercent: 100 }],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendor = report.vendors[0];
+    const row = vendor.rows[0];
+
+    expect(vendor).toMatchObject({ id: "child", share: 1, tax: null, net: null });
+    expect(row).toMatchObject({
+      share: 1,
+      declaredValue: "",
+      difference: null,
+      selectedMethod: null,
+      tax: null,
+      net: null,
+    });
+    expect(row.declarations[0]).toMatchObject({
+      id: "cm-without-value",
+      declaredShare: 1,
+      declaredValue: "",
+      hasDeclaredValue: false,
+    });
+    expect(row.warning).toMatch(/causa mortis acquisition value/i);
+    expect(report).toMatchObject({ totalTax: null, totalNet: null, totalsComplete: false });
+  });
+
+  it("keeps ownership available when the selling value is omitted and leaves tax totals blank", () => {
+    const property = {
+      id: "property",
+      saleValue: "",
+      owners: [
+        {
+          id: "title",
+          personId: "owner",
+          sharePercent: 100,
+          acquisitionDate: "2020-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+
+    const report = buildTaxCalculationReport(
+      property,
+      [{ id: "owner", fullName: "Maria Borg", spouseIds: [] }],
+      [],
+    );
+
+    expect(report.vendors[0]).toMatchObject({
+      id: "owner",
+      share: 1,
+      attributedSaleValue: null,
+      tax: null,
+      net: null,
+    });
+    expect(report.vendors[0].rows[0]).toMatchObject({
+      share: 1,
+      attributedSaleValue: null,
+      selectedMethod: null,
+      tax: null,
+    });
+    expect(report).toMatchObject({
+      totalSaleValue: null,
+      totalTax: null,
+      totalNet: null,
+      totalsComplete: false,
+    });
+  });
+
+  it("retains an explicit stored transfer value when the property selling value is blank", () => {
+    const property = {
+      id: "property",
+      saleValue: "",
+      owners: [
+        {
+          id: "title",
+          personId: "owner",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [
+        {
+          id: "stored-lot",
+          ownerId: "owner",
+          acquisitionType: "purchase",
+          acquisitionDate: "2000-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          transferValue: 200,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(
+      property,
+      [{ id: "owner", fullName: "Maria Borg", spouseIds: [] }],
+      [],
+    );
+
+    expect(report.vendors[0].rows[0]).toMatchObject({
+      attributedSaleValue: 200,
+      selectedMethod: { key: "whole-10" },
+      tax: 20,
+    });
+    expect(report).toMatchObject({
+      totalSaleValue: 200,
+      totalTax: 20,
+      totalNet: 180,
+      totalsComplete: true,
     });
   });
 
