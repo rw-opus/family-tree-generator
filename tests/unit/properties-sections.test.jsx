@@ -204,6 +204,63 @@ describe("Properties section views", () => {
     expect(onSelectPerson).toHaveBeenLastCalledWith("owner");
   });
 
+  it("shows safe tax subtotals and opens a printable list for every vendor", () => {
+    const mixedPeople = [
+      { id: "first-owner", fullName: "Maria Borg", spouseIds: [] },
+      { id: "second-owner", fullName: "Joseph Vella", spouseIds: [] },
+    ];
+    const mixedProperty = {
+      ...properties[0],
+      saleDate: "2026-08-13",
+      owners: [
+        {
+          id: "first-title",
+          personId: "first-owner",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2020-01-01",
+        },
+        {
+          id: "second-title",
+          personId: "second-owner",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[mixedProperty]}
+          people={mixedPeople}
+          outsideParties={[]}
+          singleProperty
+          section="tax"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Calculated tax subtotal");
+    expect(container.textContent).toContain("€10,000.00");
+    expect(container.textContent).toContain("Calculated net subtotal");
+    expect(container.textContent).toContain("€115,000.00");
+    expect(container.textContent).toContain("1 source fraction is not yet calculated");
+    expect(container.textContent).toContain("€125,000.00 of the selling price remains unassessed");
+
+    const openList = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Open printable vendor list"),
+    );
+    act(() => openList.click());
+
+    const statement = document.querySelector(".vendor-settlement-dialog");
+    expect(statement).not.toBeNull();
+    expect(statement.querySelectorAll(".vendor-settlement-vendor-row")).toHaveLength(2);
+    expect(statement.textContent).toContain("Maria Borg");
+    expect(statement.textContent).toContain("Joseph Vella");
+  });
+
   it("shows each recorded transfer once in the current-owner ledger", () => {
     const transferredPeople = [
       { id: "owner", fullName: "Joseph Borg" },

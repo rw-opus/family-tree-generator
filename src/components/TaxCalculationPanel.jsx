@@ -6,6 +6,7 @@ import { approximateFraction } from "../domain/ownership.js";
 import { buildTaxCalculationReport } from "../domain/propertyVendorTax.js";
 import { buildSuccessionTrace } from "../domain/successionTrace.js";
 import { downloadVendorTaxSpreadsheet } from "../domain/vendorTaxExport.js";
+import { VendorSettlementStatement } from "./VendorSettlementStatement.jsx";
 
 const money = new Intl.NumberFormat("en-MT", {
   style: "currency",
@@ -51,6 +52,9 @@ export function TaxCalculationPanel({
   });
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const hasSellingPrice = hasRecordedMoney(property.saleValue);
+  const hasCalculatedSources = report.completeSourceCount > 0;
+  const pendingVendors = report.vendors.filter((vendor) => vendor.incompleteSourceCount > 0);
+  const pendingVendorNames = pendingVendors.map((vendor) => vendor.name).join(", ");
 
   return (
     <section className="tax-calculation-panel" aria-label="Tax Calculation">
@@ -68,8 +72,14 @@ export function TaxCalculationPanel({
           >
             <FileSpreadsheet size={16} /> Download one-sheet Excel
           </button>
+          <VendorSettlementStatement
+            report={report}
+            property={property}
+            people={people}
+            onSelectPerson={onSelectPerson}
+          />
           {!report.vendors.length && (
-            <small>Add a living current owner to enable the export.</small>
+            <small>Add a living current owner to enable the export and vendor list.</small>
           )}
         </span>
       </div>
@@ -274,24 +284,54 @@ export function TaxCalculationPanel({
       )}
 
       {report.vendors.length > 0 && (
-        <div className="tax-calculation-total">
-          <span>
-            Total sale value{" "}
-            <strong>{hasSellingPrice ? money.format(report.totalSaleValue) : "Not entered"}</strong>
-          </span>
-          <span>
-            Total tax{" "}
-            <strong>
-              {report.totalTax == null ? "Not calculated" : money.format(report.totalTax)}
-            </strong>
-          </span>
-          <span>
-            Total net{" "}
-            <strong>
-              {report.totalNet == null ? "Not calculated" : money.format(report.totalNet)}
-            </strong>
-          </span>
-        </div>
+        <>
+          <div className={`tax-calculation-total ${report.totalsComplete ? "" : "partial"}`}>
+            <span>
+              Total sale value{" "}
+              <strong>
+                {hasSellingPrice ? money.format(report.totalSaleValue) : "Not entered"}
+              </strong>
+            </span>
+            <span>
+              {report.totalsComplete
+                ? "Total tax"
+                : hasCalculatedSources
+                  ? "Calculated tax subtotal"
+                  : "Tax subtotal"}{" "}
+              <strong>
+                {report.totalsComplete
+                  ? money.format(report.totalTax)
+                  : hasCalculatedSources
+                    ? money.format(report.calculatedTaxSubtotal)
+                    : "Not calculated"}
+              </strong>
+            </span>
+            <span>
+              {report.totalsComplete
+                ? "Total net"
+                : hasCalculatedSources
+                  ? "Calculated net subtotal"
+                  : "Net subtotal"}{" "}
+              <strong>
+                {report.totalsComplete
+                  ? money.format(report.totalNet)
+                  : hasCalculatedSources
+                    ? money.format(report.calculatedNetSubtotal)
+                    : "Not calculated"}
+              </strong>
+            </span>
+          </div>
+          {!report.totalsComplete && (
+            <p className="tax-calculation-total-note" role="status">
+              Final tax and net totals are not shown because {report.incompleteSourceCount} source
+              {report.incompleteSourceCount === 1 ? " fraction is" : " fractions are"} not yet
+              calculated{pendingVendorNames ? ` for ${pendingVendorNames}` : ""}.
+              {report.unassessedSaleValue != null && report.unassessedSaleValue > 0
+                ? ` ${money.format(report.unassessedSaleValue)} of the selling price remains unassessed.`
+                : ""}
+            </p>
+          )}
+        </>
       )}
       {report.excludedLotCount > 0 && (
         <p className="tax-calculation-warning">

@@ -33,6 +33,37 @@ const optionalMoney = (input) => {
   return Number.isFinite(value) && value >= 0 ? value : null;
 };
 
+const hasFiniteRecordedNumber = (input) =>
+  input !== null &&
+  input !== undefined &&
+  String(input).trim() !== "" &&
+  Number.isFinite(Number(input));
+
+const sourceRowIsCalculated = (row = {}) =>
+  Boolean(row.selectedMethod) &&
+  optionalMoney(row.attributedSaleValue) !== null &&
+  optionalMoney(row.tax) !== null &&
+  hasFiniteRecordedNumber(row.net);
+
+const sourceCalculationSummary = (rows = []) => {
+  const calculatedRows = rows.filter(sourceRowIsCalculated);
+  const unassessedRows = rows.filter((row) => !sourceRowIsCalculated(row));
+  const knownUnassessedValues = unassessedRows.map((row) => optionalMoney(row.attributedSaleValue));
+  return {
+    completeSourceCount: calculatedRows.length,
+    incompleteSourceCount: unassessedRows.length,
+    calculatedSaleValueSubtotal: calculatedRows.reduce(
+      (total, row) => total + Number(row.attributedSaleValue),
+      0,
+    ),
+    calculatedTaxSubtotal: calculatedRows.reduce((total, row) => total + Number(row.tax), 0),
+    calculatedNetSubtotal: calculatedRows.reduce((total, row) => total + Number(row.net), 0),
+    unassessedSaleValue: knownUnassessedValues.every((value) => value !== null)
+      ? knownUnassessedValues.reduce((total, value) => total + value, 0)
+      : null,
+  };
+};
+
 const exactShareFromRecord = (record = {}) => {
   const exact = normaliseFraction(record.shareNumerator, record.shareDenominator);
   return exact.error ? approximateFraction((Number(record.sharePercent) || 0) / 100) : exact;
@@ -1024,8 +1055,8 @@ export function buildTaxCalculationReport(
         : rows.length && rows.every((row) => row.attributedSaleValue !== null)
           ? rows.reduce((total, row) => total + row.attributedSaleValue, 0)
           : null;
-    const incompleteRowCount = rows.filter((row) => !row.selectedMethod).length;
-    const tax = incompleteRowCount
+    const sourceSummary = sourceCalculationSummary(rows);
+    const tax = sourceSummary.incompleteSourceCount
       ? null
       : rows.reduce((total, row) => total + Number(row.tax || 0), 0);
     return {
@@ -1034,23 +1065,63 @@ export function buildTaxCalculationReport(
       attributedSaleValue,
       tax,
       net: tax === null || attributedSaleValue === null ? null : attributedSaleValue - tax,
-      incompleteRowCount,
+      ...sourceSummary,
+      // Retained for existing consumers while the UI migrates to source terminology.
+      incompleteRowCount: sourceSummary.incompleteSourceCount,
+      taxStatus:
+        sourceSummary.incompleteSourceCount === 0
+          ? "complete"
+          : sourceSummary.completeSourceCount > 0
+            ? "partial"
+            : "pending",
     };
   });
-  const totalsComplete = vendors.every(
-    (vendor) => vendor.incompleteRowCount === 0 && vendor.attributedSaleValue !== null,
+  const totalsComplete =
+    vendors.length > 0 &&
+    vendors.every(
+      (vendor) => vendor.incompleteSourceCount === 0 && vendor.attributedSaleValue !== null,
+    );
+  const completeSourceCount = vendors.reduce(
+    (total, vendor) => total + vendor.completeSourceCount,
+    0,
   );
+  const incompleteSourceCount = vendors.reduce(
+    (total, vendor) => total + vendor.incompleteSourceCount,
+    0,
+  );
+  const unassessedSaleValues = vendors
+    .filter((vendor) => vendor.incompleteSourceCount > 0)
+    .map((vendor) => vendor.unassessedSaleValue);
   return {
     vendors,
-    totalSaleValue: vendors.every((vendor) => vendor.attributedSaleValue !== null)
-      ? vendors.reduce((total, vendor) => total + vendor.attributedSaleValue, 0)
-      : null,
+    totalSaleValue:
+      vendors.length > 0 && vendors.every((vendor) => vendor.attributedSaleValue !== null)
+        ? vendors.reduce((total, vendor) => total + vendor.attributedSaleValue, 0)
+        : null,
     totalTax: totalsComplete
       ? vendors.reduce((total, vendor) => total + Number(vendor.tax || 0), 0)
       : null,
     totalNet: totalsComplete
       ? vendors.reduce((total, vendor) => total + Number(vendor.net || 0), 0)
       : null,
+    calculatedSaleValueSubtotal: vendors.reduce(
+      (total, vendor) => total + vendor.calculatedSaleValueSubtotal,
+      0,
+    ),
+    calculatedTaxSubtotal: vendors.reduce(
+      (total, vendor) => total + vendor.calculatedTaxSubtotal,
+      0,
+    ),
+    calculatedNetSubtotal: vendors.reduce(
+      (total, vendor) => total + vendor.calculatedNetSubtotal,
+      0,
+    ),
+    unassessedSaleValue: unassessedSaleValues.every((value) => value !== null)
+      ? unassessedSaleValues.reduce((total, value) => total + value, 0)
+      : null,
+    completeSourceCount,
+    incompleteSourceCount,
+    taxStatus: totalsComplete ? "complete" : completeSourceCount > 0 ? "partial" : "pending",
     totalsComplete,
     excludedLotCount: report.taxSummary.excludedLotCount,
   };
