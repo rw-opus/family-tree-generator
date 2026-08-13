@@ -536,6 +536,39 @@ describe("provenance labels", () => {
 });
 
 describe("property vendor tax reports", () => {
+  it("accepts an original acquisition date for an outside company owner", () => {
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 250000,
+      owners: [
+        {
+          id: "company-title",
+          personId: "company",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      transfers: [],
+      saleLots: [],
+    };
+    const outsideParties = [{ id: "company", name: "Harbour Holdings Limited", type: "company" }];
+
+    const updated = setLivingInitialOwnerAcquisitionDate(
+      property,
+      [],
+      "company",
+      "2010-01-01",
+      outsideParties,
+      "company-title",
+    );
+
+    expect(updated.error).toBe("");
+    expect(updated.property.owners[0].acquisitionDate).toBe("2010-01-01");
+    const vendor = buildTaxCalculationReport(updated.property, [], outsideParties).vendors[0];
+    expect(vendor).toMatchObject({ id: "company", tax: 20000 });
+  });
+
   it("resolves a living original owner's exact initial fraction from its acquisition date", () => {
     const people = [{ id: "owner", fullName: "Maria Borg" }];
     const property = {

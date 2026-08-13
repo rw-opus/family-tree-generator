@@ -42,6 +42,7 @@ export function TaxCalculationPanel({
   outsideParties,
   vendorReport,
   onSelectPerson,
+  onSelectOutsideOwner,
 }) {
   const report = buildTaxCalculationReport(property, people, outsideParties, vendorReport);
   const historyEvents = buildSuccessionTrace({
@@ -51,6 +52,14 @@ export function TaxCalculationPanel({
     propertyReport: vendorReport,
   });
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const outsidePartyIds = new Set(outsideParties.map((party) => party.id));
+  const openParty = (partyId) => {
+    if (outsidePartyIds.has(partyId)) {
+      onSelectOutsideOwner?.(partyId);
+      return;
+    }
+    onSelectPerson?.(partyId);
+  };
   const hasSellingPrice = hasRecordedMoney(property.saleValue);
   const hasCalculatedSources = report.completeSourceCount > 0;
   const pendingVendors = report.vendors.filter((vendor) => vendor.incompleteSourceCount > 0);
@@ -61,7 +70,7 @@ export function TaxCalculationPanel({
       <div className="section-heading tax-calculation-heading">
         <div>
           <p className="eyebrow">Sale information</p>
-          <h3>Tax Calculation</h3>
+          <h2>Tax Calculation</h2>
         </div>
         <span className="tax-download-action">
           <button
@@ -136,11 +145,12 @@ export function TaxCalculationPanel({
             <article className="tax-calculation-vendor" key={vendor.id}>
               <header>
                 <span>
-                  {peopleById.has(vendor.id) && onSelectPerson ? (
+                  {(peopleById.has(vendor.id) && onSelectPerson) ||
+                  (outsidePartyIds.has(vendor.id) && onSelectOutsideOwner) ? (
                     <button
                       type="button"
                       className="tax-person-link"
-                      onClick={() => onSelectPerson(vendor.id)}
+                      onClick={() => openParty(vendor.id)}
                     >
                       {vendor.name}
                     </button>
@@ -179,11 +189,14 @@ export function TaxCalculationPanel({
                     {vendor.rows.map((row) => (
                       <tr key={row.id}>
                         <td data-label="Provenance">
-                          {row.provenancePersonId && onSelectPerson ? (
+                          {row.provenancePersonId &&
+                          ((peopleById.has(row.provenancePersonId) && onSelectPerson) ||
+                            (outsidePartyIds.has(row.provenancePersonId) &&
+                              onSelectOutsideOwner)) ? (
                             <button
                               type="button"
                               className="tax-provenance-link"
-                              onClick={() => onSelectPerson(row.provenancePersonId)}
+                              onClick={() => openParty(row.provenancePersonId)}
                             >
                               {row.provenance}
                             </button>

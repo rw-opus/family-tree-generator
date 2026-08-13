@@ -777,7 +777,7 @@ export async function openA3PrintPreview(node, title = "Family tree") {
   const scaleSlider = makeElement(previewWindow.document, "input", "");
   const scaleOutput = makeElement(previewWindow.document, "output", "a3-scale-output", "100%");
   const printButton = makeElement(previewWindow.document, "button", "", "Print all A3 pages");
-  const closeButton = makeElement(previewWindow.document, "button", "", "Close");
+  const closeButton = makeElement(previewWindow.document, "button", "", "Close preview");
   const scrollViewport = makeElement(previewWindow.document, "div", "a3-preview-scroll");
   const pages = makeElement(previewWindow.document, "main", "a3-preview-pages");
 

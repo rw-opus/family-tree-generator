@@ -1,14 +1,8 @@
 import { Home, Trash2 } from "lucide-react";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
-import { PropertyTransfers } from "./PropertyTransfers.jsx";
+import { PropertyOwnershipSummary } from "./PropertyOwnershipSummary.jsx";
 import { TaxCalculationPanel } from "./TaxCalculationPanel.jsx";
-
-const money = new Intl.NumberFormat("en-MT", {
-  style: "currency",
-  currency: "EUR",
-  maximumFractionDigits: 2,
-});
 
 const makeProperty = () => ({
   id: crypto.randomUUID(),
@@ -21,27 +15,17 @@ const makeProperty = () => ({
   saleLots: [],
 });
 
-const viaLabel = (via) => {
-  if (via === "starting") return "Direct owner";
-  if (via === "will") return "Inherited by will";
-  if (via === "unresolved") return "Unresolved";
-  return "Inherited by intestacy";
-};
-
 export function Properties({
   properties,
   people,
   outsideParties,
   singleProperty = false,
-  section = "all",
   onSelectPerson,
+  selectedOutsideOwnerId,
+  onSelectOutsideOwner,
+  onPickInitialOwner,
   onChange,
 }) {
-  const showSaleValue = section === "all" || section === "property";
-  const showProperty = section === "all" || section === "property";
-  const showOwnership = section === "all" || section === "ownership";
-  const showTax = section === "all" || section === "tax";
-  const peopleById = new Map(people.map((person) => [person.id, person]));
   const updateProperties = (nextProperties) => onChange({ properties: nextProperties });
   const updateProperty = (id, patch) =>
     updateProperties(
@@ -50,99 +34,79 @@ export function Properties({
   const addProperty = () => updateProperties([...properties, makeProperty()]);
   const removeProperty = (id) =>
     updateProperties(properties.filter((property) => property.id !== id));
-  const handleTransfersChange = (property) => (patch) =>
-    onChange({
-      properties: properties.map((item) =>
-        item.id === property.id ? { ...item, transfers: patch.transfers } : item,
-      ),
-      outsideParties: patch.outsideParties,
-    });
 
   return (
     <div className={`calculator-stack ${singleProperty ? "single-property-case" : ""}`}>
       {properties.map((property) => {
         const vendorReport = buildPropertyVendorTaxReport(property, people, outsideParties);
-        const { startingOwnership, ownership: result } = vendorReport;
+        const { startingOwnership, ownership } = vendorReport;
         const ownershipTotalLabel = (
           startingOwnership.enteredTotalPercent ?? startingOwnership.totalPercent
-        ).toLocaleString("en-MT", {
-          maximumFractionDigits: 2,
-        });
+        ).toLocaleString("en-MT", { maximumFractionDigits: 2 });
         const unassignedOwnershipLabel = startingOwnership.unassignedFraction?.denominator
           ? `${startingOwnership.unassignedFraction.numerator}/${startingOwnership.unassignedFraction.denominator}`
           : "an entered share";
         const ownershipNoticeTitle = startingOwnership.hasUnassignedOwners
           ? `Fractions total ${ownershipTotalLabel}%, but ${unassignedOwnershipLabel} has no owner.`
           : startingOwnership.isUnset
-            ? "No starting ownership has been set."
-            : `Starting ownership totals ${ownershipTotalLabel}%.`;
+            ? "No initial ownership has been entered."
+            : `Initial ownership totals ${ownershipTotalLabel}%.`;
         const ownershipNoticeDetail = startingOwnership.hasUnassignedOwners
-          ? "Choose a person for every positive fraction before calculated shares, transfers or tax figures are shown."
+          ? "Choose a person for every positive fraction."
           : startingOwnership.isUnset
-            ? "Enter who owned this property before any transfers."
-            : "Starting ownership must equal 100% before calculated shares, transfers or tax figures are shown.";
+            ? "Enter the original owner or owners below."
+            : "Initial ownership must equal 100%.";
 
         return (
-          <section className="editor-panel" key={property.id}>
-            {showProperty && (
-              <>
-                <div className="section-heading">
-                  <div>
-                    <p className="eyebrow">Property</p>
-                    <h2>
-                      {singleProperty ? "Property setup" : property.address || "Unnamed property"}
-                    </h2>
-                  </div>
-                  {!singleProperty && (
-                    <button
-                      type="button"
-                      className="icon-button"
-                      title="Remove property"
-                      onClick={() => removeProperty(property.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+          <section className="editor-panel unified-property-workspace" key={property.id}>
+            <section
+              id={
+                singleProperty
+                  ? "property-workspace-setup"
+                  : `property-workspace-setup-${property.id}`
+              }
+              className="property-workspace-section"
+            >
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Property</p>
+                  <h2>{singleProperty ? "Property & initial ownership" : property.address}</h2>
                 </div>
-                <div className="form-grid">
+                {!singleProperty && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Remove property"
+                    onClick={() => removeProperty(property.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+
+              <div className="form-grid">
+                <label className="full-width">
+                  Address
+                  <input
+                    value={property.address || ""}
+                    onChange={(event) =>
+                      updateProperty(property.id, { address: event.target.value })
+                    }
+                    placeholder="Full address of the property"
+                  />
+                </label>
+                {!singleProperty && (
                   <label className="full-width">
-                    Address
+                    Description
                     <input
-                      value={property.address}
+                      value={property.description || ""}
                       onChange={(event) =>
-                        updateProperty(property.id, { address: event.target.value })
+                        updateProperty(property.id, { description: event.target.value })
                       }
-                      placeholder="Full address of the property"
+                      placeholder="Optional registry, title or internal reference"
                     />
                   </label>
-                  {!singleProperty && (
-                    <label className="full-width">
-                      Description
-                      <input
-                        value={property.description}
-                        onChange={(event) =>
-                          updateProperty(property.id, { description: event.target.value })
-                        }
-                        placeholder="Optional registry, title or internal reference"
-                      />
-                    </label>
-                  )}
-                </div>
-              </>
-            )}
-
-            {!startingOwnership.isComplete && (
-              <div className="ownership-blocking-notice" role="alert">
-                <strong>{ownershipNoticeTitle}</strong>
-                <span>
-                  {ownershipNoticeDetail}
-                  {!showProperty && " Open Setup to complete the initial title."}
-                </span>
-              </div>
-            )}
-
-            {showSaleValue && (
-              <div className="form-grid property-sale-value">
+                )}
                 <label className="full-width">
                   Value of the property being sold today (€) (optional)
                   <input
@@ -157,92 +121,118 @@ export function Properties({
                   />
                 </label>
               </div>
-            )}
 
-            {showProperty && (
+              {!startingOwnership.isComplete && (
+                <div className="ownership-blocking-notice" role="alert">
+                  <strong>{ownershipNoticeTitle}</strong>
+                  <span>{ownershipNoticeDetail}</span>
+                </div>
+              )}
+
               <InitialOwnershipEditor
                 property={property}
                 people={people}
+                outsideParties={outsideParties}
                 onChange={(owners) => updateProperty(property.id, { owners })}
-                helperText="Select any person already on the family tree and enter the fraction originally owned. Initial owners may be added whenever they are identified."
-              />
-            )}
-
-            {showOwnership && startingOwnership.isComplete && (
-              <div className="automatic-heirs">
-                <strong>Calculated title after inheritance</strong>
-                <small>
-                  The initial fractions are followed automatically through intestacy, wills and
-                  recorded transfers.
-                </small>
-                {result.breakdown.length ? (
-                  result.breakdown.map((row) => {
-                    const person = peopleById.get(row.ownerId);
-                    return (
-                      <div key={`${row.ownerId}-${row.via}`}>
-                        <span>
-                          {person && onSelectPerson ? (
-                            <button
-                              type="button"
-                              className="ownership-person-link"
-                              onClick={() => onSelectPerson(person.id)}
-                            >
-                              {person.fullName || "Unnamed person"}
-                            </button>
-                          ) : (
-                            person?.fullName || "Unnamed person"
-                          )}
-                          <small> · {viaLabel(row.via)}</small>
-                        </span>
-                        <b>
-                          {row.numerator}/{row.denominator} ·{" "}
-                          {row.sharePercent.toLocaleString("en-MT", { maximumFractionDigits: 2 })}%
-                        </b>
-                      </div>
-                    );
+                helperText="Choose the original owner or owners. Fractions must total 100%."
+                onPickFromTree={onPickInitialOwner}
+                onCreateOutsideParty={(party, owners) =>
+                  onChange({
+                    properties: properties.map((candidate) =>
+                      candidate.id === property.id ? { ...candidate, owners } : candidate,
+                    ),
+                    outsideParties: [...outsideParties, party],
                   })
-                ) : (
-                  <small>Complete the selected initial owners to calculate the later title.</small>
-                )}
-                {property.marketValue && (
-                  <small>Market value {money.format(Number(property.marketValue) || 0)}</small>
-                )}
+                }
+              />
+            </section>
+
+            <section
+              id={
+                singleProperty
+                  ? "property-workspace-ownership"
+                  : `property-workspace-ownership-${property.id}`
+              }
+              className="property-workspace-section"
+            >
+              <div className="property-workspace-section-heading">
+                <p className="eyebrow">Ownership</p>
+                <h2>Current ownership & history</h2>
               </div>
-            )}
+              {startingOwnership.isComplete ? (
+                <PropertyOwnershipSummary
+                  people={people}
+                  outsideParties={outsideParties}
+                  transfers={property.transfers || []}
+                  startingOwnership={ownership.ownershipByPerson}
+                  property={property}
+                  vendorReport={vendorReport}
+                  onSelectPerson={onSelectPerson}
+                  selectedOutsideOwnerId={selectedOutsideOwnerId}
+                  onSelectOutsideOwner={onSelectOutsideOwner}
+                  onOutsideOwnerTransactionsChange={({
+                    property: nextProperty,
+                    transfers,
+                    outsideParties: nextParties,
+                  }) =>
+                    onChange({
+                      properties: properties.map((candidate) =>
+                        candidate.id === property.id
+                          ? nextProperty || { ...candidate, transfers }
+                          : candidate,
+                      ),
+                      outsideParties: nextParties,
+                    })
+                  }
+                />
+              ) : (
+                <p className="helper-text">
+                  Complete the initial ownership above to calculate the current title.
+                </p>
+              )}
+            </section>
 
-            {showOwnership && startingOwnership.isComplete && (
-              <PropertyTransfers
-                people={people}
-                outsideParties={outsideParties}
-                transfers={property.transfers || []}
-                startingOwnership={result.ownershipByPerson}
-                property={property}
-                vendorReport={vendorReport}
-                onChange={handleTransfersChange(property)}
-              />
-            )}
-
-            {showTax && startingOwnership.isComplete && (
-              <TaxCalculationPanel
-                property={property}
-                people={people}
-                outsideParties={outsideParties}
-                vendorReport={vendorReport}
-                onSelectPerson={onSelectPerson}
-              />
-            )}
+            <section
+              id={
+                singleProperty ? "property-workspace-tax" : `property-workspace-tax-${property.id}`
+              }
+              className="property-workspace-section"
+            >
+              {startingOwnership.isComplete ? (
+                <TaxCalculationPanel
+                  property={property}
+                  people={people}
+                  outsideParties={outsideParties}
+                  vendorReport={vendorReport}
+                  onSelectPerson={onSelectPerson}
+                  onSelectOutsideOwner={onSelectOutsideOwner}
+                />
+              ) : (
+                <div className="tax-calculation-panel">
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">Sale information</p>
+                      <h2>Tax Calculation</h2>
+                    </div>
+                  </div>
+                  <p className="helper-text">
+                    Complete the initial ownership above to calculate tax.
+                  </p>
+                </div>
+              )}
+            </section>
           </section>
         );
       })}
-      {showProperty && !singleProperty && (
+
+      {!singleProperty && (
         <button type="button" className="primary-button" onClick={addProperty}>
           <Home size={16} /> Add property
         </button>
       )}
-      {showProperty && !singleProperty && !properties.length && (
+      {!singleProperty && !properties.length && (
         <p className="helper-text">
-          No properties yet. Add a property, then assign its starting owners from the family tree —
-          the automatic cascade will follow any deceased owner to their heirs.
+          No properties yet. Add a property, then assign its initial owners from the family tree.
         </p>
       )}
     </div>

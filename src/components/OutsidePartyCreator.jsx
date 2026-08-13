@@ -7,7 +7,13 @@ const blankParty = () => ({
   registrationNumber: "",
 });
 
-export function OutsidePartyCreator({ onCreate, onCancel }) {
+export function OutsidePartyCreator({
+  onCreate,
+  onCancel,
+  submitLabel = "Add as heir",
+  helperText = "This party remains outside the family tree and can still hold or sell a property share.",
+  ariaLabelPrefix = "Unconnected heir",
+}) {
   const [draft, setDraft] = useState(blankParty);
 
   const submit = (event) => {
@@ -28,7 +34,7 @@ export function OutsidePartyCreator({ onCreate, onCancel }) {
       <label>
         <span>Type</span>
         <select
-          aria-label="Unconnected heir type"
+          aria-label={`${ariaLabelPrefix} type`}
           value={draft.type}
           onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}
         >
@@ -41,7 +47,7 @@ export function OutsidePartyCreator({ onCreate, onCancel }) {
         <span className="outside-party-name-input">
           {draft.type === "company" ? <Building2 size={15} /> : <UserRound size={15} />}
           <input
-            aria-label="Unconnected heir name"
+            aria-label={`${ariaLabelPrefix} name`}
             value={draft.name}
             onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
             placeholder={draft.type === "company" ? "Company Limited" : "Full name"}
@@ -52,7 +58,7 @@ export function OutsidePartyCreator({ onCreate, onCancel }) {
         <label>
           <span>Registration (optional)</span>
           <input
-            aria-label="Unconnected company registration number"
+            aria-label={`${ariaLabelPrefix} company registration number`}
             value={draft.registrationNumber}
             onChange={(event) =>
               setDraft((current) => ({
@@ -65,7 +71,7 @@ export function OutsidePartyCreator({ onCreate, onCancel }) {
       )}
       <div>
         <button type="submit" className="primary-button" disabled={!draft.name.trim()}>
-          Add as heir
+          {submitLabel}
         </button>
         {onCancel && (
           <button type="button" className="secondary-button" onClick={onCancel}>
@@ -73,9 +79,7 @@ export function OutsidePartyCreator({ onCreate, onCancel }) {
           </button>
         )}
       </div>
-      <small>
-        This party remains outside the family tree and can still hold or sell a property share.
-      </small>
+      {helperText && <small>{helperText}</small>}
     </form>
   );
 }

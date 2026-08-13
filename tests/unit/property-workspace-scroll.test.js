@@ -35,4 +35,22 @@ describe("property workspace scrolling", () => {
     expect(historyRule).toMatch(/max-height:\s*none/);
     expect(historyRule).toMatch(/overflow-y:\s*visible/);
   });
+
+  it("keeps the unified workspace navigation visible while the page scrolls", () => {
+    const navigationRule = blockFor(stylesheet, ".property-workspace-nav-shell");
+    const sectionRule = blockFor(stylesheet, ".property-workspace-section");
+
+    expect(navigationRule).toMatch(/position:\s*sticky/);
+    expect(navigationRule).toMatch(/top:\s*0/);
+    expect(sectionRule).toMatch(/scroll-margin-top:/);
+  });
+
+  it("shows every workspace destination without horizontal scrolling on phones", () => {
+    const mobileRules = blockFor(stylesheet, "@media (max-width: 520px)");
+    const menuRule = blockFor(mobileRules, ".property-workspace-menu");
+
+    expect(menuRule).toMatch(/display:\s*grid/);
+    expect(menuRule).toMatch(/grid-template-columns:\s*repeat\([23],/);
+    expect(menuRule).toMatch(/overflow:\s*visible/);
+  });
 });

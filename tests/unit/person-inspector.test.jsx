@@ -2121,6 +2121,65 @@ describe("PersonInspector", () => {
     expect(onSelectPerson).toHaveBeenCalledWith("deceased");
   });
 
+  it("routes a family recipient's outside provenance source to its outside-owner card", () => {
+    const onSelectPerson = vi.fn();
+    const onSelectOutsideOwner = vi.fn();
+    const people = [{ id: "donee", fullName: "Maria Borg", spouseIds: [] }];
+    const outsideParties = [{ id: "company", name: "Harbour Holdings Limited", type: "company" }];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "250000",
+      owners: [
+        {
+          id: "company-title",
+          personId: "company",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      transfers: [
+        {
+          id: "company-gift",
+          kind: "donation",
+          sellerId: "company",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "whole-property",
+          date: "2025-01-01",
+        },
+      ],
+      declarations: [],
+      saleLots: [],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          outsideParties={outsideParties}
+          properties={[property]}
+          ownershipByPerson={{ donee: 1 }}
+          ownershipFractionsByPerson={{ donee: { numerator: 1, denominator: 1 } }}
+          selectedPersonId="donee"
+          onChange={vi.fn()}
+          onSelectPerson={onSelectPerson}
+          onSelectOutsideOwner={onSelectOutsideOwner}
+        />,
+      ),
+    );
+
+    const sourceButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Open Harbour Holdings Limited original acquisition details"),
+    );
+    expect(sourceButton).toBeTruthy();
+    act(() => sourceButton.click());
+
+    expect(onSelectOutsideOwner).toHaveBeenCalledWith("company");
+    expect(onSelectPerson).not.toHaveBeenCalled();
+  });
+
   it("records a donation-time value and recalculates an older donated share immediately", () => {
     let latestProperty;
     const people = [
@@ -4472,6 +4531,90 @@ describe("PersonInspector provenance designation", () => {
     });
   });
 
+  it("creates an outside company from the person-card transfer workflow", () => {
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    const onOutsidePartiesChange = vi.fn();
+    const onRecordDonation = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[property]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          outsideParties={[]}
+          onChange={vi.fn()}
+          onOutsidePartiesChange={onOutsidePartiesChange}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
+    const acquirerSource = container.querySelector('select[aria-label="Acquirer source"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirerSource,
+        "new",
+      );
+      acquirerSource.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const acquirerType = container.querySelector('select[aria-label="New acquirer type"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(
+        acquirerType,
+        "company",
+      );
+      acquirerType.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const companyName = container.querySelector('input[aria-label="New acquirer full name"]');
+    const companyRegistration = container.querySelector(
+      'input[aria-label="New company registration number"]',
+    );
+    const donationDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        companyName,
+        "Harbour Holdings Limited",
+      );
+      companyName.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        companyRegistration,
+        "C 12345",
+      );
+      companyRegistration.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "01/01/2021",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Record donation",
+    );
+    act(() => submit.click());
+
+    expect(onOutsidePartiesChange).not.toHaveBeenCalled();
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    const [company] = onRecordDonation.mock.calls[0][0].outsideParties;
+    expect(company).toMatchObject({
+      type: "company",
+      name: "Harbour Holdings Limited",
+      registrationNumber: "C 12345",
+    });
+    expect(onRecordDonation.mock.calls[0][0]).toMatchObject({
+      people,
+      outsideParties: [company],
+      transfer: {
+        buyerId: company.id,
+        kind: "donation",
+      },
+    });
+  });
+
   it("records all of the share held on the entered deed date", () => {
     const vendorReport = buildPropertyVendorTaxReport(property, people, []);
     const onRecordDonation = vi.fn();
@@ -4659,6 +4802,61 @@ describe("PersonInspector provenance designation", () => {
     act(() => cancel.click());
     expect(onUpdateInterVivosTransfer).toHaveBeenCalledTimes(1);
     expect(container.querySelector(".person-donation-form")).toBeNull();
+  });
+
+  it("preserves the exact whole-property amount when editing a legacy seller-holding transfer", () => {
+    const legacyProperty = {
+      ...property,
+      transfers: [
+        ...property.transfers,
+        {
+          id: "legacy-sale",
+          kind: "sale",
+          sellerId: "seller",
+          buyerId: "other",
+          numerator: 1,
+          denominator: 2,
+          amountType: "seller-holding",
+          date: "2021-01-01",
+        },
+      ],
+    };
+    const onUpdateInterVivosTransfer = vi.fn();
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[legacyProperty]}
+          vendorReport={buildPropertyVendorTaxReport(legacyProperty, people, [])}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={vi.fn()}
+          onUpdateInterVivosTransfer={onUpdateInterVivosTransfer}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector('button[aria-label="Edit sale record"]').click());
+    expect(container.querySelector('input[aria-label="Transfer numerator"]').value).toBe("3");
+    expect(container.querySelector('input[aria-label="Transfer denominator"]').value).toBe("8");
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Save sale")
+        .click(),
+    );
+
+    expect(onUpdateInterVivosTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transfer: expect.objectContaining({
+          id: "legacy-sale",
+          numerator: "3",
+          denominator: "8",
+          amountType: "whole-property",
+        }),
+      }),
+    );
   });
 
   it("shows an invalid saved transfer and its error instead of hiding it", () => {

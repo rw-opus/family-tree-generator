@@ -148,7 +148,7 @@ function PendingSource({
 }
 
 /**
- * Compact person-card summary and resolution actions for Final Withholding Tax.
+ * Compact owner-card summary and resolution actions for Final Withholding Tax.
  * The Tax Calculation screen remains read-only; source data is completed here or
  * on the deceased source person's causa mortis record.
  */
@@ -165,7 +165,7 @@ export function FinalWithholdingTaxSection({
       <section className="final-withholding-tax-section" aria-label="Final Withholding Tax">
         <div className="fwt-status-row">
           <span>Final Withholding Tax</span>
-          <strong>{isPersonDeceased ? "Not applicable" : "Not calculated"}</strong>
+          <strong>{isPersonDeceased ? "Not applicable" : "Not a current vendor"}</strong>
         </div>
       </section>
     );

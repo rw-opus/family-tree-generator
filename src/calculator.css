@@ -606,12 +606,6 @@ button.index-row.selected {
   font-size: 0.78rem;
   font-weight: 800;
 }
-.ownership-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.85fr);
-  gap: 1rem;
-  margin-top: 1rem;
-}
 .ownership-panel h3 {
   margin: 0 0 0.65rem;
   color: #3f4d60;
@@ -644,20 +638,6 @@ button.index-row.selected {
 .owner-share {
   text-align: right;
 }
-.party-icon {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border-radius: 50%;
-  background: #edf6f0;
-  color: #004225;
-}
-.party-icon.company {
-  border-radius: 5px;
-  background: #f1eaf4;
-  color: #6b3f79;
-}
 .ledger-total {
   display: flex;
   justify-content: space-between;
@@ -675,24 +655,6 @@ button.index-row.selected {
   background: #fff0ee;
   color: #9f1f1f;
 }
-.transfer-form {
-  display: grid;
-  gap: 0.65rem;
-  border-radius: 7px;
-  background: #f7faf8;
-  padding: 0.85rem;
-}
-.transfer-fraction {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: end;
-  gap: 0.55rem;
-}
-.transfer-fraction > span {
-  padding-bottom: 0.7rem;
-  font-size: 1.3rem;
-  font-weight: 800;
-}
 .form-grid.compact {
   margin-top: 0;
 }
@@ -704,23 +666,6 @@ button.index-row.selected {
   padding: 0.65rem;
   font-size: 0.8rem;
   font-weight: 700;
-}
-.outside-party {
-  margin-top: 1rem;
-  border-top: 1px solid #d8e2dc;
-  padding-top: 0.8rem;
-}
-.outside-party summary {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: #004225;
-  cursor: pointer;
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-.outside-party .secondary-button {
-  align-self: end;
 }
 .transfer-history {
   margin-top: 1rem;
@@ -1115,7 +1060,6 @@ button:disabled {
   font-weight: 700;
 }
 @media (max-width: 800px) {
-  .ownership-grid,
   .declaration-layout {
     grid-template-columns: 1fr;
   }
