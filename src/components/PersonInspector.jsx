@@ -22,10 +22,7 @@ import {
   applyParentSuggestions,
   solePartnerParentSuggestions,
 } from "../domain/parentSuggestions.js";
-import {
-  isCompletedCausaMortisDeclaration,
-  validateCausaMortisDeclaration,
-} from "../domain/causaMortisCoverage.js";
+import { validateCausaMortisDeclaration } from "../domain/causaMortisCoverage.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../domain/article5A.js";
 import {
   editedIntestacyAllocations,
@@ -57,7 +54,6 @@ import {
 import { isValidIsoDate, isoDateToDisplay } from "../domain/dateFormat.js";
 import { operativeWillFromRecords, personWills, personWithWills } from "../domain/wills.js";
 import {
-  validateCausaMortisDateChronology,
   validateRelationshipDateChronology,
   validateTransferDateChronology,
   validateWillDateChronology,
@@ -88,6 +84,7 @@ import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
 import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
 import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
+import { CausaMortisSection } from "./personInspector/CausaMortisSection.jsx";
 
 const relationshipActions = [
   { key: "father", label: "Father", icon: UserRound },
@@ -136,13 +133,6 @@ function ownershipLabel(share = 0, shareDisplay = "both", exactFraction = null) 
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;
   return `${fractionText} · ${percentageText}`;
-}
-
-function fractionLabel(share = 0, exactFraction = null) {
-  const fraction = exactFraction?.denominator
-    ? exactFraction
-    : approximateFraction(Math.max(0, share));
-  return `${fraction.numerator}/${fraction.denominator}`;
 }
 
 const money = new Intl.NumberFormat("en-MT", {
@@ -1331,7 +1321,6 @@ export function PersonInspector({
       }),
     );
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
-  const canStartFirstCausaMortisDeclaration = causaMortisDeclarations.length === 0;
   const suggestedWillHeirsConfirmed =
     selectedPerson.willHeirsConfirmed === true &&
     selectedPerson.willHeirsConfirmationSource === "suggested";
@@ -2756,323 +2745,23 @@ export function PersonInspector({
                   )}
 
                   {requiresCausaMortisDetails && (
-                    <div className="causa-mortis-records">
-                      <div className="causa-mortis-heading">
-                        <div>
-                          <strong>Causa Mortis</strong>
-                          {hasUnknownCausaMortisDeathDate && (
-                            <small>Enter the exact death date.</small>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={handleCausaMortisDeclarationAction}
-                          title={
-                            canStartFirstCausaMortisDeclaration
-                              ? "Record the first Declaration Causa Mortis."
-                              : "Insert another Declaration Causa Mortis."
-                          }
-                        >
-                          <FilePlus2 size={14} />
-                          Insert CM Declaration
-                        </button>
-                      </div>
-
-                      {causaMortisCoverage.length > 0 && (
-                        <div
-                          className="causa-mortis-coverage"
-                          aria-label="Causa mortis share coverage"
-                        >
-                          {causaMortisCoverage.map((row) => {
-                            const difference = Math.abs(row.difference);
-                            const property = properties.find(
-                              (candidate) => candidate.id === row.propertyId,
-                            );
-                            const sellingPrice = Number(property?.saleValue);
-                            const hasSellingPrice =
-                              Number.isFinite(sellingPrice) && sellingPrice > 0;
-                            const requiredShareSaleValue = sellingPrice * row.requiredShare;
-                            const differenceLabel =
-                              row.status === "date-unknown"
-                                ? row.deathDateText
-                                  ? `Resolve date (${
-                                      isoDateToDisplay(row.deathDateText) || row.deathDateText
-                                    })`
-                                  : "Enter exact death date"
-                                : row.status === "allocation-unresolved"
-                                  ? "Check declarants"
-                                  : row.status === "mixed"
-                                    ? `Missing ${fractionLabel(
-                                        fractionToNumber(row.missingFraction),
-                                        row.missingFraction,
-                                      )} · Excess ${fractionLabel(
-                                        fractionToNumber(row.excessFraction),
-                                        row.excessFraction,
-                                      )}`
-                                    : row.status === "under"
-                                      ? `Missing ${fractionLabel(
-                                          row.missingFraction
-                                            ? fractionToNumber(row.missingFraction)
-                                            : difference,
-                                          row.missingFraction,
-                                        )}`
-                                      : row.status === "over"
-                                        ? `Excess ${fractionLabel(
-                                            row.excessFraction
-                                              ? fractionToNumber(row.excessFraction)
-                                              : difference,
-                                            row.excessFraction,
-                                          )}`
-                                        : "Complete";
-                            const recipientIssues = (row.recipientCoverage || [])
-                              .filter((recipient) => recipient.status !== "complete")
-                              .map((recipient) => {
-                                const relevantFraction =
-                                  recipient.status === "under"
-                                    ? recipient.missingFraction
-                                    : recipient.excessFraction;
-                                return `${recipient.name}: ${
-                                  recipient.status === "under" ? "missing" : "excess"
-                                } ${fractionLabel(
-                                  fractionToNumber(relevantFraction),
-                                  relevantFraction,
-                                )}`;
-                              });
-                            return (
-                              <button
-                                type="button"
-                                className={`causa-mortis-coverage-row ${row.status}`}
-                                key={row.propertyId}
-                                onClick={() => handleCausaMortisCoverageAction(row.propertyId)}
-                                aria-label={`Insert another causa mortis declaration for ${row.propertyAddress}`}
-                                title="Insert another Declaration Causa Mortis for this property."
-                              >
-                                <span>
-                                  <strong>{row.propertyAddress}</strong>
-                                  <small>
-                                    {row.status === "date-unknown"
-                                      ? "Coverage cannot be decided from an unknown or approximate death date."
-                                      : `Required ${fractionLabel(
-                                          row.requiredShare,
-                                          row.requiredFraction,
-                                        )} · Declared ${fractionLabel(
-                                          row.declaredShare,
-                                          row.declaredFraction,
-                                        )}`}
-                                  </small>
-                                  {recipientIssues.length > 0 && (
-                                    <small>{recipientIssues.join(" · ")}</small>
-                                  )}
-                                  {row.status !== "date-unknown" && hasSellingPrice && (
-                                    <small>
-                                      Required share of selling price{" "}
-                                      {money.format(requiredShareSaleValue)}
-                                    </small>
-                                  )}
-                                </span>
-                                <b>{differenceLabel}</b>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {!causaMortisDeclarations.length && (
-                        <small className="causa-mortis-empty">No declaration recorded.</small>
-                      )}
-
-                      {causaMortisDeclarations.map((declaration, index) => {
-                        const chronologyError = declaration.date
-                          ? validateCausaMortisDateChronology(
-                              declaration.date,
-                              selectedPerson.dateOfDeath,
-                            )
-                          : "";
-                        const declarationError =
-                          causaMortisErrors[declaration.id] || chronologyError;
-                        return (
-                          <div
-                            className={`causa-mortis-card ${
-                              isCompletedCausaMortisDeclaration(declaration) ? "complete" : "draft"
-                            } ${chronologyError ? "chronology-invalid" : ""}`}
-                            key={declaration.id}
-                          >
-                            <div className="causa-mortis-card-heading">
-                              <strong>Declaration Causa Mortis {index + 1}</strong>
-                              <button
-                                type="button"
-                                className="icon-button"
-                                aria-label={`Remove causa mortis declaration ${index + 1}`}
-                                onClick={() => removeCausaMortisDeclaration(declaration.id)}
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                            <label>
-                              <span>Property</span>
-                              <select
-                                aria-label={`Property declared causa mortis ${index + 1}`}
-                                required
-                                value={
-                                  declaration.propertyId ||
-                                  (properties.length === 1 ? properties[0].id : "")
-                                }
-                                onChange={(event) =>
-                                  updateCausaMortisDeclaration(declaration.id, {
-                                    propertyId: event.target.value,
-                                  })
-                                }
-                              >
-                                <option value="">Select property</option>
-                                {properties.map((property) => (
-                                  <option key={property.id} value={property.id}>
-                                    {property.address || property.description || "Unnamed property"}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              <span>
-                                Share declared <abbr title="Declaration Causa Mortis">CM</abbr>
-                              </span>
-                              <span className="causa-mortis-fraction">
-                                <input
-                                  aria-label={`Causa mortis share numerator ${index + 1}`}
-                                  type="number"
-                                  min="0"
-                                  max={MAX_FRACTION_INTEGER}
-                                  step="1"
-                                  required
-                                  value={declaration.declaredShareNumerator ?? ""}
-                                  onChange={(event) =>
-                                    updateCausaMortisDeclaration(declaration.id, {
-                                      declaredShareNumerator: event.target.value,
-                                    })
-                                  }
-                                />
-                                <b>/</b>
-                                <input
-                                  aria-label={`Causa mortis share denominator ${index + 1}`}
-                                  type="number"
-                                  min="1"
-                                  max={MAX_FRACTION_INTEGER}
-                                  step="1"
-                                  required
-                                  value={declaration.declaredShareDenominator ?? ""}
-                                  onChange={(event) =>
-                                    updateCausaMortisDeclaration(declaration.id, {
-                                      declaredShareDenominator: event.target.value,
-                                    })
-                                  }
-                                />
-                              </span>
-                            </label>
-                            <label>
-                              <span>Date of Declaration Causa Mortis</span>
-                              <DateInput
-                                aria-label={`Date of Declaration Causa Mortis ${index + 1}`}
-                                required
-                                value={declaration.date || ""}
-                                onChange={(value) =>
-                                  updateCausaMortisDeclaration(declaration.id, {
-                                    date: value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Notary</span>
-                              <input
-                                aria-label={`Notary for Declaration Causa Mortis ${index + 1}`}
-                                required
-                                value={declaration.notaryName || ""}
-                                onChange={(event) =>
-                                  updateCausaMortisDeclaration(declaration.id, {
-                                    notaryName: event.target.value,
-                                  })
-                                }
-                                placeholder="Notary's full name"
-                              />
-                            </label>
-                            <label>
-                              <span>
-                                Value declared
-                                {allSuccessionHeirsDeceased ? " (optional)" : ""}
-                              </span>
-                              <span className="currency-input">
-                                <b>€</b>
-                                <input
-                                  aria-label={`Immovable property value declared causa mortis ${index + 1}`}
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  required={!allSuccessionHeirsDeceased}
-                                  value={declaration.immovablePropertyValue || ""}
-                                  onChange={(event) =>
-                                    updateCausaMortisDeclaration(declaration.id, {
-                                      immovablePropertyValue: event.target.value,
-                                    })
-                                  }
-                                />
-                              </span>
-                            </label>
-                            <div className="causa-mortis-declarants">
-                              <strong>Declarants / heirs</strong>
-                              <small>Untick anyone who did not declare.</small>
-                              {declarationCandidates.length ? (
-                                <div>
-                                  {declarationCandidates.map((party) => (
-                                    <label key={party.id}>
-                                      <input
-                                        type="checkbox"
-                                        checked={(declaration.declarantPersonIds || []).includes(
-                                          party.id,
-                                        )}
-                                        onChange={() =>
-                                          toggleCausaMortisDeclarant(declaration, party.id)
-                                        }
-                                      />
-                                      {personSelectionLabel(party)}
-                                    </label>
-                                  ))}
-                                </div>
-                              ) : (
-                                <small>
-                                  Add or identify the heirs in this case before selecting
-                                  declarants.
-                                </small>
-                              )}
-                            </div>
-                            <small
-                              className={
-                                allSuccessionHeirsDeceased
-                                  ? "causa-mortis-value-note optional"
-                                  : "causa-mortis-value-note required"
-                              }
-                            >
-                              {allSuccessionHeirsDeceased
-                                ? "Value is optional because every identified heir is deceased."
-                                : successionHeirs.length
-                                  ? "Value is required while an identified heir is living."
-                                  : "Value is required until the heirs are identified."}
-                            </small>
-                            <div className="causa-mortis-card-actions">
-                              {declarationError && <small role="alert">{declarationError}</small>}
-                              <button
-                                type="button"
-                                className="primary-button"
-                                disabled={isCompletedCausaMortisDeclaration(declaration)}
-                                onClick={() => completeCausaMortisDeclaration(declaration)}
-                              >
-                                <Check size={14} />
-                                OK
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <CausaMortisSection
+                      declarations={causaMortisDeclarations}
+                      coverage={causaMortisCoverage}
+                      properties={properties}
+                      candidates={declarationCandidates}
+                      candidateLabel={personSelectionLabel}
+                      dateOfDeath={selectedPerson.dateOfDeath || ""}
+                      allHeirsDeceased={allSuccessionHeirsDeceased}
+                      hasUnknownDeathDate={hasUnknownCausaMortisDeathDate}
+                      errors={causaMortisErrors}
+                      onAddDeclaration={handleCausaMortisDeclarationAction}
+                      onAddDeclarationForProperty={handleCausaMortisCoverageAction}
+                      onUpdateDeclaration={updateCausaMortisDeclaration}
+                      onRemoveDeclaration={removeCausaMortisDeclaration}
+                      onToggleDeclarant={toggleCausaMortisDeclarant}
+                      onCompleteDeclaration={completeCausaMortisDeclaration}
+                    />
                   )}
                 </div>
               )}

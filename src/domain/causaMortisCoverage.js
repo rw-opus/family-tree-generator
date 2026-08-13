@@ -134,28 +134,12 @@ export const isCompletedCausaMortisDeclaration = (declaration = {}) =>
 
 export function validateCausaMortisDeclaration(
   declaration = {},
-  {
-    valueRequired = true,
-    availableShare = Number.POSITIVE_INFINITY,
-    availableShareFraction = null,
-    dateOfDeath = "",
-  } = {},
+  { valueRequired = true, dateOfDeath = "" } = {},
 ) {
   if (!declaration.propertyId) return "Select the property.";
 
   const share = causaMortisDeclaredShare(declaration);
   if (share <= 0) return "Enter a positive fraction declared causa mortis.";
-  const exactAvailableShare = availableShareFraction?.denominator
-    ? availableShareFraction
-    : Number.isFinite(availableShare)
-      ? approximateFraction(availableShare)
-      : null;
-  if (
-    exactAvailableShare &&
-    compareFractions(causaMortisDeclaredFraction(declaration), exactAvailableShare) > 0
-  ) {
-    return "The declared fraction is greater than the deceased's remaining share.";
-  }
   if (!declaration.date) return "Enter the date of the Declaration Causa Mortis.";
   const chronologyError = validateCausaMortisDateChronology(declaration.date, dateOfDeath);
   if (chronologyError) return chronologyError;

@@ -8,7 +8,7 @@ import {
 } from "../domain/people.js";
 import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
-import { FamilyPersonCard } from "./familyTree/FamilyPersonCard.jsx";
+import { FamilyPersonCard, familyPersonCardState } from "./familyTree/FamilyPersonCard.jsx";
 import { familyGenerationById, widestFamilyGeneration } from "./familyTree/generationRows.js";
 import { LayeredFamilyTree } from "./familyTree/LayeredFamilyTree.jsx";
 import { personCardName } from "./familyTree/treePresentation.js";
@@ -41,6 +41,7 @@ function TreePanel({
   toolbar,
   navigation,
   navigator,
+  showActionRequiredKey,
   children,
 }) {
   return (
@@ -50,11 +51,12 @@ function TreePanel({
         <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
           <Printer size={16} /> Print preview
         </button>
-        <p className="tree-required-data-key">
-          <span aria-hidden="true" />
-          <strong>Red means action required:</strong> open that person&apos;s card for the missing
-          detail or section-specific historical-law warning.
-        </p>
+        {showActionRequiredKey && (
+          <p className="tree-required-data-key">
+            <span aria-hidden="true" />
+            Red means action required
+          </p>
+        )}
       </header>
       {navigation}
       <div className="family-chart tree-canvas-scroll-region" ref={treeRef}>
@@ -126,6 +128,19 @@ export function FamilyTreeCanvas({
   const widestGeneration = useMemo(
     () => widestFamilyGeneration(generationByPerson),
     [generationByPerson],
+  );
+  const showActionRequiredKey = useMemo(
+    () =>
+      cleanPeople.some(
+        (person) =>
+          familyPersonCardState({
+            person,
+            people: cleanPeople,
+            historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
+            causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
+          }).redActionRequired,
+      ),
+    [causaMortisCoverageByPerson, cleanPeople, historicalLawWarningsByPerson],
   );
 
   const centerPerson = useCallback(
@@ -481,6 +496,7 @@ export function FamilyTreeCanvas({
         toolbar={toolbar}
         navigation={navigation}
         navigator={navigator}
+        showActionRequiredKey={showActionRequiredKey}
       >
         <LayeredFamilyTree people={relationalPeople} renderCard={renderCard} zoom={zoom} />
       </TreePanel>
@@ -504,6 +520,7 @@ export function FamilyTreeCanvas({
       toolbar={toolbar}
       navigation={navigation}
       navigator={navigator}
+      showActionRequiredKey={showActionRequiredKey}
     >
       <DesignationFamilyTree
         deceased={deceased}

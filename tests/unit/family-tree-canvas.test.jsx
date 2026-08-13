@@ -81,6 +81,7 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector('[data-person-id="a"] .family-node-surname').textContent).toBe(
       "Person",
     );
+    expect(container.querySelector(".tree-required-data-key")).toBeNull();
   });
 
   it("uses the layered layout as soon as anyone is linked", () => {
@@ -90,24 +91,63 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
-  it("explains red fields and directs the user to the person card", () => {
+  it("shows a compact red-action key only while a card needs action", () => {
     renderCanvas({
       people: [person("a", "Joseph Borg")],
       causaMortisCoverageByPerson: { a: [{ status: "missing" }] },
     });
 
-    expect(container.querySelector(".tree-required-data-key").textContent).toContain(
+    expect(container.querySelector(".tree-required-data-key").textContent.trim()).toBe(
       "Red means action required",
-    );
-    expect(container.querySelector(".tree-required-data-key").textContent).toContain(
-      "open that person's card",
     );
     const card = container.querySelector('[data-person-id="a"]');
     expect(card.classList.contains("cm-share-incomplete")).toBe(true);
     expect(card.getAttribute("aria-label")).toContain(
       "open this person's card and update the missing detail",
     );
+
+    renderCanvas({ people: [person("a", "Joseph Borg")] });
+    expect(container.querySelector(".tree-required-data-key")).toBeNull();
   });
+
+  it("does not mark an excess CM declaration as action required on the person card", () => {
+    renderCanvas({
+      people: [person("edgar", "Edgar Wadge")],
+      ownershipByPerson: { edgar: 0.5 },
+      ownershipFractionsByPerson: { edgar: { numerator: 1, denominator: 2 } },
+      causaMortisCoverageByPerson: {
+        edgar: [
+          {
+            status: "over",
+            excessFraction: { numerator: 1, denominator: 4 },
+          },
+        ],
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="edgar"]');
+    expect(card.textContent).toContain("1/2");
+    expect(card.classList.contains("cm-share-incomplete")).toBe(false);
+    expect(card.getAttribute("aria-label")).not.toContain("update the missing detail");
+    expect(card.textContent).not.toContain("Excess");
+    expect(container.querySelector(".tree-required-data-key")).toBeNull();
+  });
+
+  it.each(["under", "mixed", "date-unknown", "allocation-unresolved"])(
+    "keeps a %s CM coverage issue action-required on the person card",
+    (status) => {
+      renderCanvas({
+        people: [person("owner", "Maria Borg")],
+        causaMortisCoverageByPerson: { owner: [{ status }] },
+      });
+
+      const card = container.querySelector('[data-person-id="owner"]');
+      expect(card.classList.contains("cm-share-incomplete")).toBe(true);
+      expect(card.getAttribute("aria-label")).toContain(
+        "open this person's card and update the missing detail",
+      );
+    },
+  );
 
   it("highlights a GEDCOM birth surname that needs confirmation", () => {
     renderCanvas({

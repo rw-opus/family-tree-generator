@@ -17,11 +17,37 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 describe("PersonInspector", () => {
   let container;
   let root;
+
   const beginEditing = () => {
     const editButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "Edit identity",
     );
     if (editButton) act(() => editButton.click());
+  };
+
+  const setInputValue = (selector, value) => {
+    const input = container.querySelector(selector);
+    expect(input).not.toBeNull();
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+
+  const completedCausaMortisShare = (person) =>
+    (person.causaMortisDeclarations || [])
+      .filter((declaration) => declaration.status === "complete")
+      .reduce(
+        (total, declaration) =>
+          total +
+          Number(declaration.declaredShareNumerator) / Number(declaration.declaredShareDenominator),
+        0,
+      );
+
+  const causaMortisCoverageStatus = (declaredShare, requiredShare) => {
+    const difference = declaredShare - requiredShare;
+    if (Math.abs(difference) < 1e-10) return "complete";
+    return difference < 0 ? "under" : "over";
   };
 
   beforeEach(() => {
@@ -2422,6 +2448,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Required 1/2");
     expect(container.textContent).toContain("Required share of selling price €120,000.00");
     expect(container.textContent).toContain("Missing 1/2");
+    expect(container.textContent).not.toContain("1 Republic Street");
     expect(container.textContent).toContain("Declaration Causa Mortis 1");
     expect(container.textContent).not.toContain("Draft");
     expect(container.textContent).toContain("Notary");
@@ -2435,9 +2462,9 @@ describe("PersonInspector", () => {
         button.textContent.includes("Insert CM Declaration"),
       ).disabled,
     ).toBe(false);
-    expect(
-      container.querySelector('select[aria-label="Property declared causa mortis 1"]').value,
-    ).toBe("property-1");
+    expect(container.querySelector('select[aria-label="Property declared causa mortis 1"]')).toBe(
+      null,
+    );
     const valueInput = container.querySelector(
       'input[aria-label="Immovable property value declared causa mortis 1"]',
     );
@@ -2911,15 +2938,7 @@ describe("PersonInspector", () => {
     function Harness() {
       const [people, setPeople] = useState(initialPeople);
       latestPeople = people;
-      const completedShare = (people[0].causaMortisDeclarations || [])
-        .filter((declaration) => declaration.status === "complete")
-        .reduce(
-          (total, declaration) =>
-            total +
-            Number(declaration.declaredShareNumerator) /
-              Number(declaration.declaredShareDenominator),
-          0,
-        );
+      const completedShare = completedCausaMortisShare(people[0]);
       const requiredShare = 0.5;
       const difference = completedShare - requiredShare;
       return (
@@ -2934,7 +2953,7 @@ describe("PersonInspector", () => {
               requiredShare,
               declaredShare: completedShare,
               difference,
-              status: Math.abs(difference) < 1e-10 ? "complete" : difference < 0 ? "under" : "over",
+              status: causaMortisCoverageStatus(completedShare, requiredShare),
             },
           ]}
           selectedPersonId="deceased"
@@ -2952,21 +2971,16 @@ describe("PersonInspector", () => {
       );
     act(() => declarationActionButton().click());
     expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
-    expect(container.textContent).toContain("Declared 0/1");
+    expect(container.textContent).toContain("Required 1/2");
+    expect(container.textContent).toContain("Missing 1/2");
+    expect(container.textContent).not.toContain("Declared 0/1");
     expect(container.querySelector(".causa-mortis-card")).not.toBeNull();
 
-    const setInput = (selector, value) => {
-      const input = container.querySelector(selector);
-      act(() => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    };
-    setInput('input[aria-label="Causa mortis share numerator 1"]', "1");
-    setInput('input[aria-label="Causa mortis share denominator 1"]', "4");
-    setInput('input[aria-label="Date of Declaration Causa Mortis 1"]', "2020-01-01");
-    setInput('input[aria-label="Notary for Declaration Causa Mortis 1"]', "Dr Maria Vella");
-    setInput('input[aria-label="Immovable property value declared causa mortis 1"]', "100000");
+    setInputValue('input[aria-label="Causa mortis share numerator 1"]', "1");
+    setInputValue('input[aria-label="Causa mortis share denominator 1"]', "4");
+    setInputValue('input[aria-label="Date of Declaration Causa Mortis 1"]', "2020-01-01");
+    setInputValue('input[aria-label="Notary for Declaration Causa Mortis 1"]', "Dr Maria Vella");
+    setInputValue('input[aria-label="Immovable property value declared causa mortis 1"]', "100000");
 
     const okButton = () =>
       [...container.querySelectorAll("button")].find(
@@ -2977,10 +2991,11 @@ describe("PersonInspector", () => {
       "Declaration causa mortis date must be after the date of death.",
     );
 
-    setInput('input[aria-label="Date of Declaration Causa Mortis 1"]', "2020-06-01");
+    setInputValue('input[aria-label="Date of Declaration Causa Mortis 1"]', "2020-06-01");
     act(() => okButton().click());
 
-    expect(container.textContent).toContain("Declared 1/4");
+    expect(container.textContent).toContain("Missing 1/4");
+    expect(container.textContent).not.toContain("Declared 1/4");
     expect(declarationActionButton().disabled).toBe(false);
     expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
     expect(container.textContent).not.toContain("Completed");
@@ -2988,9 +3003,9 @@ describe("PersonInspector", () => {
     act(() => declarationActionButton().click());
     expect(declarationActionButton().textContent).toContain("Insert CM Declaration");
 
-    setInput('input[aria-label="Date of Declaration Causa Mortis 2"]', "2021-04-02");
-    setInput('input[aria-label="Notary for Declaration Causa Mortis 2"]', "Dr Paul Galea");
-    setInput('input[aria-label="Immovable property value declared causa mortis 2"]', "110000");
+    setInputValue('input[aria-label="Date of Declaration Causa Mortis 2"]', "2021-04-02");
+    setInputValue('input[aria-label="Notary for Declaration Causa Mortis 2"]', "Dr Paul Galea");
+    setInputValue('input[aria-label="Immovable property value declared causa mortis 2"]', "110000");
     act(() => okButton().click());
 
     expect(container.textContent).toContain("Declared 1/2");
@@ -3006,7 +3021,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Declaration Causa Mortis 2");
   });
 
-  it("allows an additional causa mortis declaration when completed declarations exceed coverage", () => {
+  it("keeps excess CM coverage out of the summary while allowing another declaration", () => {
     const property = { id: "property-1", address: "Unnamed property" };
     let latestPeople = [];
     const initialPeople = [
@@ -3048,15 +3063,7 @@ describe("PersonInspector", () => {
     function Harness() {
       const [people, setPeople] = useState(initialPeople);
       latestPeople = people;
-      const completedShare = (people[0].causaMortisDeclarations || [])
-        .filter((declaration) => declaration.status === "complete")
-        .reduce(
-          (total, declaration) =>
-            total +
-            Number(declaration.declaredShareNumerator) /
-              Number(declaration.declaredShareDenominator),
-          0,
-        );
+      const completedShare = completedCausaMortisShare(people[0]);
       const requiredShare = 11 / 45;
       const difference = completedShare - requiredShare;
       return (
@@ -3071,7 +3078,7 @@ describe("PersonInspector", () => {
               requiredShare,
               declaredShare: completedShare,
               difference,
-              status: Math.abs(difference) < 1e-10 ? "complete" : difference < 0 ? "under" : "over",
+              status: causaMortisCoverageStatus(completedShare, requiredShare),
             },
           ]}
           selectedPersonId="deceased"
@@ -3087,25 +3094,23 @@ describe("PersonInspector", () => {
       [...container.querySelectorAll("button")].find((button) =>
         button.textContent.includes("CM Declaration"),
       );
-    expect(container.querySelector(".causa-mortis-coverage-row.over")).not.toBeNull();
+    expect(container.querySelector(".causa-mortis-coverage-row.over")).toBeNull();
+    expect(container.textContent).not.toContain("Excess");
+    expect(container.querySelector(".causa-mortis-over-advice").textContent).toContain(
+      "reduces the declaration proportionately",
+    );
+    expect(container.querySelector(".causa-mortis-over-advice").getAttribute("role")).toBeNull();
     expect(declarationActionButton().disabled).toBe(false);
 
     act(() => declarationActionButton().click());
     expect(latestPeople[0].causaMortisDeclarations).toHaveLength(2);
     expect(container.textContent).toContain("Declaration Causa Mortis 2");
 
-    const setInput = (selector, value) => {
-      const input = container.querySelector(selector);
-      act(() => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    };
-    setInput('input[aria-label="Causa mortis share numerator 2"]', "1");
-    setInput('input[aria-label="Causa mortis share denominator 2"]', "360");
-    setInput('input[aria-label="Date of Declaration Causa Mortis 2"]', "2022-01-01");
-    setInput('input[aria-label="Notary for Declaration Causa Mortis 2"]', "Paul Galea");
-    setInput('input[aria-label="Immovable property value declared causa mortis 2"]', "1000");
+    setInputValue('input[aria-label="Causa mortis share numerator 2"]', "1");
+    setInputValue('input[aria-label="Causa mortis share denominator 2"]', "360");
+    setInputValue('input[aria-label="Date of Declaration Causa Mortis 2"]', "2022-01-01");
+    setInputValue('input[aria-label="Notary for Declaration Causa Mortis 2"]', "Paul Galea");
+    setInputValue('input[aria-label="Immovable property value declared causa mortis 2"]', "1000");
 
     const okButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent.trim() === "OK" && !button.disabled,
@@ -3113,8 +3118,87 @@ describe("PersonInspector", () => {
     act(() => okButton.click());
 
     expect(latestPeople[0].causaMortisDeclarations[1].status).toBe("complete");
-    expect(container.querySelector(".causa-mortis-coverage-row.over")).not.toBeNull();
+    expect(container.querySelector(".causa-mortis-coverage-row.over")).toBeNull();
+    expect(container.textContent).not.toContain("Excess");
+    expect(container.querySelector(".causa-mortis-over-advice")).not.toBeNull();
     expect(declarationActionButton().disabled).toBe(false);
+  });
+
+  it("shows only the missing component of mixed CM coverage", () => {
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "intestacy",
+      causaMortisDeclarations: [],
+      designations: ["Deceased"],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const childA = {
+      id: "child-a",
+      fullName: "Maria Borg",
+      sex: "Female",
+      fatherId: "deceased",
+      designations: [],
+      spouseIds: [],
+      siblingIds: [],
+    };
+    const childB = { ...childA, id: "child-b", fullName: "Paul Borg", sex: "Male" };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, childA, childB]}
+          properties={[{ id: "property-1", address: "1 Republic Street" }]}
+          causaMortisCoverage={[
+            {
+              personId: "deceased",
+              propertyId: "property-1",
+              propertyAddress: "1 Republic Street",
+              requiredShare: 0.5,
+              requiredFraction: { numerator: 1, denominator: 2 },
+              declaredShare: 0.5,
+              declaredFraction: { numerator: 1, denominator: 2 },
+              difference: 0,
+              missingFraction: { numerator: 1, denominator: 4 },
+              excessFraction: { numerator: 1, denominator: 4 },
+              underDeclaredRecipientIds: ["child-b"],
+              recipientCoverage: [
+                {
+                  personId: "child-a",
+                  name: "Maria Borg",
+                  status: "over",
+                  excessFraction: { numerator: 1, denominator: 4 },
+                },
+                {
+                  personId: "child-b",
+                  name: "Paul Borg",
+                  status: "under",
+                  missingFraction: { numerator: 1, denominator: 4 },
+                },
+              ],
+              status: "mixed",
+            },
+          ]}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    const coverage = container.querySelector(".causa-mortis-coverage-row.mixed");
+    expect(coverage.textContent).toContain("Missing 1/4");
+    expect(coverage.textContent).toContain("Paul Borg: missing 1/4");
+    expect(coverage.textContent).not.toContain("Excess");
+    expect(coverage.textContent).not.toContain("Maria Borg");
+    expect(coverage.textContent).not.toContain("Declared 1/2");
+    expect(container.querySelector(".causa-mortis-over-advice").textContent).toContain(
+      "reduces the declaration proportionately",
+    );
   });
 
   it("starts an additional declaration when the red causa mortis coverage warning is pressed", () => {
@@ -3343,9 +3427,8 @@ describe("PersonInspector", () => {
       'input[aria-label="Immovable property value declared causa mortis 1"]',
     );
     expect(valueInput.required).toBe(false);
-    expect(container.textContent).toContain(
-      "Value is optional because every identified heir is deceased",
-    );
+    expect(valueInput.closest("label").textContent).toContain("Value declared (optional)");
+    expect(container.textContent).not.toContain("Value is optional because");
   });
 
   it("unlocks identity fields with Edit without showing parent-link dropdowns", () => {
@@ -3723,6 +3806,7 @@ describe("PersonInspector provenance designation", () => {
   ];
   const property = {
     id: "prop",
+    address: "1 Republic Street",
     owners: [
       { id: "o1", personId: "seller", sharePercent: 50 },
       { id: "o2", personId: "other", sharePercent: 50 },
@@ -3779,6 +3863,7 @@ describe("PersonInspector provenance designation", () => {
     act(() => transferCheckbox.click());
     expect(container.querySelector(".person-succession")).not.toBeNull();
     expect(container.querySelector(".person-donation-form")).not.toBeNull();
+    expect(container.textContent).not.toContain("1 Republic Street");
   });
 
   it("reopens a persisted transfer disclosure for a deceased person without relying on local state", () => {
