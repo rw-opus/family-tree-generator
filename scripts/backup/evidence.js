@@ -42,6 +42,24 @@ export const REQUIRED_COUNT_KEYS = [
 
 const HEADER_LIMIT_BYTES = 16 * 1024;
 const GCM_TAG_BYTES = 16;
+const RESERVED_ROLE_NAMES = new Set([
+  "anon",
+  "authenticated",
+  "authenticator",
+  "dashboard_user",
+  "pgbouncer",
+  "postgres",
+  "service_role",
+  "pgsodium_keyholder",
+  "pgsodium_keyiduser",
+  "pgsodium_keymaker",
+  "pgtle_admin",
+]);
+const ALLOWED_RESERVED_ROLE_SETTINGS = new Set([
+  "session_replication_role",
+  "statement_timeout",
+  "track_io_timing",
+]);
 
 function requireNonBlank(value, label) {
   if (typeof value !== "string" || !value.trim()) {
@@ -92,6 +110,45 @@ export function assertLocalDatabaseUrl(value, label = "databaseUrl") {
     );
   }
   return url;
+}
+
+function reservedRole(roleName) {
+  return (
+    RESERVED_ROLE_NAMES.has(roleName) ||
+    roleName.startsWith("cli_login_") ||
+    roleName.startsWith("supabase_")
+  );
+}
+
+function allowedReservedRoleSetting(settingName) {
+  return (
+    ALLOWED_RESERVED_ROLE_SETTINGS.has(settingName) ||
+    settingName.startsWith("pgaudit.") ||
+    settingName.startsWith("pgrst.")
+  );
+}
+
+/**
+ * Supabase projects create and manage their reserved roles before a logical
+ * restore. The CLI comments out settings on those roles unless the setting is
+ * on its supported allowlist. This bounded helper repeats that current CLI
+ * policy for an older dump while leaving the encrypted source roles.sql
+ * untouched. Custom roles and every other SQL statement remain fail-closed.
+ */
+export async function prepareRolesForLocalRestore({ inputPath, outputPath }) {
+  if (path.resolve(inputPath) === path.resolve(outputPath)) {
+    throw new Error("The local restore role file must not overwrite the archived roles dump.");
+  }
+  const lines = (await readFile(inputPath, "utf8")).split(/\r?\n/);
+  let omittedCount = 0;
+  const prepared = lines.map((line) => {
+    const match = line.match(/^ALTER ROLE "([^"]+)" SET "([^"]+)" TO .*;$/);
+    if (!match || !reservedRole(match[1]) || allowedReservedRoleSetting(match[2])) return line;
+    omittedCount += 1;
+    return `-- Omitted target-managed setting for reserved role "${match[1]}": "${match[2]}".`;
+  });
+  await writeFile(outputPath, prepared.join("\n"), { encoding: "utf8", mode: 0o600 });
+  return { omittedCount };
 }
 
 /**
