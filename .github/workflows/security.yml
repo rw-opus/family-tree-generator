@@ -15,7 +15,10 @@ concurrency:
 jobs:
   tenant-isolation:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Branch protection requires this job. Keep the synthetic restore drill in
+    # the same context so backup evidence cannot be bypassed by merging a PR
+    # whose tenant-isolation checks alone passed.
+    timeout-minutes: 55
 
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -76,5 +79,20 @@ jobs:
         if: failure()
         run: supabase logs db || true
 
-      - if: always()
+      - name: Stop the tenant-isolation stack
+        if: always()
         run: supabase stop --no-backup || true
+
+      - name: Confirm local restore prerequisites
+        run: |
+          psql --version
+          jq --version
+          tar --version
+
+      - name: Prove a synthetic encrypted backup can be restored
+        # G4-G9 evidence for the backup mechanics only. This creates two
+        # disposable local stacks and fictional users; it has no environment,
+        # provider credential, production URL or scheduled trigger.
+        env:
+          FTG_SYNTHETIC_RESTORE_CONFIRMATION: DESTROY_ONLY_A_DISPOSABLE_LOCAL_SYNTHETIC_TARGET
+        run: bash scripts/backup/run-synthetic-restore-drill.sh
