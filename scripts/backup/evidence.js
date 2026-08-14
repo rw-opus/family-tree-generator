@@ -14,6 +14,7 @@ import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:
 import os from "node:os";
 import path from "node:path";
 import { once } from "node:events";
+import { pipeline } from "node:stream/promises";
 
 export const BACKUP_FORMAT = "family-tree-generator-logical-backup";
 export const BACKUP_FORMAT_VERSION = 1;
@@ -485,26 +486,17 @@ export async function decryptBackupFile({ inputPath, outputPath, privateKeyPath 
   }
 
   await atomicOutput(outputPath, async (temporaryPath) => {
-    const output = createWriteStream(temporaryPath, { flags: "wx", mode: 0o600 });
-    try {
-      const decipher = createDecipheriv("aes-256-gcm", contentKey, iv);
-      decipher.setAAD(headerBytes);
-      decipher.setAuthTag(authenticationTag);
-      const ciphertext = createReadStream(inputPath, {
+    const decipher = createDecipheriv("aes-256-gcm", contentKey, iv);
+    decipher.setAAD(headerBytes);
+    decipher.setAuthTag(authenticationTag);
+    await pipeline(
+      createReadStream(inputPath, {
         start: headerLength,
         end: details.size - GCM_TAG_BYTES - 1,
-      });
-      for await (const chunk of ciphertext) {
-        const plaintext = decipher.update(chunk);
-        if (plaintext.length) await writeChunk(output, plaintext);
-      }
-      const final = decipher.final();
-      if (final.length) await writeChunk(output, final);
-      await closeWritable(output);
-    } catch (error) {
-      output.destroy();
-      throw error;
-    }
+      }),
+      decipher,
+      createWriteStream(temporaryPath, { flags: "wx", mode: 0o600 }),
+    );
   });
 }
 
