@@ -48,7 +48,8 @@ jobs:
           service="$(echo "$status" | jq -r '.SERVICE_ROLE_KEY // empty')"
           jwt_secret="$(echo "$status" | jq -r '.JWT_SECRET // empty')"
           api="$(echo "$status" | jq -r '.API_URL // empty')"
-          for credential in "$anon" "$service" "$jwt_secret"; do
+          db_url="$(echo "$status" | jq -r '.DB_URL // empty')"
+          for credential in "$anon" "$service" "$jwt_secret" "$db_url"; do
             if [ -n "$credential" ]; then
               echo "::add-mask::$credential"
             fi
@@ -58,6 +59,7 @@ jobs:
           [ -z "$service" ] && missing+=("SERVICE_ROLE_KEY")
           [ -z "$jwt_secret" ] && missing+=("JWT_SECRET")
           [ -z "$api" ] && missing+=("API_URL")
+          [ -z "$db_url" ] && missing+=("DB_URL")
           if [ "${#missing[@]}" -gt 0 ]; then
             printf 'Could not read required local stack fields: %s\n' "${missing[*]}" >&2
             exit 1
@@ -67,6 +69,8 @@ jobs:
             echo "SUPABASE_SERVICE_ROLE_KEY=$service"
             echo "SUPABASE_JWT_SECRET=$jwt_secret"
             echo "SUPABASE_URL=$api"
+            echo "SUPABASE_DB_URL=$db_url"
+            echo "FTG_RLS_DB_FIXTURE_CONFIRMATION=ALLOW_ONLY_DISPOSABLE_LOCAL_RLS_FIXTURES"
           } >> "$GITHUB_ENV"
 
       - name: Prove cross-account isolation
