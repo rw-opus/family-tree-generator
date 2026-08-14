@@ -38,6 +38,13 @@ const enforcedConcurrencyMigration = readFileSync(
   ),
   "utf8",
 );
+const checkoutServiceRoleMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260814042300_grant_checkout_service_role_access.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -142,5 +149,16 @@ describe("commercial Supabase schema", () => {
     expect(schema).not.toMatch(
       /grant\s+select,\s*insert,\s*update,\s*delete\s+on table public\.family_trees/i,
     );
+  });
+
+  it("gives the checkout service role only the table access its workflow uses", () => {
+    for (const sql of [schema, checkoutServiceRoleMigration]) {
+      expect(sql).toContain("grant select on table public.tree_accounts to service_role");
+      expect(sql).toContain(
+        "grant select, insert, update on table public.tree_credit_orders to service_role",
+      );
+      expect(sql).not.toContain("grant all on table public.tree_accounts to service_role");
+      expect(sql).not.toContain("grant all on table public.tree_credit_orders to service_role");
+    }
   });
 });

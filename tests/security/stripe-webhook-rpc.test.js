@@ -65,7 +65,6 @@ const eventBody = ({ eventId, eventType, order, amount = 3000, paymentIntent }) 
 
 describe("atomic Stripe tree-credit processing", () => {
   const stamp = crypto.randomUUID().replaceAll("-", "");
-  const recordedEventIds = [];
   let user;
 
   const createOrder = async (name) => {
@@ -81,7 +80,9 @@ describe("atomic Stripe tree-credit processing", () => {
   };
 
   const accountCredits = async () => {
-    const response = await request(`tree_accounts?user_id=eq.${user.id}&select=paid_tree_credits`);
+    const response = await request(`tree_accounts?user_id=eq.${user.id}&select=paid_tree_credits`, {
+      token: user.token,
+    });
     const rows = await json(response);
     return rows[0].paid_tree_credits;
   };
@@ -102,13 +103,6 @@ describe("atomic Stripe tree-credit processing", () => {
     if (!created.ok) throw new Error(`Could not create Stripe test user: ${await created.text()}`);
     user = await created.json();
 
-    const account = await request("tree_accounts", {
-      method: "POST",
-      body: { user_id: user.id, free_tree_limit: 0 },
-    });
-    if (!account.ok)
-      throw new Error(`Could not create Stripe test account: ${await account.text()}`);
-
     const signedIn = await fetch(`${url}/auth/v1/token?grant_type=password`, {
       method: "POST",
       headers: { apikey: anonKey, "Content-Type": "application/json" },
@@ -118,12 +112,24 @@ describe("atomic Stripe tree-credit processing", () => {
       throw new Error(`Could not sign in Stripe test user: ${await signedIn.text()}`);
     const session = await signedIn.json();
     user.token = session.access_token;
+
+    // Exercise the normal entitlement trigger instead of granting the test
+    // harness administrative write access to tree_accounts.
+    const treeId = crypto.randomUUID();
+    const seeded = await request("family_trees", {
+      token: user.token,
+      method: "POST",
+      body: {
+        id: treeId,
+        title: "Fictional Stripe security tree",
+        people: [],
+        tree_data: { id: treeId, title: "Fictional Stripe security tree", people: [] },
+      },
+    });
+    if (!seeded.ok) throw new Error(`Could not seed Stripe test account: ${await seeded.text()}`);
   }, 60_000);
 
   afterAll(async () => {
-    for (const eventId of recordedEventIds) {
-      await request(`stripe_tree_events?event_id=eq.${eventId}`, { method: "DELETE" });
-    }
     if (user?.id) await authAdmin(`/auth/v1/admin/users/${user.id}`, { method: "DELETE" });
   });
 
@@ -156,8 +162,6 @@ describe("atomic Stripe tree-credit processing", () => {
     const expiredId = `evt_${stamp}_expired`;
     const paidId = `evt_${stamp}_paid`;
     const staleFailureId = `evt_${stamp}_stale_failure`;
-    recordedEventIds.push(expiredId, paidId, staleFailureId);
-
     const expired = await invoke(
       serviceRoleKey,
       eventBody({ eventId: expiredId, eventType: "checkout.session.expired", order }),
@@ -202,7 +206,6 @@ describe("atomic Stripe tree-credit processing", () => {
     const order = await createOrder("retry");
     const startingCredits = await accountCredits();
     const eventId = `evt_${stamp}_retry`;
-    recordedEventIds.push(eventId);
     const paymentIntent = `pi_${stamp}_retry`;
     const invalidBody = eventBody({
       amount: 2999,
@@ -230,7 +233,6 @@ describe("atomic Stripe tree-credit processing", () => {
     const order = await createOrder("concurrent");
     const startingCredits = await accountCredits();
     const eventId = `evt_${stamp}_concurrent`;
-    recordedEventIds.push(eventId);
     const body = eventBody({
       eventId,
       eventType: "checkout.session.async_payment_succeeded",

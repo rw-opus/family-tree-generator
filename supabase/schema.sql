@@ -541,6 +541,11 @@ grant select on table public.tree_accounts to authenticated;
 grant select on table public.tree_credit_orders to authenticated;
 grant select on table public.tree_generations to authenticated;
 
+-- Minimum Data API privileges used by create-tree-checkout. Stripe webhook
+-- fulfilment remains isolated behind process_stripe_tree_event.
+grant select on table public.tree_accounts to service_role;
+grant select, insert, update on table public.tree_credit_orders to service_role;
+
 -- Versioned, append-only clickwrap audit trail. Users may read and insert
 -- their own acceptance rows, but cannot update or delete them.
 create table if not exists public.terms_acceptances (
