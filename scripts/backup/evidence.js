@@ -68,7 +68,7 @@ function localUrl(value, label) {
   return url;
 }
 
-function localDatabaseUrl(value, label) {
+export function assertLocalDatabaseUrl(value, label = "databaseUrl") {
   let url;
   try {
     url = new URL(requireNonBlank(value, label));
@@ -129,8 +129,8 @@ export function assertSyntheticRestoreTarget({
 
   const parsedSource = localUrl(sourceUrl, "sourceUrl");
   const parsedTarget = localUrl(targetUrl, "targetUrl");
-  localDatabaseUrl(sourceDbUrl, "sourceDbUrl");
-  localDatabaseUrl(targetDbUrl, "targetDbUrl");
+  assertLocalDatabaseUrl(sourceDbUrl, "sourceDbUrl");
+  assertLocalDatabaseUrl(targetDbUrl, "targetDbUrl");
   const resolvedWorkdir = path.resolve(requireNonBlank(targetWorkdir, "targetWorkdir"));
   const allowedTempRoots = [os.tmpdir(), process.env.RUNNER_TEMP]
     .filter(Boolean)
