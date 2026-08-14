@@ -130,9 +130,10 @@ function allowedReservedRoleSetting(settingName) {
 
 /**
  * Supabase projects create and manage their reserved roles before a logical
- * restore. The CLI comments out settings on those roles unless the setting is
- * on its supported allowlist. This bounded helper repeats that current CLI
- * policy for an older dump while leaving the encrypted source roles.sql
+ * restore. The CLI comments out ALTER ROLE statements for those roles, then
+ * restores only settings on its supported allowlist. PostgreSQL 15+ can also
+ * dump target-managed parameter privileges for those roles. This bounded helper
+ * removes both categories while leaving the encrypted source roles.sql
  * untouched. Custom roles and every other SQL statement remain fail-closed.
  */
 export async function prepareRolesForLocalRestore({ inputPath, outputPath }) {
@@ -142,10 +143,27 @@ export async function prepareRolesForLocalRestore({ inputPath, outputPath }) {
   const lines = (await readFile(inputPath, "utf8")).split(/\r?\n/);
   let omittedCount = 0;
   const prepared = lines.map((line) => {
-    const match = line.match(/^ALTER ROLE "([^"]+)" SET "([^"]+)" TO .*;$/);
-    if (!match || !reservedRole(match[1]) || allowedReservedRoleSetting(match[2])) return line;
+    const parameterGrantMatch = line.match(
+      /^GRANT (?:ALL|SET|ALTER SYSTEM|SET, ALTER SYSTEM|ALTER SYSTEM, SET) ON PARAMETER "([^"]+)" TO "([^"]+)"(?: WITH GRANT OPTION)?;$/,
+    );
+    if (parameterGrantMatch && reservedRole(parameterGrantMatch[2])) {
+      omittedCount += 1;
+      return `-- Omitted target-managed parameter privilege for reserved role "${parameterGrantMatch[2]}".`;
+    }
+
+    const roleMatch = line.match(/^ALTER ROLE "([^"]+)"(?: .*)?;$/);
+    if (!roleMatch || !reservedRole(roleMatch[1])) return line;
+
+    const settingMatch = line.match(
+      /^ALTER ROLE "[^"]+"(?: IN DATABASE "[^"]+")? SET "([^"]+)" TO .*;$/,
+    );
+    if (settingMatch && allowedReservedRoleSetting(settingMatch[1])) return line;
+
     omittedCount += 1;
-    return `-- Omitted target-managed setting for reserved role "${match[1]}": "${match[2]}".`;
+    if (settingMatch) {
+      return `-- Omitted target-managed setting for reserved role "${roleMatch[1]}": "${settingMatch[1]}".`;
+    }
+    return `-- Omitted target-managed ALTER ROLE statement for reserved role "${roleMatch[1]}".`;
   });
   await writeFile(outputPath, prepared.join("\n"), { encoding: "utf8", mode: 0o600 });
   return { omittedCount };

@@ -163,6 +163,11 @@ describe("local reserved-role restore preparation", () => {
       `ALTER ROLE "authenticator" SET "log_min_messages" TO 'fatal';`,
       `ALTER ROLE "authenticator" SET "statement_timeout" TO '8s';`,
       `ALTER ROLE "supabase_auth_admin" SET "internal.secret" TO 'do-not-copy';`,
+      `ALTER ROLE "postgres" IN DATABASE "postgres" SET "log_min_messages" TO 'warning';`,
+      `ALTER ROLE "postgres" IN DATABASE "postgres" SET "statement_timeout" TO '8s';`,
+      `ALTER ROLE "postgres" NOSUPERUSER;`,
+      `GRANT SET ON PARAMETER "log_min_messages" TO "supabase_realtime_admin";`,
+      `GRANT SET ON PARAMETER "work_mem" TO "custom_auditor";`,
       `ALTER ROLE "custom_auditor" SET "log_min_messages" TO 'warning';`,
       `GRANT "custom_auditor" TO "postgres";`,
       "",
@@ -172,13 +177,21 @@ describe("local reserved-role restore preparation", () => {
     const result = await prepareRolesForLocalRestore({ inputPath, outputPath });
     const prepared = await readFile(outputPath, "utf8");
 
-    expect(result).toEqual({ omittedCount: 2 });
+    expect(result).toEqual({ omittedCount: 5 });
     expect(await readFile(inputPath, "utf8")).toBe(source);
     expect(prepared).not.toContain("do-not-copy");
     expect(prepared).toContain(
       `-- Omitted target-managed setting for reserved role "authenticator": "log_min_messages".`,
     );
     expect(prepared).toContain(`ALTER ROLE "authenticator" SET "statement_timeout" TO '8s';`);
+    expect(prepared).toContain(
+      `ALTER ROLE "postgres" IN DATABASE "postgres" SET "statement_timeout" TO '8s';`,
+    );
+    expect(prepared).not.toContain(`ALTER ROLE "postgres" NOSUPERUSER;`);
+    expect(prepared).not.toContain(
+      `GRANT SET ON PARAMETER "log_min_messages" TO "supabase_realtime_admin";`,
+    );
+    expect(prepared).toContain(`GRANT SET ON PARAMETER "work_mem" TO "custom_auditor";`);
     expect(prepared).toContain(`ALTER ROLE "custom_auditor" SET "log_min_messages" TO 'warning';`);
     expect(prepared).toContain(`GRANT "custom_auditor" TO "postgres";`);
   });
