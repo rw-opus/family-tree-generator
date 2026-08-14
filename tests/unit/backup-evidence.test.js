@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -338,6 +338,12 @@ describe("encrypted backup evidence", () => {
         privateKeyPath: fixture.privateKeyPath,
       }),
     ).rejects.toThrow();
+    await expect(stat(fixture.recoveredPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      (await readdir(path.dirname(fixture.recoveredPath))).some((name) =>
+        name.startsWith(`${path.basename(fixture.recoveredPath)}.partial-`),
+      ),
+    ).toBe(false);
   });
 
   it("cannot decrypt with an unrelated private key", async () => {
