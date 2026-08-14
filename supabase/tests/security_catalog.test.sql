@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(9);
+select plan(11);
 
 select is(
   (
@@ -58,7 +58,6 @@ select is(
       and grantee = 'authenticated'
   ),
   array[
-    'family_trees:DELETE',
     'family_trees:INSERT',
     'family_trees:SELECT',
     'terms_acceptances:INSERT',
@@ -67,7 +66,7 @@ select is(
     'tree_credit_orders:SELECT',
     'tree_generations:SELECT'
   ]::text[],
-  'authenticated table grants exclude direct family-tree updates'
+  'authenticated table grants exclude direct family-tree updates and deletes'
 );
 
 select is(
@@ -81,8 +80,39 @@ select is(
       and lower(grantee) in ('public', 'anon', 'authenticated')
       and privilege_type = 'EXECUTE'
   ),
-  array['save_family_tree:authenticated']::text[],
-  'only the owner-checked family-tree save RPC is executable by a browser role'
+  array[
+    'list_trashed_family_trees:authenticated',
+    'permanently_delete_family_tree:authenticated',
+    'restore_family_tree:authenticated',
+    'save_family_tree:authenticated',
+    'trash_family_tree:authenticated'
+  ]::text[],
+  'only owner-checked family-tree RPCs are executable by a browser role'
+);
+
+select ok(
+  not exists (
+    select 1
+    from pg_catalog.pg_policy policy
+    join pg_catalog.pg_class relation on relation.oid = policy.polrelid
+    join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relname = 'family_trees'
+      and policy.polcmd = 'd'
+  ),
+  'family trees have no direct browser delete policy'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_catalog.pg_policies
+    where schemaname = 'public'
+      and tablename = 'family_trees'
+      and policyname = 'family trees select active own'
+      and qual like '%deleted_at IS NULL%'
+  ),
+  'the table SELECT policy exposes active family trees only'
 );
 
 select ok(

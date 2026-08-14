@@ -205,6 +205,11 @@ textarea:focus-visible {
   background: var(--forest-soft);
 }
 
+.library-account-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .family-library {
   min-width: 0;
   padding: clamp(0.9rem, 2vw, 1.35rem);
@@ -1058,6 +1063,97 @@ body.outside-owner-inspector-open {
   margin: 0.85rem 0 0;
   color: var(--muted);
   font-size: 0.76rem;
+}
+
+.library-trash-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  border: 1px solid #d9e3dd;
+  border-radius: 7px;
+  background: #f8faf9;
+  color: var(--forest);
+  padding: 0.45rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.library-trash-toggle > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.library-trash-toggle:hover {
+  background: var(--forest-soft);
+}
+
+.family-library-trash {
+  margin-top: 0.45rem;
+  border: 1px solid #d9e3dd;
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 0.65rem;
+}
+
+.family-library-trash h3 {
+  margin: 0 0 0.45rem;
+  color: var(--ink);
+  font: 700 0.9rem var(--tracker-serif);
+}
+
+.family-trash-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.family-trash-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid #e1e8e3;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.5rem 0.55rem;
+}
+
+.family-trash-details {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.family-trash-details strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.family-trash-details span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.family-trash-details span.expired {
+  color: #a13232;
+}
+
+.family-trash-actions {
+  display: flex;
+  gap: 0.32rem;
+}
+
+.library-row-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .tree-pricing-card {
@@ -6713,6 +6809,28 @@ body.a3-print-preview-open {
 
   .family-row-actions .library-row-action-label {
     display: none;
+  }
+
+  .family-trash-row {
+    gap: 0.35rem;
+    padding: 0.4rem;
+  }
+
+  .family-trash-actions .library-row-action {
+    width: 2.75rem;
+    min-height: 2.75rem;
+    border-radius: 8px;
+    padding: 0;
+  }
+
+  .family-trash-actions .library-row-action-label {
+    display: none;
+  }
+
+  .family-trash-details strong {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 
   .family-rename-form .library-icon-button {

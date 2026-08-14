@@ -56,13 +56,17 @@ import {
   isFamilyTreeListValidationError,
   isTreeSaveConflictError,
   listFamilyTrees,
+  listTrashedFamilyTrees,
+  permanentlyDeleteFamilyTree,
   rebaseFamilyTreeListStorageRevision,
   rebaseFamilyTreeStorageRevision,
-  removeFamilyTree,
+  restoreFamilyTree,
   saveFamilyTree,
+  trashFamilyTree,
 } from "./services/familyTrees.js";
 import { createCloudSaveQueue } from "./services/cloudSaveQueue.js";
 import {
+  isLocalTrashExpired,
   loadLocalWorkspace,
   readLocalWorkspaceRecovery,
   saveLocalWorkspace,
@@ -91,6 +95,13 @@ const localRecoveryReplacementPrompt = (action, recoveryAvailable) =>
   recoveryAvailable
     ? `The previous local workspace is unreadable. A recovery copy has been kept. ${action} and replace the active saved data?`
     : `The previous local workspace is unreadable and a recovery copy could not be created. ${action} and permanently replace the active saved data?`;
+
+const activeTreeSnapshot = (value) => {
+  const active = { ...value };
+  delete active.deletedAt;
+  delete active.deleted_at;
+  return active;
+};
 
 const migratedProperties = (value) => {
   if (Array.isArray(value.properties) && value.properties.length) return value.properties;
@@ -244,7 +255,7 @@ export function App({
   const authenticatedUserId = session?.user?.id || "";
   const cloudMode = Boolean(authenticatedUserId) && !localOnlyMode;
   const [startupWorkspace] = useState(() =>
-    cloudMode ? { trees: [], activeTreeId: "" } : loadLocalWorkspace(),
+    cloudMode ? { trees: [], trashedTrees: [], activeTreeId: "" } : loadLocalWorkspace(),
   );
   const [tree, setTree] = useState(() => {
     const restoredTree =
@@ -253,6 +264,7 @@ export function App({
     return restoredTree ? normaliseTree(restoredTree) : initialTree();
   });
   const [trees, setTrees] = useState(startupWorkspace.trees);
+  const [trashedTrees, setTrashedTrees] = useState(startupWorkspace.trashedTrees || []);
   const [status, setStatus] = useState(
     startupWorkspace.loadError
       ? startupWorkspace.loadError
@@ -268,6 +280,10 @@ export function App({
       ? "Connecting to secure storage."
       : startupWorkspace.loadError || "Saved on this device.",
   }));
+  const [cloudListState, setCloudListState] = useState(() => ({
+    complete: !cloudMode,
+    warning: "",
+  }));
   const [localRecoveryBlocked, setLocalRecoveryBlocked] = useState(() =>
     Boolean(startupWorkspace.loadError),
   );
@@ -280,6 +296,7 @@ export function App({
   const [activeTreeIsListed, setActiveTreeIsListed] = useState(
     () => startupWorkspace.trees.length > 0,
   );
+  const [pendingTrashActivationId, setPendingTrashActivationId] = useState("");
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [selectedOutsideOwnerId, setSelectedOutsideOwnerId] = useState("");
@@ -290,6 +307,7 @@ export function App({
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
   const failedDirectSaveIdsRef = useRef(new Set());
+  const directSavePromisesRef = useRef(new Map());
   const propertyWorkspaceRef = useRef(null);
   const propertyWorkspaceNavRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
@@ -520,12 +538,53 @@ export function App({
   }, [activeTreeIsListed, currentTree]);
 
   useEffect(() => {
+    if (!pendingTrashActivationId) return undefined;
+    let cancelled = false;
+    const remainingTrees = trees.filter((item) => item.id !== pendingTrashActivationId);
+    const nextTree = remainingTrees[0];
+    const pendingDirectSave = nextTree ? directSavePromisesRef.current.get(nextTree.id) : undefined;
+
+    const finishActivation = async () => {
+      let activationTree = nextTree;
+      let acknowledgeCloudSave = cloudMode;
+      if (pendingDirectSave) {
+        try {
+          activationTree = await pendingDirectSave;
+        } catch {
+          // Keep the optimistic record open, but do not tell the queue that its
+          // failed save is a trusted server base. Scheduling the activated tree
+          // below will retry it through the active queue.
+          acknowledgeCloudSave = false;
+        }
+      }
+      if (cancelled) return;
+      setPendingTrashActivationId("");
+      if (activationTree) {
+        setActiveTreeIsListed(true);
+        activateCase(activationTree, { acknowledgeCloudSave });
+      } else {
+        setActiveTreeIsListed(false);
+        activateCase(initialTree(), { acknowledgeCloudSave: cloudMode });
+      }
+    };
+    void finishActivation();
+    return () => {
+      cancelled = true;
+    };
+  }, [activateCase, cloudMode, pendingTrashActivationId, trees]);
+
+  useEffect(() => {
     if (cloudMode) return;
     if (localRecoveryBlocked) {
       setStatus(startupWorkspace.loadError || "Local recovery is required before saving.");
       return;
     }
-    const saved = saveLocalWorkspace(trees, activeTreeIsListed ? tree.id : "");
+    const saved = saveLocalWorkspace(
+      trees,
+      activeTreeIsListed ? tree.id : "",
+      undefined,
+      trashedTrees,
+    );
     setSaveState({
       phase: saved ? "saved" : "error",
       detail: saved
@@ -544,35 +603,71 @@ export function App({
     startupWorkspace.loadError,
     tree.id,
     trees,
+    trashedTrees,
   ]);
 
   useEffect(() => {
     if (!cloudMode) return;
-    Promise.all([listFamilyTrees(authenticatedUserId), refreshTreeEntitlement()])
-      .then(([items]) => {
-        setTrees(items);
-        if (items[0]) {
+    let cancelled = false;
+    setCloudListState({ complete: false, warning: "" });
+    const safeFamilyList = (request) =>
+      request
+        .then((items) => ({ items, error: null }))
+        .catch((error) => ({
+          items: isFamilyTreeListValidationError(error) ? error.trees : [],
+          error,
+        }));
+
+    Promise.all([
+      safeFamilyList(listFamilyTrees(authenticatedUserId)),
+      safeFamilyList(listTrashedFamilyTrees(authenticatedUserId)),
+      refreshTreeEntitlement()
+        .then(() => ({ error: null }))
+        .catch((error) => ({ error })),
+    ])
+      .then(([activeResult, trashResult, entitlementResult]) => {
+        if (cancelled) return;
+        setTrees(activeResult.items);
+        setTrashedTrees(trashResult.items);
+        if (activeResult.items[0]) {
           setActiveTreeIsListed(true);
-          activateCase(items[0], { acknowledgeCloudSave: true });
+          activateCase(activeResult.items[0], { acknowledgeCloudSave: true });
         } else {
           setActiveTreeIsListed(false);
         }
-        setStatus("Saved securely to your workspace.");
-        setSaveState({ phase: "saved", detail: "All changes are saved securely." });
+        const collectionWarnings = [
+          activeResult.error ? `Saved families need attention: ${activeResult.error.message}` : "",
+          trashResult.error ? `Trash needs attention: ${trashResult.error.message}` : "",
+        ].filter(Boolean);
+        const collectionWarning = collectionWarnings.join(" ");
+        setCloudListState({
+          complete: !collectionWarning,
+          warning: collectionWarning,
+        });
+        const warnings = [
+          ...collectionWarnings,
+          entitlementResult.error
+            ? `Account allowance needs attention: ${entitlementResult.error.message}`
+            : "",
+        ].filter(Boolean);
+        if (warnings.length) {
+          setStatus(warnings.join(" "));
+          setSaveState({ phase: "error", detail: warnings.join(" ") });
+        } else {
+          setStatus("Saved securely to your workspace.");
+          setSaveState({ phase: "saved", detail: "All changes are saved securely." });
+        }
       })
       .catch((error) => {
-        if (isFamilyTreeListValidationError(error)) {
-          setTrees(error.trees);
-          if (error.trees[0]) {
-            setActiveTreeIsListed(true);
-            activateCase(error.trees[0], { acknowledgeCloudSave: true });
-          } else {
-            setActiveTreeIsListed(false);
-          }
-        }
-        setStatus(`Cloud storage needs attention: ${error.message}`);
+        if (cancelled) return;
+        const warning = `Cloud family lists could not be verified: ${error.message}`;
+        setCloudListState({ complete: false, warning });
+        setStatus(warning);
         setSaveState({ phase: "error", detail: error.message });
       });
+    return () => {
+      cancelled = true;
+    };
   }, [activateCase, authenticatedUserId, cloudMode, refreshTreeEntitlement]);
 
   useEffect(() => {
@@ -865,8 +960,15 @@ export function App({
   };
 
   const downloadWorkspaceBackup = () => {
+    if (cloudMode && !cloudListState.complete) {
+      setStatus(
+        cloudListState.warning ||
+          "The complete cloud family and Trash lists must load before a backup can be created.",
+      );
+      return;
+    }
     try {
-      const payload = workspaceBackupJson(treeOptions);
+      const payload = workspaceBackupJson(treeOptions, undefined, trashedTrees);
       const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
       const link = document.createElement("a");
       link.href = url;
@@ -876,8 +978,8 @@ export function App({
       link.remove();
       URL.revokeObjectURL(url);
       setStatus(
-        `Downloaded a workspace backup containing ${treeOptions.length} famil${
-          treeOptions.length === 1 ? "y" : "ies"
+        `Downloaded a workspace backup containing ${treeOptions.length} active and ${trashedTrees.length} trashed famil${
+          treeOptions.length + trashedTrees.length === 1 ? "y" : "ies"
         }. Keep it secure because it contains personal and financial information.`,
       );
     } catch (error) {
@@ -931,6 +1033,7 @@ export function App({
     if (!cloudMode) return;
 
     const usesActiveSaveQueue = treeId === currentTree.id && cloudSaveQueueRef.current;
+    let directSavePromise;
     setStatus("Saving family name...");
     if (!usesActiveSaveQueue) {
       setSaveState({ phase: "saving", detail: "Saving the family name." });
@@ -941,7 +1044,9 @@ export function App({
         cloudSaveQueueRef.current.schedule(normaliseTree(renamed));
         saved = await cloudSaveQueueRef.current.flush();
       } else {
-        saved = await saveFamilyTree(renamed, authenticatedUserId);
+        directSavePromise = saveFamilyTree(renamed, authenticatedUserId);
+        directSavePromisesRef.current.set(treeId, directSavePromise);
+        saved = await directSavePromise;
       }
       if (treeId !== currentTree.id) {
         setTrees((items) => items.map((item) => (item.id === treeId ? saved : item)));
@@ -956,6 +1061,10 @@ export function App({
         detail: error.message,
       });
       setStatus(`Could not rename family: ${error.message}`);
+    } finally {
+      if (directSavePromise && directSavePromisesRef.current.get(treeId) === directSavePromise) {
+        directSavePromisesRef.current.delete(treeId);
+      }
     }
   };
 
@@ -963,36 +1072,99 @@ export function App({
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return false;
 
-    const remainingTrees = treeOptions.filter((item) => item.id !== treeId);
-    const removedCurrentTree = treeId === currentTree.id;
-    setTrees(remainingTrees);
-    if (removedCurrentTree) {
-      if (remainingTrees[0]) {
-        setActiveTreeIsListed(true);
-        activateCase(remainingTrees[0], { acknowledgeCloudSave: cloudMode });
-      } else {
-        setActiveTreeIsListed(false);
-        activateCase(initialTree(), { acknowledgeCloudSave: cloudMode });
+    let treeToTrash = selectedTree;
+    if (cloudMode) {
+      setStatus("Saving family before moving it to Trash...");
+      try {
+        if (treeId === currentTree.id) {
+          const saved = await cloudSaveQueueRef.current?.flush();
+          if (!saved) throw new Error("The secure save queue is unavailable.");
+          treeToTrash = rebaseFamilyTreeStorageRevision(selectedTree, saved);
+        } else if (directSavePromisesRef.current.has(treeId)) {
+          treeToTrash = await directSavePromisesRef.current.get(treeId);
+        } else if (failedDirectSaveIdsRef.current.has(treeId)) {
+          treeToTrash = await saveFamilyTree(selectedTree, authenticatedUserId);
+          failedDirectSaveIdsRef.current.delete(treeId);
+        }
+      } catch (error) {
+        setSaveState({
+          phase: isTreeSaveConflictError(error) ? "conflict" : "error",
+          detail: error.message,
+        });
+        setStatus(`Could not move family to Trash before saving: ${error.message}`);
+        return false;
       }
     }
-    if (!cloudMode) return true;
 
-    setStatus("Removing family...");
+    const applyTrashToClient = (trashed) => {
+      const removedCurrentTree = treeId === currentTree.id;
+      setTrees((items) => items.filter((item) => item.id !== treeId));
+      setTrashedTrees((items) => upsertWorkspaceTree(items, trashed));
+      if (!removedCurrentTree) return;
+      setActiveTreeIsListed(false);
+      setPendingTrashActivationId(treeId);
+    };
+
+    if (!cloudMode) {
+      applyTrashToClient({
+        ...treeToTrash,
+        deletedAt: new Date().toISOString(),
+      });
+      setStatus("Family moved to Trash. It can be restored for 30 days.");
+      return true;
+    }
+
+    setStatus("Moving family to Trash...");
     try {
-      await removeFamilyTree(treeId, authenticatedUserId);
+      const trashed = await trashFamilyTree(treeToTrash);
+      applyTrashToClient(trashed);
       setStatus(
         entitlement?.unlimitedTrees
-          ? "Family removed."
-          : "Family removed. Its free or paid generation credit is not restored.",
+          ? "Family moved to Trash. It can be restored for 30 days."
+          : "Family moved to Trash for 30 days. Its generation credit is not restored.",
       );
       return true;
     } catch (error) {
-      setTrees((items) => upsertWorkspaceTree(items, selectedTree));
-      if (removedCurrentTree) {
-        setActiveTreeIsListed(true);
-        activateCase(selectedTree);
-      }
-      setStatus(`Could not remove family: ${error.message}`);
+      setStatus(`Could not move family to Trash: ${error.message}`);
+      return false;
+    }
+  };
+
+  const restoreTree = async (treeId) => {
+    const selectedTree = trashedTrees.find((item) => item.id === treeId);
+    if (!selectedTree) return false;
+    if (!cloudMode && isLocalTrashExpired(selectedTree)) {
+      setTrashedTrees((items) => items.filter((item) => item.id !== treeId));
+      setStatus("This family has been in Trash for 30 days and can no longer be restored.");
+      return false;
+    }
+
+    setStatus("Restoring family...");
+    try {
+      const restored = cloudMode ? await restoreFamilyTree(selectedTree) : selectedTree;
+      const active = activeTreeSnapshot(restored);
+      setTrashedTrees((items) => items.filter((item) => item.id !== treeId));
+      setTrees((items) => upsertWorkspaceTree(items, active));
+      setStatus(cloudMode ? "Family restored securely." : "Family restored on this device.");
+      return true;
+    } catch (error) {
+      setStatus(`Could not restore family: ${error.message}`);
+      return false;
+    }
+  };
+
+  const permanentlyDeleteTree = async (treeId) => {
+    const selectedTree = trashedTrees.find((item) => item.id === treeId);
+    if (!selectedTree) return false;
+
+    setStatus("Permanently deleting family...");
+    try {
+      if (cloudMode) await permanentlyDeleteFamilyTree(selectedTree);
+      setTrashedTrees((items) => items.filter((item) => item.id !== treeId));
+      setStatus("Family permanently deleted.");
+      return true;
+    } catch (error) {
+      setStatus(`Could not permanently delete family: ${error.message}`);
       return false;
     }
   };
@@ -1331,6 +1503,7 @@ export function App({
     return (
       <FamilyLibrary
         trees={treeOptions}
+        trashedTrees={trashedTrees}
         activeTreeId={activeTreeIsListed ? currentTree.id : ""}
         session={session}
         commercialMode={cloudMode}
@@ -1338,8 +1511,9 @@ export function App({
         canCreate={!cloudMode || Boolean(entitlement?.canCreate)}
         billingBusy={billingBusy}
         billingMessage={billingMessage}
-        storageStatus={status}
+        storageStatus={cloudListState.warning || status}
         saveState={saveState}
+        backupDisabled={cloudMode && !cloudListState.complete}
         recoveryAvailable={Boolean(startupWorkspace.recoveryKey)}
         onDownloadRecovery={downloadLocalRecovery}
         onDownloadBackup={downloadWorkspaceBackup}
@@ -1348,6 +1522,8 @@ export function App({
         onOpen={openTree}
         onRename={renameTree}
         onRemove={removeTree}
+        onRestore={restoreTree}
+        onPermanentDelete={permanentlyDeleteTree}
         onBuyTree={buyTreeCredit}
         onChangePassword={onChangePassword}
         onSignOut={signOutSafely}

@@ -52,6 +52,13 @@ const treePayloadGuardMigration = readFileSync(
   ),
   "utf8",
 );
+const trashRestoreMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260814091334_family_tree_trash_restore.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -151,12 +158,36 @@ describe("commercial Supabase schema", () => {
     expect(enforcedConcurrencyMigration).toContain(
       "revoke update on table public.family_trees from authenticated",
     );
-    expect(schema).toContain(
-      "grant select, insert, delete on table public.family_trees to authenticated",
-    );
+    expect(schema).toContain("grant select, insert on table public.family_trees to authenticated");
+    expect(schema).not.toMatch(/grant[^;]*delete[^;]*on table public\.family_trees/i);
     expect(schema).not.toMatch(
       /grant\s+select,\s*insert,\s*update,\s*delete\s+on table public\.family_trees/i,
     );
+  });
+
+  it("implements owner-scoped, revision-aware Trash and a 30-day restore window", () => {
+    for (const sql of [schema, trashRestoreMigration]) {
+      expect(sql).toContain("deleted_at timestamptz");
+      expect(sql).toContain("function public.trash_family_tree(");
+      expect(sql).toContain("function public.restore_family_tree(");
+      expect(sql).toContain("function public.permanently_delete_family_tree(");
+      expect(sql).toContain("function public.list_trashed_family_trees()");
+      expect(sql).toContain("tree.owner_id = caller_id");
+      expect(sql).toContain("current_revision <> p_expected_revision");
+      expect(sql).toContain("message = 'TREE_TRASH_CONFLICT'");
+      expect(sql).toContain("message = 'TREE_RESTORE_CONFLICT'");
+      expect(sql).toContain("message = 'TREE_RESTORE_EXPIRED'");
+      expect(sql).toContain("message = 'TREE_PERMANENT_DELETE_CONFLICT'");
+      expect(sql).toContain("now() - interval '30 days'");
+      expect(sql).toContain("security definer");
+      expect(sql).toContain("set search_path = ''");
+    }
+    expect(trashRestoreMigration).toContain(
+      "revoke delete on table public.family_trees from authenticated",
+    );
+    expect(schema).toContain('create policy "family trees select active own"');
+    expect(schema).toContain("and deleted_at is null");
+    expect(schema).not.toMatch(/create policy[^;]+on public\.family_trees[^;]+for delete/is);
   });
 
   it("gives the checkout service role only the table access its workflow uses", () => {

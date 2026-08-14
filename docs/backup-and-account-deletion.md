@@ -2,11 +2,11 @@
 
 ## User workspace backup
 
-The Home page's **Download workspace backup** action exports every tree the
-user can currently see into a versioned JSON file. The export includes family,
-will, declaration, property, ownership and tax-working data. It is not
-encrypted; treat it as confidential client material and store it in an
-approved encrypted location.
+The Home page's **Download workspace backup** action exports every active and
+trashed tree into a versioned JSON file. The export preserves each Trash
+deletion timestamp and includes family, will, declaration, property, ownership
+and tax-working data. It is not encrypted; treat it as confidential client
+material and store it in an approved encrypted location.
 
 The current export is an independent recovery copy, not a public bulk-import
 route. Operator-assisted restoration must validate the backup format and the
@@ -28,6 +28,12 @@ Before launch, confirm the actual Supabase backup retention, rehearse a
 non-production restore, record who may authorise one and record where restore
 credentials are held. Do not add an offsite database dump until encryption,
 secret ownership, storage region, retention and deletion are agreed.
+
+Tree-level accidental deletion uses the separate 30-day Trash workflow
+documented in
+[`operations/tree-trash-retention.md`](operations/tree-trash-retention.md).
+That workflow is not a substitute for database disaster recovery or account
+deletion.
 
 ## Verified account-deletion procedure
 

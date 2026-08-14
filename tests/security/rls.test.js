@@ -46,6 +46,18 @@ const rest = (path, { token, method = "GET", body, prefer } = {}) =>
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 
+const serviceRest = (path, { method = "GET", body, prefer } = {}) =>
+  fetch(`${url}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": "application/json",
+      ...(prefer ? { Prefer: prefer } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
 const readJson = async (response) => {
   const text = await response.text();
   try {
@@ -195,7 +207,8 @@ describe("cross-account isolation", () => {
       method: "DELETE",
       prefer: "return=representation",
     });
-    expect(await readJson(response)).toEqual([]);
+    expect(response.ok).toBe(false);
+    expect([401, 403]).toContain(response.status);
 
     const check = await rest(`family_trees?id=eq.${aliceTreeId}`, { token: alice.token });
     expect(await readJson(check)).toHaveLength(1);
@@ -420,6 +433,320 @@ describe("cross-account isolation", () => {
   });
 });
 
+describe("recoverable family-tree deletion", () => {
+  let alice;
+  let bob;
+
+  beforeAll(async () => {
+    const stamp = crypto.randomUUID().slice(0, 8);
+    [alice, bob] = await Promise.all([
+      createUser(`trash-alice-${stamp}@fictional.invalid`),
+      createUser(`trash-bob-${stamp}@fictional.invalid`),
+    ]);
+  }, 60_000);
+
+  afterAll(async () => {
+    for (const user of [alice, bob]) {
+      if (user?.id) await admin(`/auth/v1/admin/users/${user.id}`, { method: "DELETE" });
+    }
+  });
+
+  it("trashes, isolates, restores and explicitly deletes without changing entitlements", async () => {
+    const treeId = crypto.randomUUID();
+    const payload = strictTreePayload(treeId, "Recoverable fictional estate");
+    const createdResponse = await rest("family_trees", {
+      token: alice.token,
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        id: treeId,
+        owner_id: alice.id,
+        title: payload.title,
+        people: payload.people,
+        tree_data: payload,
+      },
+    });
+    const [created] = await readJson(createdResponse);
+    expect(createdResponse.status).toBe(201);
+
+    const accountPath =
+      `tree_accounts?user_id=eq.${alice.id}` +
+      "&select=free_trees_used,paid_tree_credits,total_trees_created";
+    const accountAfterCreate = await rest(accountPath, { token: alice.token });
+    const entitlementSnapshot = await readJson(accountAfterCreate);
+
+    const directDelete = await rest(`family_trees?id=eq.${treeId}`, {
+      token: alice.token,
+      method: "DELETE",
+      prefer: "return=representation",
+    });
+    expect(directDelete.ok).toBe(false);
+    expect([401, 403]).toContain(directDelete.status);
+
+    const trashedResponse = await rest("rpc/trash_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: created.revision },
+    });
+    const [trashed] = await readJson(trashedResponse);
+    expect(trashedResponse.status).toBe(200);
+    expect(trashed).toMatchObject({ id: treeId, revision: created.revision + 1 });
+    expect(trashed.deleted_at).toEqual(expect.any(String));
+
+    const trashWhileAlreadyTrashed = await rest("rpc/trash_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: trashed.revision },
+    });
+    expect(trashWhileAlreadyTrashed.status).toBe(409);
+    expect(await readJson(trashWhileAlreadyTrashed)).toMatchObject({
+      code: "PT409",
+      message: "TREE_TRASH_CONFLICT",
+    });
+
+    const [aliceActive, bobActive, aliceTrash, bobTrash] = await Promise.all([
+      rest(`family_trees?id=eq.${treeId}&select=id`, { token: alice.token }),
+      rest(`family_trees?id=eq.${treeId}&select=id`, { token: bob.token }),
+      rest("rpc/list_trashed_family_trees", { token: alice.token, method: "POST", body: {} }),
+      rest("rpc/list_trashed_family_trees", { token: bob.token, method: "POST", body: {} }),
+    ]);
+    expect(await readJson(aliceActive)).toEqual([]);
+    expect(await readJson(bobActive)).toEqual([]);
+    expect(await readJson(aliceTrash)).toEqual([
+      expect.objectContaining({ id: treeId, revision: trashed.revision }),
+    ]);
+    expect(await readJson(bobTrash)).toEqual([]);
+
+    const hiddenSave = strictTreePayload(treeId, "Invisible edit must fail");
+    const saveWhileTrashed = await rest("rpc/save_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: {
+        p_tree_id: treeId,
+        p_expected_revision: trashed.revision,
+        p_title: hiddenSave.title,
+        p_people: hiddenSave.people,
+        p_tree_data: hiddenSave,
+      },
+    });
+    expect(saveWhileTrashed.status).toBe(409);
+    expect(await readJson(saveWhileTrashed)).toMatchObject({
+      code: "PT409",
+      message: "TREE_SAVE_CONFLICT",
+    });
+
+    const crossOwner = await rest("rpc/trash_family_tree", {
+      token: bob.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: trashed.revision },
+    });
+    const missing = await rest("rpc/trash_family_tree", {
+      token: bob.token,
+      method: "POST",
+      body: { p_tree_id: crypto.randomUUID(), p_expected_revision: trashed.revision },
+    });
+    expect(crossOwner.ok).toBe(false);
+    expect(await readJson(crossOwner)).toMatchObject({
+      code: "42501",
+      message: "TREE_TRASH_FORBIDDEN",
+    });
+    expect(await readJson(missing)).toMatchObject({
+      code: "42501",
+      message: "TREE_TRASH_FORBIDDEN",
+    });
+
+    const crossRestore = await rest("rpc/restore_family_tree", {
+      token: bob.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: trashed.revision },
+    });
+    const missingRestore = await rest("rpc/restore_family_tree", {
+      token: bob.token,
+      method: "POST",
+      body: { p_tree_id: crypto.randomUUID(), p_expected_revision: trashed.revision },
+    });
+    expect(await readJson(crossRestore)).toMatchObject({
+      code: "42501",
+      message: "TREE_RESTORE_FORBIDDEN",
+    });
+    expect(await readJson(missingRestore)).toMatchObject({
+      code: "42501",
+      message: "TREE_RESTORE_FORBIDDEN",
+    });
+
+    const staleRestore = await rest("rpc/restore_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: created.revision },
+    });
+    expect(staleRestore.status).toBe(409);
+    expect(await readJson(staleRestore)).toMatchObject({
+      code: "PT409",
+      message: "TREE_RESTORE_CONFLICT",
+    });
+
+    const restoredResponse = await rest("rpc/restore_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: trashed.revision },
+    });
+    const [restored] = await readJson(restoredResponse);
+    expect(restoredResponse.status).toBe(200);
+    expect(restored).toMatchObject({
+      id: treeId,
+      revision: trashed.revision + 1,
+      deleted_at: null,
+    });
+
+    const restoreWhileActive = await rest("rpc/restore_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: restored.revision },
+    });
+    expect(restoreWhileActive.status).toBe(409);
+    expect(await readJson(restoreWhileActive)).toMatchObject({
+      code: "PT409",
+      message: "TREE_RESTORE_CONFLICT",
+    });
+
+    const deleteWhileActive = await rest("rpc/permanently_delete_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: restored.revision },
+    });
+    expect(deleteWhileActive.status).toBe(409);
+    expect(await readJson(deleteWhileActive)).toMatchObject({
+      code: "PT409",
+      message: "TREE_PERMANENT_DELETE_CONFLICT",
+    });
+
+    const secondTrashResponse = await rest("rpc/trash_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: restored.revision },
+    });
+    const [secondTrash] = await readJson(secondTrashResponse);
+    expect(secondTrashResponse.status).toBe(200);
+
+    const crossPermanentDelete = await rest("rpc/permanently_delete_family_tree", {
+      token: bob.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: secondTrash.revision },
+    });
+    const missingPermanentDelete = await rest("rpc/permanently_delete_family_tree", {
+      token: bob.token,
+      method: "POST",
+      body: { p_tree_id: crypto.randomUUID(), p_expected_revision: secondTrash.revision },
+    });
+    expect(await readJson(crossPermanentDelete)).toMatchObject({
+      code: "42501",
+      message: "TREE_PERMANENT_DELETE_FORBIDDEN",
+    });
+    expect(await readJson(missingPermanentDelete)).toMatchObject({
+      code: "42501",
+      message: "TREE_PERMANENT_DELETE_FORBIDDEN",
+    });
+
+    const stalePermanentDelete = await rest("rpc/permanently_delete_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: restored.revision },
+    });
+    expect(stalePermanentDelete.status).toBe(409);
+
+    const permanentDelete = await rest("rpc/permanently_delete_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: secondTrash.revision },
+    });
+    expect(permanentDelete.status).toBe(200);
+    expect(await readJson(permanentDelete)).toBe(treeId);
+
+    const [activeAfterDelete, trashAfterDelete, accountAfterDelete, generationAfterDelete] =
+      await Promise.all([
+        rest(`family_trees?id=eq.${treeId}&select=id`, { token: alice.token }),
+        rest("rpc/list_trashed_family_trees", {
+          token: alice.token,
+          method: "POST",
+          body: {},
+        }),
+        rest(accountPath, { token: alice.token }),
+        rest(`tree_generations?owner_id=eq.${alice.id}&tree_id=is.null&select=tree_id,tree_title`, {
+          token: alice.token,
+        }),
+      ]);
+    expect(await readJson(activeAfterDelete)).toEqual([]);
+    expect(await readJson(trashAfterDelete)).toEqual([]);
+    expect(await readJson(accountAfterDelete)).toEqual(entitlementSnapshot);
+    expect(await readJson(generationAfterDelete)).toContainEqual({
+      tree_id: null,
+      tree_title: payload.title,
+    });
+  });
+
+  it("lists expired trash but refuses to restore it after 30 days", async () => {
+    const treeId = crypto.randomUUID();
+    const payload = strictTreePayload(treeId, "Expired fictional trash");
+    const createdResponse = await rest("family_trees", {
+      token: alice.token,
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        id: treeId,
+        owner_id: alice.id,
+        title: payload.title,
+        people: payload.people,
+        tree_data: payload,
+      },
+    });
+    const [created] = await readJson(createdResponse);
+    expect(createdResponse.status).toBe(201);
+
+    const trashedResponse = await rest("rpc/trash_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: created.revision },
+    });
+    expect(trashedResponse.status).toBe(200);
+
+    const expiredAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    const agedResponse = await serviceRest(`family_trees?id=eq.${treeId}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: { deleted_at: expiredAt },
+    });
+    const [aged] = await readJson(agedResponse);
+    expect(agedResponse.status).toBe(200);
+
+    const listedResponse = await rest("rpc/list_trashed_family_trees", {
+      token: alice.token,
+      method: "POST",
+      body: {},
+    });
+    expect(await readJson(listedResponse)).toContainEqual(
+      expect.objectContaining({ id: treeId, revision: aged.revision }),
+    );
+
+    const restoreResponse = await rest("rpc/restore_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: aged.revision },
+    });
+    expect(restoreResponse.status).toBe(410);
+    expect(await readJson(restoreResponse)).toMatchObject({
+      code: "PT410",
+      message: "TREE_RESTORE_EXPIRED",
+    });
+
+    const permanentDelete = await rest("rpc/permanently_delete_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: { p_tree_id: treeId, p_expected_revision: aged.revision },
+    });
+    expect(permanentDelete.status).toBe(200);
+  });
+});
+
 describe("unauthenticated and invalid credentials", () => {
   it("refuses an anonymous listing of trees", async () => {
     const response = await rest("family_trees?select=id,title");
@@ -482,6 +809,22 @@ describe("unauthenticated and invalid credentials", () => {
     expect(response.ok).toBe(false);
     expect([401, 403]).toContain(response.status);
   });
+
+  it("refuses anonymous invocation of every Trash RPC", async () => {
+    const treeId = crypto.randomUUID();
+    const requests = [
+      ["list_trashed_family_trees", {}],
+      ["trash_family_tree", { p_tree_id: treeId, p_expected_revision: 1 }],
+      ["restore_family_tree", { p_tree_id: treeId, p_expected_revision: 1 }],
+      ["permanently_delete_family_tree", { p_tree_id: treeId, p_expected_revision: 1 }],
+    ];
+
+    for (const [rpcName, body] of requests) {
+      const response = await rest(`rpc/${rpcName}`, { method: "POST", body });
+      expect(response.ok).toBe(false);
+      expect([401, 403]).toContain(response.status);
+    }
+  });
 });
 
 describe("entitlements are out of the browser's reach", () => {
@@ -493,6 +836,39 @@ describe("entitlements are out of the browser's reach", () => {
 
   afterAll(async () => {
     if (carol?.id) await admin(`/auth/v1/admin/users/${carol.id}`, { method: "DELETE" });
+  });
+
+  it("refuses a browser-created trashed row without consuming an entitlement", async () => {
+    const accountPath =
+      `tree_accounts?user_id=eq.${carol.id}` +
+      "&select=user_id,free_trees_used,paid_tree_credits,total_trees_created";
+    const before = await rest(accountPath, { token: carol.token });
+    const originalAccount = await readJson(before);
+    const treeId = crypto.randomUUID();
+    const payload = strictTreePayload(treeId, "Forged trashed estate");
+
+    const response = await rest("family_trees", {
+      token: carol.token,
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        id: treeId,
+        owner_id: carol.id,
+        title: payload.title,
+        people: payload.people,
+        tree_data: payload,
+        deleted_at: new Date().toISOString(),
+      },
+    });
+    expect(response.ok).toBe(false);
+    expect([401, 403]).toContain(response.status);
+
+    const [after, tree] = await Promise.all([
+      rest(accountPath, { token: carol.token }),
+      serviceRest(`family_trees?id=eq.${treeId}&select=id`),
+    ]);
+    expect(await readJson(after)).toEqual(originalAccount);
+    expect(await readJson(tree)).toEqual([]);
   });
 
   it("rejects an invalid direct insert before consuming any entitlement", async () => {

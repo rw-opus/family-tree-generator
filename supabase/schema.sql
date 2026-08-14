@@ -16,6 +16,7 @@ create table if not exists public.family_trees (
   people jsonb not null default '[]'::jsonb check (jsonb_typeof(people) = 'array'),
   tree_data jsonb not null default '{}'::jsonb check (jsonb_typeof(tree_data) = 'object'),
   revision bigint not null default 1,
+  deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -27,13 +28,24 @@ alter table public.family_trees
   add column if not exists revision bigint not null default 1;
 
 alter table public.family_trees
+  add column if not exists deleted_at timestamptz;
+
+comment on column public.family_trees.deleted_at
+is 'Soft-deletion timestamp; null rows are active and non-null rows are in Trash.';
+
+alter table public.family_trees
   drop constraint if exists family_trees_revision_positive;
 
 alter table public.family_trees
   add constraint family_trees_revision_positive check (revision > 0);
 
-create index if not exists family_trees_owner_updated_idx
-  on public.family_trees (owner_id, updated_at desc);
+create index if not exists family_trees_owner_active_updated_idx
+  on public.family_trees (owner_id, updated_at desc)
+  where deleted_at is null;
+
+create index if not exists family_trees_owner_trash_deleted_idx
+  on public.family_trees (owner_id, deleted_at desc)
+  where deleted_at is not null;
 
 create table if not exists public.tree_accounts (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -1277,6 +1289,7 @@ as $$
 declare
   caller_id uuid := (select auth.uid());
   current_revision bigint;
+  current_deleted_at timestamptz;
 begin
   if caller_id is null then
     raise exception using
@@ -1284,8 +1297,8 @@ begin
       message = 'TREE_SAVE_AUTH_REQUIRED';
   end if;
 
-  select tree.revision
-  into current_revision
+  select tree.revision, tree.deleted_at
+  into current_revision, current_deleted_at
   from public.family_trees as tree
   where tree.id = p_tree_id
     and tree.owner_id = caller_id
@@ -1299,7 +1312,8 @@ begin
 
   if p_expected_revision is null
     or p_expected_revision <= 0
-    or current_revision <> p_expected_revision then
+    or current_revision <> p_expected_revision
+    or current_deleted_at is not null then
     raise sqlstate 'PT409' using
       message = 'TREE_SAVE_CONFLICT';
   end if;
@@ -1322,7 +1336,221 @@ grant execute on function public.save_family_tree(uuid, bigint, text, jsonb, jso
 to authenticated;
 
 comment on function public.save_family_tree(uuid, bigint, text, jsonb, jsonb)
-is 'Owner-checked compare-and-swap save for family_trees; raises TREE_SAVE_CONFLICT on stale revisions.';
+is 'Owner-checked compare-and-swap save for active family_trees; raises TREE_SAVE_CONFLICT on a stale revision or trashed row.';
+
+create or replace function public.trash_family_tree(
+  p_tree_id uuid,
+  p_expected_revision bigint
+)
+returns setof public.family_trees
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  current_revision bigint;
+  current_deleted_at timestamptz;
+begin
+  if caller_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_TRASH_AUTH_REQUIRED';
+  end if;
+
+  select tree.revision, tree.deleted_at
+  into current_revision, current_deleted_at
+  from public.family_trees as tree
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_TRASH_FORBIDDEN';
+  end if;
+
+  if p_expected_revision is null
+    or p_expected_revision <= 0
+    or current_revision <> p_expected_revision
+    or current_deleted_at is not null then
+    raise sqlstate 'PT409' using
+      message = 'TREE_TRASH_CONFLICT';
+  end if;
+
+  return query
+  update public.family_trees as tree
+  set deleted_at = now()
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id
+  returning tree.*;
+end;
+$$;
+
+revoke all on function public.trash_family_tree(uuid, bigint)
+from public, anon, authenticated;
+grant execute on function public.trash_family_tree(uuid, bigint)
+to authenticated;
+
+comment on function public.trash_family_tree(uuid, bigint)
+is 'Owner-checked compare-and-swap soft delete for an active family tree.';
+
+create or replace function public.restore_family_tree(
+  p_tree_id uuid,
+  p_expected_revision bigint
+)
+returns setof public.family_trees
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  current_revision bigint;
+  current_deleted_at timestamptz;
+begin
+  if caller_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_RESTORE_AUTH_REQUIRED';
+  end if;
+
+  select tree.revision, tree.deleted_at
+  into current_revision, current_deleted_at
+  from public.family_trees as tree
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_RESTORE_FORBIDDEN';
+  end if;
+
+  if p_expected_revision is null
+    or p_expected_revision <= 0
+    or current_revision <> p_expected_revision
+    or current_deleted_at is null then
+    raise sqlstate 'PT409' using
+      message = 'TREE_RESTORE_CONFLICT';
+  end if;
+
+  if current_deleted_at <= now() - interval '30 days' then
+    raise sqlstate 'PT410' using
+      message = 'TREE_RESTORE_EXPIRED';
+  end if;
+
+  return query
+  update public.family_trees as tree
+  set deleted_at = null
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id
+  returning tree.*;
+end;
+$$;
+
+revoke all on function public.restore_family_tree(uuid, bigint)
+from public, anon, authenticated;
+grant execute on function public.restore_family_tree(uuid, bigint)
+to authenticated;
+
+comment on function public.restore_family_tree(uuid, bigint)
+is 'Owner-checked compare-and-swap restore within 30 days of soft deletion.';
+
+create or replace function public.permanently_delete_family_tree(
+  p_tree_id uuid,
+  p_expected_revision bigint
+)
+returns uuid
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  current_revision bigint;
+  current_deleted_at timestamptz;
+begin
+  if caller_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_PERMANENT_DELETE_AUTH_REQUIRED';
+  end if;
+
+  select tree.revision, tree.deleted_at
+  into current_revision, current_deleted_at
+  from public.family_trees as tree
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_PERMANENT_DELETE_FORBIDDEN';
+  end if;
+
+  if p_expected_revision is null
+    or p_expected_revision <= 0
+    or current_revision <> p_expected_revision
+    or current_deleted_at is null then
+    raise sqlstate 'PT409' using
+      message = 'TREE_PERMANENT_DELETE_CONFLICT';
+  end if;
+
+  delete from public.family_trees as tree
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id;
+
+  return p_tree_id;
+end;
+$$;
+
+revoke all on function public.permanently_delete_family_tree(uuid, bigint)
+from public, anon, authenticated;
+grant execute on function public.permanently_delete_family_tree(uuid, bigint)
+to authenticated;
+
+comment on function public.permanently_delete_family_tree(uuid, bigint)
+is 'Owner-checked compare-and-swap permanent deletion of an already trashed family tree.';
+
+create or replace function public.list_trashed_family_trees()
+returns setof public.family_trees
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+begin
+  if caller_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_TRASH_LIST_AUTH_REQUIRED';
+  end if;
+
+  return query
+  select tree.*
+  from public.family_trees as tree
+  where tree.owner_id = caller_id
+    and tree.deleted_at is not null
+  order by tree.deleted_at desc, tree.id;
+end;
+$$;
+
+revoke all on function public.list_trashed_family_trees()
+from public, anon, authenticated;
+grant execute on function public.list_trashed_family_trees()
+to authenticated;
+
+comment on function public.list_trashed_family_trees()
+is 'Lists every trashed family tree owned by the authenticated caller, including rows past the restore window.';
 
 drop trigger if exists tree_accounts_set_updated_at on public.tree_accounts;
 create trigger tree_accounts_set_updated_at
@@ -1631,18 +1859,22 @@ drop policy if exists "family trees select own" on public.family_trees;
 drop policy if exists "family trees insert own" on public.family_trees;
 drop policy if exists "family trees update own" on public.family_trees;
 drop policy if exists "family trees delete own" on public.family_trees;
+drop policy if exists "family trees select active own" on public.family_trees;
+drop policy if exists "family trees insert active own" on public.family_trees;
 
-create policy "family trees select own"
+create policy "family trees select active own"
 on public.family_trees for select to authenticated
-using ((select auth.uid()) = owner_id);
+using (
+  (select auth.uid()) = owner_id
+  and deleted_at is null
+);
 
-create policy "family trees insert own"
+create policy "family trees insert active own"
 on public.family_trees for insert to authenticated
-with check ((select auth.uid()) = owner_id);
-
-create policy "family trees delete own"
-on public.family_trees for delete to authenticated
-using ((select auth.uid()) = owner_id);
+with check (
+  (select auth.uid()) = owner_id
+  and deleted_at is null
+);
 
 drop policy if exists "tree accounts select own" on public.tree_accounts;
 create policy "tree accounts select own"
@@ -1665,7 +1897,7 @@ revoke all on table public.tree_credit_orders from anon, authenticated;
 revoke all on table public.tree_generations from anon, authenticated;
 revoke all on table public.stripe_tree_events from anon, authenticated;
 
-grant select, insert, delete on table public.family_trees to authenticated;
+grant select, insert on table public.family_trees to authenticated;
 grant select on table public.tree_accounts to authenticated;
 grant select on table public.tree_credit_orders to authenticated;
 grant select on table public.tree_generations to authenticated;

@@ -54,6 +54,39 @@ test.describe("workspace and persistence", () => {
     await expect(page.getByRole("button", { name: /Open Renamed Estate/ })).toBeVisible();
   });
 
+  test("moves a family to Trash, restores it, and confirms deletion forever", async ({
+    seeded,
+    page,
+  }) => {
+    await seeded();
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Move Borg Fictional Estate to Trash" }).click();
+    let dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("restore this family from Trash for 30 days");
+    await dialog.getByRole("button", { name: "Move to Trash" }).click();
+
+    await expect(page.locator("button.family-name-button")).toHaveCount(0);
+    await page.getByRole("button", { name: "Trash (1)" }).click();
+    await expect(page.getByText("Borg Fictional Estate", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Restore Borg Fictional Estate" }).click();
+    await expect(page.getByRole("button", { name: /Open Borg Fictional Estate/ })).toBeVisible();
+
+    await page.getByRole("button", { name: "Move Borg Fictional Estate to Trash" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Move to Trash" }).click();
+    await page.getByRole("button", { name: "Delete Borg Fictional Estate forever" }).click();
+    dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("cannot be restored");
+    await dialog.getByRole("button", { name: "Delete forever" }).click();
+
+    await expect(page.getByRole("button", { name: "Trash (0)" })).toBeVisible();
+    const stored = await page.evaluate(
+      (key) => JSON.parse(window.localStorage.getItem(key)),
+      WORKSPACE_KEY,
+    );
+    expect(stored).toMatchObject({ version: 2, trees: [], trashedTrees: [] });
+  });
+
   test("downloads a workspace backup containing the family", async ({ seeded, page }) => {
     await seeded();
     await page.goto("/");
