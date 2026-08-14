@@ -12,8 +12,7 @@ A commercial Maltese property ownership and succession workspace. It combines a 
 
 ## Start locally
 
-Use Node.js `24.19.0` and npm `11.17.0`, as pinned by `.nvmrc` and
-`package.json`.
+Use Node.js `24.19.0`, as pinned by `.nvmrc` and `package.json`.
 
 1. Run `npm ci` then `npm run dev` for a local-only development workspace.
 2. To exercise authentication and billing, copy `.env.example` to `.env`, set `VITE_COMMERCIAL_MODE=true`, and add a dedicated Supabase project URL and publishable key.
