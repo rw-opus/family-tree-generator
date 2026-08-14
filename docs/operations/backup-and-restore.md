@@ -28,13 +28,15 @@ key must remain outside CI, GitHub, Railway and Supabase.
 
 The original `roles.sql` remains inside that encrypted, checksummed archive.
 For the disposable local restore only, the harness creates a separate working
-copy using the current Supabase CLI reserved-role policy: unsupported settings
-on Supabase-managed roles are omitted because the fresh target already manages
-those roles, while supported settings, custom roles and every other statement
-remain under `ON_ERROR_STOP`. A real hosted restore must follow the current
-official guide and record any provider-specific role exception in its private
-drill evidence; this local compatibility step is not permission to ignore
-arbitrary role errors.
+copy using the current Supabase CLI reserved-role policy: target-managed role
+changes, unsupported settings and PostgreSQL parameter grants on
+Supabase-managed roles are omitted because the fresh target already manages
+those roles. The drill verifies the corresponding target-managed logging
+privilege before continuing. Supported settings, custom roles and every other
+statement remain under `ON_ERROR_STOP`. A real hosted restore must follow the
+current official guide and record any provider-specific role exception in its
+private drill evidence; this local compatibility step is not permission to
+ignore arbitrary role errors.
 
 ## Safety properties
 
