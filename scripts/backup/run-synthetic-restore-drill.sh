@@ -58,6 +58,11 @@ prepare_workdir() {
     -e 's|^site_url = .*|site_url = "http://127.0.0.1:4199"|' \
     -e 's|^additional_redirect_urls = .*|additional_redirect_urls = ["http://127.0.0.1:4199/**"]|' \
     "$destination/supabase/config.toml"
+  # The CLI validates every function referenced by config.toml while starting
+  # a stack, even though this drill does not invoke those functions directly.
+  # Copy the complete source-controlled function tree, including deno.json and
+  # lockfiles; generated supabase/.temp state is deliberately never copied.
+  cp -R "$repository_root/supabase/functions" "$destination/supabase/functions"
   cp -R "$repository_root/supabase/tests" "$destination/supabase/tests"
   if [[ "$include_migrations" == "yes" ]]; then
     cp -R "$repository_root/supabase/migrations" "$destination/supabase/migrations"
