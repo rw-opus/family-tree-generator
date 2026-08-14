@@ -1,0 +1,68 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  tenant-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.114.0
+
+      # Applies supabase/migrations from scratch, so the policies under test are
+      # exactly the ones a fresh production project would receive.
+      - name: Start a local Supabase stack
+        run: supabase start
+
+      # Read explicitly rather than by blanket-prefixing, so a rename in the CLI
+      # surfaces as an empty value here instead of as a confusing test failure.
+      - name: Export the stack's credentials
+        run: |
+          status="$(supabase status -o json)"
+          anon="$(echo "$status" | jq -r '.ANON_KEY // empty')"
+          service="$(echo "$status" | jq -r '.SERVICE_ROLE_KEY // empty')"
+          api="$(echo "$status" | jq -r '.API_URL // empty')"
+          if [ -z "$anon" ] || [ -z "$service" ] || [ -z "$api" ]; then
+            echo "Could not read the local stack's credentials:" >&2
+            echo "$status" >&2
+            exit 1
+          fi
+          echo "::add-mask::$anon"
+          echo "::add-mask::$service"
+          {
+            echo "SUPABASE_ANON_KEY=$anon"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$service"
+            echo "SUPABASE_URL=$api"
+          } >> "$GITHUB_ENV"
+
+      - name: Prove cross-account isolation
+        run: npm run test:rls
+
+      - name: Show the database logs on failure
+        if: failure()
+        run: supabase logs db || true
+
+      - if: always()
+        run: supabase stop --no-backup || true

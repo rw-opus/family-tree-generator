@@ -68,6 +68,17 @@ test.describe("production delivery", () => {
     expect(missing.status()).toBe(404);
   });
 
+  test("forbids inline script, so an injected tag could not run", async ({ request }) => {
+    const policy = (await request.get("/")).headers()["content-security-policy"] || "";
+
+    expect(policy).toContain("default-src 'self'");
+    expect(policy).toContain("object-src 'none'");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toMatch(/script-src 'self'/);
+    expect(policy).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(policy).not.toMatch(/script-src[^;]*'unsafe-eval'/);
+  });
+
   test("stops at the configuration screen rather than storing data locally", async ({ page }) => {
     // A production build must never silently fall back to browser storage. This
     // is the guarantee AppEntry makes; if it ever regressed, client data would

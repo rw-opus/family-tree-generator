@@ -4,9 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 import type { CommercialDatabase } from "../_shared/database.types.ts";
 import {
+  eventClaimOutcome,
   paidTreeOrderUpdate,
   treeCheckoutEventAction,
-  treeOrderWasAlreadyFulfilled,
+  treeCheckoutReference,
+  treeOrderFulfilmentOutcome,
+  webhookRejection,
 } from "./logic.ts";
 
 const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY") || "";
@@ -15,20 +18,20 @@ const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
 export default {
   fetch: withSupabase({ auth: "none" }, async (request, context) => {
-    if (request.method !== "POST") {
-      return Response.json({ error: "method not allowed" }, { status: 405 });
-    }
-    if (!stripe || !webhookSecret) {
-      console.error("Stripe tree webhook is not configured");
-      return Response.json({ error: "webhook is not configured" }, { status: 503 });
-    }
-
     const signature = request.headers.get("stripe-signature");
-    if (!signature) return Response.json({ error: "missing signature" }, { status: 400 });
+    const rejection = webhookRejection({
+      method: request.method,
+      configured: Boolean(stripe && webhookSecret),
+      signature,
+    });
+    if (rejection) {
+      if (rejection.status === 503) console.error("Stripe tree webhook is not configured");
+      return Response.json({ error: rejection.error }, { status: rejection.status });
+    }
 
     let event: Stripe.Event;
     try {
-      event = await stripe.webhooks.constructEventAsync(
+      event = await stripe!.webhooks.constructEventAsync(
         await request.text(),
         signature,
         webhookSecret,
@@ -42,8 +45,9 @@ export default {
     const { error: claimError } = await admin
       .from("stripe_tree_events")
       .insert({ event_id: event.id, event_type: event.type });
-    if (claimError?.code === "23505") return Response.json({ received: true });
-    if (claimError) {
+    const claim = eventClaimOutcome(claimError);
+    if (claim === "duplicate") return Response.json({ received: true });
+    if (claim === "failed") {
       console.error("Could not claim Stripe event", claimError);
       return Response.json({ error: "could not claim event" }, { status: 500 });
     }
@@ -53,11 +57,9 @@ export default {
       if (action === "ignore") return Response.json({ received: true });
 
       const session = event.data.object as Stripe.Checkout.Session;
-      const orderId = String(session.client_reference_id || session.metadata?.order_id || "");
-      const userId = String(session.metadata?.user_id || "");
-      if (!orderId || !userId || session.metadata?.product !== "family_tree_credit") {
-        throw new Error("tree checkout metadata is incomplete");
-      }
+      const reference = treeCheckoutReference(session);
+      if (!reference) throw new Error("tree checkout metadata is incomplete");
+      const { orderId, userId } = reference;
 
       if (action === "expire") {
         const { error: expireError } = await admin
@@ -96,7 +98,8 @@ export default {
           .eq("currency", "eur")
           .maybeSingle();
         if (existingOrderError) throw existingOrderError;
-        if (!treeOrderWasAlreadyFulfilled(existingOrder)) {
+        const outcome = treeOrderFulfilmentOutcome({ updatedOrder: fulfilledOrder, existingOrder });
+        if (outcome === "unmatched") {
           throw new Error("matching pending or fulfilled tree order was not found");
         }
       }
