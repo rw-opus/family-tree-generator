@@ -1,5 +1,10 @@
 import { useState } from "react";
 import { Eye, EyeOff, GitBranch, ShieldCheck } from "lucide-react";
+import {
+  PUBLIC_AUTH_MESSAGES,
+  publicResetRequestOutcome,
+  publicSignInFailure,
+} from "../services/publicAuthMessages.js";
 import { supabase } from "../supabaseClient.js";
 
 export function AuthScreen() {
@@ -32,8 +37,12 @@ export function AuthScreen() {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
           redirectTo: window.location.origin,
         });
-        if (resetError) throw resetError;
-        setMessage("If an account exists for this email, a password reset link is on its way.");
+        const outcome = publicResetRequestOutcome(resetError);
+        if (outcome.kind === "unavailable") {
+          setError(outcome.message);
+        } else {
+          setMessage(outcome.message);
+        }
         return;
       }
 
@@ -41,9 +50,15 @@ export function AuthScreen() {
         email: trimmedEmail,
         password,
       });
-      if (signInError) throw signInError;
+      if (signInError) {
+        setError(publicSignInFailure());
+      }
     } catch (requestError) {
-      setError(requestError?.message || "Something went wrong.");
+      if (mode === "reset") {
+        setError(publicResetRequestOutcome(requestError, { requestRejected: true }).message);
+      } else {
+        setError(publicSignInFailure({ requestUnavailable: true }));
+      }
     } finally {
       setBusy(false);
     }
@@ -187,8 +202,8 @@ export function PasswordResetScreen({ onDone, onSignOut }) {
       setPassword("");
       setConfirm("");
       setComplete(true);
-    } catch (requestError) {
-      setError(requestError?.message || "Could not update the password.");
+    } catch {
+      setError(PUBLIC_AUTH_MESSAGES.passwordUpdateFailed);
     } finally {
       setBusy(false);
     }

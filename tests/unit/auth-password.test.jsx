@@ -75,7 +75,7 @@ describe("PasswordResetScreen", () => {
     expect(container.querySelector('[role="alert"]').textContent).toContain("do not match");
   });
 
-  it("shows a Supabase error and keeps the recovery screen open", async () => {
+  it("does not disclose a Supabase error and keeps the recovery screen open", async () => {
     updateUser.mockResolvedValue({ error: { message: "Recovery session expired" } });
     setInput(container, "New password", "a-secure-password");
     setInput(container, "Repeat new password", "a-secure-password");
@@ -83,9 +83,10 @@ describe("PasswordResetScreen", () => {
     await submitForm(container);
 
     expect(updateUser).toHaveBeenCalledWith({ password: "a-secure-password" });
-    expect(container.querySelector('[role="alert"]').textContent).toContain(
-      "Recovery session expired",
+    expect(container.querySelector('[role="alert"]').textContent).toBe(
+      "The password could not be changed. Request a new link and try again.",
     );
+    expect(container.textContent).not.toContain("Recovery session expired");
     expect(onDone).not.toHaveBeenCalled();
   });
 
@@ -96,7 +97,10 @@ describe("PasswordResetScreen", () => {
 
     await submitForm(container);
 
-    expect(container.querySelector('[role="alert"]').textContent).toContain("Network unavailable");
+    expect(container.querySelector('[role="alert"]').textContent).toBe(
+      "The password could not be changed. Request a new link and try again.",
+    );
+    expect(container.textContent).not.toContain("Network unavailable");
     expect(container.querySelector('button[type="submit"]').disabled).toBe(false);
     expect(onDone).not.toHaveBeenCalled();
   });
