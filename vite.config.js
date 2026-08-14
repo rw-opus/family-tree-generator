@@ -11,10 +11,12 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          icons: ["lucide-react"],
-          react: ["react", "react-dom"],
-          supabase: ["@supabase/supabase-js"],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/node_modules[\\/]lucide-react[\\/]/.test(id)) return "icons";
+          if (/node_modules[\\/]@supabase[\\/]supabase-js[\\/]/.test(id)) return "supabase";
+          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react";
+          return undefined;
         },
       },
     },
