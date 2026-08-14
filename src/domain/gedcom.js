@@ -8,6 +8,94 @@ import {
 } from "./people.js";
 import { PARTNER_RELATIONSHIP_TYPES, partnerRelationshipKey } from "./partnerRelationships.js";
 
+export const GEDCOM_LIMITS = Object.freeze({
+  maxFileBytes: 10 * 1024 * 1024,
+  maxLines: 100_000,
+  maxLineCharacters: 20_512,
+  maxRecords: 10_000,
+  maxTextCharacters: 20_000,
+});
+
+export class GedcomLimitError extends Error {
+  constructor(limit, message) {
+    super(message);
+    this.name = "GedcomLimitError";
+    this.code = "GEDCOM_LIMIT_EXCEEDED";
+    this.limit = limit;
+  }
+}
+
+const limitError = (limit, message) => new GedcomLimitError(limit, message);
+
+export function assertGedcomFileSize(byteSize) {
+  const size = Number(byteSize);
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw limitError("fileBytes", "The GEDCOM file size could not be verified.");
+  }
+  if (size > GEDCOM_LIMITS.maxFileBytes) {
+    throw limitError(
+      "fileBytes",
+      `This GEDCOM file is too large. The limit is ${GEDCOM_LIMITS.maxFileBytes / (1024 * 1024)} MB.`,
+    );
+  }
+  return size;
+}
+
+const GEDCOM_LINE_PATTERN = /^(\d+)\s+(?:(@\S+@)\s+)?(\S+)(?:\s+(.*))?$/;
+
+export function assertGedcomContentLimits(value) {
+  const content = String(value || "");
+  // Reject obviously oversized strings before allocating an encoded copy.
+  if (content.length > GEDCOM_LIMITS.maxFileBytes) {
+    throw limitError("fileBytes", "This GEDCOM content exceeds the file-size limit.");
+  }
+  assertGedcomFileSize(new TextEncoder().encode(content).byteLength);
+
+  let lines = 0;
+  let records = 0;
+  let lineStart = 0;
+  const inspectLine = (lineEnd) => {
+    lines += 1;
+    if (lines > GEDCOM_LIMITS.maxLines) {
+      throw limitError(
+        "lines",
+        `This GEDCOM file has too many lines. The limit is ${GEDCOM_LIMITS.maxLines.toLocaleString("en")}.`,
+      );
+    }
+    const contentEnd = content[lineEnd - 1] === "\r" ? lineEnd - 1 : lineEnd;
+    const rawLine = content.slice(lineStart, contentEnd);
+    if (rawLine.length > GEDCOM_LIMITS.maxLineCharacters) {
+      throw limitError(
+        "lineCharacters",
+        `A GEDCOM line is too long. The limit is ${GEDCOM_LIMITS.maxLineCharacters.toLocaleString("en")} characters.`,
+      );
+    }
+    const match = rawLine.match(GEDCOM_LINE_PATTERN);
+    if (!match) return;
+    if (Number(match[1]) === 0) records += 1;
+    if (records > GEDCOM_LIMITS.maxRecords) {
+      throw limitError(
+        "records",
+        `This GEDCOM file has too many records. The limit is ${GEDCOM_LIMITS.maxRecords.toLocaleString("en")}.`,
+      );
+    }
+    if ((match[4] || "").length > GEDCOM_LIMITS.maxTextCharacters) {
+      throw limitError(
+        "textCharacters",
+        `A GEDCOM text value is too long. The limit is ${GEDCOM_LIMITS.maxTextCharacters.toLocaleString("en")} characters.`,
+      );
+    }
+  };
+
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] !== "\n") continue;
+    inspectLine(index);
+    lineStart = index + 1;
+  }
+  inspectLine(content.length);
+  return content;
+}
+
 const MONTHS = {
   JAN: "01",
   FEB: "02",
@@ -79,10 +167,10 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
   const warnings = [];
   let record = null;
   let event = "";
-  String(text || "")
+  assertGedcomContentLimits(text)
     .split(/\r?\n/)
     .forEach((rawLine) => {
-      const match = rawLine.match(/^(\d+)\s+(?:(@\S+@)\s+)?(\S+)(?:\s+(.*))?$/);
+      const match = rawLine.match(GEDCOM_LINE_PATTERN);
       if (!match) return;
       const level = Number(match[1]);
       const pointer = match[2] || "";

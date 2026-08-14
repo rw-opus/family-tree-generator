@@ -85,6 +85,29 @@ async function createUser(email) {
   return { id, email, token };
 }
 
+const strictTreePayload = (treeId, title, people = [{ id: `${treeId}:person:1` }]) => {
+  const familyGroupId = `${treeId}:group:1`;
+  const propertyId = `${treeId}:property:1`;
+  return {
+    tree_schema_version: 2,
+    schemaVersion: 2,
+    id: treeId,
+    title,
+    people,
+    familyGroups: [
+      {
+        id: familyGroupId,
+        rootPersonId: people[0].id,
+        personIds: people.map((person) => person.id),
+      },
+    ],
+    activeFamilyGroupId: familyGroupId,
+    outsideParties: [],
+    properties: [{ id: propertyId, owners: [], transfers: [], declarations: [], saleLots: [] }],
+    settings: { activePropertyId: propertyId },
+  };
+};
+
 describe("cross-account isolation", () => {
   let alice;
   let bob;
@@ -97,15 +120,26 @@ describe("cross-account isolation", () => {
       createUser(`bob-${stamp}@fictional.invalid`),
     ]);
 
+    aliceTreeId = crypto.randomUUID();
+    const legacyCompatiblePayload = strictTreePayload(aliceTreeId, "Alice private estate");
+    delete legacyCompatiblePayload.tree_schema_version;
     const created = await rest("family_trees", {
       token: alice.token,
       method: "POST",
       prefer: "return=representation",
-      body: { owner_id: alice.id, title: "Alice private estate", people: [], tree_data: {} },
+      body: {
+        id: aliceTreeId,
+        owner_id: alice.id,
+        title: legacyCompatiblePayload.title,
+        people: legacyCompatiblePayload.people,
+        tree_data: legacyCompatiblePayload,
+      },
     });
     const rows = await readJson(created);
     if (!created.ok) throw new Error(`Alice could not create a tree: ${JSON.stringify(rows)}`);
-    aliceTreeId = rows[0].id;
+    if (rows[0].tree_data.tree_schema_version !== 2) {
+      throw new Error("The database did not upgrade a strict unmarked tree to schema version 2.");
+    }
   }, 60_000);
 
   afterAll(async () => {
@@ -168,11 +202,19 @@ describe("cross-account isolation", () => {
   });
 
   it("refuses Bob an insert that claims Alice as the owner", async () => {
+    const plantedId = crypto.randomUUID();
+    const planted = strictTreePayload(plantedId, "Planted by Bob");
     const response = await rest("family_trees", {
       token: bob.token,
       method: "POST",
       prefer: "return=representation",
-      body: { owner_id: alice.id, title: "Planted by Bob", people: [], tree_data: {} },
+      body: {
+        id: plantedId,
+        owner_id: alice.id,
+        title: planted.title,
+        people: planted.people,
+        tree_data: planted,
+      },
     });
 
     expect(response.ok).toBe(false);
@@ -180,11 +222,19 @@ describe("cross-account isolation", () => {
   });
 
   it("shows Alice nothing of Bob's, in reverse", async () => {
+    const bobTreeId = crypto.randomUUID();
+    const bobTreeData = strictTreePayload(bobTreeId, "Bob private estate");
     const created = await rest("family_trees", {
       token: bob.token,
       method: "POST",
       prefer: "return=representation",
-      body: { owner_id: bob.id, title: "Bob private estate", people: [], tree_data: {} },
+      body: {
+        id: bobTreeId,
+        owner_id: bob.id,
+        title: bobTreeData.title,
+        people: bobTreeData.people,
+        tree_data: bobTreeData,
+      },
     });
     const [bobTree] = await readJson(created);
 
@@ -235,15 +285,17 @@ describe("cross-account isolation", () => {
     });
     const [original] = await readJson(read);
 
+    const legacyClientPayload = strictTreePayload(aliceTreeId, "Alice RPC save");
+    legacyClientPayload.tree_schema_version = 1;
     const firstSave = await rest("rpc/save_family_tree", {
       token: alice.token,
       method: "POST",
       body: {
         p_tree_id: aliceTreeId,
         p_expected_revision: original.revision,
-        p_title: "Alice RPC save",
-        p_people: [],
-        p_tree_data: { id: aliceTreeId, title: "Alice RPC save", people: [] },
+        p_title: legacyClientPayload.title,
+        p_people: legacyClientPayload.people,
+        p_tree_data: legacyClientPayload,
       },
     });
     const [newer] = await readJson(firstSave);
@@ -252,6 +304,7 @@ describe("cross-account isolation", () => {
       title: "Alice RPC save",
       revision: original.revision + 1,
     });
+    expect(newer.tree_data.tree_schema_version).toBe(2);
   });
 
   it("returns a typed conflict for a stale RPC save without overwriting", async () => {
@@ -260,29 +313,33 @@ describe("cross-account isolation", () => {
     });
     const [original] = await readJson(read);
 
+    const newerPayload = strictTreePayload(aliceTreeId, "Alice newer revision");
+    newerPayload.tree_schema_version = 1;
     const firstSave = await rest("rpc/save_family_tree", {
       token: alice.token,
       method: "POST",
       body: {
         p_tree_id: aliceTreeId,
         p_expected_revision: original.revision,
-        p_title: "Alice newer revision",
-        p_people: [],
-        p_tree_data: { id: aliceTreeId, title: "Alice newer revision", people: [] },
+        p_title: newerPayload.title,
+        p_people: newerPayload.people,
+        p_tree_data: newerPayload,
       },
     });
     const [newer] = await readJson(firstSave);
     expect(firstSave.status).toBe(200);
+    expect(newer.tree_data.tree_schema_version).toBe(2);
 
+    const stalePayload = strictTreePayload(aliceTreeId, "Alice stale overwrite");
     const staleSave = await rest("rpc/save_family_tree", {
       token: alice.token,
       method: "POST",
       body: {
         p_tree_id: aliceTreeId,
         p_expected_revision: original.revision,
-        p_title: "Alice stale overwrite",
-        p_people: [],
-        p_tree_data: { id: aliceTreeId, title: "Alice stale overwrite", people: [] },
+        p_title: stalePayload.title,
+        p_people: stalePayload.people,
+        p_tree_data: stalePayload,
       },
     });
     const conflict = await readJson(staleSave);
@@ -298,21 +355,58 @@ describe("cross-account isolation", () => {
     });
   });
 
+  it("rejects an invalid RPC payload before the row revision can change", async () => {
+    const before = await rest(
+      `family_trees?id=eq.${aliceTreeId}&select=title,people,tree_data,revision`,
+      { token: alice.token },
+    );
+    const [original] = await readJson(before);
+    const invalid = structuredClone(original.tree_data);
+    invalid.people[0].fatherId = "missing-person";
+
+    const response = await rest("rpc/save_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: {
+        p_tree_id: aliceTreeId,
+        p_expected_revision: original.revision,
+        p_title: original.title,
+        p_people: invalid.people,
+        p_tree_data: invalid,
+      },
+    });
+    const failure = await readJson(response);
+
+    expect(response.status).toBe(422);
+    expect(failure).toMatchObject({
+      code: "PT422",
+      message: "TREE_PAYLOAD_INVALID",
+      details: "TREE_RELATIONSHIP_REFERENCE_INVALID",
+    });
+
+    const after = await rest(
+      `family_trees?id=eq.${aliceTreeId}&select=title,people,tree_data,revision`,
+      { token: alice.token },
+    );
+    expect((await readJson(after))[0]).toEqual(original);
+  });
+
   it("denies Bob's save RPC for Alice's exact tree identifier", async () => {
     const read = await rest(`family_trees?id=eq.${aliceTreeId}&select=title,revision`, {
       token: alice.token,
     });
     const [original] = await readJson(read);
 
+    const overwrite = strictTreePayload(aliceTreeId, "Bob RPC overwrite");
     const response = await rest("rpc/save_family_tree", {
       token: bob.token,
       method: "POST",
       body: {
         p_tree_id: aliceTreeId,
         p_expected_revision: original.revision,
-        p_title: "Bob RPC overwrite",
-        p_people: [],
-        p_tree_data: { id: aliceTreeId, title: "Bob RPC overwrite", people: [] },
+        p_title: overwrite.title,
+        p_people: overwrite.people,
+        p_tree_data: overwrite,
       },
     });
 
@@ -372,14 +466,16 @@ describe("unauthenticated and invalid credentials", () => {
   });
 
   it("refuses anonymous invocation of the family-tree save RPC", async () => {
+    const treeId = crypto.randomUUID();
+    const anonymousPayload = strictTreePayload(treeId, "Anonymous overwrite");
     const response = await rest("rpc/save_family_tree", {
       method: "POST",
       body: {
-        p_tree_id: crypto.randomUUID(),
+        p_tree_id: treeId,
         p_expected_revision: 1,
-        p_title: "Anonymous overwrite",
-        p_people: [],
-        p_tree_data: {},
+        p_title: anonymousPayload.title,
+        p_people: anonymousPayload.people,
+        p_tree_data: anonymousPayload,
       },
     });
 
@@ -397,6 +493,123 @@ describe("entitlements are out of the browser's reach", () => {
 
   afterAll(async () => {
     if (carol?.id) await admin(`/auth/v1/admin/users/${carol.id}`, { method: "DELETE" });
+  });
+
+  it("rejects an invalid direct insert before consuming any entitlement", async () => {
+    const accountPath =
+      `tree_accounts?user_id=eq.${carol.id}` +
+      "&select=user_id,free_trees_used,paid_tree_credits,total_trees_created";
+    const before = await rest(accountPath, { token: carol.token });
+    const originalAccount = await readJson(before);
+    const treeId = crypto.randomUUID();
+    const invalid = strictTreePayload(treeId, "Invalid fictional estate");
+    invalid.people[0].fatherId = "missing-person";
+
+    const response = await rest("family_trees", {
+      token: carol.token,
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        id: treeId,
+        owner_id: carol.id,
+        title: invalid.title,
+        people: invalid.people,
+        tree_data: invalid,
+      },
+    });
+    const failure = await readJson(response);
+
+    expect(response.status).toBe(422);
+    expect(failure).toMatchObject({
+      code: "PT422",
+      message: "TREE_PAYLOAD_INVALID",
+      details: "TREE_RELATIONSHIP_REFERENCE_INVALID",
+    });
+
+    const [after, tree] = await Promise.all([
+      rest(accountPath, { token: carol.token }),
+      rest(`family_trees?id=eq.${treeId}&select=id`, { token: carol.token }),
+    ]);
+    expect(await readJson(after)).toEqual(originalAccount);
+    expect(await readJson(tree)).toEqual([]);
+  });
+
+  it("rejects whitespace-only optional references instead of treating them as blank", async () => {
+    const cases = [
+      {
+        title: "Whitespace parent reference",
+        mutate: (tree) => {
+          tree.people[0].fatherId = "   ";
+        },
+        details: "TREE_RELATIONSHIP_REFERENCE_INVALID",
+      },
+      {
+        title: "Whitespace group-root reference",
+        mutate: (tree) => {
+          tree.familyGroups[0].rootPersonId = "   ";
+        },
+        details: "TREE_FAMILY_GROUP_REFERENCE_INVALID",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const treeId = crypto.randomUUID();
+      const invalid = strictTreePayload(treeId, testCase.title);
+      testCase.mutate(invalid);
+      const response = await rest("family_trees", {
+        token: carol.token,
+        method: "POST",
+        prefer: "return=representation",
+        body: {
+          id: treeId,
+          owner_id: carol.id,
+          title: invalid.title,
+          people: invalid.people,
+          tree_data: invalid,
+        },
+      });
+      const failure = await readJson(response);
+
+      expect(response.status).toBe(422);
+      expect(failure).toMatchObject({
+        code: "PT422",
+        message: "TREE_PAYLOAD_INVALID",
+        details: testCase.details,
+      });
+      const tree = await rest(`family_trees?id=eq.${treeId}&select=id`, { token: carol.token });
+      expect(await readJson(tree)).toEqual([]);
+    }
+  });
+
+  it("returns a stable payload-too-large error without persisting the rejected tree", async () => {
+    const treeId = crypto.randomUUID();
+    const oversized = strictTreePayload(treeId, "Oversized fictional estate");
+    oversized.people[0].notes = "x".repeat(50_001);
+
+    const response = await rest("family_trees", {
+      token: carol.token,
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        id: treeId,
+        owner_id: carol.id,
+        title: oversized.title,
+        people: oversized.people,
+        tree_data: oversized,
+      },
+    });
+    const failure = await readJson(response);
+
+    expect(response.status).toBe(413);
+    expect(failure).toMatchObject({
+      code: "PT413",
+      message: "TREE_PAYLOAD_TOO_LARGE",
+      details: "TREE_JSON_STRING_LIMIT_EXCEEDED",
+    });
+    expect(JSON.stringify(failure)).not.toContain(oversized.title);
+
+    const tree = await rest(`family_trees?id=eq.${treeId}&select=id`, { token: carol.token });
+    expect(await readJson(tree)).toEqual([]);
   });
 
   it("refuses an attempt to grant unlimited trees", async () => {

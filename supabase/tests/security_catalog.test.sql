@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(7);
+select plan(9);
 
 select is(
   (
@@ -89,6 +89,35 @@ select ok(
   not has_schema_privilege('anon', 'private', 'USAGE')
     and not has_schema_privilege('authenticated', 'private', 'USAGE'),
   'browser roles cannot use the private schema'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_catalog.pg_trigger t
+    join pg_catalog.pg_class c on c.oid = t.tgrelid
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relname = 'family_trees'
+      and t.tgname = 'family_trees_00_validate_payload'
+      and t.tgenabled = 'O'
+      and not t.tgisinternal
+  ),
+  'every family-tree write passes through the enabled payload validator trigger'
+);
+
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon',
+    pg_catalog.to_regprocedure('private.validate_family_tree_payload()'),
+    'EXECUTE'
+  )
+    and not pg_catalog.has_function_privilege(
+      'authenticated',
+      pg_catalog.to_regprocedure('private.validate_family_tree_payload()'),
+      'EXECUTE'
+    ),
+  'browser roles cannot invoke the private tree-payload validator directly'
 );
 
 select is(

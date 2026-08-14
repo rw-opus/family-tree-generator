@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FamilyLibrary } from "../../src/components/FamilyLibrary.jsx";
+import { TREE_DATA_LIMITS } from "../../src/domain/treeData.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -151,6 +152,11 @@ describe("FamilyLibrary", () => {
     expect(handlers.onCreate).not.toHaveBeenCalled();
 
     const dialog = container.querySelector('[role="dialog"]');
+    expect(
+      [...dialog.querySelectorAll("label")]
+        .find((item) => item.textContent.includes("Family name"))
+        .querySelector("input").maxLength,
+    ).toBe(TREE_DATA_LIMITS.maxTitleCharacters);
     const setInput = (labelText, value) => {
       const label = [...dialog.querySelectorAll("label")].find((item) =>
         item.textContent.includes(labelText),

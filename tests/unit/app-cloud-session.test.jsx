@@ -17,6 +17,7 @@ const cloudHarness = vi.hoisted(() => ({
 vi.mock("../../src/services/familyTrees.js", () => ({
   createFamilyTree: vi.fn(async (tree) => tree),
   familyTreeSaveFingerprint: (tree) => JSON.stringify(tree),
+  isFamilyTreeListValidationError: (error) => error?.code === "FAMILY_TREE_LIST_INVALID",
   isTreeSaveConflictError: (error) => error?.code === "TREE_SAVE_CONFLICT",
   listFamilyTrees: cloudHarness.listFamilyTrees,
   rebaseFamilyTreeListStorageRevision: (trees) => trees,
@@ -179,6 +180,37 @@ describe("App cloud session identity", () => {
     expect(container.querySelector('[data-testid="tree-canvas"]').textContent).toBe(
       "Second family",
     );
+  });
+
+  it("keeps valid cloud families available when another saved row is quarantined", async () => {
+    const safeTree = tree("safe", "Safe family");
+    cloudHarness.listFamilyTrees.mockRejectedValueOnce(
+      Object.assign(
+        new Error("1 saved family could not be opened safely and has not been changed."),
+        {
+          code: "FAMILY_TREE_LIST_INVALID",
+          trees: [safeTree],
+          rejected: [{ id: "future", code: "TREE_DATA_UNSUPPORTED_VERSION" }],
+        },
+      ),
+    );
+
+    await act(async () => {
+      root.render(
+        <App
+          localOnlyMode={false}
+          session={{ access_token: "token", user: { id: "user-1", email: "user@example.com" } }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Safe family");
+    expect(container.querySelector('[data-testid="family-library"]').dataset.activeTreeId).toBe(
+      "safe",
+    );
+    expect(container.querySelector('[role="status"]').textContent).toBe("error");
   });
 
   it("shows a conflict and retains a non-current family's newer local rename", async () => {

@@ -63,6 +63,24 @@ const eventBody = ({ eventId, eventType, order, amount = 3000, paymentIntent }) 
   p_user_id: order.user_id,
 });
 
+const strictTreePayload = (treeId, title) => {
+  const personId = `${treeId}:person:1`;
+  const familyGroupId = `${treeId}:group:1`;
+  const propertyId = `${treeId}:property:1`;
+  return {
+    tree_schema_version: 2,
+    schemaVersion: 2,
+    id: treeId,
+    title,
+    people: [{ id: personId }],
+    familyGroups: [{ id: familyGroupId, rootPersonId: personId, personIds: [personId] }],
+    activeFamilyGroupId: familyGroupId,
+    outsideParties: [],
+    properties: [{ id: propertyId, owners: [], transfers: [], declarations: [], saleLots: [] }],
+    settings: { activePropertyId: propertyId },
+  };
+};
+
 describe("atomic Stripe tree-credit processing", () => {
   const stamp = crypto.randomUUID().replaceAll("-", "");
   let user;
@@ -116,14 +134,15 @@ describe("atomic Stripe tree-credit processing", () => {
     // Exercise the normal entitlement trigger instead of granting the test
     // harness administrative write access to tree_accounts.
     const treeId = crypto.randomUUID();
+    const treeData = strictTreePayload(treeId, "Fictional Stripe security tree");
     const seeded = await request("family_trees", {
       token: user.token,
       method: "POST",
       body: {
         id: treeId,
-        title: "Fictional Stripe security tree",
-        people: [],
-        tree_data: { id: treeId, title: "Fictional Stripe security tree", people: [] },
+        title: treeData.title,
+        people: treeData.people,
+        tree_data: treeData,
       },
     });
     if (!seeded.ok) throw new Error(`Could not seed Stripe test account: ${await seeded.text()}`);

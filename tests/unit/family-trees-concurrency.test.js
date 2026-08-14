@@ -10,20 +10,47 @@ vi.mock("../../src/supabaseClient.js", () => ({
 }));
 
 import {
+  FamilyTreeListValidationError,
   TREE_SAVE_CONFLICT,
   familyTreeRecord,
   hydrateFamilyTree,
+  isFamilyTreeListValidationError,
   isTreeSaveConflictError,
+  listFamilyTrees,
   rebaseFamilyTreeListStorageRevision,
   rebaseFamilyTreeStorageRevision,
   saveFamilyTree,
 } from "../../src/services/familyTrees.js";
+import {
+  CURRENT_TREE_SCHEMA_VERSION,
+  TREE_SCHEMA_VERSION_FIELD,
+} from "../../src/domain/treeData.js";
+
+const currentTree = (overrides = {}) => ({
+  [TREE_SCHEMA_VERSION_FIELD]: CURRENT_TREE_SCHEMA_VERSION,
+  schemaVersion: 2,
+  id: "tree-1",
+  title: "Borg family",
+  people: [{ id: "person-1" }],
+  familyGroups: [
+    {
+      id: "group-1",
+      rootPersonId: "person-1",
+      personIds: ["person-1"],
+    },
+  ],
+  activeFamilyGroupId: "group-1",
+  properties: [{ id: "property-1" }],
+  outsideParties: [],
+  settings: { activePropertyId: "property-1" },
+  ...overrides,
+});
 
 const savedRecord = (overrides = {}) => ({
   id: "tree-1",
   title: "Borg family",
-  people: [],
-  tree_data: { id: "tree-1", title: "Borg family", people: [] },
+  people: [{ id: "person-1" }],
+  tree_data: currentTree(),
   revision: 8,
   created_at: "2026-08-14T03:00:00Z",
   updated_at: "2026-08-14T03:05:00Z",
@@ -44,9 +71,7 @@ describe("family tree optimistic concurrency", () => {
 
   it("keeps database revision metadata outside the user-controlled JSON payload", () => {
     const record = familyTreeRecord({
-      id: "tree-1",
-      title: "Borg family",
-      people: [],
+      ...currentTree(),
       storageRevision: 7,
     });
 
@@ -61,7 +86,7 @@ describe("family tree optimistic concurrency", () => {
     const query = rpcQuery({ data: savedRecord(), error: null });
 
     const saved = await saveFamilyTree(
-      { id: "tree-1", title: "Edited family", people: [], storageRevision: 7 },
+      currentTree({ title: "Edited family", storageRevision: 7 }),
       "owner-1",
     );
 
@@ -69,11 +94,24 @@ describe("family tree optimistic concurrency", () => {
       p_tree_id: "tree-1",
       p_expected_revision: 7,
       p_title: "Edited family",
-      p_people: [],
+      p_people: [{ id: "person-1" }],
       p_tree_data: {
+        [TREE_SCHEMA_VERSION_FIELD]: CURRENT_TREE_SCHEMA_VERSION,
+        schemaVersion: 2,
         id: "tree-1",
         title: "Edited family",
-        people: [],
+        people: [{ id: "person-1" }],
+        familyGroups: [
+          {
+            id: "group-1",
+            rootPersonId: "person-1",
+            personIds: ["person-1"],
+          },
+        ],
+        activeFamilyGroupId: "group-1",
+        properties: [{ id: "property-1" }],
+        outsideParties: [],
+        settings: { activePropertyId: "property-1" },
       },
     });
     expect(query.select).toHaveBeenCalledWith(
@@ -88,12 +126,12 @@ describe("family tree optimistic concurrency", () => {
       error: { code: "PT409", message: "TREE_SAVE_CONFLICT" },
     });
 
-    const operation = saveFamilyTree({
-      id: "tree-1",
-      title: "Stale edit",
-      people: [],
-      storageRevision: 7,
-    });
+    const operation = saveFamilyTree(
+      currentTree({
+        title: "Stale edit",
+        storageRevision: 7,
+      }),
+    );
 
     await expect(operation).rejects.toMatchObject({
       name: "TreeSaveConflictError",
@@ -105,12 +143,11 @@ describe("family tree optimistic concurrency", () => {
   });
 
   it("rebases only storage metadata and preserves newer local edits", () => {
-    const local = {
-      id: "tree-1",
+    const local = currentTree({
       title: "Newer local title",
       people: [{ id: "new-local-person" }],
       storageRevision: 7,
-    };
+    });
 
     expect(rebaseFamilyTreeStorageRevision(local, hydrateFamilyTree(savedRecord()))).toEqual({
       ...local,
@@ -120,8 +157,8 @@ describe("family tree optimistic concurrency", () => {
 
   it("keeps an acknowledged revision in the list for a later non-current rename", async () => {
     const list = [
-      { id: "tree-1", title: "Locally edited A", people: [], storageRevision: 7 },
-      { id: "tree-2", title: "Currently open B", people: [], storageRevision: 3 },
+      currentTree({ title: "Locally edited A", storageRevision: 7 }),
+      currentTree({ id: "tree-2", title: "Currently open B", storageRevision: 3 }),
     ];
     const rebased = rebaseFamilyTreeListStorageRevision(list, hydrateFamilyTree(savedRecord()));
     rpcQuery({ data: savedRecord({ revision: 9 }), error: null });
@@ -134,5 +171,45 @@ describe("family tree optimistic concurrency", () => {
       "save_family_tree",
       expect.objectContaining({ p_tree_id: "tree-1", p_expected_revision: 8 }),
     );
+  });
+
+  it("adopts the persisted tree schema marker when rebasing a legacy snapshot", () => {
+    const legacy = {
+      ...currentTree({ storageRevision: 7 }),
+    };
+    delete legacy[TREE_SCHEMA_VERSION_FIELD];
+
+    expect(rebaseFamilyTreeStorageRevision(legacy, hydrateFamilyTree(savedRecord()))).toMatchObject(
+      {
+        [TREE_SCHEMA_VERSION_FIELD]: CURRENT_TREE_SCHEMA_VERSION,
+        storageRevision: 8,
+      },
+    );
+  });
+
+  it("returns safe rows on a typed list error while quarantining a future row", async () => {
+    const futureRecord = savedRecord({
+      id: "future-tree",
+      title: "Future family",
+      tree_data: currentTree({
+        id: "future-tree",
+        title: "Future family",
+        [TREE_SCHEMA_VERSION_FIELD]: CURRENT_TREE_SCHEMA_VERSION + 1,
+      }),
+    });
+    const order = vi.fn(async () => ({ data: [savedRecord(), futureRecord], error: null }));
+    supabaseHarness.from.mockReturnValue({
+      select: vi.fn(() => ({ order })),
+    });
+
+    const operation = listFamilyTrees();
+    await expect(operation).rejects.toBeInstanceOf(FamilyTreeListValidationError);
+    await operation.catch((error) => {
+      expect(isFamilyTreeListValidationError(error)).toBe(true);
+      expect(error.trees).toHaveLength(1);
+      expect(error.rejected).toEqual([
+        expect.objectContaining({ id: "future-tree", code: "TREE_DATA_UNSUPPORTED_VERSION" }),
+      ]);
+    });
   });
 });
