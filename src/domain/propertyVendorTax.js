@@ -7,6 +7,7 @@ import {
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "./article5A.js";
 import { buildPropertyOwnership, isPersonDeceased } from "./familyOwnership.js";
 import { approximateFraction, buildPropertyLedger } from "./ownership.js";
+import { allocateMoney, roundMoney, sumMoney } from "./money.js";
 import { deedTransferTotals, saleTaxLot, vendorTaxSummary } from "./propertyTax.js";
 import {
   addFractions,
@@ -63,6 +64,82 @@ const sourceCalculationSummary = (rows = []) => {
       : null,
   };
 };
+
+/**
+ * Puts every money figure a user can read onto a whole cent, and makes each
+ * total the sum of the rounded parts beneath it.
+ *
+ * Attributing the selling price by multiplying it by each share leaves parts
+ * that do not add back to the whole once they are shown to the cent: three
+ * heirs to a third of EUR 1,000,000 each read EUR 333,333.33, and the column
+ * totals EUR 999,999.99. Thirds, sixths and sevenths are ordinary in Maltese
+ * succession, so the price is instead split across the source rows by largest
+ * remainder, and every subtotal is re-derived from those rounded rows.
+ */
+function reconcileVendorMoney(vendors = [], propertySaleValue = null) {
+  const attributableRows = vendors.flatMap((vendor) =>
+    vendor.rows.filter((row) => row.attributedSaleValue !== null),
+  );
+  // The vendors on a deed need not cover the whole property: a deceased owner's
+  // share can sit outside this sale. Only the covered portion of the price is
+  // shared out, so a partial sale is never inflated to the full selling price.
+  const shares = attributableRows.map((row) => Number(row.share) || 0);
+  const coveredShare = shares.reduce((total, share) => total + share, 0);
+  const allocations =
+    propertySaleValue === null
+      ? null
+      : allocateMoney(roundMoney(propertySaleValue * coveredShare), shares);
+  const allocationByRow = new Map();
+  if (allocations) {
+    attributableRows.forEach((row, index) => allocationByRow.set(row, allocations[index]));
+  }
+
+  const roundedMethod = (method) =>
+    method
+      ? {
+          ...method,
+          basis: roundMoney(method.basis) ?? method.basis,
+          tax: roundMoney(method.tax) ?? method.tax,
+        }
+      : method;
+
+  return vendors.map((vendor) => {
+    const rows = vendor.rows.map((row) => {
+      const attributedSaleValue = allocationByRow.has(row)
+        ? allocationByRow.get(row)
+        : roundMoney(row.attributedSaleValue);
+      const tax = row.tax === null || row.tax === undefined ? row.tax : roundMoney(row.tax);
+      return {
+        ...row,
+        attributedSaleValue,
+        difference: row.difference === null ? null : roundMoney(row.difference),
+        methods: (row.methods || []).map((method) => roundedMethod(method)),
+        selectedMethod: roundedMethod(row.selectedMethod),
+        tax,
+        net:
+          tax === null || tax === undefined || attributedSaleValue === null
+            ? null
+            : sumMoney([attributedSaleValue, -tax]),
+      };
+    });
+
+    const summary = sourceCalculationSummary(rows);
+    const attributedSaleValue = rows.every((row) => row.attributedSaleValue === null)
+      ? null
+      : sumMoney(rows.map((row) => row.attributedSaleValue));
+    const tax = summary.incompleteSourceCount ? null : sumMoney(rows.map((row) => row.tax));
+    return {
+      ...vendor,
+      rows,
+      attributedSaleValue,
+      tax,
+      net:
+        tax === null || attributedSaleValue === null ? null : sumMoney([attributedSaleValue, -tax]),
+      ...summary,
+      incompleteRowCount: summary.incompleteSourceCount,
+    };
+  });
+}
 
 const exactShareFromRecord = (record = {}) => {
   const exact = normaliseFraction(record.shareNumerator, record.shareDenominator);
@@ -857,7 +934,7 @@ export function buildTaxCalculationReport(
 ) {
   const report = vendorReport || buildPropertyVendorTaxReport(property, people, outsideParties);
   const peopleById = new Map(people.map((person) => [person.id, person]));
-  const vendors = report.livingVendors.map((vendor) => {
+  const assessedVendors = report.livingVendors.map((vendor) => {
     const storedRows = report.saleRows.filter((row) => row.lot.ownerId === vendor.id);
     const inheritanceSources = report.inheritanceSourcesByOwner.get(vendor.id) || [];
     const currentTranches = report.ownership?.tranchesByOwner?.get?.(vendor.id) || [];
@@ -1076,6 +1153,7 @@ export function buildTaxCalculationReport(
             : "pending",
     };
   });
+  const vendors = reconcileVendorMoney(assessedVendors, optionalMoney(property.saleValue));
   const totalsComplete =
     vendors.length > 0 &&
     vendors.every(
