@@ -203,6 +203,19 @@ psql \
   --file "$recovered_directory/migration-history-schema.sql" \
   --file "$recovered_directory/migration-history-data.sql" \
   --dbname "$SUPABASE_DB_URL"
+
+readonly realtime_log_privilege="$(
+  psql "$SUPABASE_DB_URL" \
+    --tuples-only \
+    --no-align \
+    --variable ON_ERROR_STOP=1 \
+    --command "select has_parameter_privilege('supabase_realtime_admin', 'log_min_messages', 'SET')"
+)"
+if [[ "$realtime_log_privilege" != "t" ]]; then
+  echo "The fresh target did not retain its managed realtime logging privilege." >&2
+  exit 1
+fi
+
 psql "$SUPABASE_DB_URL" --variable ON_ERROR_STOP=1 --command "notify pgrst, 'reload schema'"
 
 # The restored schema must retain the catalog and grant invariants as well as
