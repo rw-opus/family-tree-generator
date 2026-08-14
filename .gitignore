@@ -8,3 +8,9 @@ tmp/
 supabase/.temp/
 .claude/settings.local.json
 playwright-report/
+
+# Backup tooling must use an approved temporary directory. These narrow ignores
+# are a final guard against accidentally staging a local drill artifact.
+.backup-work/
+*.ftgbackup
+*.ftgbackup.sha256.json
