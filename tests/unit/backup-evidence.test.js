@@ -101,6 +101,30 @@ describe("synthetic restore target guard", () => {
         targetDbUrl: databaseUrl("db.example.supabase.co", 5432),
       },
     },
+    {
+      label: "a local-looking database URL with a host override",
+      override: {
+        targetDbUrl: `${databaseUrl()}?host=db.example.supabase.co`,
+      },
+    },
+    {
+      label: "a local-looking database URL with a libpq service override",
+      override: {
+        targetDbUrl: `${databaseUrl()}?service=production`,
+      },
+    },
+    {
+      label: "a local-looking database URL with a database override",
+      override: {
+        targetDbUrl: `${databaseUrl()}?dbname=production`,
+      },
+    },
+    {
+      label: "a database URL fragment",
+      override: {
+        targetDbUrl: `${databaseUrl()}#production`,
+      },
+    },
     { label: "a production source kind", override: { sourceKind: "production" } },
     { label: "the same project", override: { targetProjectId: "ftg-synthetic-source" } },
     { label: "a vague source", override: { sourceProjectId: "source" } },

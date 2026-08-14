@@ -86,6 +86,11 @@ function localDatabaseUrl(value, label) {
   if (url.pathname !== "/postgres") {
     throw new Error(`${label} must target only the disposable local postgres database.`);
   }
+  if (url.search || url.hash) {
+    throw new Error(
+      `${label} must not contain connection parameters or a fragment; libpq overrides are forbidden.`,
+    );
+  }
   return url;
 }
 
