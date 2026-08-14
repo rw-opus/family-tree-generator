@@ -7,3 +7,4 @@ test-results/
 tmp/
 supabase/.temp/
 .claude/settings.local.json
+playwright-report/

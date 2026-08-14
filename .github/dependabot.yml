@@ -1,0 +1,22 @@
+version: 2
+
+# npm audit --audit-level=high gates every merge, so an advisory with no update
+# path would eventually block all work. These keep a route open.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for the routine patch traffic; anything larger arrives on its own
+      # so it can be reviewed against the test suite properly.
+      patch-and-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

@@ -1,0 +1,45 @@
+name: End-to-end
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Chromium only. This is a desktop and tablet professional tool, so a
+      # Firefox and WebKit matrix would triple the cost for little return.
+      - run: npx playwright install --with-deps chromium
+
+      # The delivery project runs against this build through server.mjs, so the
+      # precompressed assets and build-info must exist before the suite starts.
+      - run: npm run build
+
+      - run: npx playwright test
+
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

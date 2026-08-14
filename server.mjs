@@ -96,15 +96,58 @@ async function resolveFile(requestUrl) {
   return { filePath: notFoundFile, statusCode: 404 };
 }
 
-async function sendFile(response, requestMethod, filePath, statusCode) {
+// Written beside each build output by scripts/precompress.mjs. Brotli is offered
+// first: it is materially smaller than gzip on this bundle, and any client that
+// advertises "br" supports it for static responses.
+const encodingVariants = [
+  { encoding: "br", extension: ".br" },
+  { encoding: "gzip", extension: ".gz" },
+];
+
+export function acceptedEncodings(headerValue) {
+  return String(headerValue || "")
+    .split(",")
+    .map((part) => {
+      const [name, ...parameters] = part.trim().split(";");
+      const quality = parameters
+        .map((parameter) => parameter.trim())
+        .find((parameter) => parameter.startsWith("q="));
+      return { name: name.toLowerCase(), quality: quality ? Number(quality.slice(2)) : 1 };
+    })
+    .filter((entry) => entry.name && Number.isFinite(entry.quality) && entry.quality > 0)
+    .map((entry) => entry.name);
+}
+
+async function resolveEncodedVariant(filePath, acceptEncodingHeader) {
+  const accepted = acceptedEncodings(acceptEncodingHeader);
+  if (!accepted.length) return null;
+  for (const variant of encodingVariants) {
+    if (!accepted.includes(variant.encoding)) continue;
+    const candidate = `${filePath}${variant.extension}`;
+    try {
+      if ((await stat(candidate)).isFile()) return { ...variant, filePath: candidate };
+    } catch {
+      // No precompressed sibling for this file; try the next encoding.
+    }
+  }
+  return null;
+}
+
+async function sendFile(response, requestMethod, filePath, statusCode, acceptEncodingHeader = "") {
   const contentType = mimeTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream";
   const cacheControl = filePath.includes(`${path.sep}assets${path.sep}`)
     ? "public, max-age=31536000, immutable"
     : "no-cache";
 
+  const variant = await resolveEncodedVariant(filePath, acceptEncodingHeader);
+
   response.writeHead(statusCode, {
     "Cache-Control": cacheControl,
     "Content-Type": contentType,
+    // Declared even on an identity response: a shared cache must never hand a
+    // brotli body to a client that did not ask for one.
+    Vary: "Accept-Encoding",
+    ...(variant ? { "Content-Encoding": variant.encoding } : {}),
     ...securityHeaders,
   });
 
@@ -114,8 +157,29 @@ async function sendFile(response, requestMethod, filePath, statusCode) {
   }
 
   await new Promise((resolve, reject) => {
-    createReadStream(filePath).on("error", reject).on("end", resolve).pipe(response);
+    createReadStream(variant ? variant.filePath : filePath)
+      .on("error", reject)
+      .on("end", resolve)
+      .pipe(response);
   });
+}
+
+/**
+ * One structured line per failed response. Successful static reads are not
+ * logged: at this traffic level that is noise, and request paths can carry
+ * identifiers that should not sit in a log.
+ */
+function logResponse(statusCode, pathname, error) {
+  console.error(
+    JSON.stringify({
+      level: statusCode >= 500 ? "error" : "warn",
+      event: "response",
+      status: statusCode,
+      path: pathname,
+      ...(error ? { error: error.message } : {}),
+      at: new Date().toISOString(),
+    }),
+  );
 }
 
 export function createPropertySuccessionServer() {
@@ -148,15 +212,18 @@ export function createPropertySuccessionServer() {
       return;
     }
 
+    const acceptEncoding = request.headers["accept-encoding"] || "";
     try {
       const { filePath, statusCode } = await resolveFile(request.url || "/");
-      await sendFile(response, request.method, filePath, statusCode);
+      if (statusCode !== 200) logResponse(statusCode, pathname);
+      await sendFile(response, request.method, filePath, statusCode, acceptEncoding);
     } catch (error) {
       if (response.headersSent) {
         response.destroy();
         return;
       }
       if (error instanceof URIError) {
+        logResponse(400, pathname, error);
         response.writeHead(400, {
           "Content-Type": "text/plain; charset=utf-8",
           ...securityHeaders,
@@ -164,8 +231,9 @@ export function createPropertySuccessionServer() {
         response.end("Bad Request");
         return;
       }
+      logResponse(500, pathname, error);
       try {
-        await sendFile(response, request.method, serverErrorFile, 500);
+        await sendFile(response, request.method, serverErrorFile, 500, acceptEncoding);
       } catch {
         response.writeHead(500, {
           "Content-Type": "text/plain; charset=utf-8",
@@ -177,10 +245,37 @@ export function createPropertySuccessionServer() {
   });
 }
 
+/**
+ * Stops accepting connections, lets in-flight responses finish, and exits.
+ * Without this Railway's stop signal severs live responses on every deploy.
+ */
+export function shutdownGracefully(server, { signal = "SIGTERM", timeoutMs = 10_000 } = {}) {
+  console.log(JSON.stringify({ level: "info", event: "shutdown", signal }));
+  const forceExit = setTimeout(() => {
+    console.log(JSON.stringify({ level: "warn", event: "shutdown-timeout", signal }));
+    process.exit(1);
+  }, timeoutMs);
+  // A pending timer must not itself hold the process open once draining is done.
+  forceExit.unref?.();
+  return new Promise((resolve) => {
+    server.close(() => {
+      clearTimeout(forceExit);
+      resolve();
+    });
+    server.closeIdleConnections?.();
+  });
+}
+
 const isMainModule =
   process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMainModule) {
-  createPropertySuccessionServer().listen(port, "0.0.0.0", () => {
+  const server = createPropertySuccessionServer();
+  server.listen(port, "0.0.0.0", () => {
     console.log(`Property Succession Calculator listening on port ${port}`);
   });
+  for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.once(signal, () => {
+      shutdownGracefully(server, { signal }).then(() => process.exit(0));
+    });
+  }
 }
