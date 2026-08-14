@@ -78,7 +78,23 @@ export type CommercialDatabase = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      process_stripe_tree_event: {
+        Args: {
+          p_amount_total: number | null;
+          p_checkout_session_id: string | null;
+          p_currency: string | null;
+          p_customer_id: string | null;
+          p_event_id: string;
+          p_event_type: string;
+          p_order_id: string | null;
+          p_payment_intent_id: string | null;
+          p_payment_status: string | null;
+          p_user_id: string | null;
+        };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

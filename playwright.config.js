@@ -37,13 +37,23 @@ export default defineConfig({
     },
     {
       name: "app",
-      testIgnore: /(delivery|mobile)\.spec\.js/,
+      testIgnore: /(delivery|mobile|webkit-smoke)\.spec\.js/,
       use: { ...devices["Desktop Chrome"], baseURL: appURL },
     },
     {
       name: "mobile",
       testMatch: /mobile\.spec\.js/,
       use: { ...devices["Pixel 7"], baseURL: appURL },
+    },
+    {
+      name: "webkit-iphone-smoke",
+      testMatch: /webkit-smoke\.spec\.js/,
+      use: { ...devices["iPhone 15"], baseURL: appURL },
+    },
+    {
+      name: "webkit-ipad-smoke",
+      testMatch: /webkit-smoke\.spec\.js/,
+      use: { ...devices["iPad Pro 11"], baseURL: appURL },
     },
   ],
   webServer: [

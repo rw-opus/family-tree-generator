@@ -12,7 +12,10 @@ A commercial Maltese property ownership and succession workspace. It combines a 
 
 ## Start locally
 
-1. Run `npm install` then `npm run dev` for a local-only development workspace.
+Use Node.js `24.19.0` and npm `11.17.0`, as pinned by `.nvmrc` and
+`package.json`.
+
+1. Run `npm ci` then `npm run dev` for a local-only development workspace.
 2. To exercise authentication and billing, copy `.env.example` to `.env`, set `VITE_COMMERCIAL_MODE=true`, and add a dedicated Supabase project URL and publishable key.
 3. Apply the migrations, configure Stripe and deploy the two Edge Functions as described in [`docs/commercial-setup.md`](docs/commercial-setup.md).
 
@@ -27,6 +30,7 @@ Stripe secrets and the Supabase secret/service key belong only in Supabase Edge 
 ## Legal and operations
 
 - [`docs/production-governance-decisions.md`](docs/production-governance-decisions.md) is the canonical production-governance brief and distinguishes required controls from controls actually verified as active.
+- [`docs/production-readiness-status.md`](docs/production-readiness-status.md) records current evidence, launch blockers and provider-side checks that still require an operator.
 - [`SECURITY.md`](SECURITY.md) records the copied File Tracker decisions on clickwrap, monitoring, leaked-password protection and browser session storage.
 - [`docs/backup-and-account-deletion.md`](docs/backup-and-account-deletion.md) records backup, restoration and verified deletion procedures.
 - [`docs/incident-response.md`](docs/incident-response.md) is the production incident runbook.

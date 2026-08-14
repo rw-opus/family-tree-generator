@@ -21,10 +21,24 @@ Unlimited access is an operator-managed value in `tree_accounts.unlimited_trees`
 
 Use a dedicated Supabase project for this product. Do not share the File Tracker database or reuse its client tables.
 
-Apply `supabase/migrations/20260731124716_commercial_tree_credits.sql`, or run `supabase/schema.sql` in the SQL Editor for a new project. Then confirm:
+Treat `supabase/migrations/` as the authoritative database history. Apply every
+pending migration, in timestamp order, to an isolated staging project first and
+then apply the same reviewed migrations to production. For example, from a
+project linked to the intended Supabase environment:
+
+```text
+npx supabase db push
+```
+
+Do not initialise or upgrade an environment by running one selected migration
+or by pasting `supabase/schema.sql` into the SQL Editor. That file is a generated
+review snapshot only and may not describe the migration state of an existing
+project. After applying migrations, confirm:
 
 - RLS is enabled on every public table;
-- authenticated users can select, update and delete only their own `family_trees`;
+- authenticated users can select, insert and delete only their own `family_trees`;
+- direct table updates are denied and `save_family_tree` accepts only the
+  caller's matching expected revision;
 - `tree_accounts`, `tree_credit_orders` and `tree_generations` expose only each user's own rows;
 - `stripe_tree_events` has no anon or authenticated policy;
 - the private quota and credit functions are not exposed through the Data API.
@@ -70,6 +84,10 @@ npx supabase functions deploy create-tree-checkout
 npx supabase functions deploy stripe-tree-webhook
 ```
 
+Deploy to the isolated staging project first. Exercise checkout, signed webhook
+delivery, duplicate delivery, delayed payment, expiry and a later successful
+payment before deploying the exact reviewed function sources to production.
+
 The generated `supabase/config.toml` keeps JWT verification enabled for checkout and disabled only for the externally signed Stripe webhook. The webhook verifies Stripe's signature before doing any work.
 
 ## 4. Railway variables
@@ -89,6 +107,11 @@ Do not add Stripe secrets or a Supabase secret/service-role key to Railway's cli
 
 Before accepting live payments:
 
+- verify that the production webhook is configured and a signed Stripe test
+  event reaches the deployed function successfully;
+- verify that the configured Edge Function CORS allow-list contains only the
+  production origin, approved staging origin and deliberate local-development
+  origins;
 - obtain final Maltese legal approval of the in-app Terms, Privacy Notice and tax-calculation disclaimer template;
 - decide the refund and chargeback policy and add the corresponding support procedure;
 - test Stripe's card, delayed-payment, expiry and duplicate-webhook scenarios in test mode;

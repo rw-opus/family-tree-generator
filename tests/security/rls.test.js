@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createHmac } from "node:crypto";
 
 /**
  * A1 and A4 — tenant isolation, proven rather than assumed.
@@ -15,13 +16,23 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const url = process.env.SUPABASE_URL;
 const anonKey = process.env.SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const jwtSecret = process.env.SUPABASE_JWT_SECRET;
 
-if (!url || !anonKey || !serviceRoleKey) {
+if (!url || !anonKey || !serviceRoleKey || !jwtSecret) {
   throw new Error(
-    "RLS tests need SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY. " +
+    "RLS tests need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY " +
+      "and SUPABASE_JWT_SECRET. " +
       "Start a local stack with `npx supabase start` and export them, or run this in CI.",
   );
 }
+
+const signedLocalJwt = (payload) => {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const header = encode({ alg: "HS256", typ: "JWT" });
+  const body = encode(payload);
+  const signature = createHmac("sha256", jwtSecret).update(`${header}.${body}`).digest("base64url");
+  return `${header}.${body}.${signature}`;
+};
 
 const rest = (path, { token, method = "GET", body, prefer } = {}) =>
   fetch(`${url}/rest/v1/${path}`, {
@@ -137,8 +148,8 @@ describe("cross-account isolation", () => {
       prefer: "return=representation",
       body: { title: "Taken over by Bob" },
     });
-    const rows = await readJson(response);
-    expect(rows).toEqual([]);
+    expect(response.ok).toBe(false);
+    expect([401, 403]).toContain(response.status);
 
     const check = await rest(`family_trees?id=eq.${aliceTreeId}`, { token: alice.token });
     expect((await readJson(check))[0].title).toBe("Alice private estate");
@@ -195,6 +206,124 @@ describe("cross-account isolation", () => {
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(JSON.stringify(body)).not.toContain("Alice private estate");
   });
+
+  it("denies an unconditional table PATCH even from the tree owner", async () => {
+    const before = await rest(`family_trees?id=eq.${aliceTreeId}&select=title,revision`, {
+      token: alice.token,
+    });
+    const [original] = await readJson(before);
+
+    const response = await rest(`family_trees?id=eq.${aliceTreeId}`, {
+      token: alice.token,
+      method: "PATCH",
+      prefer: "return=representation",
+      body: { title: "Bypassed compare and swap" },
+    });
+
+    expect(response.ok).toBe(false);
+    expect([401, 403]).toContain(response.status);
+
+    const after = await rest(`family_trees?id=eq.${aliceTreeId}&select=title,revision`, {
+      token: alice.token,
+    });
+    expect((await readJson(after))[0]).toEqual(original);
+  });
+
+  it("saves the owner's matching revision through the RPC and increments it", async () => {
+    const read = await rest(`family_trees?id=eq.${aliceTreeId}&select=id,title,revision`, {
+      token: alice.token,
+    });
+    const [original] = await readJson(read);
+
+    const firstSave = await rest("rpc/save_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: {
+        p_tree_id: aliceTreeId,
+        p_expected_revision: original.revision,
+        p_title: "Alice RPC save",
+        p_people: [],
+        p_tree_data: { id: aliceTreeId, title: "Alice RPC save", people: [] },
+      },
+    });
+    const [newer] = await readJson(firstSave);
+    expect(firstSave.status).toBe(200);
+    expect(newer).toMatchObject({
+      title: "Alice RPC save",
+      revision: original.revision + 1,
+    });
+  });
+
+  it("returns a typed conflict for a stale RPC save without overwriting", async () => {
+    const read = await rest(`family_trees?id=eq.${aliceTreeId}&select=id,title,revision`, {
+      token: alice.token,
+    });
+    const [original] = await readJson(read);
+
+    const firstSave = await rest("rpc/save_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: {
+        p_tree_id: aliceTreeId,
+        p_expected_revision: original.revision,
+        p_title: "Alice newer revision",
+        p_people: [],
+        p_tree_data: { id: aliceTreeId, title: "Alice newer revision", people: [] },
+      },
+    });
+    const [newer] = await readJson(firstSave);
+    expect(firstSave.status).toBe(200);
+
+    const staleSave = await rest("rpc/save_family_tree", {
+      token: alice.token,
+      method: "POST",
+      body: {
+        p_tree_id: aliceTreeId,
+        p_expected_revision: original.revision,
+        p_title: "Alice stale overwrite",
+        p_people: [],
+        p_tree_data: { id: aliceTreeId, title: "Alice stale overwrite", people: [] },
+      },
+    });
+    const conflict = await readJson(staleSave);
+    expect(staleSave.status).toBe(409);
+    expect(conflict).toMatchObject({ code: "PT409", message: "TREE_SAVE_CONFLICT" });
+
+    const finalRead = await rest(`family_trees?id=eq.${aliceTreeId}&select=title,revision`, {
+      token: alice.token,
+    });
+    expect((await readJson(finalRead))[0]).toEqual({
+      title: "Alice newer revision",
+      revision: newer.revision,
+    });
+  });
+
+  it("denies Bob's save RPC for Alice's exact tree identifier", async () => {
+    const read = await rest(`family_trees?id=eq.${aliceTreeId}&select=title,revision`, {
+      token: alice.token,
+    });
+    const [original] = await readJson(read);
+
+    const response = await rest("rpc/save_family_tree", {
+      token: bob.token,
+      method: "POST",
+      body: {
+        p_tree_id: aliceTreeId,
+        p_expected_revision: original.revision,
+        p_title: "Bob RPC overwrite",
+        p_people: [],
+        p_tree_data: { id: aliceTreeId, title: "Bob RPC overwrite", people: [] },
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect([401, 403]).toContain(response.status);
+
+    const finalRead = await rest(`family_trees?id=eq.${aliceTreeId}&select=title,revision`, {
+      token: alice.token,
+    });
+    expect((await readJson(finalRead))[0]).toEqual(original);
+  });
 });
 
 describe("unauthenticated and invalid credentials", () => {
@@ -224,6 +353,38 @@ describe("unauthenticated and invalid credentials", () => {
     });
 
     expect(response.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("refuses a correctly signed but expired authentication token", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = signedLocalJwt({
+      aud: "authenticated",
+      exp: now - 60,
+      iat: now - 3600,
+      iss: `${url}/auth/v1`,
+      role: "authenticated",
+      sub: crypto.randomUUID(),
+    });
+
+    const response = await rest("family_trees?select=id", { token });
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("refuses anonymous invocation of the family-tree save RPC", async () => {
+    const response = await rest("rpc/save_family_tree", {
+      method: "POST",
+      body: {
+        p_tree_id: crypto.randomUUID(),
+        p_expected_revision: 1,
+        p_title: "Anonymous overwrite",
+        p_people: [],
+        p_tree_data: {},
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect([401, 403]).toContain(response.status);
   });
 });
 

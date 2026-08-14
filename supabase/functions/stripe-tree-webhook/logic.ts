@@ -1,9 +1,5 @@
 export type TreeCheckoutAction = "fulfil" | "expire" | "ignore";
 
-export function treeOrderWasAlreadyFulfilled(order: { status?: string | null } | null) {
-  return order?.status === "paid";
-}
-
 export function treeCheckoutEventAction(eventType: string): TreeCheckoutAction {
   if (
     eventType === "checkout.session.completed" ||
@@ -30,14 +26,18 @@ export function paidTreeOrderUpdate(session: {
   if (session.amount_total !== 3000 || String(session.currency || "").toLowerCase() !== "eur") {
     throw new Error("tree checkout amount is invalid");
   }
-  const paymentIntentId =
-    typeof session.payment_intent === "string"
-      ? session.payment_intent
-      : session.payment_intent?.id || null;
   return {
     status: "paid",
-    stripe_payment_intent_id: paymentIntentId,
+    stripe_payment_intent_id: treePaymentIntentId(session),
   };
+}
+
+export function treePaymentIntentId(session: {
+  payment_intent?: string | { id?: string } | null;
+}): string | null {
+  return typeof session.payment_intent === "string"
+    ? session.payment_intent
+    : session.payment_intent?.id || null;
 }
 
 export type WebhookRejection = { status: number; error: string } | null;
@@ -56,33 +56,6 @@ export function webhookRejection(input: {
   if (!input.configured) return { status: 503, error: "webhook is not configured" };
   if (!input.signature) return { status: 400, error: "missing signature" };
   return null;
-}
-
-export type EventClaimOutcome = "claimed" | "duplicate" | "failed";
-
-/**
- * E2 — the idempotency ledger is claimed by insert. A unique violation means
- * this event has already been seen, which is a successful no-op rather than an
- * error, so Stripe stops retrying it.
- */
-export function eventClaimOutcome(error: { code?: string | null } | null): EventClaimOutcome {
-  if (!error) return "claimed";
-  return error.code === "23505" ? "duplicate" : "failed";
-}
-
-export type FulfilmentOutcome = "fulfilled" | "already-fulfilled" | "unmatched";
-
-/**
- * E2/E3 — a fulfilment that updated no pending row is not automatically a
- * failure: a redelivered or out-of-order event may find the order already paid.
- * Only a genuinely unmatched order is an error worth retrying.
- */
-export function treeOrderFulfilmentOutcome(input: {
-  updatedOrder: { id?: string } | null;
-  existingOrder: { status?: string | null } | null;
-}): FulfilmentOutcome {
-  if (input.updatedOrder) return "fulfilled";
-  return treeOrderWasAlreadyFulfilled(input.existingOrder) ? "already-fulfilled" : "unmatched";
 }
 
 /**

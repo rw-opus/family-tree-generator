@@ -17,6 +17,7 @@ import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { observeStickyNavOffset } from "./components/stickyNavOffset.js";
 import { TreeToolsPanel } from "./components/TreeToolsPanel.jsx";
+import { WorkspaceSaveStatus } from "./components/WorkspaceSaveStatus.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
   casePersonDependencyLabels,
@@ -50,7 +51,11 @@ import {
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
 import {
   createFamilyTree,
+  familyTreeSaveFingerprint,
+  isTreeSaveConflictError,
   listFamilyTrees,
+  rebaseFamilyTreeListStorageRevision,
+  rebaseFamilyTreeStorageRevision,
   removeFamilyTree,
   saveFamilyTree,
 } from "./services/familyTrees.js";
@@ -250,6 +255,12 @@ export function App({
           ? "Connecting to secure storage..."
           : "Automatically saved on this device.",
   );
+  const [saveState, setSaveState] = useState(() => ({
+    phase: cloudMode ? "saving" : startupWorkspace.loadError ? "error" : "saved",
+    detail: cloudMode
+      ? "Connecting to secure storage."
+      : startupWorkspace.loadError || "Saved on this device.",
+  }));
   const [localRecoveryBlocked, setLocalRecoveryBlocked] = useState(() =>
     Boolean(startupWorkspace.loadError),
   );
@@ -271,6 +282,7 @@ export function App({
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
+  const failedDirectSaveIdsRef = useRef(new Set());
   const propertyWorkspaceRef = useRef(null);
   const propertyWorkspaceNavRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
@@ -278,6 +290,9 @@ export function App({
   );
   const activateCase = useCallback((value, options = {}) => {
     const activation = caseActivationState(value);
+    if (options.acknowledgeCloudSave) {
+      cloudSaveQueueRef.current?.acknowledge?.(activation.caseData);
+    }
     setTree(activation.caseData);
     setZoom(activation.zoom);
     setActiveFamilyGroupId(activation.activeFamilyGroupId);
@@ -304,10 +319,30 @@ export function App({
     const queue = createCloudSaveQueue(
       (snapshot) => saveFamilyTree(snapshot, authenticatedUserId),
       {
-        onSaveStart: () => setStatus("Saving securely..."),
-        onSaveSuccess: () => setStatus("Saved securely to your workspace."),
+        rebaseSnapshot: rebaseFamilyTreeStorageRevision,
+        snapshotFingerprint: familyTreeSaveFingerprint,
+        isConflictError: isTreeSaveConflictError,
+        onStateChange: (queueState) => {
+          const detail =
+            queueState.phase === "conflict"
+              ? queueState.error?.message
+              : queueState.phase === "error"
+                ? queueState.error?.message || "The latest changes could not be saved."
+                : queueState.phase === "saving"
+                  ? "Changes are being secured."
+                  : "All changes are saved securely.";
+          setSaveState({ phase: queueState.phase, detail });
+        },
+        onSaveSuccess: (savedTree) => {
+          setTree((current) => rebaseFamilyTreeStorageRevision(current, savedTree));
+          setTrees((items) => rebaseFamilyTreeListStorageRevision(items, savedTree));
+        },
         onSaveError: (error) =>
-          setStatus(`Cloud save needs attention: ${error?.message || "Unknown error"}`),
+          setStatus(
+            isTreeSaveConflictError(error)
+              ? `Conflict detected: ${error.message}`
+              : `Save failed: ${error?.message || "Unknown error"}`,
+          ),
       },
     );
     cloudSaveQueueRef.current = queue;
@@ -484,6 +519,12 @@ export function App({
       return;
     }
     const saved = saveLocalWorkspace(trees, activeTreeIsListed ? tree.id : "");
+    setSaveState({
+      phase: saved ? "saved" : "error",
+      detail: saved
+        ? "Saved on this device."
+        : "This browser could not save the latest changes. Keep this page open.",
+    });
     setStatus(
       saved
         ? "Automatically saved on this device."
@@ -505,13 +546,17 @@ export function App({
         setTrees(items);
         if (items[0]) {
           setActiveTreeIsListed(true);
-          activateCase(items[0]);
+          activateCase(items[0], { acknowledgeCloudSave: true });
         } else {
           setActiveTreeIsListed(false);
         }
         setStatus("Saved securely to your workspace.");
+        setSaveState({ phase: "saved", detail: "All changes are saved securely." });
       })
-      .catch((error) => setStatus(`Cloud storage needs attention: ${error.message}`));
+      .catch((error) => {
+        setStatus(`Cloud storage needs attention: ${error.message}`);
+        setSaveState({ phase: "error", detail: error.message });
+      });
   }, [activateCase, authenticatedUserId, cloudMode, refreshTreeEntitlement]);
 
   useEffect(() => {
@@ -690,7 +735,7 @@ export function App({
     try {
       const saved = await createFamilyTree(nextTree);
       setTrees((items) => upsertWorkspaceTree(items, saved));
-      openCreatedTree(saved, { openDashboard: true });
+      openCreatedTree(saved, { openDashboard: true, acknowledgeCloudSave: true });
       await refreshTreeEntitlement();
       setStatus("New family created and saved securely.");
       return true;
@@ -738,7 +783,7 @@ export function App({
         setStatus("Importing and securing this family tree...");
         const saved = await createFamilyTree(nextTree);
         setTrees((items) => upsertWorkspaceTree(items, saved));
-        openCreatedTree(saved);
+        openCreatedTree(saved, { acknowledgeCloudSave: true });
         await refreshTreeEntitlement();
       } else {
         openCreatedTree(nextTree);
@@ -823,7 +868,7 @@ export function App({
       }
     }
     setActiveTreeIsListed(true);
-    activateCase(selectedTree);
+    activateCase(selectedTree, { acknowledgeCloudSave: cloudMode });
     setPropertyWorkspaceSection(
       view === "tax" ? "tax" : view === "ownership" ? "ownership" : "setup",
     );
@@ -834,7 +879,10 @@ export function App({
   const renameTree = async (treeId, title) => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     const nextTitle = String(title || "").trim();
-    if (!selectedTree || !nextTitle || nextTitle === selectedTree.title) return;
+    const retryingFailedSave = failedDirectSaveIdsRef.current.has(treeId);
+    if (!selectedTree || !nextTitle || (nextTitle === selectedTree.title && !retryingFailedSave)) {
+      return;
+    }
 
     const selectedActiveGroupId =
       selectedTree.activeFamilyGroupId || selectedTree.familyGroups?.[0]?.id || "";
@@ -849,19 +897,31 @@ export function App({
     if (treeId === currentTree.id) setTree(renamed);
     if (!cloudMode) return;
 
+    const usesActiveSaveQueue = treeId === currentTree.id && cloudSaveQueueRef.current;
     setStatus("Saving family name...");
+    if (!usesActiveSaveQueue) {
+      setSaveState({ phase: "saving", detail: "Saving the family name." });
+    }
     try {
       let saved;
-      if (treeId === currentTree.id && cloudSaveQueueRef.current) {
+      if (usesActiveSaveQueue) {
         cloudSaveQueueRef.current.schedule(normaliseTree(renamed));
         saved = await cloudSaveQueueRef.current.flush();
       } else {
         saved = await saveFamilyTree(renamed, authenticatedUserId);
       }
-      setTrees((items) => items.map((item) => (item.id === treeId ? saved : item)));
-      if (treeId === currentTree.id) setTree(saved);
+      if (treeId !== currentTree.id) {
+        setTrees((items) => items.map((item) => (item.id === treeId ? saved : item)));
+        setSaveState({ phase: "saved", detail: "All changes are saved securely." });
+      }
+      failedDirectSaveIdsRef.current.delete(treeId);
       setStatus("Saved securely to your workspace.");
     } catch (error) {
+      if (!usesActiveSaveQueue) failedDirectSaveIdsRef.current.add(treeId);
+      setSaveState({
+        phase: isTreeSaveConflictError(error) ? "conflict" : "error",
+        detail: error.message,
+      });
       setStatus(`Could not rename family: ${error.message}`);
     }
   };
@@ -876,10 +936,10 @@ export function App({
     if (removedCurrentTree) {
       if (remainingTrees[0]) {
         setActiveTreeIsListed(true);
-        activateCase(remainingTrees[0]);
+        activateCase(remainingTrees[0], { acknowledgeCloudSave: cloudMode });
       } else {
         setActiveTreeIsListed(false);
-        activateCase(initialTree());
+        activateCase(initialTree(), { acknowledgeCloudSave: cloudMode });
       }
     }
     if (!cloudMode) return true;
@@ -1202,8 +1262,10 @@ export function App({
       cloudSaveQueueRef.current?.schedule(normaliseTree(currentTree));
       const saved = await cloudSaveQueueRef.current?.flush();
       if (!saved) throw new Error("The secure save queue is unavailable.");
-      setTree(saved);
-      setTrees((items) => [saved, ...items.filter((item) => item.id !== saved.id)]);
+      // Do not replace the live editor with the response snapshot: the user may
+      // have made a newer change while this request was in flight. The queue
+      // retains the returned server revision and rebases that newer snapshot.
+      setTrees((items) => rebaseFamilyTreeListStorageRevision(items, saved));
       setStatus("Saved securely to your workspace.");
       setDashboardOpen(false);
       setWorkspaceView("tree");
@@ -1240,6 +1302,7 @@ export function App({
         billingBusy={billingBusy}
         billingMessage={billingMessage}
         storageStatus={status}
+        saveState={saveState}
         recoveryAvailable={Boolean(startupWorkspace.recoveryKey)}
         onDownloadRecovery={downloadLocalRecovery}
         onDownloadBackup={downloadWorkspaceBackup}
@@ -1293,6 +1356,7 @@ export function App({
             <div className="property-workspace-title">
               <p className="eyebrow">Property &amp; Tax</p>
               <h1>{currentTree.title}</h1>
+              <WorkspaceSaveStatus state={saveState} />
             </div>
             <button type="button" className="tree-home-button" onClick={returnHome}>
               <House size={16} /> Home
@@ -1499,7 +1563,11 @@ export function App({
                       <Landmark size={16} />
                       <span>Property &amp; Tax</span>
                     </button>
-                    <EditableTreeTitle value={currentTree.title} onChange={updateTreeTitle} />
+                    <EditableTreeTitle
+                      value={currentTree.title}
+                      onChange={updateTreeTitle}
+                      trailing={<WorkspaceSaveStatus state={saveState} />}
+                    />
                     <PersonFinder
                       people={currentTree.people}
                       onSelectPerson={(personId) => {

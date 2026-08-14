@@ -1,3 +1,5 @@
+-- GENERATED SNAPSHOT — DO NOT EDIT MANUALLY.
+-- supabase/migrations/ is the authoritative database history.
 -- Family Tree Generator commercial schema.
 -- Run this only in the Family Tree Generator's own Supabase project.
 -- Commercial rule: the first five lifetime tree generations are free;
@@ -13,12 +15,22 @@ create table if not exists public.family_trees (
   title text not null default 'Untitled family tree' check (char_length(title) <= 200),
   people jsonb not null default '[]'::jsonb check (jsonb_typeof(people) = 'array'),
   tree_data jsonb not null default '{}'::jsonb check (jsonb_typeof(tree_data) = 'object'),
+  revision bigint not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.family_trees
   add column if not exists tree_data jsonb not null default '{}'::jsonb;
+
+alter table public.family_trees
+  add column if not exists revision bigint not null default 1;
+
+alter table public.family_trees
+  drop constraint if exists family_trees_revision_positive;
+
+alter table public.family_trees
+  add constraint family_trees_revision_positive check (revision > 0);
 
 create index if not exists family_trees_owner_updated_idx
   on public.family_trees (owner_id, updated_at desc);
@@ -100,6 +112,88 @@ drop function if exists public.set_family_tree_updated_at();
 create trigger family_trees_set_updated_at
 before update on public.family_trees
 for each row execute function private.set_updated_at();
+
+create or replace function private.increment_family_tree_revision()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  new.revision := old.revision + 1;
+  return new;
+end;
+$$;
+
+revoke all on function private.increment_family_tree_revision() from public, anon, authenticated;
+
+drop trigger if exists family_trees_increment_revision on public.family_trees;
+create trigger family_trees_increment_revision
+before update on public.family_trees
+for each row execute function private.increment_family_tree_revision();
+
+create or replace function public.save_family_tree(
+  p_tree_id uuid,
+  p_expected_revision bigint,
+  p_title text,
+  p_people jsonb,
+  p_tree_data jsonb
+)
+returns setof public.family_trees
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  current_revision bigint;
+begin
+  if caller_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_SAVE_AUTH_REQUIRED';
+  end if;
+
+  select tree.revision
+  into current_revision
+  from public.family_trees as tree
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_SAVE_FORBIDDEN';
+  end if;
+
+  if p_expected_revision is null
+    or p_expected_revision <= 0
+    or current_revision <> p_expected_revision then
+    raise sqlstate 'PT409' using
+      message = 'TREE_SAVE_CONFLICT';
+  end if;
+
+  return query
+  update public.family_trees as tree
+  set
+    title = p_title,
+    people = p_people,
+    tree_data = p_tree_data
+  where tree.id = p_tree_id
+    and tree.owner_id = caller_id
+  returning tree.*;
+end;
+$$;
+
+revoke all on function public.save_family_tree(uuid, bigint, text, jsonb, jsonb)
+from public, anon, authenticated;
+grant execute on function public.save_family_tree(uuid, bigint, text, jsonb, jsonb)
+to authenticated;
+
+comment on function public.save_family_tree(uuid, bigint, text, jsonb, jsonb)
+is 'Owner-checked compare-and-swap save for family_trees; raises TREE_SAVE_CONFLICT on stale revisions.';
 
 drop trigger if exists tree_accounts_set_updated_at on public.tree_accounts;
 create trigger tree_accounts_set_updated_at
@@ -260,6 +354,143 @@ create trigger tree_credit_orders_grant_paid_credit
 before insert or update of status on public.tree_credit_orders
 for each row execute function private.grant_paid_tree_credit();
 
+-- Process each verified Stripe event and its entitlement change in one
+-- PostgreSQL transaction. The public location makes the RPC reachable through
+-- PostgREST, but only the service_role used by the Edge Function may execute it.
+create or replace function public.process_stripe_tree_event(
+  p_event_id text,
+  p_event_type text,
+  p_order_id uuid,
+  p_user_id uuid,
+  p_checkout_session_id text,
+  p_payment_status text,
+  p_amount_total integer,
+  p_currency text,
+  p_payment_intent_id text,
+  p_customer_id text
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  claimed boolean;
+  tree_order public.tree_credit_orders%rowtype;
+begin
+  if nullif(btrim(p_event_id), '') is null or char_length(p_event_id) > 255 then
+    raise exception using errcode = '22023', message = 'INVALID_STRIPE_EVENT_ID';
+  end if;
+  if nullif(btrim(p_event_type), '') is null or char_length(p_event_type) > 200 then
+    raise exception using errcode = '22023', message = 'INVALID_STRIPE_EVENT_TYPE';
+  end if;
+
+  insert into public.stripe_tree_events (event_id, event_type)
+  values (p_event_id, p_event_type)
+  on conflict (event_id) do nothing
+  returning true into claimed;
+
+  if not coalesce(claimed, false) then
+    return 'duplicate';
+  end if;
+
+  if p_event_type not in (
+    'checkout.session.completed',
+    'checkout.session.async_payment_succeeded',
+    'checkout.session.expired',
+    'checkout.session.async_payment_failed'
+  ) then
+    return 'ignored';
+  end if;
+
+  if p_order_id is null or p_user_id is null or nullif(btrim(p_checkout_session_id), '') is null then
+    raise exception using errcode = '22023', message = 'INCOMPLETE_TREE_CHECKOUT_REFERENCE';
+  end if;
+
+  select orders.* into tree_order
+  from public.tree_credit_orders orders
+  where orders.id = p_order_id
+    and orders.user_id = p_user_id
+    and orders.unit_amount_cents = 3000
+    and orders.currency = 'eur'
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'TREE_CREDIT_ORDER_NOT_FOUND';
+  end if;
+
+  if tree_order.stripe_checkout_session_id is distinct from p_checkout_session_id then
+    raise exception using errcode = 'P0001', message = 'TREE_CHECKOUT_SESSION_MISMATCH';
+  end if;
+
+  -- Checkout can complete before a delayed payment method settles. Record the
+  -- event idempotently but leave the order pending for the later success/fail
+  -- event.
+  if p_event_type = 'checkout.session.completed'
+    and p_payment_status is distinct from 'paid' then
+    return 'awaiting_payment';
+  end if;
+
+  if p_event_type in ('checkout.session.expired', 'checkout.session.async_payment_failed') then
+    if tree_order.status = 'pending' then
+      update public.tree_credit_orders
+      set status = 'expired'
+      where id = tree_order.id;
+      return 'expired';
+    end if;
+
+    -- A stale failure must never undo a successful, refunded or disputed
+    -- payment state.
+    return 'already_final';
+  end if;
+
+  if p_payment_status is distinct from 'paid'
+    or p_amount_total is distinct from 3000
+    or lower(coalesce(p_currency, '')) <> 'eur'
+    or nullif(btrim(p_payment_intent_id), '') is null then
+    raise exception using errcode = '22023', message = 'INVALID_PAID_TREE_CHECKOUT';
+  end if;
+
+  if tree_order.status in ('pending', 'expired') then
+    update public.tree_credit_orders
+    set
+      status = 'paid',
+      stripe_payment_intent_id = p_payment_intent_id
+    where id = tree_order.id;
+  elsif tree_order.status = 'paid' then
+    if tree_order.stripe_payment_intent_id is distinct from p_payment_intent_id then
+      raise exception using errcode = 'P0001', message = 'TREE_PAYMENT_INTENT_MISMATCH';
+    end if;
+  else
+    -- Do not let an out-of-order paid event reverse a later refund/dispute.
+    return 'already_final';
+  end if;
+
+  if nullif(btrim(p_customer_id), '') is not null then
+    update public.tree_accounts
+    set stripe_customer_id = p_customer_id
+    where user_id = p_user_id;
+
+    if not found then
+      raise exception using errcode = 'P0001', message = 'TREE_ACCOUNT_NOT_FOUND';
+    end if;
+  end if;
+
+  return case when tree_order.status = 'paid' then 'already_paid' else 'paid' end;
+end;
+$$;
+
+revoke all on function public.process_stripe_tree_event(
+  text, text, uuid, uuid, text, text, integer, text, text, text
+) from public, anon, authenticated;
+grant execute on function public.process_stripe_tree_event(
+  text, text, uuid, uuid, text, text, integer, text, text, text
+) to service_role;
+
+comment on function public.process_stripe_tree_event(
+  text, text, uuid, uuid, text, text, integer, text, text, text
+) is 'Atomically processes a signature-verified Stripe tree-credit event; service_role only.';
+
 alter table public.family_trees enable row level security;
 alter table public.tree_accounts enable row level security;
 alter table public.tree_credit_orders enable row level security;
@@ -278,11 +509,6 @@ using ((select auth.uid()) = owner_id);
 
 create policy "family trees insert own"
 on public.family_trees for insert to authenticated
-with check ((select auth.uid()) = owner_id);
-
-create policy "family trees update own"
-on public.family_trees for update to authenticated
-using ((select auth.uid()) = owner_id)
 with check ((select auth.uid()) = owner_id);
 
 create policy "family trees delete own"
@@ -310,7 +536,7 @@ revoke all on table public.tree_credit_orders from anon, authenticated;
 revoke all on table public.tree_generations from anon, authenticated;
 revoke all on table public.stripe_tree_events from anon, authenticated;
 
-grant select, insert, update, delete on table public.family_trees to authenticated;
+grant select, insert, delete on table public.family_trees to authenticated;
 grant select on table public.tree_accounts to authenticated;
 grant select on table public.tree_credit_orders to authenticated;
 grant select on table public.tree_generations to authenticated;
