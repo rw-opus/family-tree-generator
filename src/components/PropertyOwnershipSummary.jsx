@@ -125,7 +125,8 @@ export function PropertyOwnershipSummary({
               <span>{isoDateToDisplay(entry.date) || "Undated"}</span>
               <strong>
                 {renderPartyName(entry.sellerId, { allowOutsideOwnerCard: true })}{" "}
-                <ArrowRight size={13} aria-hidden="true" /> {renderPartyName(entry.buyerId)}
+                <ArrowRight size={13} aria-hidden="true" />{" "}
+                {renderPartyName(entry.buyerId, { allowOutsideOwnerCard: true })}
               </strong>
               <span>
                 {entry.error ||

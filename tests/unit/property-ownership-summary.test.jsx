@@ -505,6 +505,56 @@ describe("PropertyOwnershipSummary", () => {
     });
   });
 
+  it("opens an outside party from either side of a transfer-history row", () => {
+    // The two sides of a history row were not rendered alike: the seller was
+    // offered its owner card and the buyer was left as bare text, so the same
+    // outside party was a link in one column and dead text in the next.
+    const donor = { id: "company-a", name: "Alpha Holdings Limited", type: "company" };
+    const donee = { id: "company-b", name: "Beta Holdings Limited", type: "company" };
+    const gift = {
+      id: "outside-gift",
+      kind: "donation",
+      sellerId: donor.id,
+      buyerId: donee.id,
+      numerator: 1,
+      denominator: 2,
+      amountType: "whole-property",
+      date: "2025-01-01",
+    };
+    act(() =>
+      root.render(
+        <PropertyOwnershipSummary
+          people={[]}
+          outsideParties={[donor, donee]}
+          property={{
+            id: "outside-chain",
+            owners: [
+              { id: "alpha-title", personId: donor.id, shareNumerator: 1, shareDenominator: 1 },
+            ],
+            transfers: [gift],
+            declarations: [],
+            saleLots: [],
+          }}
+          startingOwnership={{ [donor.id]: 1 }}
+          transfers={[gift]}
+          onOutsideOwnerTransactionsChange={vi.fn()}
+        />,
+      ),
+    );
+
+    const historyRow = container.querySelector(".read-only-transfer-history .history-row");
+    const partyLinks = [...historyRow.querySelectorAll("button.ownership-person-link")].map(
+      (button) => button.textContent,
+    );
+    expect(partyLinks).toEqual(["Alpha Holdings Limited", "Beta Holdings Limited"]);
+
+    // The buyer link opens the buyer's card, not the seller's.
+    act(() => historyRow.querySelectorAll("button.ownership-person-link")[1].click());
+    expect(container.querySelector("#outside-owner-title").textContent).toBe(
+      "Beta Holdings Limited",
+    );
+  });
+
   it("switches directly from an outside donee to its outside donor's owner card", () => {
     const donor = { id: "company-a", name: "Alpha Holdings Limited", type: "company" };
     const donee = { id: "company-b", name: "Beta Holdings Limited", type: "company" };
