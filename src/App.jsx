@@ -15,6 +15,7 @@ import { EditableTreeTitle } from "./components/EditableTreeTitle.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
+import { observeStickyNavOffset } from "./components/stickyNavOffset.js";
 import { TreeToolsPanel } from "./components/TreeToolsPanel.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
@@ -270,6 +271,8 @@ export function App({
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
+  const propertyWorkspaceRef = useRef(null);
+  const propertyWorkspaceNavRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
     () => normaliseTree(tree).activeFamilyGroupId,
   );
@@ -287,6 +290,14 @@ export function App({
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
   }, []);
+
+  // The Property & Tax menu is sticky and wraps onto more lines as the screen
+  // narrows, so the room each section must keep clear is measured rather than
+  // guessed. Without this a jumped-to heading hides behind the menu.
+  useEffect(
+    () => observeStickyNavOffset(propertyWorkspaceRef.current, propertyWorkspaceNavRef.current),
+    [workspaceView],
+  );
 
   useEffect(() => {
     if (!cloudMode) return undefined;
@@ -1259,8 +1270,9 @@ export function App({
       });
     };
     return (
-      <main className="property-workspace-page">
+      <main className="property-workspace-page" ref={propertyWorkspaceRef}>
         <div
+          ref={propertyWorkspaceNavRef}
           className={`property-workspace-nav-shell${
             currentTree.properties.length > 1 ? " has-property-selector" : ""
           }`}

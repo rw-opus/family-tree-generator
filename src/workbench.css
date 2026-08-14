@@ -524,14 +524,12 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+/* The offset is the sticky menu's measured height, written to
+   --property-workspace-nav-height by the workspace, plus a small gap. The rem
+   fallback only applies before the first measurement: fixed offsets cannot
+   track the header, which wraps onto more lines as the screen narrows. */
 .property-workspace-section {
-  scroll-margin-top: 8rem;
-}
-
-.property-workspace-nav-shell.has-property-selector
-  + .property-workspace-content
-  .property-workspace-section {
-  scroll-margin-top: 11rem;
+  scroll-margin-top: calc(var(--property-workspace-nav-height, 11rem) + 0.75rem);
 }
 
 .property-workspace-content {
@@ -6407,16 +6405,6 @@ body.a3-print-preview-open {
     text-align: center;
   }
 
-  .property-workspace-section {
-    scroll-margin-top: 11rem;
-  }
-
-  .property-workspace-nav-shell.has-property-selector
-    + .property-workspace-content
-    .property-workspace-section {
-    scroll-margin-top: 14rem;
-  }
-
   .property-workspace-property-selector {
     grid-template-columns: auto minmax(0, 1fr);
     padding-inline: 0.65rem;
@@ -7274,5 +7262,23 @@ body.a3-print-preview-open {
 
   .tax-calculation-table td:last-child {
     border-bottom: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  /* The initial-ownership grid tracks add up to more than a 320px viewport, so
+     the remove-owner button used to be clipped by the page overflow guard. */
+  .initial-owner-columns,
+  .initial-owner-row {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.95fr) minmax(0, 0.75fr) 24px;
+    gap: 0.2rem;
+  }
+
+  .initial-owner-row .icon-button {
+    width: 24px;
+  }
+
+  .initial-owner-person-control {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }

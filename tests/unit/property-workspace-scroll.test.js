@@ -53,4 +53,43 @@ describe("property workspace scrolling", () => {
     expect(menuRule).toMatch(/grid-template-columns:\s*repeat\([23],/);
     expect(menuRule).toMatch(/overflow:\s*visible/);
   });
+
+  // The sticky header wraps onto extra lines as the screen narrows, so a fixed
+  // rem offset left a jumped-to heading hidden underneath the menu.
+  it("reserves the measured menu height rather than a fixed offset", () => {
+    const sectionRule = blockFor(stylesheet, ".property-workspace-section");
+
+    expect(sectionRule).toMatch(
+      /scroll-margin-top:\s*calc\(\s*var\(--property-workspace-nav-height/,
+    );
+
+    const fixedOffsets = [...stylesheet.matchAll(/scroll-margin-top:\s*([^;]+);/g)]
+      .map((match) => match[1].trim())
+      .filter((value) => !value.includes("--property-workspace-nav-height"));
+
+    expect(fixedOffsets.filter((value) => /rem|px/.test(value) && !value.includes("var("))).toEqual(
+      ["3.5rem"],
+    );
+  });
+
+  it("lets the initial-ownership row shrink to a 320px viewport", () => {
+    const baseColumns = blockFor(stylesheet, ".initial-owner-columns,\n.initial-owner-row").match(
+      /grid-template-columns:([^;]+);/,
+    );
+    const narrowRules = blockFor(stylesheet, "@media (max-width: 360px)");
+    const narrowColumns = blockFor(
+      narrowRules,
+      ".initial-owner-columns,\n  .initial-owner-row",
+    ).match(/grid-template-columns:([^;]+);/);
+
+    // The unconditional grid keeps px minima that add up past a 320px phone.
+    expect(baseColumns[1]).toMatch(/minmax\(\s*\d+px/);
+    expect(narrowColumns).not.toBeNull();
+
+    const minima = [...narrowColumns[1].matchAll(/minmax\(\s*([^,]+),/g)].map((match) =>
+      match[1].trim(),
+    );
+    expect(minima.length).toBeGreaterThan(0);
+    expect(minima.every((value) => value === "0")).toBe(true);
+  });
 });
