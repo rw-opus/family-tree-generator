@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { SYNTHETIC_SOURCE_KIND, verifyBackupManifest } from "./evidence.js";
+import { promisify } from "node:util";
+import { SYNTHETIC_SOURCE_KIND, assertLocalDatabaseUrl, verifyBackupManifest } from "./evidence.js";
 
 const PUBLIC_TABLES = [
   "family_trees",
@@ -10,6 +12,8 @@ const PUBLIC_TABLES = [
   "tree_credit_orders",
   "tree_generations",
 ];
+
+const execFileAsync = promisify(execFile);
 
 function requiredEnvironment(name) {
   const value = process.env[name];
@@ -30,6 +34,8 @@ function configuration() {
     url: localApiUrl(requiredEnvironment("SUPABASE_URL")),
     anonKey: requiredEnvironment("SUPABASE_ANON_KEY"),
     serviceRoleKey: requiredEnvironment("SUPABASE_SERVICE_ROLE_KEY"),
+    databaseUrl: assertLocalDatabaseUrl(requiredEnvironment("SUPABASE_DB_URL"), "SUPABASE_DB_URL")
+      .href,
   };
 }
 
@@ -163,50 +169,30 @@ async function acceptTerms(config, user, token) {
   );
 }
 
-function contentRangeCount(response, table) {
-  const contentRange = response.headers.get("content-range") || "";
-  const match = contentRange.match(/\/(\d+)$/);
-  if (!match) throw new Error(`Could not read an exact ${table} count.`);
-  return Number(match[1]);
-}
-
-async function tableCount(config, table) {
-  const { response } = await requestJson(
-    `${config.url}/rest/v1/${table}?select=*`,
-    {
-      method: "HEAD",
-      headers: {
-        ...adminHeaders(config.serviceRoleKey),
-        Prefer: "count=exact",
-        Range: "0-0",
-      },
-    },
-    `Count ${table}`,
-  );
-  return contentRangeCount(response, table);
-}
-
-async function authUserCount(config) {
-  const { body } = await requestJson(
-    `${config.url}/auth/v1/admin/users?page=1&per_page=1000`,
-    { headers: adminHeaders(config.serviceRoleKey) },
-    "Count Auth users",
-  );
-  if (!Array.isArray(body.users)) throw new Error("Auth user listing was malformed.");
-  if (body.users.length === 1000) {
-    throw new Error("Synthetic Auth user count reached the single-page safety limit.");
-  }
-  return body.users.length;
-}
-
 export async function collectCounts(config = configuration()) {
-  const entries = await Promise.all(
-    PUBLIC_TABLES.map(async (table) => [table, await tableCount(config, table)]),
+  const pairs = [
+    ["auth_users", "auth.users"],
+    ...PUBLIC_TABLES.map((table) => [table, `public.${table}`]),
+  ];
+  const query = `select json_build_object(${pairs
+    .map(([key, table]) => `'${key}', (select count(*) from ${table})`)
+    .join(", ")})::text;`;
+  const { stdout } = await execFileAsync(
+    "psql",
+    [config.databaseUrl, "--tuples-only", "--no-align", "--command", query],
+    {
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    },
   );
-  return {
-    auth_users: await authUserCount(config),
-    ...Object.fromEntries(entries),
-  };
+  const counts = JSON.parse(stdout.trim());
+  for (const [name, count] of Object.entries(counts)) {
+    if (!Number.isSafeInteger(count) || count < 0) {
+      throw new Error(`Synthetic database count ${name} is invalid.`);
+    }
+  }
+  return counts;
 }
 
 async function assertEmptySource(config) {
