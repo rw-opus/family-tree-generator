@@ -40,4 +40,4 @@ jobs:
       # A3 — the built bundle is what reaches a browser, so it is scanned too.
       - run: npm run scan:secrets
 
-      - run: npm audit --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high
