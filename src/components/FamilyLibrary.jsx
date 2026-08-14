@@ -1,6 +1,9 @@
 import { useState } from "react";
 import {
+  ArchiveRestore,
   Check,
+  ChevronDown,
+  ChevronUp,
   CreditCard,
   Download,
   FileUp,
@@ -17,6 +20,7 @@ import {
 import { AccountPasswordDialog } from "./AccountPasswordDialog.jsx";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { TREE_DATA_LIMITS } from "../domain/treeData.js";
+import { LOCAL_TRASH_RETENTION_DAYS } from "../services/localWorkspace.js";
 import { WorkspaceSaveStatus } from "./WorkspaceSaveStatus.jsx";
 
 const displayDate = (value) => {
@@ -33,6 +37,19 @@ const accountName = (session) => {
 
 const familyAddedDate = (tree) => tree.createdAt || tree.created_at || tree.updated_at || "";
 
+const trashRetention = (tree, now = Date.now()) => {
+  const deletedAt = Date.parse(tree?.deletedAt || "");
+  if (!Number.isFinite(deletedAt)) return { expired: true, label: "Restore unavailable" };
+  const expiresAt = deletedAt + LOCAL_TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  return {
+    expired: expiresAt <= now,
+    label:
+      expiresAt <= now
+        ? "Restore period expired"
+        : `Restore by ${displayDate(new Date(expiresAt).toISOString())}`,
+  };
+};
+
 const routineStorageMessages = new Set([
   "Automatically saved on this device.",
   "Saved securely to your workspace.",
@@ -40,6 +57,7 @@ const routineStorageMessages = new Set([
 
 export function FamilyLibrary({
   trees,
+  trashedTrees = [],
   activeTreeId,
   session,
   commercialMode = false,
@@ -49,12 +67,15 @@ export function FamilyLibrary({
   billingMessage = "",
   storageStatus = "",
   saveState,
+  backupDisabled = false,
   recoveryAvailable = false,
   onCreate,
   onImport,
   onOpen,
   onRename,
   onRemove,
+  onRestore,
+  onPermanentDelete,
   onBuyTree,
   onChangePassword,
   onSignOut,
@@ -72,7 +93,10 @@ export function FamilyLibrary({
     sex: "",
   });
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [pendingPermanentDelete, setPendingPermanentDelete] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashAction, setTrashAction] = useState({ id: "", type: "" });
   const [renamingId, setRenamingId] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
   const [importStatus, setImportStatus] = useState("");
@@ -120,6 +144,27 @@ export function FamilyLibrary({
       if (removed !== false) setPendingDelete(null);
     } finally {
       setDeleteBusy(false);
+    }
+  };
+
+  const restoreFromTrash = async (tree) => {
+    if (trashAction.id || (!commercialMode && trashRetention(tree).expired)) return;
+    setTrashAction({ id: tree.id, type: "restore" });
+    try {
+      await onRestore(tree.id);
+    } finally {
+      setTrashAction({ id: "", type: "" });
+    }
+  };
+
+  const confirmPermanentDelete = async () => {
+    if (!pendingPermanentDelete || trashAction.id) return;
+    setTrashAction({ id: pendingPermanentDelete.id, type: "delete" });
+    try {
+      const removed = await onPermanentDelete(pendingPermanentDelete.id);
+      if (removed !== false) setPendingPermanentDelete(null);
+    } finally {
+      setTrashAction({ id: "", type: "" });
     }
   };
 
@@ -252,6 +297,12 @@ export function FamilyLibrary({
               className="library-account-action"
               onClick={onDownloadBackup}
               aria-label="Download workspace backup"
+              disabled={backupDisabled}
+              title={
+                backupDisabled
+                  ? "Wait for the complete family and Trash lists before downloading a backup"
+                  : "Download workspace backup"
+              }
             >
               <Download size={15} />
               <span className="library-action-label-full">Download workspace backup</span>
@@ -461,8 +512,8 @@ export function FamilyLibrary({
                         type="button"
                         className="library-row-action danger"
                         onClick={() => setPendingDelete(tree)}
-                        title={`Delete ${tree.title || "family"}`}
-                        aria-label={`Delete ${tree.title || "family"}`}
+                        title={`Move ${tree.title || "family"} to Trash`}
+                        aria-label={`Move ${tree.title || "family"} to Trash`}
                       >
                         <Trash2 size={14} />
                         <span className="library-row-action-label">Delete</span>
@@ -479,6 +530,88 @@ export function FamilyLibrary({
                 ? "No family matches that search."
                 : "No families yet. Create a new family or import a GEDCOM file."}
             </p>
+          )}
+
+          <button
+            type="button"
+            className="library-trash-toggle"
+            aria-expanded={trashOpen}
+            aria-controls="family-library-trash"
+            onClick={() => setTrashOpen((open) => !open)}
+          >
+            <span>
+              <Trash2 size={15} aria-hidden="true" /> Trash ({trashedTrees.length})
+            </span>
+            {trashOpen ? (
+              <ChevronUp size={15} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={15} aria-hidden="true" />
+            )}
+          </button>
+
+          {trashOpen && (
+            <section
+              id="family-library-trash"
+              className="family-library-trash"
+              aria-labelledby="family-library-trash-title"
+            >
+              <h3 id="family-library-trash-title">Trash</h3>
+              {trashedTrees.length ? (
+                <div className="family-trash-list" role="list">
+                  {trashedTrees.map((tree) => {
+                    const retention = commercialMode
+                      ? {
+                          expired: false,
+                          label: "Restore eligibility checked securely",
+                        }
+                      : trashRetention(tree);
+                    const busy = trashAction.id === tree.id;
+                    return (
+                      <div className="family-trash-row" role="listitem" key={tree.id}>
+                        <div className="family-trash-details">
+                          <strong>{tree.title || "Untitled family"}</strong>
+                          <span className={retention.expired ? "expired" : ""}>
+                            {retention.label}
+                          </span>
+                        </div>
+                        <div className="family-trash-actions">
+                          <button
+                            type="button"
+                            className="library-row-action"
+                            onClick={() => restoreFromTrash(tree)}
+                            disabled={busy || retention.expired}
+                            aria-label={`Restore ${tree.title || "family"}`}
+                            title={
+                              retention.expired
+                                ? "The 30-day restore period has expired"
+                                : "Restore family"
+                            }
+                          >
+                            <ArchiveRestore size={14} />
+                            <span className="library-row-action-label">
+                              {busy && trashAction.type === "restore" ? "Restoring..." : "Restore"}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="library-row-action danger"
+                            onClick={() => setPendingPermanentDelete(tree)}
+                            disabled={busy}
+                            aria-label={`Delete ${tree.title || "family"} forever`}
+                            title="Delete forever"
+                          >
+                            <Trash2 size={14} />
+                            <span className="library-row-action-label">Delete forever</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="family-library-empty">Trash is empty.</p>
+              )}
+            </section>
           )}
         </section>
       </div>
@@ -608,8 +741,10 @@ export function FamilyLibrary({
           >
             <div className="library-dialog-heading">
               <div>
-                <p className="library-kicker">Delete family</p>
-                <h2 id="delete-family-title">Delete {pendingDelete.title || "this family"}?</h2>
+                <p className="library-kicker">Move to Trash</p>
+                <h2 id="delete-family-title">
+                  Move {pendingDelete.title || "this family"} to Trash?
+                </h2>
               </div>
               <button
                 type="button"
@@ -622,9 +757,9 @@ export function FamilyLibrary({
               </button>
             </div>
             <p id="delete-family-description" className="library-dialog-intro">
-              This permanently removes the family and cannot be undone.
+              You can restore this family from Trash for 30 days.
               {commercialMode && !unlimitedTrees
-                ? " Its free or paid tree credit will not be restored."
+                ? " Its generation credit will not be restored."
                 : ""}
             </p>
             <div className="library-dialog-actions">
@@ -642,7 +777,62 @@ export function FamilyLibrary({
                 onClick={confirmDelete}
                 disabled={deleteBusy}
               >
-                <Trash2 size={16} /> {deleteBusy ? "Deleting..." : "Delete family"}
+                <Trash2 size={16} /> {deleteBusy ? "Moving..." : "Move to Trash"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {pendingPermanentDelete && (
+        <div className="library-dialog-backdrop" role="presentation">
+          <section
+            className="library-dialog library-delete-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="permanent-delete-family-title"
+            aria-describedby="permanent-delete-family-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !trashAction.id) setPendingPermanentDelete(null);
+            }}
+          >
+            <div className="library-dialog-heading">
+              <div>
+                <p className="library-kicker">Permanent deletion</p>
+                <h2 id="permanent-delete-family-title">
+                  Delete {pendingPermanentDelete.title || "this family"} forever?
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="library-icon-button"
+                onClick={() => setPendingPermanentDelete(null)}
+                aria-label="Cancel permanently deleting family"
+                disabled={Boolean(trashAction.id)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p id="permanent-delete-family-description" className="library-dialog-intro">
+              This permanently removes the family. It cannot be restored.
+            </p>
+            <div className="library-dialog-actions">
+              <button
+                type="button"
+                className="library-secondary-button"
+                onClick={() => setPendingPermanentDelete(null)}
+                disabled={Boolean(trashAction.id)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="library-danger-button"
+                onClick={confirmPermanentDelete}
+                disabled={Boolean(trashAction.id)}
+              >
+                <Trash2 size={16} />
+                {trashAction.type === "delete" ? "Deleting..." : "Delete forever"}
               </button>
             </div>
           </section>

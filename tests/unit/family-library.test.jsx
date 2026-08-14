@@ -14,6 +14,8 @@ const renderLibrary = (root, props = {}) => {
     onOpen: vi.fn(),
     onRename: vi.fn(),
     onRemove: vi.fn(),
+    onRestore: vi.fn(),
+    onPermanentDelete: vi.fn(),
     onChangePassword: vi.fn(),
     onSignIn: vi.fn(),
     onSignOut: vi.fn(),
@@ -98,9 +100,9 @@ describe("FamilyLibrary", () => {
     expect(handlers.onOpen).toHaveBeenCalledWith("vella");
   });
 
-  it("confirms a clearly labelled delete action inside the application", async () => {
+  it("confirms that Delete moves a family to recoverable Trash", async () => {
     const handlers = renderLibrary(root);
-    const remove = container.querySelector('button[aria-label="Delete Vella family"]');
+    const remove = container.querySelector('button[aria-label="Move Vella family to Trash"]');
 
     expect(container.textContent).not.toContain("Property & tax");
     expect(container.querySelector('button[aria-label="Rename Vella family"]')).not.toBeNull();
@@ -109,10 +111,95 @@ describe("FamilyLibrary", () => {
     expect(handlers.onRemove).not.toHaveBeenCalled();
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
     const confirm = [...container.querySelectorAll('[role="alertdialog"] button')].find((button) =>
-      button.textContent.includes("Delete family"),
+      button.textContent.includes("Move to Trash"),
     );
     await act(async () => confirm.click());
     expect(handlers.onRemove).toHaveBeenCalledWith("vella");
+  });
+
+  it("restores a family from Trash and confirms permanent deletion separately", async () => {
+    const handlers = renderLibrary(root, {
+      trashedTrees: [
+        {
+          id: "trashed",
+          title: "Testa family",
+          deletedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const toggle = container.querySelector('button[aria-controls="family-library-trash"]');
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    act(() => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Testa family");
+    expect(container.textContent).toContain("Restore by");
+
+    await act(async () =>
+      container.querySelector('button[aria-label="Restore Testa family"]').click(),
+    );
+    expect(handlers.onRestore).toHaveBeenCalledWith("trashed");
+
+    act(() => container.querySelector('button[aria-label="Delete Testa family forever"]').click());
+    const permanentDialog = container.querySelector('[role="alertdialog"]');
+    expect(permanentDialog.textContent).toContain("cannot be restored");
+    expect(handlers.onPermanentDelete).not.toHaveBeenCalled();
+    await act(async () =>
+      [...permanentDialog.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Delete forever"))
+        .click(),
+    );
+    expect(handlers.onPermanentDelete).toHaveBeenCalledWith("trashed");
+  });
+
+  it("keeps expired Trash visible for permanent deletion but disables restore", () => {
+    renderLibrary(root, {
+      trashedTrees: [
+        {
+          id: "expired",
+          title: "Expired family",
+          deletedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
+    });
+
+    act(() => container.querySelector('button[aria-controls="family-library-trash"]').click());
+    expect(container.textContent).toContain("Restore period expired");
+    expect(container.querySelector('button[aria-label="Restore Expired family"]').disabled).toBe(
+      true,
+    );
+    expect(
+      container.querySelector('button[aria-label="Delete Expired family forever"]'),
+    ).not.toBeNull();
+  });
+
+  it("leaves cloud restore eligibility to the database instead of the browser clock", async () => {
+    const handlers = renderLibrary(root, {
+      commercialMode: true,
+      trashedTrees: [
+        {
+          id: "cloud-old",
+          title: "Cloud family",
+          deletedAt: "2020-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    act(() => container.querySelector('button[aria-controls="family-library-trash"]').click());
+    expect(container.textContent).toContain("Restore eligibility checked securely");
+    expect(container.textContent).not.toContain("Restore period expired");
+    const restore = container.querySelector('button[aria-label="Restore Cloud family"]');
+    expect(restore.disabled).toBe(false);
+    await act(async () => restore.click());
+    expect(handlers.onRestore).toHaveBeenCalledWith("cloud-old");
+  });
+
+  it("disables backup while the complete cloud collections are unavailable", () => {
+    renderLibrary(root, { backupDisabled: true });
+
+    expect(container.querySelector('button[aria-label="Download workspace backup"]').disabled).toBe(
+      true,
+    );
   });
 
   it("filters and renames families inline", () => {
@@ -197,7 +284,7 @@ describe("FamilyLibrary", () => {
     );
     expect(container.querySelector('[role="dialog"]')).toBeNull();
 
-    const remove = container.querySelector('button[aria-label="Delete Vella family"]');
+    const remove = container.querySelector('button[aria-label="Move Vella family to Trash"]');
     act(() => remove.click());
     const deletionDialog = container.querySelector('[role="alertdialog"]');
     expect(deletionDialog).not.toBeNull();
@@ -409,7 +496,7 @@ describe("FamilyLibrary", () => {
       (button) => button.textContent.includes("Cancel"),
     );
     act(() => cancelCreate.click());
-    act(() => container.querySelector('button[aria-label="Delete Vella family"]').click());
+    act(() => container.querySelector('button[aria-label="Move Vella family to Trash"]').click());
     expect(container.querySelector('[role="alertdialog"]').textContent).not.toContain("credit");
   });
 

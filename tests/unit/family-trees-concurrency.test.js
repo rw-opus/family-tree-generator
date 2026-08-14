@@ -12,6 +12,7 @@ vi.mock("../../src/supabaseClient.js", () => ({
 import {
   FamilyTreeListValidationError,
   TREE_SAVE_CONFLICT,
+  familyTreeSaveFingerprint,
   familyTreeRecord,
   hydrateFamilyTree,
   isFamilyTreeListValidationError,
@@ -69,13 +70,21 @@ const rpcQuery = (response) => {
 describe("family tree optimistic concurrency", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("keeps database revision metadata outside the user-controlled JSON payload", () => {
+  it("keeps database revision and trash metadata outside the user-controlled JSON payload", () => {
     const record = familyTreeRecord({
       ...currentTree(),
       storageRevision: 7,
+      deletedAt: "2026-08-14T03:30:00Z",
     });
 
     expect(record.tree_data).not.toHaveProperty("storageRevision");
+    expect(record.tree_data).not.toHaveProperty("deletedAt");
+    expect(
+      familyTreeSaveFingerprint({
+        ...currentTree(),
+        deletedAt: "2026-08-14T03:30:00Z",
+      }),
+    ).toBe(familyTreeSaveFingerprint(currentTree()));
     expect(hydrateFamilyTree(savedRecord())).toMatchObject({
       id: "tree-1",
       storageRevision: 8,
@@ -86,7 +95,11 @@ describe("family tree optimistic concurrency", () => {
     const query = rpcQuery({ data: savedRecord(), error: null });
 
     const saved = await saveFamilyTree(
-      currentTree({ title: "Edited family", storageRevision: 7 }),
+      currentTree({
+        title: "Edited family",
+        storageRevision: 7,
+        deletedAt: "2026-08-14T03:30:00Z",
+      }),
       "owner-1",
     );
 
@@ -115,7 +128,7 @@ describe("family tree optimistic concurrency", () => {
       },
     });
     expect(query.select).toHaveBeenCalledWith(
-      "id,title,people,tree_data,revision,created_at,updated_at",
+      "id,title,people,tree_data,revision,created_at,updated_at,deleted_at",
     );
     expect(saved.storageRevision).toBe(8);
   });
@@ -198,9 +211,8 @@ describe("family tree optimistic concurrency", () => {
       }),
     });
     const order = vi.fn(async () => ({ data: [savedRecord(), futureRecord], error: null }));
-    supabaseHarness.from.mockReturnValue({
-      select: vi.fn(() => ({ order })),
-    });
+    const is = vi.fn(() => ({ order }));
+    supabaseHarness.from.mockReturnValue({ select: vi.fn(() => ({ is })) });
 
     const operation = listFamilyTrees();
     await expect(operation).rejects.toBeInstanceOf(FamilyTreeListValidationError);
@@ -211,5 +223,6 @@ describe("family tree optimistic concurrency", () => {
         expect.objectContaining({ id: "future-tree", code: "TREE_DATA_UNSUPPORTED_VERSION" }),
       ]);
     });
+    expect(is).toHaveBeenCalledWith("deleted_at", null);
   });
 });

@@ -232,11 +232,40 @@ describe("App local recovery", () => {
     act(() => root.render(<App />));
 
     expect(container.textContent).toContain("Create new family");
-    expect(container.querySelector('button[aria-label="Delete Borg family"]')).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Move Borg family to Trash"]'),
+    ).not.toBeNull();
     openCurrentFamily();
     expect(container.textContent).not.toContain("Create new family");
     expect(container.querySelector(".add-family-view")).toBeNull();
     expect(container.querySelector(".case-view-tabs")).toBeNull();
+  });
+
+  it("persists automatic expiry pruning when Trash is the only local content", () => {
+    window.localStorage.setItem(
+      LOCAL_WORKSPACE_KEY,
+      JSON.stringify({
+        version: 2,
+        activeTreeId: "",
+        trees: [],
+        trashedTrees: [
+          {
+            id: "expired-tree",
+            title: "Expired family",
+            people: [{ id: "person-1", fullName: "Fictional Person" }],
+            deletedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+          },
+        ],
+      }),
+    );
+
+    act(() => root.render(<App />));
+
+    expect(JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY))).toMatchObject({
+      version: 2,
+      trees: [],
+      trashedTrees: [],
+    });
   });
 
   it("keeps an unreadable workspace blocked when an oversized GEDCOM import fails", async () => {
@@ -608,14 +637,15 @@ describe("App local recovery", () => {
     act(() => home.click());
     expect(container.querySelectorAll(".family-name-button")).toHaveLength(1);
 
-    const remove = container.querySelector('button[aria-label="Delete New family"]');
+    const remove = container.querySelector('button[aria-label="Move New family to Trash"]');
     act(() => remove.click());
     const confirm = [...container.querySelectorAll('[role="alertdialog"] button')].find((button) =>
-      button.textContent.includes("Delete family"),
+      button.textContent.includes("Move to Trash"),
     );
     await act(async () => confirm.click());
 
     expect(container.querySelectorAll(".family-name-button")).toHaveLength(0);
     expect(container.textContent).toContain("No families yet");
+    expect(container.textContent).toContain("Trash (1)");
   });
 });
