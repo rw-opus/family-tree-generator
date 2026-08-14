@@ -10,6 +10,19 @@ const LoadingScreen = () => (
   <main className="commercial-loading-screen">Loading your secure family workspace...</main>
 );
 
+const sessionUserId = (session) => String(session?.user?.id || "").trim();
+
+const nextPasswordRecovery = (current, event, nextSession) => {
+  if (event === "PASSWORD_RECOVERY") {
+    return { userId: sessionUserId(nextSession) };
+  }
+  if (event === "SIGNED_OUT") return null;
+  if (!current || !["INITIAL_SESSION", "SIGNED_IN"].includes(event)) return current;
+
+  const nextUserId = sessionUserId(nextSession);
+  return current.userId && nextUserId && current.userId !== nextUserId ? null : current;
+};
+
 export function AppEntry() {
   const requestedLegalPage = new URLSearchParams(window.location.search).get("legal");
   const legalPage = ["privacy", "terms"].includes(requestedLegalPage) ? requestedLegalPage : "";
@@ -20,7 +33,7 @@ export function AppEntry() {
   const localOnlyMode = !commercialMode;
   const missingProductionConfig = commercialMode && !supabaseConfigured;
   const [session, setSession] = useState(localOnlyMode ? null : undefined);
-  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(null);
 
   useEffect(() => {
     if (localOnlyMode || !supabase) return undefined;
@@ -32,7 +45,7 @@ export function AppEntry() {
         setSession(null);
       });
     const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
+      setPasswordRecovery((current) => nextPasswordRecovery(current, event, nextSession));
       setSession(nextSession);
     });
     return () => subscription.subscription.unsubscribe();
@@ -52,9 +65,9 @@ export function AppEntry() {
   if (passwordRecovery) {
     return (
       <PasswordResetScreen
-        onDone={() => setPasswordRecovery(false)}
+        onDone={() => setPasswordRecovery(null)}
         onSignOut={() => {
-          setPasswordRecovery(false);
+          setPasswordRecovery(null);
           supabase.auth.signOut({ scope: "local" });
         }}
       />
