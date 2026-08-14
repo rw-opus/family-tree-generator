@@ -36,6 +36,41 @@ const legacyCase = () => ({
 });
 
 describe("case model migration", () => {
+  it("canonicalises legacy null relationship fields before strict persistence", () => {
+    const result = normalizeCase({
+      id: "legacy-null-references",
+      people: [
+        {
+          id: "person-1",
+          fullName: "Joseph Borg",
+          fatherId: null,
+          motherId: null,
+          survivalStatusReferencePersonId: null,
+          spouseIds: null,
+          siblingIds: null,
+          partnerRelationships: null,
+          willHeirs: null,
+          intestateHeirs: null,
+          causaMortisDeclarations: null,
+          designations: null,
+        },
+      ],
+    });
+
+    expect(result.people[0]).toMatchObject({
+      fatherId: "",
+      motherId: "",
+      survivalStatusReferencePersonId: "",
+      spouseIds: [],
+      siblingIds: [],
+      partnerRelationships: [],
+      willHeirs: [],
+      intestateHeirs: [],
+      causaMortisDeclarations: [],
+      designations: [],
+    });
+  });
+
   it("adds one deterministic family group while preserving legacy case data", () => {
     const input = legacyCase();
     const snapshot = structuredClone(input);

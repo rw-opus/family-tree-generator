@@ -27,7 +27,7 @@ import {
   reconcilePeopleUpdate,
   removePersonFromFamilyGroup,
 } from "./domain/caseModel.js";
-import { parseGedcom } from "./domain/gedcom.js";
+import { assertGedcomFileSize, parseGedcom } from "./domain/gedcom.js";
 import { createPerson } from "./domain/people.js";
 import {
   buildTreeCardHistoricalWarningsByPerson,
@@ -48,10 +48,12 @@ import {
   endStatusToggleSession,
   statusToggleSession,
 } from "./domain/statusToggleSessions.js";
+import { TREE_DATA_LIMITS, prepareTreeForPersistence } from "./domain/treeData.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
 import {
   createFamilyTree,
   familyTreeSaveFingerprint,
+  isFamilyTreeListValidationError,
   isTreeSaveConflictError,
   listFamilyTrees,
   rebaseFamilyTreeListStorageRevision,
@@ -84,6 +86,11 @@ const makePrimaryProperty = (id = crypto.randomUUID()) => ({
 });
 
 const familyViewKey = (groupId) => `family:${groupId}`;
+
+const localRecoveryReplacementPrompt = (action, recoveryAvailable) =>
+  recoveryAvailable
+    ? `The previous local workspace is unreadable. A recovery copy has been kept. ${action} and replace the active saved data?`
+    : `The previous local workspace is unreadable and a recovery copy could not be created. ${action} and permanently replace the active saved data?`;
 
 const migratedProperties = (value) => {
   if (Array.isArray(value.properties) && value.properties.length) return value.properties;
@@ -554,6 +561,15 @@ export function App({
         setSaveState({ phase: "saved", detail: "All changes are saved securely." });
       })
       .catch((error) => {
+        if (isFamilyTreeListValidationError(error)) {
+          setTrees(error.trees);
+          if (error.trees[0]) {
+            setActiveTreeIsListed(true);
+            activateCase(error.trees[0], { acknowledgeCloudSave: true });
+          } else {
+            setActiveTreeIsListed(false);
+          }
+        }
         setStatus(`Cloud storage needs attention: ${error.message}`);
         setSaveState({ phase: "error", detail: error.message });
       });
@@ -720,14 +736,23 @@ export function App({
       !cloudMode &&
       localRecoveryBlocked &&
       !window.confirm(
-        "The previous local workspace is unreadable. A recovery copy has been kept. Create a new workspace and replace the active saved data?",
+        localRecoveryReplacementPrompt(
+          "Create a new workspace",
+          Boolean(startupWorkspace.recoveryKey),
+        ),
       )
     ) {
       return false;
     }
-    if (!cloudMode && localRecoveryBlocked) setLocalRecoveryBlocked(false);
-    const nextTree = initialTree(seed);
+    let nextTree;
+    try {
+      nextTree = prepareTreeForPersistence(initialTree(seed));
+    } catch (error) {
+      setStatus(`Could not create family: ${error.message}`);
+      return false;
+    }
     if (!cloudMode) {
+      if (localRecoveryBlocked) setLocalRecoveryBlocked(false);
       openCreatedTree(nextTree, { openDashboard: true });
       return true;
     }
@@ -751,12 +776,15 @@ export function App({
         !cloudMode &&
         localRecoveryBlocked &&
         !window.confirm(
-          "The previous local workspace is unreadable. A recovery copy has been kept. Import into a new workspace and replace the active saved data?",
+          localRecoveryReplacementPrompt(
+            "Import into a new workspace",
+            Boolean(startupWorkspace.recoveryKey),
+          ),
         )
       ) {
         return;
       }
-      if (!cloudMode && localRecoveryBlocked) setLocalRecoveryBlocked(false);
+      assertGedcomFileSize(file?.size);
       const result = parseGedcom(await file.text());
       if (!result.people.length) throw new Error("No individual records were found.");
 
@@ -770,14 +798,14 @@ export function App({
       const importedTree = reconcilePeopleUpdate(baseTree, familyGroupId, result.people, {
         replaceFamilyGroup: true,
       });
-      const nextTree = {
+      const nextTree = prepareTreeForPersistence({
         ...importedTree,
         title: importedTitle,
         importWarnings: result.warnings || [],
         familyGroups: importedTree.familyGroups.map((group) =>
           group.id === familyGroupId ? { ...group, title: importedTitle } : group,
         ),
-      };
+      });
 
       if (cloudMode) {
         setStatus("Importing and securing this family tree...");
@@ -786,6 +814,7 @@ export function App({
         openCreatedTree(saved, { acknowledgeCloudSave: true });
         await refreshTreeEntitlement();
       } else {
+        if (localRecoveryBlocked) setLocalRecoveryBlocked(false);
         openCreatedTree(nextTree);
       }
       setStatus(
@@ -880,19 +909,23 @@ export function App({
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     const nextTitle = String(title || "").trim();
     const retryingFailedSave = failedDirectSaveIdsRef.current.has(treeId);
+    if ([...nextTitle].length > TREE_DATA_LIMITS.maxTitleCharacters) {
+      setStatus(`Family names are limited to ${TREE_DATA_LIMITS.maxTitleCharacters} characters.`);
+      return false;
+    }
     if (!selectedTree || !nextTitle || (nextTitle === selectedTree.title && !retryingFailedSave)) {
       return;
     }
 
     const selectedActiveGroupId =
       selectedTree.activeFamilyGroupId || selectedTree.familyGroups?.[0]?.id || "";
-    const renamed = {
+    const renamed = normaliseTree({
       ...selectedTree,
       title: nextTitle,
       familyGroups: (selectedTree.familyGroups || []).map((group) =>
         group.id === selectedActiveGroupId ? { ...group, title: nextTitle } : group,
       ),
-    };
+    });
     setTrees((items) => items.map((item) => (item.id === treeId ? renamed : item)));
     if (treeId === currentTree.id) setTree(renamed);
     if (!cloudMode) return;
@@ -1035,6 +1068,10 @@ export function App({
   };
 
   const updateTreeTitle = (title) => {
+    if ([...String(title || "")].length > TREE_DATA_LIMITS.maxTitleCharacters) {
+      setStatus(`Family names are limited to ${TREE_DATA_LIMITS.maxTitleCharacters} characters.`);
+      return;
+    }
     setTree({
       ...currentTree,
       title,

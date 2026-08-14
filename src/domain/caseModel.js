@@ -53,6 +53,29 @@ function nextFamilyGroupId(caseData) {
   return familyGroupId(caseData.id, ordinal);
 }
 
+const LEGACY_PERSON_REFERENCE_FIELDS = ["fatherId", "motherId", "survivalStatusReferencePersonId"];
+const LEGACY_PERSON_COLLECTION_FIELDS = [
+  "spouseIds",
+  "siblingIds",
+  "partnerRelationships",
+  "wills",
+  "willHeirs",
+  "intestateHeirs",
+  "causaMortisDeclarations",
+  "designations",
+];
+
+function normalizeLegacyPersonNulls(person) {
+  const normalized = cloneValue(person);
+  LEGACY_PERSON_REFERENCE_FIELDS.forEach((field) => {
+    if (normalized[field] === null) normalized[field] = "";
+  });
+  LEGACY_PERSON_COLLECTION_FIELDS.forEach((field) => {
+    if (normalized[field] === null) normalized[field] = [];
+  });
+  return normalized;
+}
+
 function normalizePeople(people = []) {
   if (!Array.isArray(people)) {
     return { people: [], warnings: ["The saved people list was malformed and needs review."] };
@@ -81,7 +104,9 @@ function normalizePeople(people = []) {
       id = recoveredId;
     }
     seen.add(id);
-    result.push(personWithWills(normalisePersonNameFields({ ...cloneValue(person), id })));
+    result.push(
+      personWithWills(normalisePersonNameFields({ ...normalizeLegacyPersonNulls(person), id })),
+    );
     return result;
   }, []);
   const survivalNormalised = normalized

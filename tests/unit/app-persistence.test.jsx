@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, caseActivationState } from "../../src/App.jsx";
-import { saveLocalWorkspace } from "../../src/services/localWorkspace.js";
+import { GEDCOM_LIMITS } from "../../src/domain/gedcom.js";
+import { TREE_DATA_LIMITS } from "../../src/domain/treeData.js";
+import { LOCAL_WORKSPACE_KEY, saveLocalWorkspace } from "../../src/services/localWorkspace.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -235,6 +237,63 @@ describe("App local recovery", () => {
     expect(container.textContent).not.toContain("Create new family");
     expect(container.querySelector(".add-family-view")).toBeNull();
     expect(container.querySelector(".case-view-tabs")).toBeNull();
+  });
+
+  it("keeps an unreadable workspace blocked when an oversized GEDCOM import fails", async () => {
+    const unreadableWorkspace = "{not-json";
+    window.localStorage.setItem(LOCAL_WORKSPACE_KEY, unreadableWorkspace);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    act(() => root.render(<App />));
+
+    const file = {
+      name: "oversized.ged",
+      size: GEDCOM_LIMITS.maxFileBytes + 1,
+      text: vi.fn(),
+    };
+    const input = container.querySelector('input[aria-label="Import GEDCOM"]');
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(file.text).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(LOCAL_WORKSPACE_KEY)).toBe(unreadableWorkspace);
+    expect(container.textContent).toContain("GEDCOM file is too large");
+    confirm.mockRestore();
+  });
+
+  it("rejects a GEDCOM that cannot fit the persisted tree before replacing recovery data", async () => {
+    const unreadableWorkspace = "{not-json";
+    window.localStorage.setItem(LOCAL_WORKSPACE_KEY, unreadableWorkspace);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const content = Array.from(
+      { length: TREE_DATA_LIMITS.maxPeople + 1 },
+      (_, index) => `0 @I${index}@ INDI\n1 NAME Person${index} /Test/`,
+    ).join("\n");
+
+    act(() => root.render(<App />));
+
+    const file = {
+      name: "too-many-people.ged",
+      size: new TextEncoder().encode(content).byteLength,
+      text: vi.fn(async () => content),
+    };
+    const input = container.querySelector('input[aria-label="Import GEDCOM"]');
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(file.text).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem(LOCAL_WORKSPACE_KEY)).toBe(unreadableWorkspace);
+    expect(container.textContent).toContain("Could not import GEDCOM");
+    confirm.mockRestore();
   });
 
   it("does not infer property ownership from family relationships", () => {

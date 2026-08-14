@@ -45,11 +45,19 @@ const checkoutServiceRoleMigration = readFileSync(
   ),
   "utf8",
 );
+const treePayloadGuardMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260814044717_harden_family_tree_payloads.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
   "utf8",
 );
+const normaliseSql = (sql) => sql.replaceAll("\r\n", "\n").trim();
 
 describe("commercial Supabase schema", () => {
   it("enforces five free trees and paid credits in a private insert trigger", () => {
@@ -159,6 +167,61 @@ describe("commercial Supabase schema", () => {
       );
       expect(sql).not.toContain("grant all on table public.tree_accounts to service_role");
       expect(sql).not.toContain("grant all on table public.tree_credit_orders to service_role");
+    }
+  });
+
+  it("validates every persisted tree at the database boundary before other row triggers", () => {
+    expect(normaliseSql(schema)).toContain(normaliseSql(treePayloadGuardMigration));
+    for (const sql of [schema, treePayloadGuardMigration]) {
+      expect(sql).toContain("function private.validate_family_tree_payload()");
+      expect(sql).toContain("security invoker");
+      expect(sql).toContain("set search_path = ''");
+      expect(sql).toContain("message = 'TREE_PAYLOAD_INVALID'");
+      expect(sql).toContain("message = 'TREE_PAYLOAD_TOO_LARGE'");
+      expect(sql).toContain("raise sqlstate 'PT422'");
+      expect(sql).toContain("raise sqlstate 'PT413'");
+      expect(sql).toContain("max_tree_bytes constant integer := 8388608");
+      expect(sql).toContain("max_json_nodes constant integer := 100000");
+      expect(sql).toContain("max_json_depth constant integer := 20");
+      expect(sql).toContain("TREE_PEOPLE_MIRROR_MISMATCH");
+      expect(sql).toContain("TREE_JSON_KEY_FORBIDDEN");
+      expect(sql).toContain("TREE_RECORD_COUNT_LIMIT_EXCEEDED");
+      expect(sql).toContain("create trigger family_trees_00_validate_payload");
+      expect(sql).toContain(
+        "before insert or update of id, title, people, tree_data on public.family_trees",
+      );
+      expect(sql).toMatch(
+        /revoke all on function private\.validate_family_tree_payload\(\)\s+from public, anon, authenticated/,
+      );
+    }
+  });
+
+  it("preserves deployed-client compatibility without silently accepting future schemas", () => {
+    for (const sql of [schema, treePayloadGuardMigration]) {
+      expect(sql).toContain("where not (tree_data ? 'tree_schema_version')");
+      expect(sql).toContain("requested_marker = '1'");
+      expect(sql).toContain("requested_marker = '2'");
+      expect(sql).toContain("requested_marker = ''");
+      expect(sql).toContain("'{tree_schema_version}'");
+      expect(sql).toContain("'2'::jsonb");
+      expect(sql).toContain("TREE_SCHEMA_VERSION_UNSUPPORTED");
+      expect(sql).toContain(
+        "alter table public.family_trees disable trigger family_trees_increment_revision",
+      );
+      expect(sql).toContain(
+        "alter table public.family_trees enable trigger family_trees_increment_revision",
+      );
+    }
+  });
+
+  it("treats only an exact empty optional reference as a blank draft value", () => {
+    for (const sql of [schema, treePayloadGuardMigration]) {
+      expect(sql).toContain("where coalesce(family_group.value ->> 'rootPersonId', '') <> ''");
+      expect(sql).toContain("where coalesce(reference.person_id, '') <> ''");
+      expect(sql).toContain("where coalesce(declaration.value ->> 'propertyId', '') <> ''");
+      expect(sql).toContain("coalesce(session.value ->> 'propertyId', '') <> ''");
+      expect(sql).not.toContain("pg_catalog.btrim(coalesce(reference.person_id, '')) <> ''");
+      expect(sql).not.toContain("pg_catalog.btrim(family_group.value ->> 'rootPersonId') <> ''");
     }
   });
 });
