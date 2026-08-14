@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseGedcom } from "../../src/domain/gedcom.js";
+import {
+  GEDCOM_LIMITS,
+  GedcomLimitError,
+  assertGedcomContentLimits,
+  assertGedcomFileSize,
+  parseGedcom,
+} from "../../src/domain/gedcom.js";
 import { findPartnerRelationship } from "../../src/domain/partnerRelationships.js";
 
 const SAMPLE = `0 HEAD
@@ -26,6 +32,64 @@ const SAMPLE = `0 HEAD
 0 TRLR`;
 
 describe("GEDCOM import", () => {
+  it("checks the file byte size before its contents are read", () => {
+    expect(assertGedcomFileSize(GEDCOM_LIMITS.maxFileBytes)).toBe(GEDCOM_LIMITS.maxFileBytes);
+    expect(() => assertGedcomFileSize(GEDCOM_LIMITS.maxFileBytes + 1)).toThrowError(
+      expect.objectContaining({
+        name: "GedcomLimitError",
+        code: "GEDCOM_LIMIT_EXCEEDED",
+        limit: "fileBytes",
+      }),
+    );
+    expect(() => assertGedcomFileSize(Number.NaN)).toThrow(GedcomLimitError);
+  });
+
+  it("rejects excessive line counts before creating imported people", () => {
+    let idCalls = 0;
+    const content = Array.from({ length: GEDCOM_LIMITS.maxLines + 1 }, () => "1 NOTE safe").join(
+      "\n",
+    );
+
+    expect(() =>
+      parseGedcom(content, () => {
+        idCalls += 1;
+        return `person-${idCalls}`;
+      }),
+    ).toThrowError(expect.objectContaining({ limit: "lines" }));
+    expect(idCalls).toBe(0);
+  });
+
+  it("rejects a single excessive line before parsing records", () => {
+    expect(() =>
+      assertGedcomContentLimits("x".repeat(GEDCOM_LIMITS.maxLineCharacters + 1)),
+    ).toThrowError(expect.objectContaining({ limit: "lineCharacters" }));
+  });
+
+  it("rejects excessive level-zero record counts", () => {
+    const content = Array.from(
+      { length: GEDCOM_LIMITS.maxRecords + 1 },
+      (_, index) => `0 @I${index}@ INDI`,
+    ).join("\n");
+
+    expect(() => parseGedcom(content)).toThrowError(
+      expect.objectContaining({
+        code: "GEDCOM_LIMIT_EXCEEDED",
+        limit: "records",
+      }),
+    );
+  });
+
+  it("rejects an excessive text value", () => {
+    const content = `0 @I1@ INDI\n1 NOTE ${"x".repeat(GEDCOM_LIMITS.maxTextCharacters + 1)}`;
+
+    expect(() => parseGedcom(content)).toThrowError(
+      expect.objectContaining({
+        code: "GEDCOM_LIMIT_EXCEEDED",
+        limit: "textCharacters",
+      }),
+    );
+  });
+
   it("imports individuals, dates and parent links", () => {
     let id = 0;
     const result = parseGedcom(SAMPLE, () => `person-${++id}`);

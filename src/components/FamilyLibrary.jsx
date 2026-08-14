@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { AccountPasswordDialog } from "./AccountPasswordDialog.jsx";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { TREE_DATA_LIMITS } from "../domain/treeData.js";
 import { WorkspaceSaveStatus } from "./WorkspaceSaveStatus.jsx";
 
 const displayDate = (value) => {
@@ -396,6 +397,7 @@ export function FamilyLibrary({
                         <input
                           aria-label={`New name for ${tree.title || "family"}`}
                           autoFocus
+                          maxLength={TREE_DATA_LIMITS.maxTitleCharacters}
                           value={renameDraft}
                           onChange={(event) => setRenameDraft(event.target.value)}
                         />
@@ -512,6 +514,7 @@ export function FamilyLibrary({
               <span>Family name</span>
               <input
                 autoFocus
+                maxLength={TREE_DATA_LIMITS.maxTitleCharacters}
                 required
                 value={creationDraft.title}
                 onChange={(event) =>

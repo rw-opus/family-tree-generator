@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
+import { TREE_DATA_LIMITS } from "../domain/treeData.js";
 
 export function EditableTreeTitle({ value = "", onChange, trailing = null }) {
   const [editing, setEditing] = useState(false);
@@ -23,6 +24,7 @@ export function EditableTreeTitle({ value = "", onChange, trailing = null }) {
           autoFocus
           className="stage-family-title-input"
           aria-label="Tree name"
+          maxLength={TREE_DATA_LIMITS.maxTitleCharacters}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={save}

@@ -67,6 +67,7 @@ describe("focused family workspace", () => {
     const treeNameButton = container.querySelector('button[aria-label^="Edit tree name:"]');
     act(() => treeNameButton.click());
     const treeName = container.querySelector('input[aria-label="Tree name"]');
+    expect(treeName.maxLength).toBe(200);
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         treeName,
