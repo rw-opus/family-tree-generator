@@ -187,6 +187,16 @@ node "$repository_root/scripts/backup/evidence-cli.js" assert-synthetic-target \
   --confirmation "$confirmation" \
   --target-workdir "$target_workdir"
 
+# A fresh Supabase target grants broad privileges to browser roles through
+# postgres default ACLs. Neutralize those target-only defaults before creating
+# restored public tables. The source dump restores its own default ACLs after
+# table creation, while its explicit object ACLs remain authoritative.
+psql \
+  --single-transaction \
+  --variable ON_ERROR_STOP=1 \
+  --command 'alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated' \
+  --dbname "$SUPABASE_DB_URL"
+
 # Restore the application database and its separately preserved migration
 # history using the two current Supabase-documented transactions.
 psql \
