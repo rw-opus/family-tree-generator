@@ -6,6 +6,7 @@ import {
   decryptBackupFile,
   encryptBackupFile,
   generateEphemeralBackupKeyPair,
+  prepareRolesForLocalRestore,
   verifyBackupManifest,
   verifyChecksumRecord,
   writeChecksumRecord,
@@ -65,6 +66,12 @@ async function run(command, args) {
       await verifyBackupManifest({
         dumpDirectory: required(options, "--dump-directory"),
         manifestPath: required(options, "--manifest"),
+      });
+      return;
+    case "prepare-local-roles":
+      await prepareRolesForLocalRestore({
+        inputPath: required(options, "--input"),
+        outputPath: required(options, "--output"),
       });
       return;
     case "generate-ephemeral-key":

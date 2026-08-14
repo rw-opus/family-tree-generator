@@ -27,6 +27,7 @@ readonly archive_path="$work_root/plaintext-backup.tar.gz"
 readonly encrypted_path="$work_root/synthetic-backup.ftgbackup"
 readonly checksum_path="$work_root/synthetic-backup.ftgbackup.sha256.json"
 readonly recovered_archive_path="$work_root/recovered-backup.tar.gz"
+readonly local_roles_path="$recovered_directory/roles-local-target.sql"
 readonly public_key_path="$work_root/ephemeral-public.pem"
 readonly private_key_path="$work_root/ephemeral-private.pem"
 readonly source_project_id="ftg-synthetic-backup-source"
@@ -167,6 +168,9 @@ tar -xzf "$recovered_archive_path" -C "$recovered_directory"
 node "$repository_root/scripts/backup/evidence-cli.js" verify-manifest \
   --dump-directory "$recovered_directory" \
   --manifest "$recovered_directory/manifest.json"
+node "$repository_root/scripts/backup/evidence-cli.js" prepare-local-roles \
+  --input "$recovered_directory/roles.sql" \
+  --output "$local_roles_path"
 
 supabase --workdir "$source_workdir" stop --no-backup
 supabase --workdir "$target_workdir" start
@@ -188,7 +192,7 @@ node "$repository_root/scripts/backup/evidence-cli.js" assert-synthetic-target \
 psql \
   --single-transaction \
   --variable ON_ERROR_STOP=1 \
-  --file "$recovered_directory/roles.sql" \
+  --file "$local_roles_path" \
   --file "$recovered_directory/schema.sql" \
   --command 'set session_replication_role = replica' \
   --file "$recovered_directory/data.sql" \
