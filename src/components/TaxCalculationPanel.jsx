@@ -252,8 +252,8 @@ export function TaxCalculationPanel({
                           ) : (
                             <small className="attention">
                               {hasSellingPrice
-                                ? row.warning || "Optional tax details not supplied"
-                                : "Selling price not supplied (optional)"}
+                                ? row.warning || "A detail is missing for this source"
+                                : "Enter the selling price above to calculate tax"}
                             </small>
                           )}
                         </td>
@@ -285,8 +285,9 @@ export function TaxCalculationPanel({
               {vendor.incompleteRowCount > 0 && (
                 <p className="tax-calculation-warning">
                   Tax is not calculated for {vendor.incompleteRowCount} source{" "}
-                  {vendor.incompleteRowCount === 1 ? "fraction" : "fractions"}. Monetary tax details
-                  are optional.
+                  {vendor.incompleteRowCount === 1 ? "fraction" : "fractions"}. Complete{" "}
+                  {vendor.incompleteRowCount === 1 ? "it" : "them"} on {vendor.name}&apos;s owner
+                  card.
                 </p>
               )}
             </article>

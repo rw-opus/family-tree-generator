@@ -91,6 +91,7 @@ export function FamilyTreeCanvas({
   const treeRef = useRef(null);
   const gestureSurfaceRef = useRef(null);
   const dragRef = useRef(null);
+  const lastCentredPersonRef = useRef("");
   const [panHintVisible, setPanHintVisible] = useState(true);
   const [navigatorState, setNavigatorState] = useState({
     visible: false,
@@ -264,7 +265,9 @@ export function FamilyTreeCanvas({
       if (!state) return;
       const deltaX = clientX - state.x;
       const deltaY = clientY - state.y;
-      if (state.pointerType !== "mouse" && !state.moved && Math.hypot(deltaX, deltaY) < 4) return;
+      // The same small threshold applies to every pointer type, so the slight
+      // wobble of an ordinary click still selects the person underneath.
+      if (!state.moved && Math.hypot(deltaX, deltaY) < 4) return;
       state.moved = true;
       event.preventDefault();
       chart.scrollLeft = state.left - deltaX;
@@ -272,34 +275,43 @@ export function FamilyTreeCanvas({
       setPanHintVisible(false);
     };
     const finishDrag = () => {
-      const movedByTouch =
-        dragRef.current?.pointerType === "touch" && dragRef.current.moved === true;
+      // A pan that actually moved must not also select whatever it started on,
+      // whichever pointer type made it.
+      const panned = dragRef.current?.moved === true;
       dragRef.current = null;
       chart.classList.remove("is-panning");
-      if (movedByTouch) suppressClickUntil = Date.now() + 500;
+      if (panned) suppressClickUntil = Date.now() + 500;
     };
     const startPointerDrag = (event) => {
       if (event.pointerType === "touch") return;
       if (event.pointerType === "mouse" && event.button !== 0) return;
-      if (event.target.closest("button, input, select, textarea, a, label")) return;
+      // Person cards are buttons and cover most of the canvas, so refusing to
+      // pan from a button would leave dragging working only in the gaps.
+      if (event.target.closest("input, select, textarea, a, label")) return;
+      const button = event.target.closest("button");
+      if (button && !button.hasAttribute("data-person-id")) return;
       beginDrag({
         id: event.pointerId,
         pointerType: event.pointerType || "mouse",
         clientX: event.clientX,
         clientY: event.clientY,
       });
-      chart.setPointerCapture?.(event.pointerId);
     };
     const movePointerDrag = (event) => {
       const state = dragRef.current;
       if (!state || state.pointerType === "touch" || state.id !== event.pointerId) return;
+      const wasPanning = state.moved;
       moveDrag(event.clientX, event.clientY, event);
+      // Capture only once a pan has really started. Capturing on pointerdown
+      // retargets the click to the chart, which stopped a plain click on a
+      // person card from selecting that person.
+      if (!wasPanning && dragRef.current?.moved) chart.setPointerCapture?.(event.pointerId);
     };
     const stopPointerDrag = (event) => {
       const state = dragRef.current;
       if (!state || state.pointerType === "touch" || state.id !== event.pointerId) return;
       finishDrag();
-      chart.releasePointerCapture?.(event.pointerId);
+      if (chart.hasPointerCapture?.(event.pointerId)) chart.releasePointerCapture(event.pointerId);
     };
     const startTouchDrag = (event) => {
       if (event.touches.length !== 1) {
@@ -357,10 +369,18 @@ export function FamilyTreeCanvas({
     };
   }, []);
 
+  // Centring follows the selection, never the person's data. Re-centring on
+  // every people change dragged the view back to the selected card on each
+  // keystroke, so a pan made while editing could not be held.
   useEffect(() => {
-    if (!selectedPersonId || !treeRef.current) return;
-
-    centerPerson(selectedPersonId);
+    if (!selectedPersonId) {
+      lastCentredPersonRef.current = "";
+      return;
+    }
+    if (!treeRef.current || lastCentredPersonRef.current === selectedPersonId) return;
+    // A person added moments ago may not be rendered yet; the retry on the next
+    // people change centres them once the card exists.
+    if (centerPerson(selectedPersonId)) lastCentredPersonRef.current = selectedPersonId;
   }, [centerPerson, people, selectedPersonId]);
 
   usePinchZoom(gestureSurfaceRef, treeRef, zoom, onZoomChange, usesRelationalLayout);

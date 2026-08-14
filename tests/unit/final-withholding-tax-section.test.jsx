@@ -266,9 +266,11 @@ describe("FinalWithholdingTaxSection", () => {
     expect(container.querySelector('input[aria-label="Original acquisition date"]')).toBeNull();
     const valueInput = container.querySelector('input[aria-label="Donation Value"]');
     expect(container.querySelector(".fwt-status-row strong").textContent).toBe("Not calculated");
-    expect(valueInput.closest("label").textContent).toContain("Donation Value (optional)");
+    // Nothing listed here is optional: without it there is no tax figure at all.
+    expect(valueInput.closest("label").textContent).toContain("Donation Value");
+    expect(container.textContent).not.toContain("optional");
     expect(container.textContent).toContain(
-      "Optional tax details are absent for 1 source fraction",
+      "1 source fraction still needs a detail below before the tax can be calculated",
     );
     expect(container.textContent).not.toContain("Value basis");
     expect(

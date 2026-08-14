@@ -87,17 +87,16 @@ export function TreeToolsPanel({
 
         {expanded && (
           <div className="tree-tools-panel-body">
-            <details className="tree-control-section">
-              <summary>
-                <span>Person card details</span>
-                <b>Choose details</b>
-              </summary>
+            {/* Shown outright rather than behind a second disclosure: one click
+                on Tree tools reveals everything the panel holds. */}
+            <section className="tree-control-section">
+              <h3>Person card details</h3>
               <PersonCardDisplayControl
                 embedded
                 fields={cardFields}
                 onChange={onCardFieldsChange}
               />
-            </details>
+            </section>
 
             <section className="succession-trace-control" aria-live="polite">
               <div className="succession-trace-heading">

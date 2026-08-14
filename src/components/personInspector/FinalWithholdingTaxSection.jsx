@@ -74,7 +74,7 @@ function DonationValueResolution({ row, onConfirm }) {
   return (
     <form className="fwt-donation-value" onSubmit={handleSubmit}>
       <label className="fwt-acquisition-field" htmlFor={`fwt-donation-value-${row.id}`}>
-        <span>Donation Value (optional)</span>
+        <span>Donation Value</span>
         <span className="fwt-money-input">
           <span aria-hidden="true">€</span>
           <input
@@ -108,9 +108,9 @@ function PendingSource({
     !isPersonDeceased &&
     row.sourceKind === "initial" &&
     row.requiresOriginalAcquisitionDate === true;
-  const warning = row.warning
-    ? `${row.warning} Tax values are optional.`
-    : "Optional tax detail not supplied. Ownership fractions are unaffected.";
+  // Every row reaching this list is one the calculation could not complete, so
+  // it must not be described as optional.
+  const warning = row.warning || "This source is not complete, so no tax is calculated for it yet.";
 
   return (
     <li className="fwt-pending-source">
@@ -202,8 +202,9 @@ export function FinalWithholdingTaxSection({
       {resolutionRows.length ? (
         <>
           <small className="fwt-summary">
-            Optional tax details are absent for {resolutionRows.length} source{" "}
-            {resolutionRows.length === 1 ? "fraction" : "fractions"}.
+            {resolutionRows.length} source{" "}
+            {resolutionRows.length === 1 ? "fraction still needs" : "fractions still need"} a detail
+            below before the tax can be calculated. Ownership fractions are unaffected.
           </small>
           <ul className="fwt-pending-sources">
             {resolutionRows.map((row, index) => (

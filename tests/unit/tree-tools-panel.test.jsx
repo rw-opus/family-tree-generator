@@ -83,10 +83,8 @@ describe("TreeToolsPanel", () => {
     const props = renderPanel();
     act(() => container.querySelector(".tree-tools-panel-toggle").click());
 
-    const cardView = [...container.querySelectorAll("summary")].find((summary) =>
-      summary.textContent.includes("Person card details"),
-    );
-    act(() => cardView.click());
+    // One click on Tree tools reveals everything: no second disclosure inside.
+    expect(container.querySelector(".tree-tools-panel-body summary")).toBeNull();
     const valueToggle = [...container.querySelectorAll("label")]
       .find((label) => label.textContent.includes("Current holding value"))
       .querySelector("input");

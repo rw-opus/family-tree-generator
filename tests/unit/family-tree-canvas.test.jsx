@@ -57,6 +57,12 @@ const positionedCards = () =>
     outsideMarriage: node.classList.contains("born-outside-marriage"),
   }));
 
+const pointerEvent = (type, { clientX, clientY, pointerType = "mouse", pointerId = 1 }) => {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { clientX, clientY, pointerType, pointerId, button: 0 });
+  return event;
+};
+
 const touchEvent = (type, touches, changedTouches = touches) => {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, "touches", { configurable: true, value: touches });
@@ -393,6 +399,113 @@ describe("FamilyTreeCanvas", () => {
     expect(scrollRegion.scrollLeft).toBe(170);
     expect(scrollRegion.scrollTop).toBe(140);
     expect(onToolbarClick).not.toHaveBeenCalled();
+  });
+
+  it("pans from a person card with the mouse without opening the card", () => {
+    const onSelectPerson = vi.fn();
+    renderCanvas({ people: family(), onSelectPerson });
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    const card = container.querySelector('[data-person-id="fa"]');
+    scrollRegion.scrollLeft = 200;
+    scrollRegion.scrollTop = 150;
+
+    const moveEvent = pointerEvent("pointermove", { clientX: 260, clientY: 210 });
+    act(() => {
+      card.dispatchEvent(pointerEvent("pointerdown", { clientX: 300, clientY: 250 }));
+      card.dispatchEvent(moveEvent);
+      card.dispatchEvent(pointerEvent("pointerup", { clientX: 260, clientY: 210 }));
+      card.click();
+    });
+
+    expect(moveEvent.defaultPrevented).toBe(true);
+    expect(scrollRegion.scrollLeft).toBe(240);
+    expect(scrollRegion.scrollTop).toBe(190);
+    expect(onSelectPerson).not.toHaveBeenCalled();
+  });
+
+  it("still opens the card when the mouse clicks without panning", () => {
+    const onSelectPerson = vi.fn();
+    renderCanvas({ people: family(), onSelectPerson });
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    const card = container.querySelector('[data-person-id="fa"]');
+    scrollRegion.scrollLeft = 200;
+
+    act(() => {
+      card.dispatchEvent(pointerEvent("pointerdown", { clientX: 300, clientY: 250 }));
+      // A hand-held mouse wobbles by a pixel or two between press and release.
+      card.dispatchEvent(pointerEvent("pointermove", { clientX: 301, clientY: 251 }));
+      card.dispatchEvent(pointerEvent("pointerup", { clientX: 301, clientY: 251 }));
+      card.click();
+    });
+
+    expect(scrollRegion.scrollLeft).toBe(200);
+    expect(onSelectPerson).toHaveBeenCalledWith("fa");
+  });
+
+  it("leaves a toolbar button clickable instead of treating it as a pan handle", () => {
+    const onToolbarClick = vi.fn();
+    renderCanvas({
+      people: family(),
+      toolbar: (
+        <button type="button" onClick={onToolbarClick}>
+          Property &amp; Tax
+        </button>
+      ),
+    });
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    const toolbarButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Property"),
+    );
+    scrollRegion.scrollLeft = 60;
+
+    act(() => {
+      toolbarButton.dispatchEvent(pointerEvent("pointerdown", { clientX: 300, clientY: 40 }));
+      toolbarButton.dispatchEvent(pointerEvent("pointermove", { clientX: 200, clientY: 40 }));
+      toolbarButton.dispatchEvent(pointerEvent("pointerup", { clientX: 200, clientY: 40 }));
+      toolbarButton.click();
+    });
+
+    expect(scrollRegion.scrollLeft).toBe(60);
+    expect(onToolbarClick).toHaveBeenCalledOnce();
+  });
+
+  it("holds the pan while the selected person's details are edited", () => {
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+
+    try {
+      const people = family();
+      renderCanvas({ people, selectedPersonId: "c1" });
+      expect(scrollTo).toHaveBeenCalledOnce();
+
+      // Every keystroke in the person card produces a new people array.
+      renderCanvas({
+        people: people.map((entry) =>
+          entry.id === "c1" ? { ...entry, fullName: "Josephine Borg" } : entry,
+        ),
+        selectedPersonId: "c1",
+      });
+      expect(scrollTo).toHaveBeenCalledOnce();
+
+      // Choosing a different person still recentres.
+      renderCanvas({ people, selectedPersonId: "c2" });
+      expect(scrollTo).toHaveBeenCalledTimes(2);
+
+      // So does coming back to the first person after the card is closed.
+      renderCanvas({ people, selectedPersonId: "" });
+      renderCanvas({ people, selectedPersonId: "c2" });
+      expect(scrollTo).toHaveBeenCalledTimes(3);
+    } finally {
+      if (originalScrollTo) {
+        Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+      } else {
+        delete HTMLElement.prototype.scrollTo;
+      }
+    }
   });
 
   it("pinches in and out from anywhere on the tree screen", () => {

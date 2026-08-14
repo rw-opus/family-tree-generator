@@ -25,7 +25,8 @@ describe("FractionCalculator", () => {
     act(() => root.render(<FractionCalculator />));
 
     const launcher = container.querySelector(".fraction-launcher");
-    expect(launcher.textContent).not.toContain("Fractions");
+    // The icon alone read as decoration, so the launcher names itself on screen.
+    expect(launcher.textContent).toContain("Fractions");
     expect(launcher.querySelectorAll(".mini-calculator-keys i")).toHaveLength(6);
 
     act(() => launcher.click());

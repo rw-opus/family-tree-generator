@@ -37,6 +37,10 @@ export function FractionCalculator() {
           <i />
           <i />
         </span>
+        {/* Named in plain sight: the icon on its own read as decoration. */}
+        <span className="fraction-launcher-label" aria-hidden="true">
+          Fractions
+        </span>
       </button>
       {open && (
         <div

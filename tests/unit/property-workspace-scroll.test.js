@@ -72,6 +72,21 @@ describe("property workspace scrolling", () => {
     );
   });
 
+  // An unlabelled icon on the page edge read as decoration, so the collapsed
+  // rail keeps its name and only the chevron is dropped.
+  it("keeps the collapsed tree-tools rail labelled", () => {
+    const collapsedRules = blockFor(
+      stylesheet,
+      ".tree-tools-panel.collapsed .tree-tools-panel-toggle strong",
+    );
+    const hiddenWhenCollapsed = [
+      ...stylesheet.matchAll(/\.tree-tools-panel\.collapsed[^{]*\{[^}]*display:\s*none[^}]*\}/g),
+    ].map((match) => match[0]);
+
+    expect(collapsedRules).toMatch(/writing-mode:\s*vertical-rl/);
+    expect(hiddenWhenCollapsed.some((rule) => rule.includes("strong"))).toBe(false);
+  });
+
   it("lets the initial-ownership row shrink to a 320px viewport", () => {
     const baseColumns = blockFor(stylesheet, ".initial-owner-columns,\n.initial-owner-row").match(
       /grid-template-columns:([^;]+);/,

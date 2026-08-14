@@ -884,16 +884,22 @@ button:disabled {
   bottom: 1.25rem;
   z-index: 20;
   display: grid;
-  grid-template-rows: 18px 1fr;
+  grid-template-rows: 18px 1fr auto;
   gap: 4px;
-  width: 48px;
-  height: 54px;
+  width: 62px;
+  height: 68px;
   border: 2px solid #fff;
   border-radius: 9px;
   background: #6b3f79;
   color: #fff;
   padding: 6px;
   box-shadow: 0 8px 24px rgba(44, 22, 51, 0.3);
+}
+.fraction-launcher-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: center;
 }
 .fraction-launcher:hover {
   background: #583265;
