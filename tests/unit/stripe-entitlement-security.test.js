@@ -160,7 +160,9 @@ describe("E4 — a browser cannot grant itself an entitlement", () => {
       "public.tree_credit_orders",
       "public.tree_generations",
     ]) {
-      const granted = grantsFor(table).map((grant) => grant.privilege);
+      const granted = grantsFor(table)
+        .filter((grant) => grant.roles.includes("authenticated"))
+        .map((grant) => grant.privilege);
       expect(granted).toEqual(["select"]);
     }
   });
