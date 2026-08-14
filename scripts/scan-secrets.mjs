@@ -36,6 +36,10 @@ export const SECRET_PATTERNS = [
   { name: "Stripe webhook signing secret", pattern: /\bwhsec_[A-Za-z0-9]{16,}/ },
   { name: "AWS access key id", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
   { name: "GitHub token", pattern: /\bgh[pousr]_[A-Za-z0-9]{30,}/ },
+  {
+    name: "GitHub fine-grained token",
+    pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}/,
+  },
   { name: "Private key block", pattern: /-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/ },
   {
     name: "Postgres connection string with a password",
@@ -71,6 +75,40 @@ const TEXT_EXTENSIONS = new Set([
   ".yaml",
   ".yml",
 ]);
+
+const SENSITIVE_CREDENTIAL_EXTENSIONS = new Set([".key", ".pem"]);
+export const MAX_REGULAR_FILE_BYTES = 8 * 1024 * 1024;
+export const MAX_SENSITIVE_FILE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Credential files do not always have a conventional text extension. In
+ * particular, path.extname(".env.production") is ".production", so checking
+ * the extension alone would silently omit a common production secret file.
+ */
+export function isSensitiveCredentialFile(filePath) {
+  const basename = path.basename(filePath).toLowerCase();
+  const extension = path.extname(basename);
+  return (
+    basename === ".env" ||
+    basename.startsWith(".env.") ||
+    SENSITIVE_CREDENTIAL_EXTENSIONS.has(extension)
+  );
+}
+
+export function isScannableTextFile(filePath) {
+  if (isSensitiveCredentialFile(filePath)) return true;
+  const extension = path.extname(filePath).toLowerCase();
+  // Preserve support for extensionless dotfiles and text scripts.
+  return !extension || TEXT_EXTENSIONS.has(extension);
+}
+
+export function shouldReadForSecretScan(filePath, size) {
+  if (!isScannableTextFile(filePath)) return false;
+  const limit = isSensitiveCredentialFile(filePath)
+    ? MAX_SENSITIVE_FILE_BYTES
+    : MAX_REGULAR_FILE_BYTES;
+  return size <= limit;
+}
 
 /**
  * A Supabase service_role key is a JWT whose role sits inside the base64
@@ -126,11 +164,18 @@ async function* walk(directory) {
 async function scanTree(directory, options) {
   const problems = [];
   for await (const filePath of walk(directory)) {
-    const extension = path.extname(filePath).toLowerCase();
-    // Read extensionless dotfiles such as .env too.
-    if (extension && !TEXT_EXTENSIONS.has(extension)) continue;
+    if (!isScannableTextFile(filePath)) continue;
     const info = await stat(filePath);
-    if (info.size > 8 * 1024 * 1024) continue;
+    if (!shouldReadForSecretScan(filePath, info.size)) {
+      // An unexpectedly huge credential file must fail closed. Silently
+      // skipping it would let a secret bypass the exact check intended for it.
+      if (isSensitiveCredentialFile(filePath)) {
+        problems.push(
+          `${path.relative(rootDirectory, filePath)}: sensitive credential file exceeds the ${MAX_SENSITIVE_FILE_BYTES / 1024 / 1024} MiB scan limit`,
+        );
+      }
+      continue;
+    }
 
     const content = await readFile(filePath, "utf8");
     // A file may hold deliberate fixtures for this very scanner. The marker

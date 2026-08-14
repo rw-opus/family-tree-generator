@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const stylesheet = readFileSync(new URL("../../src/workbench.css", import.meta.url), "utf8");
+const stylesheet = readFileSync(
+  new URL("../../src/workbench.css", import.meta.url),
+  "utf8",
+).replace(/\r?\n/g, "\n");
 
 function blockFor(source, selector) {
   const selectorIndex = source.indexOf(selector);

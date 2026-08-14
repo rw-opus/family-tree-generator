@@ -9,13 +9,19 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const cloudHarness = vi.hoisted(() => ({
   listFamilyTrees: vi.fn(),
   loadTreeEntitlement: vi.fn(),
+  queueAcknowledge: vi.fn(),
+  removeFamilyTree: vi.fn(),
   saveFamilyTree: vi.fn(async (tree) => tree),
 }));
 
 vi.mock("../../src/services/familyTrees.js", () => ({
   createFamilyTree: vi.fn(async (tree) => tree),
+  familyTreeSaveFingerprint: (tree) => JSON.stringify(tree),
+  isTreeSaveConflictError: (error) => error?.code === "TREE_SAVE_CONFLICT",
   listFamilyTrees: cloudHarness.listFamilyTrees,
-  removeFamilyTree: vi.fn(),
+  rebaseFamilyTreeListStorageRevision: (trees) => trees,
+  rebaseFamilyTreeStorageRevision: (tree) => tree,
+  removeFamilyTree: cloudHarness.removeFamilyTree,
   saveFamilyTree: cloudHarness.saveFamilyTree,
 }));
 
@@ -42,6 +48,7 @@ vi.mock("../../src/services/cloudSaveQueue.js", () => ({
         latestSnapshot = snapshot;
       },
       flush: async () => latestSnapshot,
+      acknowledge: cloudHarness.queueAcknowledge,
       dispose: vi.fn(),
       hasUnsavedChanges: () => false,
     };
@@ -49,12 +56,21 @@ vi.mock("../../src/services/cloudSaveQueue.js", () => ({
 }));
 
 vi.mock("../../src/components/FamilyLibrary.jsx", () => ({
-  FamilyLibrary: ({ trees, activeTreeId, onOpen }) => (
+  FamilyLibrary: ({ trees, activeTreeId, onOpen, onRename, onRemove, saveState }) => (
     <div data-testid="family-library" data-active-tree-id={activeTreeId}>
+      <span role="status">{saveState?.phase}</span>
       {trees.map((tree) => (
-        <button key={tree.id} type="button" onClick={() => onOpen(tree.id)}>
-          Open {tree.title}
-        </button>
+        <div key={tree.id}>
+          <button type="button" onClick={() => onOpen(tree.id)}>
+            Open {tree.title}
+          </button>
+          <button type="button" onClick={() => onRename(tree.id, `${tree.title} renamed`)}>
+            Rename {tree.title}
+          </button>
+          <button type="button" onClick={() => onRemove(tree.id)}>
+            Remove {tree.title}
+          </button>
+        </div>
       ))}
     </div>
   ),
@@ -109,6 +125,7 @@ describe("App cloud session identity", () => {
       unlimitedTrees: false,
       canCreate: true,
     });
+    cloudHarness.removeFamilyTree.mockResolvedValue(undefined);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -161,6 +178,68 @@ describe("App cloud session identity", () => {
     expect(cloudHarness.loadTreeEntitlement).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-testid="tree-canvas"]').textContent).toBe(
       "Second family",
+    );
+  });
+
+  it("shows a conflict and retains a non-current family's newer local rename", async () => {
+    cloudHarness.saveFamilyTree.mockRejectedValueOnce(
+      Object.assign(new Error("changed in another session"), { code: "TREE_SAVE_CONFLICT" }),
+    );
+
+    await act(async () => {
+      root.render(
+        <App
+          localOnlyMode={false}
+          session={{ access_token: "token", user: { id: "user-1", email: "user@example.com" } }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const renameSecond = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Rename Second family",
+    );
+    await act(async () => {
+      renameSecond.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[role="status"]').textContent).toBe("conflict");
+    expect(container.textContent).toContain("Second family renamed");
+  });
+
+  it("abandons the deleted active tree's save context before activating another tree", async () => {
+    await act(async () => {
+      root.render(
+        <App
+          localOnlyMode={false}
+          session={{ access_token: "token", user: { id: "user-1", email: "user@example.com" } }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    cloudHarness.queueAcknowledge.mockClear();
+    const removeFirst = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Remove First family",
+    );
+    await act(async () => {
+      removeFirst.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cloudHarness.queueAcknowledge).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "second" }),
+    );
+    expect(cloudHarness.queueAcknowledge.mock.invocationCallOrder[0]).toBeLessThan(
+      cloudHarness.removeFamilyTree.mock.invocationCallOrder[0],
+    );
+    expect(container.querySelector('[data-testid="family-library"]').dataset.activeTreeId).toBe(
+      "second",
     );
   });
 });

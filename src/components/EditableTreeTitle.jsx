@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 
-export function EditableTreeTitle({ value = "", onChange }) {
+export function EditableTreeTitle({ value = "", onChange, trailing = null }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -34,6 +34,7 @@ export function EditableTreeTitle({ value = "", onChange }) {
             }
           }}
         />
+        {trailing}
       </div>
     );
   }
@@ -50,6 +51,7 @@ export function EditableTreeTitle({ value = "", onChange }) {
         <span>{value || "Untitled family tree"}</span>
         <Pencil aria-hidden="true" size={15} />
       </button>
+      {trailing}
     </div>
   );
 }

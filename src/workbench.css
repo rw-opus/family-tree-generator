@@ -63,14 +63,35 @@ textarea:focus-visible {
   padding: 0.38rem;
 }
 
-.library-storage-state {
+.workspace-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: max-content;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.library-storage-state.connected {
+.workspace-save-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.workspace-save-status.saved {
   color: var(--forest);
+}
+
+.workspace-save-status.saving {
+  color: #8a5b00;
+}
+
+.workspace-save-status.error,
+.workspace-save-status.conflict {
+  color: #a9232d;
 }
 
 .family-library-content {
@@ -442,7 +463,15 @@ textarea:focus-visible {
 }
 
 .property-workspace-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.65rem;
   min-width: 0;
+}
+
+.property-workspace-title .eyebrow {
+  grid-column: 1 / -1;
 }
 
 .property-workspace-title h1 {
@@ -6474,7 +6503,7 @@ body.a3-print-preview-open {
     font-size: 0.88rem;
   }
 
-  .library-storage-state {
+  .workspace-save-status {
     font-size: 0.62rem;
   }
 

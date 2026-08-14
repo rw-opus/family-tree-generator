@@ -4,11 +4,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 import type { CommercialDatabase } from "../_shared/database.types.ts";
 import {
-  eventClaimOutcome,
   paidTreeOrderUpdate,
   treeCheckoutEventAction,
   treeCheckoutReference,
-  treeOrderFulfilmentOutcome,
   webhookRejection,
 } from "./logic.ts";
 
@@ -17,7 +15,9 @@ const webhookSecret = Deno.env.get("STRIPE_TREE_WEBHOOK_SECRET") || "";
 const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
 export default {
-  fetch: withSupabase({ auth: "none" }, async (request, context) => {
+  // Stripe is a server-to-server caller. It never needs browser CORS, and
+  // disabling the wrapper default avoids advertising a wildcard origin.
+  fetch: withSupabase({ auth: "none", cors: "disabled" }, async (request, context) => {
     const signature = request.headers.get("stripe-signature");
     const rejection = webhookRejection({
       method: request.method,
@@ -33,7 +33,7 @@ export default {
     try {
       event = await stripe!.webhooks.constructEventAsync(
         await request.text(),
-        signature,
+        signature!,
         webhookSecret,
       );
     } catch (error) {
@@ -41,82 +41,41 @@ export default {
       return Response.json({ error: "invalid signature" }, { status: 400 });
     }
 
-    const admin = context.supabaseAdmin as SupabaseClient<CommercialDatabase>;
-    const { error: claimError } = await admin
-      .from("stripe_tree_events")
-      .insert({ event_id: event.id, event_type: event.type });
-    const claim = eventClaimOutcome(claimError);
-    if (claim === "duplicate") return Response.json({ received: true });
-    if (claim === "failed") {
-      console.error("Could not claim Stripe event", claimError);
-      return Response.json({ error: "could not claim event" }, { status: 500 });
-    }
-
     try {
       const action = treeCheckoutEventAction(event.type);
-      if (action === "ignore") return Response.json({ received: true });
+      const session = action === "ignore" ? null : (event.data.object as Stripe.Checkout.Session);
+      const reference = session ? treeCheckoutReference(session) : null;
+      if (session && !reference) throw new Error("tree checkout metadata is incomplete");
 
-      const session = event.data.object as Stripe.Checkout.Session;
-      const reference = treeCheckoutReference(session);
-      if (!reference) throw new Error("tree checkout metadata is incomplete");
-      const { orderId, userId } = reference;
+      const paidOrder =
+        session &&
+        action === "fulfil" &&
+        !(event.type === "checkout.session.completed" && session.payment_status !== "paid")
+          ? paidTreeOrderUpdate(session)
+          : null;
 
-      if (action === "expire") {
-        const { error: expireError } = await admin
-          .from("tree_credit_orders")
-          .update({ status: "expired" })
-          .eq("id", orderId)
-          .eq("user_id", userId)
-          .eq("status", "pending");
-        if (expireError) throw expireError;
-        return Response.json({ received: true });
-      }
-
-      if (event.type === "checkout.session.completed" && session.payment_status !== "paid") {
-        return Response.json({ received: true });
-      }
-
-      const orderUpdate = paidTreeOrderUpdate(session);
-      const { data: fulfilledOrder, error: fulfilError } = await admin
-        .from("tree_credit_orders")
-        .update(orderUpdate)
-        .eq("id", orderId)
-        .eq("user_id", userId)
-        .eq("unit_amount_cents", 3000)
-        .eq("currency", "eur")
-        .eq("status", "pending")
-        .select("id")
-        .maybeSingle();
-      if (fulfilError) throw fulfilError;
-      if (!fulfilledOrder) {
-        const { data: existingOrder, error: existingOrderError } = await admin
-          .from("tree_credit_orders")
-          .select("id,status")
-          .eq("id", orderId)
-          .eq("user_id", userId)
-          .eq("unit_amount_cents", 3000)
-          .eq("currency", "eur")
-          .maybeSingle();
-        if (existingOrderError) throw existingOrderError;
-        const outcome = treeOrderFulfilmentOutcome({ updatedOrder: fulfilledOrder, existingOrder });
-        if (outcome === "unmatched") {
-          throw new Error("matching pending or fulfilled tree order was not found");
-        }
-      }
-
-      const customerId =
-        typeof session.customer === "string" ? session.customer : session.customer?.id || "";
-      if (customerId) {
-        const { error: customerError } = await admin
-          .from("tree_accounts")
-          .update({ stripe_customer_id: customerId })
-          .eq("user_id", userId);
-        if (customerError) throw customerError;
-      }
+      const customerId = session
+        ? typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id || null
+        : null;
+      const admin = context.supabaseAdmin as SupabaseClient<CommercialDatabase>;
+      const { error: processingError } = await admin.rpc("process_stripe_tree_event", {
+        p_amount_total: session?.amount_total ?? null,
+        p_checkout_session_id: session?.id ?? null,
+        p_currency: session?.currency ?? null,
+        p_customer_id: customerId,
+        p_event_id: event.id,
+        p_event_type: event.type,
+        p_order_id: reference?.orderId ?? null,
+        p_payment_intent_id: paidOrder?.stripe_payment_intent_id ?? null,
+        p_payment_status: session?.payment_status ?? null,
+        p_user_id: reference?.userId ?? null,
+      });
+      if (processingError) throw processingError;
 
       return Response.json({ received: true });
     } catch (error) {
-      await admin.from("stripe_tree_events").delete().eq("event_id", event.id);
       console.error("Stripe tree webhook processing failed", error);
       return Response.json({ error: "webhook processing failed" }, { status: 500 });
     }

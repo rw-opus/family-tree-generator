@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { AccountPasswordDialog } from "./AccountPasswordDialog.jsx";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { WorkspaceSaveStatus } from "./WorkspaceSaveStatus.jsx";
 
 const displayDate = (value) => {
   if (!value) return "Saved on this device";
@@ -46,6 +47,7 @@ export function FamilyLibrary({
   billingBusy = false,
   billingMessage = "",
   storageStatus = "",
+  saveState,
   recoveryAvailable = false,
   onCreate,
   onImport,
@@ -162,9 +164,7 @@ export function FamilyLibrary({
           <FolderOpen size={22} aria-hidden="true" />
           <span>Family Tree Generator</span>
         </div>
-        <span className={`library-storage-state ${signedIn ? "connected" : ""}`}>
-          {signedIn ? "Secure workspace" : "Development workspace"}
-        </span>
+        <WorkspaceSaveStatus state={saveState} />
       </header>
 
       <div className="family-library-content">

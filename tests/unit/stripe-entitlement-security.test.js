@@ -1,21 +1,31 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  eventClaimOutcome,
   paidTreeOrderUpdate,
   treeCheckoutEventAction,
   treeCheckoutReference,
-  treeOrderFulfilmentOutcome,
   webhookRejection,
 } from "../../supabase/functions/stripe-tree-webhook/logic.ts";
 import {
   checkoutGate,
+  checkoutCorsHeaders,
   isExpectedTreePrice,
 } from "../../supabase/functions/create-tree-checkout/logic.ts";
 
 const schema = readFileSync(new URL("../../supabase/schema.sql", import.meta.url), "utf8");
 const webhookSource = readFileSync(
   new URL("../../supabase/functions/stripe-tree-webhook/index.ts", import.meta.url),
+  "utf8",
+);
+const checkoutSource = readFileSync(
+  new URL("../../supabase/functions/create-tree-checkout/index.ts", import.meta.url),
+  "utf8",
+);
+const atomicMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260814035209_harden_stripe_tree_webhook_atomic.sql",
+    import.meta.url,
+  ),
   "utf8",
 );
 
@@ -78,67 +88,66 @@ describe("E1 — the webhook refuses anything it cannot verify", () => {
 });
 
 describe("E2 — a redelivered event cannot pay twice", () => {
-  it("treats a unique violation on the ledger as an already-handled event", () => {
-    expect(eventClaimOutcome({ code: "23505" })).toBe("duplicate");
-  });
-
-  it("claims an event the first time it is seen", () => {
-    expect(eventClaimOutcome(null)).toBe("claimed");
-  });
-
-  it("does not silently swallow a real ledger failure", () => {
-    expect(eventClaimOutcome({ code: "08006" })).toBe("failed");
-  });
-
-  it("accepts a redelivery that finds the order already paid", () => {
-    expect(
-      treeOrderFulfilmentOutcome({ updatedOrder: null, existingOrder: { status: "paid" } }),
-    ).toBe("already-fulfilled");
-  });
-
-  it("still reports an order that matches nothing at all", () => {
-    expect(treeOrderFulfilmentOutcome({ updatedOrder: null, existingOrder: null })).toBe(
-      "unmatched",
+  it("does all idempotency and entitlement work in one database call", () => {
+    expect(webhookSource).toContain('.rpc("process_stripe_tree_event"');
+    expect(webhookSource).not.toMatch(/\.from\("stripe_tree_events"\)/);
+    expect(webhookSource).not.toMatch(/\.from\("tree_credit_orders"\)/);
+    expect(atomicMigration).toMatch(
+      /insert into public\.stripe_tree_events[\s\S]+on conflict \(event_id\) do nothing/i,
     );
+    expect(atomicMigration).toMatch(/if not coalesce\(claimed, false\)[\s\S]+return 'duplicate'/i);
   });
 
-  it("claims the ledger row before doing any work", () => {
-    const claimIndex = webhookSource.indexOf("stripe_tree_events");
-    const fulfilIndex = webhookSource.indexOf("tree_credit_orders");
-    expect(claimIndex).toBeGreaterThan(-1);
-    expect(claimIndex).toBeLessThan(fulfilIndex);
-  });
-
-  it("releases the claim when processing fails, so a retry can still succeed", () => {
-    expect(webhookSource).toMatch(/from\("stripe_tree_events"\)\s*\.delete\(\)/);
+  it("rolls the ledger claim back with every failed entitlement mutation", () => {
+    // PostgreSQL functions execute in their caller's transaction. There is no
+    // exception handler or secondary delete that could commit the claim alone.
+    expect(atomicMigration).not.toMatch(/exception\s+when/i);
+    expect(atomicMigration).not.toMatch(/delete from public\.stripe_tree_events/i);
   });
 });
 
 describe("E3 — events that arrive out of order", () => {
-  it("only ever expires an order that is still pending", () => {
-    // An expiry arriving after payment must not un-pay the order, which is
-    // enforced by the status guard on the update rather than by event order.
-    expect(webhookSource).toMatch(/status: "expired"[\s\S]{0,200}\.eq\("status", "pending"\)/);
+  it("only expires an order that is still pending", () => {
+    expect(atomicMigration).toMatch(/if tree_order\.status = 'pending'[\s\S]+status = 'expired'/i);
   });
 
-  it("only ever fulfils an order that is still pending", () => {
-    expect(webhookSource).toMatch(/orderUpdate[\s\S]{0,300}\.eq\("status", "pending"\)/);
+  it("lets a trusted paid event recover an earlier expired order", () => {
+    expect(atomicMigration).toMatch(
+      /tree_order\.status in \('pending', 'expired'\)[\s\S]+status = 'paid'/i,
+    );
   });
 
-  it("treats a second fulfilling event as complete rather than as an error", () => {
-    // checkout.session.completed and async_payment_succeeded both fulfil, and
-    // either may arrive first.
+  it("recognises both immediate and delayed payment success", () => {
     expect(treeCheckoutEventAction("checkout.session.completed")).toBe("fulfil");
     expect(treeCheckoutEventAction("checkout.session.async_payment_succeeded")).toBe("fulfil");
-    expect(
-      treeOrderFulfilmentOutcome({ updatedOrder: null, existingOrder: { status: "paid" } }),
-    ).toBe("already-fulfilled");
   });
 
   it("ignores events it has no business acting on", () => {
     expect(treeCheckoutEventAction("payment_intent.succeeded")).toBe("ignore");
     expect(treeCheckoutEventAction("customer.subscription.created")).toBe("ignore");
     expect(treeCheckoutEventAction("")).toBe("ignore");
+  });
+
+  it("never reverses a later refund or dispute", () => {
+    expect(atomicMigration).toMatch(
+      /do not let an out-of-order paid event reverse a later refund\/dispute/i,
+    );
+    expect(atomicMigration).toMatch(/else[\s\S]{0,150}return 'already_final'/i);
+  });
+});
+
+describe("F5 — Edge Function CORS", () => {
+  it("allows checkout only from this environment's exact application origin", () => {
+    const headers = checkoutCorsHeaders("https://family.example");
+    expect(headers["Access-Control-Allow-Origin"]).toBe("https://family.example");
+    expect(headers["Access-Control-Allow-Origin"]).not.toBe("*");
+    expect(headers["Access-Control-Allow-Methods"]).toBe("POST, OPTIONS");
+    expect(checkoutSource).toContain("checkoutCorsHeaders(appUrl)");
+  });
+
+  it("does not expose the server-to-server Stripe webhook through CORS", () => {
+    expect(webhookSource).toMatch(/auth: "none", cors: "disabled"/);
+    expect(webhookSource).not.toContain('"Access-Control-Allow-Origin": "*"');
   });
 });
 
@@ -202,6 +211,15 @@ describe("E4 — a browser cannot grant itself an entitlement", () => {
     );
     expect(schema).toMatch(
       /revoke all on function private\.grant_paid_tree_credit\(\) from public, anon, authenticated/i,
+    );
+  });
+
+  it("keeps the atomic Stripe processor service-role only", () => {
+    expect(atomicMigration).toMatch(
+      /revoke all on function public\.process_stripe_tree_event\([\s\S]+from public, anon, authenticated/i,
+    );
+    expect(atomicMigration).toMatch(
+      /grant execute on function public\.process_stripe_tree_event\([\s\S]+to service_role/i,
     );
   });
 
@@ -284,9 +302,14 @@ describe("E4 — a browser cannot grant itself an entitlement", () => {
   });
 
   it("scopes every entitlement write to the user named in the event", () => {
-    // Without the user_id guard a forged order id could move another account's
-    // order, so both identifiers must appear on the update.
-    const updates = webhookSource.match(/\.eq\("id", orderId\)\s*\n\s*\.eq\("user_id", userId\)/g);
-    expect(updates?.length).toBeGreaterThanOrEqual(2);
+    // The RPC locks only a row matching both signed identifiers, then mutates
+    // that exact locked row. It also binds the stored Stripe session id.
+    expect(atomicMigration).toMatch(
+      /where orders\.id = p_order_id\s+and orders\.user_id = p_user_id/i,
+    );
+    expect(atomicMigration).toMatch(
+      /tree_order\.stripe_checkout_session_id is distinct from p_checkout_session_id/i,
+    );
+    expect(atomicMigration).toMatch(/where id = tree_order\.id/i);
   });
 });

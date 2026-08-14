@@ -7,8 +7,13 @@
 import { describe, expect, it } from "vitest";
 import {
   FORBIDDEN_BROWSER_VARIABLES,
+  MAX_REGULAR_FILE_BYTES,
+  MAX_SENSITIVE_FILE_BYTES,
   SECRET_PATTERNS,
   findSecrets,
+  isScannableTextFile,
+  isSensitiveCredentialFile,
+  shouldReadForSecretScan,
 } from "../../scripts/scan-secrets.mjs";
 
 /**
@@ -30,6 +35,11 @@ const STRIPE_PUBLISHABLE = sample("pk", "_", "live", "_", "51AbCdEfGhIjKlMnOpQrS
 const SUPABASE_SECRET = sample("sb", "_", "secret", "_", "ZmFrZUtleUZvclRlc3RzMTIzNDU2");
 const AWS_KEY_ID = sample("AKIA", "IOSFODNN7EXAMPLE");
 const GITHUB_TOKEN = sample("ghp", "_", "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789");
+const GITHUB_FINE_GRAINED_TOKEN = sample(
+  "github",
+  "_pat_",
+  "11AABBCCDDEEFF001122_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+);
 const PRIVATE_KEY_HEADER = sample("-----BEGIN ", "RSA ", "PRIVATE KEY-----");
 const POSTGRES_URL = sample("postgresql://postgres:", "hunter2", "@db.example.co:5432/postgres");
 const BROWSER_SERVICE_ROLE_VARIABLE = sample("VITE", "_SUPABASE_", "SERVICE_ROLE", "_KEY");
@@ -44,6 +54,7 @@ describe("secret detection", () => {
     ["Stripe webhook secret", STRIPE_WEBHOOK],
     ["AWS access key id", AWS_KEY_ID],
     ["GitHub token", GITHUB_TOKEN],
+    ["GitHub fine-grained token", GITHUB_FINE_GRAINED_TOKEN],
     ["private key block", PRIVATE_KEY_HEADER],
     ["Postgres URL with password", POSTGRES_URL],
   ])("catches a %s", (_label, content) => {
@@ -83,5 +94,22 @@ describe("secret detection", () => {
     const findings = findSecrets(`${STRIPE_LIVE_SECRET} and ${STRIPE_WEBHOOK}`);
 
     expect(findings).toHaveLength(2);
+  });
+
+  it.each([".env.production", ".env.local", "signing.pem", "deploy.key"])(
+    "scans sensitive credential filename %s",
+    (filePath) => {
+      expect(isSensitiveCredentialFile(filePath)).toBe(true);
+      expect(isScannableTextFile(filePath)).toBe(true);
+    },
+  );
+
+  it("does not silently skip large recognized credential files", () => {
+    const justOverRegularLimit = MAX_REGULAR_FILE_BYTES + 1;
+
+    expect(shouldReadForSecretScan("notes.txt", justOverRegularLimit)).toBe(false);
+    expect(shouldReadForSecretScan(".env.production", justOverRegularLimit)).toBe(true);
+    expect(shouldReadForSecretScan("private.pem", justOverRegularLimit)).toBe(true);
+    expect(shouldReadForSecretScan("private.key", MAX_SENSITIVE_FILE_BYTES + 1)).toBe(false);
   });
 });

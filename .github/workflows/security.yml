@@ -18,16 +18,16 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 22
+          node-version: "24.19.0"
           cache: npm
 
       - run: npm ci
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         with:
           version: 2.114.0
 
@@ -43,22 +43,34 @@ jobs:
           status="$(supabase status -o json)"
           anon="$(echo "$status" | jq -r '.ANON_KEY // empty')"
           service="$(echo "$status" | jq -r '.SERVICE_ROLE_KEY // empty')"
+          jwt_secret="$(echo "$status" | jq -r '.JWT_SECRET // empty')"
           api="$(echo "$status" | jq -r '.API_URL // empty')"
-          if [ -z "$anon" ] || [ -z "$service" ] || [ -z "$api" ]; then
-            echo "Could not read the local stack's credentials:" >&2
-            echo "$status" >&2
+          for credential in "$anon" "$service" "$jwt_secret"; do
+            if [ -n "$credential" ]; then
+              echo "::add-mask::$credential"
+            fi
+          done
+          missing=()
+          [ -z "$anon" ] && missing+=("ANON_KEY")
+          [ -z "$service" ] && missing+=("SERVICE_ROLE_KEY")
+          [ -z "$jwt_secret" ] && missing+=("JWT_SECRET")
+          [ -z "$api" ] && missing+=("API_URL")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Could not read required local stack fields: %s\n' "${missing[*]}" >&2
             exit 1
           fi
-          echo "::add-mask::$anon"
-          echo "::add-mask::$service"
           {
             echo "SUPABASE_ANON_KEY=$anon"
             echo "SUPABASE_SERVICE_ROLE_KEY=$service"
+            echo "SUPABASE_JWT_SECRET=$jwt_secret"
             echo "SUPABASE_URL=$api"
           } >> "$GITHUB_ENV"
 
       - name: Prove cross-account isolation
         run: npm run test:rls
+
+      - name: Prove database security invariants
+        run: supabase test db
 
       - name: Show the database logs on failure
         if: failure()

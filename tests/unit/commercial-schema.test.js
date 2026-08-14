@@ -24,6 +24,20 @@ const unlimitedAccountsMigration = readFileSync(
   new URL("../../supabase/migrations/20260806060552_unlimited_tree_accounts.sql", import.meta.url),
   "utf8",
 );
+const concurrencyMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260814034839_family_tree_optimistic_concurrency.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const enforcedConcurrencyMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260814041002_enforce_family_tree_save_rpc.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -92,5 +106,41 @@ describe("commercial Supabase schema", () => {
       'site_url = "https://family-tree-generator-production.up.railway.app"',
     );
     expect(authConfig).toMatch(/\[auth\.mfa\.totp\][\s\S]*verify_enabled\s*=\s*true/);
+  });
+
+  it("uses a server-owned revision to reject stale family-tree updates", () => {
+    for (const sql of [schema, concurrencyMigration]) {
+      expect(sql).toContain("revision bigint not null default 1");
+      expect(sql).toContain("private.increment_family_tree_revision()");
+      expect(sql).toContain("new.revision := old.revision + 1");
+      expect(sql).toContain("before update on public.family_trees");
+      expect(sql).toContain(
+        "revoke all on function private.increment_family_tree_revision() from public, anon, authenticated",
+      );
+    }
+    expect(schema).toContain("GENERATED SNAPSHOT — DO NOT EDIT MANUALLY");
+    expect(schema).toContain("supabase/migrations/ is the authoritative database history");
+  });
+
+  it("enforces compare-and-swap saves at the database API boundary", () => {
+    for (const sql of [schema, enforcedConcurrencyMigration]) {
+      expect(sql).toContain("function public.save_family_tree(");
+      expect(sql).toContain("security definer");
+      expect(sql).toContain("set search_path = ''");
+      expect(sql).toContain("tree.owner_id = caller_id");
+      expect(sql).toContain("message = 'TREE_SAVE_CONFLICT'");
+      expect(sql).toContain(
+        "grant execute on function public.save_family_tree(uuid, bigint, text, jsonb, jsonb)",
+      );
+    }
+    expect(enforcedConcurrencyMigration).toContain(
+      "revoke update on table public.family_trees from authenticated",
+    );
+    expect(schema).toContain(
+      "grant select, insert, delete on table public.family_trees to authenticated",
+    );
+    expect(schema).not.toMatch(
+      /grant\s+select,\s*insert,\s*update,\s*delete\s+on table public\.family_trees/i,
+    );
   });
 });
