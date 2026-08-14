@@ -11,6 +11,7 @@ import {
   decryptBackupFile,
   encryptBackupFile,
   generateEphemeralBackupKeyPair,
+  prepareRolesForLocalRestore,
   verifyBackupManifest,
   verifyChecksumRecord,
   writeChecksumRecord,
@@ -150,6 +151,46 @@ describe("synthetic restore target guard", () => {
         ...override,
       }),
     ).toThrow();
+  });
+});
+
+describe("local reserved-role restore preparation", () => {
+  it("omits only unsupported settings on Supabase-managed roles", async () => {
+    const directory = await temporaryDirectory();
+    const inputPath = path.join(directory, "roles.sql");
+    const outputPath = path.join(directory, "roles-local.sql");
+    const source = [
+      `ALTER ROLE "authenticator" SET "log_min_messages" TO 'fatal';`,
+      `ALTER ROLE "authenticator" SET "statement_timeout" TO '8s';`,
+      `ALTER ROLE "supabase_auth_admin" SET "internal.secret" TO 'do-not-copy';`,
+      `ALTER ROLE "custom_auditor" SET "log_min_messages" TO 'warning';`,
+      `GRANT "custom_auditor" TO "postgres";`,
+      "",
+    ].join("\n");
+    await writeFile(inputPath, source, "utf8");
+
+    const result = await prepareRolesForLocalRestore({ inputPath, outputPath });
+    const prepared = await readFile(outputPath, "utf8");
+
+    expect(result).toEqual({ omittedCount: 2 });
+    expect(await readFile(inputPath, "utf8")).toBe(source);
+    expect(prepared).not.toContain("do-not-copy");
+    expect(prepared).toContain(
+      `-- Omitted target-managed setting for reserved role "authenticator": "log_min_messages".`,
+    );
+    expect(prepared).toContain(`ALTER ROLE "authenticator" SET "statement_timeout" TO '8s';`);
+    expect(prepared).toContain(`ALTER ROLE "custom_auditor" SET "log_min_messages" TO 'warning';`);
+    expect(prepared).toContain(`GRANT "custom_auditor" TO "postgres";`);
+  });
+
+  it("never overwrites the archived roles dump", async () => {
+    const directory = await temporaryDirectory();
+    const inputPath = path.join(directory, "roles.sql");
+    await writeFile(inputPath, "RESET ALL;\n", "utf8");
+
+    await expect(prepareRolesForLocalRestore({ inputPath, outputPath: inputPath })).rejects.toThrow(
+      /must not overwrite/,
+    );
   });
 });
 
