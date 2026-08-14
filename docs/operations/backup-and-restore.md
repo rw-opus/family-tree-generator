@@ -16,6 +16,13 @@ local Supabase stack. It then uses the current official logical-backup pattern:
 5. `psql --single-transaction --variable ON_ERROR_STOP=1` for the main restore
    and the separately documented migration-history restore.
 
+For the disposable local target only, the harness first neutralizes the fresh
+stack's browser-role default ACLs for public tables. This prevents target-only
+inherited grants from surviving table creation; it is a local compatibility
+step, not an additional step in Supabase's logical backup guide. The source dump
+subsequently restores its own default ACLs, and the catalog tests prove the
+restored current-table grant allowlist.
+
 The plaintext files receive a manifest containing byte lengths, SHA-256
 checksums, tool/database versions and aggregate record counts. The archive is
 then protected with an ephemeral RSA-OAEP-wrapped AES-256-GCM key and receives
