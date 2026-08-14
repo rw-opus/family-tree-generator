@@ -146,6 +146,86 @@ describe("authenticated application entry", () => {
     expect(container.textContent).toContain("Password reset");
   });
 
+  it("clears password recovery when Supabase signs the user out", async () => {
+    await act(async () => {
+      root.render(<AppEntry />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      authHarness.listener("PASSWORD_RECOVERY", {
+        user: { id: "user-1", email: "user@example.com" },
+      });
+      authHarness.listener("SIGNED_OUT", null);
+      authHarness.listener("TOKEN_REFRESHED", {
+        user: { id: "user-2", email: "other@example.com" },
+      });
+    });
+
+    expect(container.textContent).not.toContain("Password reset");
+    expect(container.querySelector('[data-testid="authenticated-application"]')).not.toBeNull();
+  });
+
+  it.each(["SIGNED_IN", "INITIAL_SESSION"])(
+    "preserves password recovery when Supabase re-emits %s for the same user",
+    async (event) => {
+      await act(async () => {
+        root.render(<AppEntry />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      act(() => {
+        authHarness.listener("PASSWORD_RECOVERY", {
+          user: { id: "user-1", email: "user@example.com" },
+        });
+        authHarness.listener(event, {
+          user: { id: "user-1", email: "user@example.com" },
+        });
+      });
+
+      expect(container.textContent).toContain("Password reset");
+    },
+  );
+
+  it("preserves password recovery when the recovery user is unknown", async () => {
+    await act(async () => {
+      root.render(<AppEntry />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      authHarness.listener("PASSWORD_RECOVERY", { user: {} });
+      authHarness.listener("SIGNED_IN", {
+        user: { id: "user-1", email: "user@example.com" },
+      });
+    });
+
+    expect(container.textContent).toContain("Password reset");
+  });
+
+  it("clears password recovery for a definitely different user's sign-in", async () => {
+    await act(async () => {
+      root.render(<AppEntry />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      authHarness.listener("PASSWORD_RECOVERY", {
+        user: { id: "user-1", email: "user@example.com" },
+      });
+      authHarness.listener("SIGNED_IN", {
+        user: { id: "user-2", email: "other@example.com" },
+      });
+    });
+
+    expect(container.textContent).not.toContain("Password reset");
+    expect(container.querySelector("span").dataset.userId).toBe("user-2");
+  });
+
   it("preserves the mounted workspace when Supabase refreshes the same user's token", async () => {
     await act(async () => {
       root.render(<AppEntry />);
