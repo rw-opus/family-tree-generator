@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { createHmac } from "node:crypto";
+import { assertLocalDatabaseUrl } from "../../scripts/backup/evidence.js";
 
 /**
  * A1 and A4 — tenant isolation, proven rather than assumed.
@@ -17,14 +19,38 @@ const url = process.env.SUPABASE_URL;
 const anonKey = process.env.SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+const databaseUrl = process.env.SUPABASE_DB_URL;
+const fixtureConfirmation = process.env.FTG_RLS_DB_FIXTURE_CONFIRMATION;
+const REQUIRED_FIXTURE_CONFIRMATION = "ALLOW_ONLY_DISPOSABLE_LOCAL_RLS_FIXTURES";
 
-if (!url || !anonKey || !serviceRoleKey || !jwtSecret) {
+if (
+  !url ||
+  !anonKey ||
+  !serviceRoleKey ||
+  !jwtSecret ||
+  !databaseUrl ||
+  fixtureConfirmation !== REQUIRED_FIXTURE_CONFIRMATION
+) {
   throw new Error(
     "RLS tests need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY " +
-      "and SUPABASE_JWT_SECRET. " +
+      "SUPABASE_JWT_SECRET, SUPABASE_DB_URL and the disposable-fixture confirmation. " +
       "Start a local stack with `npx supabase start` and export them, or run this in CI.",
   );
 }
+
+let apiUrl;
+try {
+  apiUrl = new URL(url);
+} catch {
+  throw new Error("RLS tests require an absolute local Supabase API URL.");
+}
+if (
+  apiUrl.protocol !== "http:" ||
+  !["127.0.0.1", "localhost"].includes(apiUrl.hostname.toLowerCase())
+) {
+  throw new Error("RLS tests are forbidden unless the Supabase API is local and disposable.");
+}
+const localDatabaseUrl = assertLocalDatabaseUrl(databaseUrl, "SUPABASE_DB_URL").toString();
 
 const signedLocalJwt = (payload) => {
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -40,18 +66,6 @@ const rest = (path, { token, method = "GET", body, prefer } = {}) =>
     headers: {
       apikey: anonKey,
       Authorization: `Bearer ${token ?? anonKey}`,
-      "Content-Type": "application/json",
-      ...(prefer ? { Prefer: prefer } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-const serviceRest = (path, { method = "GET", body, prefer } = {}) =>
-  fetch(`${url}/rest/v1/${path}`, {
-    method,
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
       "Content-Type": "application/json",
       ...(prefer ? { Prefer: prefer } : {}),
     },
@@ -77,6 +91,43 @@ const admin = (path, init = {}) =>
       ...(init.headers || {}),
     },
   });
+
+function ageTrashedFamilyTree(treeId, deletedAt) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(treeId)) {
+    throw new Error("The RLS fixture tree ID must be a UUID.");
+  }
+  const parsedDeletedAt = new Date(deletedAt);
+  if (Number.isNaN(parsedDeletedAt.getTime()) || parsedDeletedAt.toISOString() !== deletedAt) {
+    throw new Error("The RLS fixture deletion time must be a canonical ISO timestamp.");
+  }
+
+  const output = execFileSync(
+    "psql",
+    [
+      localDatabaseUrl,
+      "--no-psqlrc",
+      "--quiet",
+      "--tuples-only",
+      "--no-align",
+      "--set=ON_ERROR_STOP=1",
+      `--set=tree_id=${treeId}`,
+      `--set=deleted_at=${deletedAt}`,
+    ],
+    {
+      encoding: "utf8",
+      input:
+        "update public.family_trees " +
+        "set deleted_at = :'deleted_at'::timestamptz " +
+        "where id = :'tree_id'::uuid returning revision;\n",
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  ).trim();
+  const revision = Number(output);
+  if (!Number.isSafeInteger(revision) || revision < 1) {
+    throw new Error("The local RLS fixture did not update exactly one family tree.");
+  }
+  return revision;
+}
 
 async function createUser(email) {
   const password = `Fictional-${crypto.randomUUID()}`;
@@ -710,13 +761,7 @@ describe("recoverable family-tree deletion", () => {
     expect(trashedResponse.status).toBe(200);
 
     const expiredAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
-    const agedResponse = await serviceRest(`family_trees?id=eq.${treeId}`, {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: { deleted_at: expiredAt },
-    });
-    const [aged] = await readJson(agedResponse);
-    expect(agedResponse.status).toBe(200);
+    const agedRevision = ageTrashedFamilyTree(treeId, expiredAt);
 
     const listedResponse = await rest("rpc/list_trashed_family_trees", {
       token: alice.token,
@@ -724,13 +769,13 @@ describe("recoverable family-tree deletion", () => {
       body: {},
     });
     expect(await readJson(listedResponse)).toContainEqual(
-      expect.objectContaining({ id: treeId, revision: aged.revision }),
+      expect.objectContaining({ id: treeId, revision: agedRevision }),
     );
 
     const restoreResponse = await rest("rpc/restore_family_tree", {
       token: alice.token,
       method: "POST",
-      body: { p_tree_id: treeId, p_expected_revision: aged.revision },
+      body: { p_tree_id: treeId, p_expected_revision: agedRevision },
     });
     expect(restoreResponse.status).toBe(410);
     expect(await readJson(restoreResponse)).toMatchObject({
@@ -741,7 +786,7 @@ describe("recoverable family-tree deletion", () => {
     const permanentDelete = await rest("rpc/permanently_delete_family_tree", {
       token: alice.token,
       method: "POST",
-      body: { p_tree_id: treeId, p_expected_revision: aged.revision },
+      body: { p_tree_id: treeId, p_expected_revision: agedRevision },
     });
     expect(permanentDelete.status).toBe(200);
   });
@@ -863,12 +908,16 @@ describe("entitlements are out of the browser's reach", () => {
     expect(response.ok).toBe(false);
     expect([401, 403]).toContain(response.status);
 
-    const [after, tree] = await Promise.all([
+    const [after, trash] = await Promise.all([
       rest(accountPath, { token: carol.token }),
-      serviceRest(`family_trees?id=eq.${treeId}&select=id`),
+      rest("rpc/list_trashed_family_trees", {
+        token: carol.token,
+        method: "POST",
+        body: {},
+      }),
     ]);
     expect(await readJson(after)).toEqual(originalAccount);
-    expect(await readJson(tree)).toEqual([]);
+    expect(await readJson(trash)).not.toContainEqual(expect.objectContaining({ id: treeId }));
   });
 
   it("rejects an invalid direct insert before consuming any entitlement", async () => {
