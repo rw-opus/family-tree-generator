@@ -520,6 +520,18 @@ describe("PropertyOwnershipSummary", () => {
     ).not.toBeNull();
   });
 
+  // The button carried the underline, and an underline cannot be cancelled by
+  // a descendant, so it ran under the appended hint too and the two read as one
+  // run-on word. The name owns the underline now.
+  it("underlines the outside-owner name without underlining its hint", () => {
+    renderCompanySummary();
+    const link = container.querySelector(".outside-owner-link");
+
+    expect(link.querySelector(".outside-owner-name").textContent).toBe("Harbour Holdings Limited");
+    // The hint is a pseudo-element, so the name is the button's only child.
+    expect(link.children).toHaveLength(1);
+  });
+
   it("drops the kicker above the current-ownership heading", () => {
     renderSummary();
 

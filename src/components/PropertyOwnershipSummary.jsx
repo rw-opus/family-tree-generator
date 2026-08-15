@@ -66,7 +66,9 @@ export function PropertyOwnershipSummary({
           aria-label={`Open ${partyName(id)} owner card`}
           onClick={() => selectOutsideOwner(id)}
         >
-          {partyName(id)}
+          {/* The name is wrapped so the underline belongs to it rather than to
+              the button, which would also draw under the appended hint. */}
+          <span className="outside-owner-name">{partyName(id)}</span>
         </button>
       );
     }
