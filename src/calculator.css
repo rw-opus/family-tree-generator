@@ -912,7 +912,7 @@ button:disabled {
   background: #f6f0f8;
   color: #4f285c;
   font:
-    800 12px/1 Georgia,
+    800 12px/1 "Tracker Fraunces",
     serif;
 }
 .mini-calculator-keys {
@@ -974,7 +974,7 @@ button:disabled {
 .fraction-display strong {
   color: #174a36;
   font:
-    800 1.65rem/1 Georgia,
+    800 1.65rem/1 "Tracker Fraunces",
     serif;
 }
 .fraction-display strong span {

@@ -275,7 +275,7 @@ const previewCss = `
   :root {
     color: #10231c;
     background: #e8ece9;
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: "Tracker Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
   * { box-sizing: border-box; }
