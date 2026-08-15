@@ -87,15 +87,11 @@ export function PropertyOwnershipSummary({
         {ledger.owners.length ? (
           ledger.owners.map((owner) => (
             <div className="owner-row read-only-owner-row" key={owner.id}>
+              {/* No provenance line. The name is the row; an outside owner is
+                  already marked by the "Open owner card" affordance on its
+                  link, so a second label under every name only added height. */}
               <span className="owner-identity">
                 <strong>{renderPartyName(owner.id, { allowOutsideOwnerCard: true })}</strong>
-                {/* Almost everyone here comes from the family tree, so saying so
-                    on every row said nothing. Only the exceptions are marked. */}
-                {owner.source !== "family-tree" && (
-                  <small>
-                    {owner.type === "company" ? "Outside company" : "Outside individual"}
-                  </small>
-                )}
               </span>
               <span className="owner-share">
                 <strong>{fractionLabel(owner.share, owner.shareFraction)}</strong>
