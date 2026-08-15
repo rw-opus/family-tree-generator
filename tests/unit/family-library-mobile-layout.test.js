@@ -45,3 +45,39 @@ describe("mobile family library layout", () => {
     expect(blockFor(mobileRules, ".family-library-page input,")).toMatch(/font-size:\s*16px/);
   });
 });
+
+/**
+ * Between the phone layout and a comfortable desktop there was a band — small
+ * tablets, and any phone in landscape — where the page had already split into
+ * two columns but neither column could afford it. The account column will not
+ * go below 15rem, so the families table was left about 270px wide: narrower
+ * than the same table gets on a phone. The name column collapsed to zero and
+ * the only control that opens a family disappeared from the row.
+ */
+describe("the family row survives a narrow families card", () => {
+  it("keeps the page in one column until two will fit", () => {
+    const split = blockFor(stylesheet, ".family-library-content");
+    expect(split).toMatch(/grid-template-columns:\s*minmax\(15rem,/);
+
+    // A breakpoint above the phone layout has to undo the split, or the 15rem
+    // floor squeezes the families card below its phone width.
+    const singleColumn = [...stylesheet.matchAll(/@media \(max-width: (\d+)px\)/g)]
+      .map((match) => ({ width: Number(match[1]), index: match.index }))
+      .filter(({ index }) => {
+        const rules = blockFor(stylesheet.slice(index), "@media");
+        return /\.family-library-content\s*{[^}]*grid-template-columns:\s*1fr/s.test(rules);
+      })
+      .map(({ width }) => width);
+
+    expect(Math.max(...singleColumn)).toBeGreaterThanOrEqual(700);
+  });
+
+  it("never lets the family name column collapse to nothing", () => {
+    const row = blockFor(stylesheet, ".family-library-row");
+    const columns = row.match(/grid-template-columns:([^;]+);/)[1];
+
+    // The name comes first and keeps a floor; the date yields its width first.
+    expect(columns).toMatch(/minmax\(\s*[1-9][\d.]*rem,\s*1fr\s*\)/);
+    expect(columns).not.toMatch(/^\s*minmax\(\s*0/);
+  });
+});
