@@ -90,6 +90,28 @@ describe("property workspace scrolling", () => {
     expect(hiddenWhenCollapsed.some((rule) => rule.includes("strong"))).toBe(false);
   });
 
+  it("places a horizontal tree-tools launcher below the mobile toolbar", () => {
+    const mobileRules = blockFor(stylesheet, "@media (max-width: 900px)");
+    const panelRule = blockFor(mobileRules, ".tree-tools-panel,\n  .tree-tools-panel.collapsed");
+    const toggleContentRule = blockFor(
+      mobileRules,
+      ".tree-tools-panel.collapsed .tree-tools-panel-toggle > span",
+    );
+    const labelRule = blockFor(
+      mobileRules,
+      ".tree-tools-panel.collapsed .tree-tools-panel-toggle strong",
+    );
+    const navigationRule = blockFor(mobileRules, ".tree-navigation-tools");
+
+    expect(panelRule).toMatch(/top:\s*6\.55rem/);
+    expect(panelRule).toMatch(/left:\s*0\.55rem/);
+    expect(panelRule).toMatch(/width:\s*auto/);
+    expect(toggleContentRule).toMatch(/flex-direction:\s*row/);
+    expect(labelRule).toMatch(/writing-mode:\s*horizontal-tb/);
+    expect(navigationRule).toMatch(/right:\s*0\.55rem/);
+    expect(navigationRule).toMatch(/left:\s*auto/);
+  });
+
   it("lets the initial-ownership row shrink to a 320px viewport", () => {
     const baseColumns = blockFor(stylesheet, ".initial-owner-columns,\n.initial-owner-row").match(
       /grid-template-columns:([^;]+);/,

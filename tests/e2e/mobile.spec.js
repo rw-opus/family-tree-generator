@@ -109,4 +109,33 @@ test.describe("phone layout", () => {
     });
     expect(overlapping).toBe(false);
   });
+
+  test("keeps Tree tools labelled below the toolbar and clear of Fit tree", async ({ page }) => {
+    const launcher = page.locator(".tree-tools-panel-toggle");
+    await expect(launcher).toContainText("Tree tools");
+
+    const layout = await page.evaluate(() => {
+      const panel = document.querySelector(".tree-tools-panel").getBoundingClientRect();
+      const toolbar = document.querySelector(".tree-stage-toolbar").getBoundingClientRect();
+      const navigation = document.querySelector(".tree-navigation-tools").getBoundingClientRect();
+      const label = document.querySelector(".tree-tools-panel-toggle strong");
+      const overlaps = (first, second) =>
+        first.left < second.right &&
+        second.left < first.right &&
+        first.top < second.bottom &&
+        second.top < first.bottom;
+
+      return {
+        belowToolbar: panel.top >= toolbar.bottom,
+        overlapsNavigation: overlaps(panel, navigation),
+        writingMode: getComputedStyle(label).writingMode,
+      };
+    });
+
+    expect(layout).toEqual({
+      belowToolbar: true,
+      overlapsNavigation: false,
+      writingMode: "horizontal-tb",
+    });
+  });
 });

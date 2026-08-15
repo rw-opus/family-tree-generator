@@ -6279,7 +6279,8 @@ body.a3-print-preview-open {
 
   .tree-navigation-tools {
     top: 6.55rem;
-    left: 0.55rem;
+    right: 0.55rem;
+    left: auto;
   }
 
   .initial-owner-tree-picker {
@@ -6311,14 +6312,14 @@ body.a3-print-preview-open {
   .tree-tools-panel.collapsed {
     position: absolute;
     z-index: 70;
-    top: 0.45rem;
+    top: 6.55rem;
     right: auto;
     bottom: auto;
-    left: 0.6rem;
-    width: 3rem;
-    max-width: 3rem;
+    left: 0.55rem;
+    width: auto;
+    max-width: calc(100% - 4rem);
     min-height: auto;
-    max-height: 3.2rem;
+    max-height: 2.75rem;
     overflow: hidden;
     border: 1px solid #b8c9c0;
     border-radius: 8px;
@@ -6327,8 +6328,18 @@ body.a3-print-preview-open {
 
   .tree-tools-panel.collapsed .tree-tools-panel-toggle {
     height: auto;
-    min-height: 3rem;
-    padding: 0;
+    min-height: 2.75rem;
+    padding: 0 0.7rem;
+  }
+
+  .tree-tools-panel.collapsed .tree-tools-panel-toggle > span {
+    flex-direction: row;
+    width: auto;
+  }
+
+  .tree-tools-panel.collapsed .tree-tools-panel-toggle strong {
+    writing-mode: horizontal-tb;
+    letter-spacing: normal;
   }
 
   .tree-tools-panel.expanded {
