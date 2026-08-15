@@ -104,6 +104,19 @@ describe("property workspace scrolling", () => {
     expect(controlRule).toMatch(/min-height:\s*2\.75rem/);
   });
 
+  // The share used to sit stacked above its own percentage, spending two lines
+  // per owner to say one thing twice.
+  it("keeps an owner's share and percentage on one line", () => {
+    // The scoping matters: the base sheet stacks this same element as
+    // `.owner-row > span:nth-child(2)`, which outranks a two-class selector,
+    // so the rule has to go through .owner-row to win.
+    const rule = blockFor(stylesheet, ".property-ownership-summary .owner-row > .owner-share");
+
+    expect(rule).toMatch(/display:\s*flex/);
+    expect(rule).not.toMatch(/display:\s*grid/);
+    expect(rule).toMatch(/align-items:\s*baseline/);
+  });
+
   it("lets the initial-ownership row shrink to a 320px viewport", () => {
     const baseColumns = blockFor(stylesheet, ".initial-owner-columns,\n.initial-owner-row").match(
       /grid-template-columns:([^;]+);/,

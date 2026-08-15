@@ -641,6 +641,31 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+/* The owner list is a summary, not a heading. The names were set larger than
+   the section title above them, so on a phone four owners filled the screen. */
+.property-ownership-summary .owner-identity > strong,
+.property-ownership-summary .owner-identity .ownership-person-link {
+  font-size: var(--type-caption);
+}
+
+/* The share sat stacked above its own percentage, spending two lines to say
+   one thing twice. They read as a single value on one line.
+
+   Scoped through .owner-row deliberately: the base sheet stacks this element
+   as `.owner-row > span:nth-child(2)`, and that selector outranks a plain
+   `.property-ownership-summary .owner-share`. */
+.property-ownership-summary .owner-row > .owner-share {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.32rem;
+}
+
+.property-ownership-summary .owner-row > .owner-share small::before {
+  content: "·";
+  margin-right: 0.32rem;
+}
+
 .property-ownership-summary .read-only-transfer-history .history-row {
   grid-template-columns: 85px minmax(180px, 0.9fr) minmax(220px, 1.2fr);
 }
