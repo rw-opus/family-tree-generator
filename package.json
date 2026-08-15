@@ -21,8 +21,8 @@
     "test:rls": "vitest run --config vitest.security.config.js"
   },
   "dependencies": {
-    "@sentry/browser": "10.64.0",
-    "@supabase/supabase-js": "2.110.8",
+    "@sentry/browser": "10.70.0",
+    "@supabase/supabase-js": "2.112.3",
     "lucide-react": "0.511.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "@vitejs/plugin-react": "6.0.5",
-    "eslint": "10.8.0",
+    "eslint": "10.8.1",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "15.15.0",
     "jsdom": "25.0.1",
