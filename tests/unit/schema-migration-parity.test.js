@@ -122,6 +122,46 @@ describe("the comparison notices a snapshot that has fallen behind", () => {
     ).toEqual(["row level security public.family_trees: DISABLED"]);
   });
 
+  it("catches row level security being switched off through ALTER TABLE ONLY", () => {
+    expect(
+      driftFrom(
+        (sql) => `${sql};\nalter table only public.family_trees disable row level security;`,
+      ),
+    ).toEqual(["row level security public.family_trees: DISABLED"]);
+  });
+
+  it("keeps FORCE and NO FORCE separate from whether row level security is enabled", () => {
+    const forced = stateOf(`
+      alter table only public.thing enable row level security;
+      alter table only public.thing force row level security;
+    `);
+    const notForced = stateOf(`
+      alter table only public.thing enable row level security;
+      alter table only public.thing no force row level security;
+    `);
+
+    expect(forced).toEqual(["row level security public.thing: enabled; FORCED"]);
+    expect(notForced).toEqual(["row level security public.thing: enabled; not forced"]);
+    expect(forced).not.toEqual(notForced);
+  });
+
+  it("fails closed on security-sensitive statements it does not replay", () => {
+    for (const statement of [
+      "alter table public.family_trees owner to authenticated",
+      "alter role authenticated bypassrls",
+      "alter default privileges in schema public grant all on tables to authenticated",
+    ]) {
+      expect(replayPrivileges(`${migrations};\n${statement};`).unparsed).toContain(statement);
+    }
+  });
+
+  it("fails closed on column-level grants instead of erasing the column list", () => {
+    const statement = "grant update (tree_data) on table public.family_trees to authenticated";
+
+    expect(replayPrivileges(`${migrations};\n${statement};`).unparsed).toContain(statement);
+    expect(parsePrivilegeStatement(statement)).toEqual({ kind: "unparsed", statement });
+  });
+
   it("catches a revoke that is dropped from one side", () => {
     // The effective privilege set is unchanged, so only recording that the role
     // was named at all catches this.
@@ -160,6 +200,25 @@ describe("reading SQL", () => {
 
     expect(statements).toHaveLength(2);
     expect(statements[1]).toBe("grant select on table public.thing to anon");
+  });
+
+  it("preserves significant whitespace inside quoted and dollar-quoted literals", () => {
+    const statements = splitStatements(`
+      select   'tenant  one',   $body1$tenant  two$body1$;
+    `);
+
+    expect(statements).toEqual(["select 'tenant  one', $body1$tenant  two$body1$"]);
+  });
+
+  it("distinguishes policy predicates whose quoted values differ only by whitespace", () => {
+    const policyState = (tenant) =>
+      stateOf(`
+        create policy "tenant access" on public.thing
+        for select to authenticated using (tenant_name = '${tenant}');
+      `);
+
+    expect(policyState("tenant  one")).not.toEqual(policyState("tenant one"));
+    expect(policyState("tenant  one")[0]).toContain("'tenant  one'");
   });
 
   it("expands `all` to the full privilege set so a later revoke can remove one", () => {
