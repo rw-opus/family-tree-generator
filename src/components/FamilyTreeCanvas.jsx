@@ -13,6 +13,7 @@ import { familyGenerationById, widestFamilyGeneration } from "./familyTree/gener
 import { LayeredFamilyTree } from "./familyTree/LayeredFamilyTree.jsx";
 import { personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
+import { PersonCardDisplayControl } from "./PersonCardDisplayControl.jsx";
 
 function hasRelationalData(person) {
   return Boolean(
@@ -81,6 +82,7 @@ export function FamilyTreeCanvas({
   onSelectPerson,
   onFocusPerson,
   personCardFields,
+  onPersonCardFieldsChange,
   propertyValue = 0,
   propertyId = "",
   ownershipSnapshotActive = false,
@@ -282,9 +284,12 @@ export function FamilyTreeCanvas({
       chart.classList.remove("is-panning");
       if (panned) suppressClickUntil = Date.now() + 500;
     };
+    const startsInCardDisplayControl = (target) =>
+      Boolean(target?.closest?.(".person-card-display-control"));
     const startPointerDrag = (event) => {
       if (event.pointerType === "touch") return;
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (startsInCardDisplayControl(event.target)) return;
       // Person cards are buttons and cover most of the canvas, so refusing to
       // pan from a button would leave dragging working only in the gaps.
       if (event.target.closest("input, select, textarea, a, label")) return;
@@ -318,6 +323,9 @@ export function FamilyTreeCanvas({
         if (dragRef.current?.pointerType === "touch") finishDrag();
         return;
       }
+      // This disclosure and its scrollable checklist sit over the canvas, so
+      // their touch gestures must never become tree pans.
+      if (startsInCardDisplayControl(event.target)) return;
       const touch = event.touches[0];
       beginDrag({
         id: touch.identifier,
@@ -463,6 +471,9 @@ export function FamilyTreeCanvas({
 
   const navigation = (
     <div className="tree-navigation-tools" aria-label="Tree view controls">
+      {onPersonCardFieldsChange && (
+        <PersonCardDisplayControl fields={personCardFields} onChange={onPersonCardFieldsChange} />
+      )}
       <button type="button" onClick={fitWholeTree} title="Fit the whole tree in view">
         <Maximize2 size={15} /> <span>Fit tree</span>
       </button>

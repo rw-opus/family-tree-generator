@@ -16,7 +16,6 @@ import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { observeStickyNavOffset } from "./components/stickyNavOffset.js";
-import { TreeToolsPanel } from "./components/TreeToolsPanel.jsx";
 import { WorkspaceSaveStatus } from "./components/WorkspaceSaveStatus.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
@@ -300,9 +299,6 @@ export function App({
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [selectedOutsideOwnerId, setSelectedOutsideOwnerId] = useState("");
-  const [traceOwnershipSnapshot, setTraceOwnershipSnapshot] = useState(null);
-  const [traceOwnershipFractionSnapshot, setTraceOwnershipFractionSnapshot] = useState(null);
-  const [treeToolsExpanded, setTreeToolsExpanded] = useState(false);
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
@@ -323,9 +319,6 @@ export function App({
     setActiveFamilyGroupId(activation.activeFamilyGroupId);
     setSelectedPersonId(activation.selectedPersonId);
     setSelectedOutsideOwnerId("");
-    setTraceOwnershipSnapshot(null);
-    setTraceOwnershipFractionSnapshot(null);
-    setTreeToolsExpanded(false);
     setInitialOwnerPick(null);
     if (options.openDashboard) setDashboardOpen(true);
     return activation.caseData;
@@ -734,11 +727,6 @@ export function App({
   );
 
   const selectPerson = (personId) => {
-    // Entering edit mode always returns the cards to the current legal position.
-    // Otherwise a previously selected history step can mask the user's edits.
-    setTraceOwnershipSnapshot(null);
-    setTraceOwnershipFractionSnapshot(null);
-    setTreeToolsExpanded(false);
     setSelectedOutsideOwnerId("");
     const targetGroup =
       findFamilyGroupsForPerson(currentTree, personId).find(
@@ -755,8 +743,6 @@ export function App({
   const selectOutsideOwner = (ownerId) => {
     setSelectedOutsideOwnerId(ownerId);
     if (!ownerId) return;
-    setTraceOwnershipSnapshot(null);
-    setTraceOwnershipFractionSnapshot(null);
     setSelectedPersonId("");
     setDashboardOpen(false);
     setPropertyWorkspaceSection("ownership");
@@ -786,16 +772,6 @@ export function App({
   const closePersonCard = () => {
     setSelectedPersonId("");
     setDashboardOpen(false);
-  };
-
-  const showTraceEventOnTree = (event) => {
-    setTraceOwnershipSnapshot(event?.ownershipSnapshot || null);
-    setTraceOwnershipFractionSnapshot(event?.ownershipFractionSnapshot || null);
-    if (event?.personId) {
-      focusPersonOnTree(event.personId);
-      return;
-    }
-    closePersonCard();
   };
 
   const updateZoom = (nextZoom) => {
@@ -1385,8 +1361,6 @@ export function App({
 
   const beginInitialOwnerTreePick = (ownerId) => {
     setInitialOwnerPick({ propertyId: activeProperty.id, ownerId });
-    setTraceOwnershipSnapshot(null);
-    setTraceOwnershipFractionSnapshot(null);
     setPropertyWorkspaceSection("setup");
     setSelectedPersonId("");
     setDashboardOpen(false);
@@ -1454,9 +1428,6 @@ export function App({
     });
 
   const returnHome = async () => {
-    setTraceOwnershipSnapshot(null);
-    setTraceOwnershipFractionSnapshot(null);
-    setTreeToolsExpanded(false);
     setInitialOwnerPick(null);
     setSelectedOutsideOwnerId("");
     if (!cloudMode) {
@@ -1594,8 +1565,6 @@ export function App({
               <select
                 value={activeProperty.id}
                 onChange={(event) => {
-                  setTraceOwnershipSnapshot(null);
-                  setTraceOwnershipFractionSnapshot(null);
                   setSelectedOutsideOwnerId("");
                   setTree({
                     ...currentTree,
@@ -1726,13 +1695,9 @@ export function App({
               <FamilyTreeCanvas
                 treeTitle={currentTree.title}
                 people={visiblePeople}
-                ownershipByPerson={traceOwnershipSnapshot || ownershipByPerson}
-                ownershipFractionsByPerson={
-                  traceOwnershipSnapshot
-                    ? traceOwnershipFractionSnapshot || {}
-                    : ownershipFractionsByPerson
-                }
-                currentOwnershipByPerson={traceOwnershipSnapshot || currentOwnershipByPerson}
+                ownershipByPerson={ownershipByPerson}
+                ownershipFractionsByPerson={ownershipFractionsByPerson}
+                currentOwnershipByPerson={currentOwnershipByPerson}
                 historicalLawWarningsByPerson={historicalLawWarningsByPerson}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}
@@ -1740,19 +1705,15 @@ export function App({
                 onFocusPerson={focusPersonOnTree}
                 zoom={zoom}
                 onZoomChange={updateZoom}
-                personCardFields={
-                  traceOwnershipSnapshot
-                    ? {
-                        ...currentTree.settings.personCardFields,
-                        ownershipFraction: true,
-                        ownershipPercentage: true,
-                        ownershipValue: true,
-                      }
-                    : currentTree.settings.personCardFields
+                personCardFields={currentTree.settings.personCardFields}
+                onPersonCardFieldsChange={(personCardFields) =>
+                  setTree({
+                    ...currentTree,
+                    settings: { ...currentTree.settings, personCardFields },
+                  })
                 }
                 propertyValue={activeProperty.saleValue}
                 propertyId={activeProperty.id}
-                ownershipSnapshotActive={Boolean(traceOwnershipSnapshot)}
                 toolbar={
                   <>
                     <button type="button" className="tree-home-button" onClick={returnHome}>
@@ -1764,8 +1725,6 @@ export function App({
                       type="button"
                       className="ownership-tax-button"
                       onClick={() => {
-                        setTraceOwnershipSnapshot(null);
-                        setTraceOwnershipFractionSnapshot(null);
                         setPropertyWorkspaceSection("setup");
                         setSelectedOutsideOwnerId("");
                         setInitialOwnerPick(null);
@@ -1781,13 +1740,7 @@ export function App({
                       onChange={updateTreeTitle}
                       trailing={<WorkspaceSaveStatus state={saveState} />}
                     />
-                    <PersonFinder
-                      people={currentTree.people}
-                      onSelectPerson={(personId) => {
-                        setTreeToolsExpanded(false);
-                        focusPersonOnTree(personId);
-                      }}
-                    />
+                    <PersonFinder people={currentTree.people} onSelectPerson={focusPersonOnTree} />
                     <label className="tree-zoom-slider">
                       <span>Zoom</span>
                       <input
@@ -1803,26 +1756,6 @@ export function App({
                     </label>
                   </>
                 }
-              />
-              <TreeToolsPanel
-                property={activeProperty}
-                people={currentTree.people}
-                outsideParties={currentTree.outsideParties}
-                propertyReport={propertyReport}
-                cardFields={currentTree.settings.personCardFields}
-                onCardFieldsChange={(personCardFields) =>
-                  setTree({
-                    ...currentTree,
-                    settings: { ...currentTree.settings, personCardFields },
-                  })
-                }
-                onFocusEvent={showTraceEventOnTree}
-                onSelectPerson={selectPerson}
-                expanded={treeToolsExpanded}
-                onExpandedChange={(expanded) => {
-                  setTreeToolsExpanded(expanded);
-                  if (expanded && initialOwnerPick) setInitialOwnerPick(null);
-                }}
               />
             </div>
           )}

@@ -75,41 +75,33 @@ describe("property workspace scrolling", () => {
     );
   });
 
-  // An unlabelled icon on the page edge read as decoration, so the collapsed
-  // rail keeps its name and only the chevron is dropped.
-  it("keeps the collapsed tree-tools rail labelled", () => {
-    const collapsedRules = blockFor(
-      stylesheet,
-      ".tree-tools-panel.collapsed .tree-tools-panel-toggle strong",
-    );
-    const hiddenWhenCollapsed = [
-      ...stylesheet.matchAll(/\.tree-tools-panel\.collapsed[^{]*\{[^}]*display:\s*none[^}]*\}/g),
-    ].map((match) => match[0]);
+  it("keeps the labelled person-card control interactive at the top-left of the tree", () => {
+    const navigationRule = blockFor(stylesheet, ".tree-navigation-tools");
+    const controlRule = blockFor(stylesheet, ".person-card-display-control");
+    const menuRule = blockFor(stylesheet, ".person-card-display-menu");
 
-    expect(collapsedRules).toMatch(/writing-mode:\s*vertical-rl/);
-    expect(hiddenWhenCollapsed.some((rule) => rule.includes("strong"))).toBe(false);
+    expect(navigationRule).toMatch(/top:\s*4\.55rem/);
+    expect(navigationRule).toMatch(/left:\s*0\.75rem/);
+    expect(controlRule).toMatch(/pointer-events:\s*auto/);
+    expect(controlRule).toMatch(/touch-action:\s*auto/);
+    expect(menuRule).toMatch(/left:\s*0/);
+    expect(stylesheet).not.toMatch(
+      /\.person-card-display-control\s+summary\s+span\s*\{[^}]*display:\s*none/s,
+    );
   });
 
-  it("places a horizontal tree-tools launcher below the mobile toolbar", () => {
+  it("places the person-card control below the mobile toolbar with a touch-sized target", () => {
     const mobileRules = blockFor(stylesheet, "@media (max-width: 900px)");
-    const panelRule = blockFor(mobileRules, ".tree-tools-panel,\n  .tree-tools-panel.collapsed");
-    const toggleContentRule = blockFor(
-      mobileRules,
-      ".tree-tools-panel.collapsed .tree-tools-panel-toggle > span",
-    );
-    const labelRule = blockFor(
-      mobileRules,
-      ".tree-tools-panel.collapsed .tree-tools-panel-toggle strong",
-    );
     const navigationRule = blockFor(mobileRules, ".tree-navigation-tools");
+    const controlRule = blockFor(
+      mobileRules,
+      ".tree-navigation-tools .person-card-display-control summary",
+    );
 
-    expect(panelRule).toMatch(/top:\s*6\.55rem/);
-    expect(panelRule).toMatch(/left:\s*0\.55rem/);
-    expect(panelRule).toMatch(/width:\s*auto/);
-    expect(toggleContentRule).toMatch(/flex-direction:\s*row/);
-    expect(labelRule).toMatch(/writing-mode:\s*horizontal-tb/);
-    expect(navigationRule).toMatch(/right:\s*0\.55rem/);
-    expect(navigationRule).toMatch(/left:\s*auto/);
+    expect(navigationRule).toMatch(/top:\s*7rem/);
+    expect(navigationRule).toMatch(/right:\s*auto/);
+    expect(navigationRule).toMatch(/left:\s*0\.55rem/);
+    expect(controlRule).toMatch(/min-height:\s*2\.75rem/);
   });
 
   it("lets the initial-ownership row shrink to a 320px viewport", () => {

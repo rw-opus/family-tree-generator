@@ -15,6 +15,39 @@ test.describe("Property & Tax workspace", () => {
     await expect(page.getByLabel("Address")).toHaveValue("12, Triq il-Kbira, Fictionville");
   });
 
+  test("uses the Billing Calculator tab palette and typography", async ({ page }) => {
+    await openPropertyWorkspace(page);
+
+    const styles = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const active = getComputedStyle(
+        document.querySelector(".property-workspace-menu button.active"),
+      );
+      const inactive = getComputedStyle(
+        document.querySelector(".property-workspace-menu button:not(.active)"),
+      );
+      return {
+        activeBackground: active.backgroundColor,
+        activeColor: active.color,
+        inactiveBorder: inactive.borderColor,
+        inactiveColor: inactive.color,
+        fontFamily: inactive.fontFamily,
+        fontSize: inactive.fontSize,
+        fontWeight: inactive.fontWeight,
+      };
+    });
+
+    expect(styles).toEqual({
+      activeBackground: "rgb(0, 66, 37)",
+      activeColor: "rgb(255, 255, 255)",
+      inactiveBorder: "rgb(227, 224, 214)",
+      inactiveColor: "rgb(15, 27, 45)",
+      fontFamily: expect.stringContaining("Tracker Inter"),
+      fontSize: "14px",
+      fontWeight: "600",
+    });
+  });
+
   test("calculates current title from the initial shares", async ({ page }) => {
     await openPropertyWorkspace(page);
 
@@ -22,6 +55,19 @@ test.describe("Property & Tax workspace", () => {
     await expect(ownership).toContainText("Ġorġ Borg");
     await expect(ownership).toContainText("Vella Holdings Ltd");
     await expect(ownership.locator(".ledger-total")).toContainText("100%");
+  });
+
+  test("traces succession and opens the printable history from ownership", async ({ page }) => {
+    await openPropertyWorkspace(page);
+
+    const ownership = page.locator("#property-workspace-ownership");
+    const trace = ownership.locator(".succession-trace-control");
+    await expect(trace).toContainText("Trace succession");
+    await trace.getByRole("button", { name: "Start" }).click();
+    await expect(trace.locator(".succession-trace-counter")).toContainText(/1 of \d+/);
+
+    await trace.getByRole("button", { name: "View full history" }).click();
+    await expect(page.locator(".succession-history-dialog")).toBeVisible();
   });
 
   test("scrolls a chosen section clear of the sticky menu", async ({ page }) => {

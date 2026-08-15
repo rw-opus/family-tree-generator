@@ -43,7 +43,9 @@ body.vendor-settlement-open {
 .vendor-settlement-header h2 {
   margin-block: 0.2rem;
   color: var(--forest, #00562f);
-  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-family: var(--tracker-serif, "Tracker Fraunces", "Times New Roman", serif);
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  font-weight: 600;
 }
 
 .vendor-settlement-header > div:first-child > p:last-child {

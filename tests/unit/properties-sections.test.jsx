@@ -63,6 +63,12 @@ describe("unified Property & Tax workspace", () => {
     expect(container.textContent).toContain("Value of the property being sold today");
     expect(container.textContent).toContain("Current ownership & history");
     expect(container.textContent).toContain("Current ownership");
+    expect(container.querySelector("#property-workspace-ownership").textContent).toContain(
+      "Trace succession",
+    );
+    expect(container.querySelector("#property-workspace-ownership").textContent).toContain(
+      "View full history",
+    );
     expect(container.textContent).toContain("Tax Calculation");
     expect(container.querySelector("#property-workspace-setup")).not.toBeNull();
     expect(container.querySelector("#property-workspace-ownership")).not.toBeNull();

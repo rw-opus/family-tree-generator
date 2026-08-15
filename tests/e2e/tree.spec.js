@@ -83,14 +83,14 @@ test.describe("family tree canvas", () => {
   });
 
   test("names its controls in plain sight rather than hiding them", async ({ page }) => {
-    // An unlabelled icon on the page edge is not a discoverable control.
-    await expect(page.locator(".tree-tools-panel-toggle")).toContainText("Tree tools");
+    const cardDetails = page.locator(".person-card-display-control");
+    await expect(cardDetails.locator("summary")).toContainText("Person card details");
     await expect(page.locator(".fraction-launcher")).toContainText("Fractions");
+    await expect(page.locator(".tree-tools-panel")).toHaveCount(0);
 
-    await page.locator(".tree-tools-panel-toggle").click();
-    // One click reveals everything: no second disclosure inside the panel.
-    await expect(page.locator(".tree-tools-panel-body")).toContainText("Person card details");
-    await expect(page.locator(".tree-tools-panel-body")).toContainText("Trace succession");
-    await expect(page.locator(".tree-tools-panel-body summary")).toHaveCount(0);
+    await cardDetails.locator("summary").click();
+    await expect(cardDetails.locator(".person-card-display-menu")).toContainText(
+      "Current holding value",
+    );
   });
 });
