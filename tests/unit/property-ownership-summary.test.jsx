@@ -505,6 +505,24 @@ describe("PropertyOwnershipSummary", () => {
     });
   });
 
+  // Every owner in a typical estate comes from the family tree, so a row that
+  // said so carried no information and cost a line on a phone.
+  it("marks only the owners that are not from the family tree", () => {
+    renderCompanySummary();
+    const ownerRow = container.querySelector(".read-only-owner-row");
+
+    expect(container.textContent).not.toContain("Family tree");
+    expect(ownerRow.textContent).toContain("Outside company");
+  });
+
+  it("drops the kicker above the current-ownership heading", () => {
+    renderSummary();
+
+    // The heading is still named for the section it labels.
+    expect(container.querySelector("#current-title").textContent).toBe("Current ownership");
+    expect(container.querySelector(".section-heading .eyebrow")).toBeNull();
+  });
+
   it("opens an outside party from either side of a transfer-history row", () => {
     // The two sides of a history row were not rendered alike: the seller was
     // offered its owner card and the buyer was left as bare text, so the same

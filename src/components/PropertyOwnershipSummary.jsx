@@ -79,7 +79,6 @@ export function PropertyOwnershipSummary({
     <section className="ownership-panel property-ownership-summary" aria-labelledby="current-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Calculated title</p>
           <h3 id="current-title">Current ownership</h3>
         </div>
       </div>
@@ -90,13 +89,13 @@ export function PropertyOwnershipSummary({
             <div className="owner-row read-only-owner-row" key={owner.id}>
               <span className="owner-identity">
                 <strong>{renderPartyName(owner.id, { allowOutsideOwnerCard: true })}</strong>
-                <small>
-                  {owner.source === "family-tree"
-                    ? "Family tree"
-                    : owner.type === "company"
-                      ? "Outside company"
-                      : "Outside individual"}
-                </small>
+                {/* Almost everyone here comes from the family tree, so saying so
+                    on every row said nothing. Only the exceptions are marked. */}
+                {owner.source !== "family-tree" && (
+                  <small>
+                    {owner.type === "company" ? "Outside company" : "Outside individual"}
+                  </small>
+                )}
               </span>
               <span className="owner-share">
                 <strong>{fractionLabel(owner.share, owner.shareFraction)}</strong>
