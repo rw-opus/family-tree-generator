@@ -26,7 +26,69 @@ const ALL_TABLE_PRIVILEGES = [
 const ALL_FUNCTION_PRIVILEGES = ["execute"];
 const ALL_SCHEMA_PRIVILEGES = ["usage", "create"];
 
-const collapse = (text) => text.replace(/\s+/g, " ").trim();
+const dollarQuoteAt = (text, index) =>
+  text.slice(index).match(/^\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$/)?.[0] ?? null;
+
+/**
+ * Normalises formatting whitespace without changing quoted values. Policy
+ * predicates can compare against whitespace-bearing text, so applying a plain
+ * `text.replace(/\s+/g, " ")` to a whole statement would make distinct
+ * policies appear equal.
+ */
+const normaliseSqlWhitespace = (text) => {
+  let normalised = "";
+  let pendingSpace = false;
+  let index = 0;
+
+  const appendPendingSpace = () => {
+    if (pendingSpace && normalised.length > 0) normalised += " ";
+    pendingSpace = false;
+  };
+
+  while (index < text.length) {
+    const character = text[index];
+    if (/\s/.test(character)) {
+      pendingSpace = true;
+      index += 1;
+      continue;
+    }
+
+    const dollarTag = dollarQuoteAt(text, index);
+    if (dollarTag) {
+      const end = text.indexOf(dollarTag, index + dollarTag.length);
+      const stop = end === -1 ? text.length : end + dollarTag.length;
+      appendPendingSpace();
+      normalised += text.slice(index, stop);
+      index = stop;
+      continue;
+    }
+
+    if (character === "'" || character === '"') {
+      let cursor = index + 1;
+      while (cursor < text.length) {
+        if (text[cursor] === character && text[cursor + 1] === character) {
+          cursor += 2;
+          continue;
+        }
+        if (text[cursor] === character) {
+          cursor += 1;
+          break;
+        }
+        cursor += 1;
+      }
+      appendPendingSpace();
+      normalised += text.slice(index, cursor);
+      index = cursor;
+      continue;
+    }
+
+    appendPendingSpace();
+    normalised += character;
+    index += 1;
+  }
+
+  return normalised.trim();
+};
 
 /**
  * Splits a script into statements, skipping the semicolons that sit inside
@@ -56,7 +118,7 @@ export function splitStatements(sql) {
       continue;
     }
 
-    const dollarTag = rest.match(/^\$[A-Za-z_]*\$/)?.[0];
+    const dollarTag = dollarQuoteAt(sql, index);
     if (dollarTag) {
       const end = sql.indexOf(dollarTag, index + dollarTag.length);
       const stop = end === -1 ? sql.length : end + dollarTag.length;
@@ -97,7 +159,7 @@ export function splitStatements(sql) {
   }
 
   statements.push(current);
-  return statements.map(collapse).filter(Boolean);
+  return statements.map(normaliseSqlWhitespace).filter(Boolean);
 }
 
 const parseRoles = (text) =>
@@ -119,11 +181,17 @@ const parsePrivileges = (text, everything) => {
   if (normalised === "all") return [...everything];
   return normalised
     .split(",")
-    .map((privilege) => privilege.trim().replace(/\s*\([^)]*\)$/, ""))
+    .map((privilege) => privilege.trim())
     .filter(Boolean);
 };
 
 const GRANT_OR_REVOKE = /^(grant|revoke)\s+(.+?)\s+on\s+(.+?)\s+(to|from)\s+([^\s].*)$/i;
+const COLUMN_PRIVILEGE = /\b(?:all(?:\s+privileges)?|select|insert|update|references)\s*\([^)]*\)/i;
+
+const isUnsupportedSecurityStatement = (statement) =>
+  /^(?:alter\s+(?:role|user|default\s+privileges)\b)/i.test(statement) ||
+  /^(?:create|drop|alter)\s+policy\b/i.test(statement) ||
+  /^alter\s+table\b[\s\S]*\b(?:owner\s+to|row\s+level\s+security)\b/i.test(statement);
 
 /**
  * Reads one statement into an event, or returns null if the statement does not
@@ -133,13 +201,15 @@ const GRANT_OR_REVOKE = /^(grant|revoke)\s+(.+?)\s+on\s+(.+?)\s+(to|from)\s+([^\
  */
 export function parsePrivilegeStatement(statement) {
   const rlsMatch = statement.match(
-    /^alter\s+table\s+(?:if\s+exists\s+)?([\w."]+)\s+(enable|disable|force|no\s+force)\s+row\s+level\s+security$/i,
+    /^alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([\w."]+)(?:\s+\*)?\s+(enable|disable|force|no\s+force)\s+row\s+level\s+security$/i,
   );
   if (rlsMatch) {
+    const action = rlsMatch[2].toLowerCase().replace(/\s+/g, " ");
     return {
       kind: "row-level-security",
       table: rlsMatch[1].toLowerCase(),
-      enabled: /^enable$/i.test(rlsMatch[2]),
+      setting: action === "enable" || action === "disable" ? "enabled" : "forced",
+      value: action === "enable" || action === "force",
     };
   }
 
@@ -154,7 +224,9 @@ export function parsePrivilegeStatement(statement) {
     };
   }
 
-  const createPolicy = statement.match(/^create\s+policy\s+"?([^"]+?)"?\s+on\s+([\w."]+)\s+(.*)$/i);
+  const createPolicy = statement.match(
+    /^create\s+policy\s+"?([^"]+?)"?\s+on\s+([\w."]+)\s+([\s\S]*)$/i,
+  );
   if (createPolicy) {
     return {
       kind: "create-policy",
@@ -162,11 +234,11 @@ export function parsePrivilegeStatement(statement) {
       table: createPolicy[2].toLowerCase(),
       // The whole tail is kept, so a predicate weakened to `using (true)` shows
       // up as a difference rather than as an identically-named policy.
-      definition: collapse(createPolicy[3]),
+      definition: normaliseSqlWhitespace(createPolicy[3]),
     };
   }
 
-  if (/^alter\s+policy\b/i.test(statement)) return { kind: "unparsed", statement };
+  if (isUnsupportedSecurityStatement(statement)) return { kind: "unparsed", statement };
   if (!/^(grant|revoke)\b/i.test(statement)) return null;
 
   const match = statement.match(GRANT_OR_REVOKE);
@@ -176,6 +248,7 @@ export function parsePrivilegeStatement(statement) {
   const granting = verb.toLowerCase() === "grant";
   // `grant … to` and `revoke … from`; anything else is a misread.
   if (granting !== (direction.toLowerCase() === "to")) return { kind: "unparsed", statement };
+  if (COLUMN_PRIVILEGE.test(privilegeText)) return { kind: "unparsed", statement };
 
   const target = targetText.trim();
   const functionTarget = target.match(/^function\s+(.+)$/i);
@@ -188,7 +261,7 @@ export function parsePrivilegeStatement(statement) {
       objectKind: "function",
       // Signatures are compared textually, so argument spacing is normalised.
       objects: [
-        collapse(functionTarget[1])
+        normaliseSqlWhitespace(functionTarget[1])
           .replace(/\s*,\s*/g, ", ")
           .toLowerCase(),
       ],
@@ -243,7 +316,8 @@ export function replayPrivileges(sql) {
     }
 
     if (event.kind === "row-level-security") {
-      rowLevelSecurity.set(event.table, event.enabled);
+      const current = rowLevelSecurity.get(event.table) ?? {};
+      rowLevelSecurity.set(event.table, { ...current, [event.setting]: event.value });
       continue;
     }
 
@@ -284,8 +358,15 @@ export function describePrivilegeState(state) {
   for (const [key, definition] of state.policies) {
     lines.push(`policy ${key}: ${definition}`);
   }
-  for (const [table, enabled] of state.rowLevelSecurity) {
-    lines.push(`row level security ${table}: ${enabled ? "enabled" : "DISABLED"}`);
+  for (const [table, settings] of state.rowLevelSecurity) {
+    const description = [];
+    if (settings.enabled !== undefined) {
+      description.push(settings.enabled ? "enabled" : "DISABLED");
+    }
+    if (settings.forced !== undefined) {
+      description.push(settings.forced ? "FORCED" : "not forced");
+    }
+    lines.push(`row level security ${table}: ${description.join("; ")}`);
   }
 
   return lines.sort();

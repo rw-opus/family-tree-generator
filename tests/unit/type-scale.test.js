@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(new URL("../../src/workbench.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../../src/workbench.css", import.meta.url), "utf8").replace(
+  /\r\n/g,
+  "\n",
+);
 
 /** Everything before the print block; print sizes are physical and use px. */
 const screenCss = css.slice(0, css.indexOf("@media print") + 1 || css.length);
