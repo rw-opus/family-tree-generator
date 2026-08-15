@@ -505,14 +505,19 @@ describe("PropertyOwnershipSummary", () => {
     });
   });
 
-  // Every owner in a typical estate comes from the family tree, so a row that
-  // said so carried no information and cost a line on a phone.
-  it("marks only the owners that are not from the family tree", () => {
+  // A provenance line under every name cost a row each and said what the row
+  // already showed. An outside owner stays identifiable by its owner-card link.
+  it("gives an owner row its name and share, and no provenance line", () => {
     renderCompanySummary();
     const ownerRow = container.querySelector(".read-only-owner-row");
 
     expect(container.textContent).not.toContain("Family tree");
-    expect(ownerRow.textContent).toContain("Outside company");
+    expect(container.textContent).not.toContain("Outside company");
+    expect(container.textContent).not.toContain("Outside individual");
+    expect(ownerRow.querySelector(".owner-identity small")).toBeNull();
+    expect(
+      ownerRow.querySelector('button[aria-label="Open Harbour Holdings Limited owner card"]'),
+    ).not.toBeNull();
   });
 
   it("drops the kicker above the current-ownership heading", () => {
