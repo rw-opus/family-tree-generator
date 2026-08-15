@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TreeToolsPanel } from "../../src/components/TreeToolsPanel.jsx";
+import { SuccessionTraceControl } from "../../src/components/SuccessionTraceControl.jsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -17,7 +17,6 @@ const people = [
   { id: "owner", fullName: "Maria Borg" },
 ];
 const propertyReport = {
-  startingOwnership: { isComplete: true, totalPercent: 100 },
   ownership: {
     transmissions: [
       {
@@ -34,7 +33,7 @@ const propertyReport = {
   },
 };
 
-describe("TreeToolsPanel", () => {
+describe("SuccessionTraceControl", () => {
   let container;
   let root;
 
@@ -49,67 +48,41 @@ describe("TreeToolsPanel", () => {
     container.remove();
   });
 
-  function renderPanel(overrides = {}) {
+  function renderControl(overrides = {}) {
     const props = {
       property,
       people,
       outsideParties: [],
       propertyReport,
-      cardFields: { ownershipFraction: true, ownershipValue: false },
-      onCardFieldsChange: vi.fn(),
-      onFocusEvent: vi.fn(),
       onSelectPerson: vi.fn(),
       ...overrides,
     };
-    act(() => root.render(<TreeToolsPanel {...props} />));
+    act(() => root.render(<SuccessionTraceControl {...props} />));
     return props;
   }
 
-  it("contains only display and succession tools", () => {
-    renderPanel();
-    act(() => container.querySelector(".tree-tools-panel-toggle").click());
+  it("steps through calculated succession events and links family members", () => {
+    const props = renderControl();
 
-    expect(container.textContent).toContain("Person card details");
     expect(container.textContent).toContain("Trace succession");
     expect(container.textContent).toContain("View full history");
-    expect(container.textContent).not.toContain("Property address");
-    expect(container.textContent).not.toContain("Selling price");
-    expect(container.textContent).not.toContain("Initial ownership");
-    expect(container.textContent).not.toContain("Current owners");
-    expect(container.textContent).not.toContain("Tax Calculation");
-  });
-
-  it("updates card fields and steps through the calculated history", () => {
-    const props = renderPanel();
-    act(() => container.querySelector(".tree-tools-panel-toggle").click());
-
-    // One click on Tree tools reveals everything: no second disclosure inside.
-    expect(container.querySelector(".tree-tools-panel-body summary")).toBeNull();
-    const valueToggle = [...container.querySelectorAll("label")]
-      .find((label) => label.textContent.includes("Current holding value"))
-      .querySelector("input");
-    act(() => valueToggle.click());
-    expect(props.onCardFieldsChange).toHaveBeenCalledWith(
-      expect.objectContaining({ ownershipValue: true }),
-    );
 
     const start = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Start"),
     );
     act(() => start.click());
-    expect(props.onFocusEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "initial", personId: "deceased" }),
-    );
+    expect(container.textContent).toContain("Initial ownership");
+
+    const personLink = container.querySelector(".trace-person-link");
+    act(() => personLink.click());
+    expect(props.onSelectPerson).toHaveBeenLastCalledWith("deceased");
 
     act(() => container.querySelector('button[aria-label="Next succession event"]').click());
     expect(container.textContent).toContain("Succession of Joseph Borg");
-    expect(props.onFocusEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "succession", personId: "deceased" }),
-    );
   });
 
   it("opens the printable full history", () => {
-    renderPanel({ expanded: true });
+    renderControl();
     const openHistory = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("View full history"),
     );

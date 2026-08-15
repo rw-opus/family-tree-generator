@@ -1,16 +1,25 @@
 :root {
-  --ink: #10231c;
-  --muted: #65756e;
-  --forest: #004225;
+  --ink: #0f1b2d;
+  --muted: #6f695e;
+  --accent: #004225;
+  --forest: var(--accent);
   --forest-dark: #00351d;
-  --forest-soft: #eaf5ee;
+  --forest-soft: #d8eadf;
   --plum: #4b116f;
-  --paper: #eef1f6;
-  --line: #dbe3ea;
-  --tracker-serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --paper: #f7f5f0;
+  --line: #e3e0d6;
+  --field: #c9c4b8;
+  --danger: #c8102e;
+  --ok: #1b6b45;
+  --type-caption: 0.75rem;
+  --type-control: 0.875rem;
+  --type-control-mobile: 0.8125rem;
+  --type-input: 1rem;
+  --type-subhead: 1.125rem;
+  --type-title: clamp(1.5rem, 3vw, 2rem);
+  --tracker-serif: "Tracker Fraunces", "Times New Roman", serif;
   --tracker-sans:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+    "Tracker Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   --panel-width: 390px;
 }
 
@@ -20,8 +29,9 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid rgba(75, 17, 111, 0.32);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: 8px;
 }
 
 .family-library-page {
@@ -69,8 +79,8 @@ textarea:focus-visible {
   gap: 0.35rem;
   width: max-content;
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: var(--type-caption);
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -135,10 +145,11 @@ textarea:focus-visible {
 
 .library-kicker {
   margin: 0 0 0.12rem;
-  color: var(--plum);
-  font-size: 0.62rem;
-  font-weight: 850;
-  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-family: var(--tracker-serif);
+  font-size: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -495,50 +506,68 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  border: 1px solid #b9cbc1;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   background: #fff;
-  color: var(--forest);
+  color: var(--ink);
   padding: 0.55rem 0.75rem;
-  font-weight: 800;
+  font-size: var(--type-control);
+  font-weight: 600;
 }
 
 .property-workspace-menu {
-  display: flex;
-  gap: 0.45rem;
-  overflow-x: auto;
-  border-bottom: 1px solid #dbe3df;
-  background: #fff;
-  padding: 0.55rem clamp(0.8rem, 3vw, 2rem);
-  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  overflow: visible;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  padding: 0.55rem clamp(0.8rem, 3vw, 2rem) 0.75rem;
 }
 
 .property-workspace-menu button {
-  display: inline-flex;
-  flex: 0 0 auto;
+  display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.35rem;
-  border: 1px solid #b9cbc1;
-  border-radius: 7px;
+  min-width: 0;
+  min-height: 3.5rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   background: #fff;
-  color: var(--forest);
-  padding: 0.4rem 0.65rem;
-  font-size: 0.72rem;
-  font-weight: 800;
+  color: var(--ink);
+  padding: 0.45rem 0.65rem;
+  box-shadow: 0 2px 8px rgba(15, 27, 45, 0.03);
+  font-size: var(--type-control);
+  font-weight: 600;
+  line-height: 1.16;
+  text-align: center;
   text-decoration: none;
+  white-space: normal;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
 }
 
 .property-workspace-menu button:hover,
 .property-workspace-menu button:focus-visible {
-  border-color: var(--forest);
-  background: var(--forest-soft);
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: 0 7px 18px rgba(15, 27, 45, 0.09);
+  transform: translateY(-1px);
 }
 
 .property-workspace-menu button.active {
-  border-color: var(--forest);
-  background: var(--forest);
+  border-color: var(--accent);
+  background: var(--accent);
   color: #fff;
+  box-shadow: 0 8px 20px rgba(15, 27, 45, 0.18);
+}
+
+.property-workspace-menu button.active:hover,
+.property-workspace-menu button.active:focus-visible {
+  background: var(--accent);
 }
 
 .property-workspace-property-selector {
@@ -1279,9 +1308,10 @@ body.outside-owner-inspector-open {
 
 .commercial-auth-intro h1 {
   max-width: 650px;
-  font-size: clamp(2.2rem, 6vw, 4.5rem);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
+  font-size: var(--type-title);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
 }
 
 .commercial-auth-intro > p:not(.library-kicker) {
@@ -1333,7 +1363,8 @@ body.outside-owner-inspector-open {
 }
 
 .commercial-auth-card h2 {
-  font-size: 1.7rem;
+  font-size: 1.25rem;
+  font-weight: 600;
 }
 
 .commercial-auth-help,
@@ -1457,8 +1488,8 @@ body.outside-owner-inspector-open {
   margin: 0.25rem 0 0;
   color: var(--ink);
   font-family: var(--tracker-serif);
-  font-size: clamp(1.65rem, 4vw, 2.4rem);
-  font-weight: 500;
+  font-size: var(--type-title);
+  font-weight: 700;
   line-height: 1.08;
 }
 
@@ -1588,8 +1619,8 @@ body.outside-owner-inspector-open {
 
 .startup-error-card h1 {
   font-family: var(--tracker-serif);
-  font-size: 1.7rem;
-  font-weight: 500;
+  font-size: 1.25rem;
+  font-weight: 600;
 }
 
 .startup-error-card p {
@@ -1752,7 +1783,7 @@ textarea {
 
 .workbench-brand strong {
   font:
-    700 1.08rem Georgia,
+    700 1.08rem "Tracker Fraunces",
     serif;
 }
 
@@ -1985,7 +2016,7 @@ textarea {
   background: #fff;
   color: var(--forest);
   font:
-    800 0.9rem Georgia,
+    800 0.9rem "Tracker Fraunces",
     serif;
 }
 
@@ -2081,7 +2112,7 @@ textarea {
 .inspector-section h3 {
   margin: 0;
   font:
-    700 0.92rem Georgia,
+    700 0.92rem "Tracker Fraunces",
     serif;
 }
 
@@ -4190,8 +4221,7 @@ textarea {
 }
 
 .tree-stage-main {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -4267,90 +4297,6 @@ textarea {
   border: 2px solid #b42318;
   border-radius: 3px;
   background: #fee4e2;
-}
-
-.tree-tools-panel {
-  position: relative;
-  z-index: 7;
-  order: -1;
-  width: 288px;
-  max-width: 26vw;
-  min-height: 0;
-  max-height: 100%;
-  overflow: auto;
-  border-right: 1px solid #b8c9c0;
-  background: #fff;
-  box-shadow: 8px 0 24px rgba(17, 46, 33, 0.07);
-  scrollbar-width: thin;
-}
-
-.tree-tools-panel.collapsed {
-  width: 48px;
-  max-width: 48px;
-  overflow: hidden;
-}
-
-.tree-tools-panel-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  width: 100%;
-  min-height: 3rem;
-  border: 0;
-  background: #f4f8f5;
-  color: var(--forest);
-  padding: 0.65rem 0.75rem;
-  text-align: left;
-}
-
-.tree-tools-panel-toggle > span {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.tree-tools-panel-toggle strong {
-  font-size: 0.76rem;
-}
-
-.tree-tools-panel.expanded .tree-tools-panel-toggle > svg {
-  transform: rotate(180deg);
-}
-
-/* The collapsed rail keeps its name. An unlabelled icon on the page edge read
-   as decoration and left the panel undiscoverable. */
-.tree-tools-panel.collapsed .tree-tools-panel-toggle {
-  justify-content: flex-start;
-  height: 100%;
-  min-height: 10rem;
-  padding: 0.75rem 0;
-}
-
-.tree-tools-panel.collapsed .tree-tools-panel-toggle > span {
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.tree-tools-panel.collapsed .tree-tools-panel-toggle strong {
-  writing-mode: vertical-rl;
-  letter-spacing: 0.04em;
-}
-
-.tree-tools-panel.collapsed .tree-tools-panel-toggle > svg {
-  display: none;
-}
-
-.tree-tools-panel-body {
-  display: grid;
-  gap: 0.55rem;
-  border-top: 1px solid #dbe3de;
-  padding: 0.65rem;
-}
-
-.person-card-open .tree-tools-panel {
-  display: none;
 }
 
 .person-finder {
@@ -4452,28 +4398,6 @@ textarea {
 
 .person-finder-results > p {
   padding: 0.75rem;
-}
-
-.tree-control-section {
-  border: 1px solid #dbe3de;
-  border-radius: 7px;
-  background: #fff;
-}
-
-.tree-control-section > h3 {
-  display: flex;
-  align-items: center;
-  min-height: 2.25rem;
-  margin: 0;
-  padding: 0.45rem 0.55rem;
-  color: var(--ink);
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-.person-card-display-fields {
-  border-top: 1px solid #e3e9e5;
-  padding: 0.55rem;
 }
 
 .initial-owner-tree-picker {
@@ -4580,46 +4504,10 @@ textarea {
   outline-offset: 2px;
 }
 
-.person-card-display-fields {
-  margin: 0;
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-}
-
-.person-card-display-fields legend {
-  padding: 0;
-  color: var(--muted);
-  font-size: 0.6rem;
-}
-
-.person-card-display-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.4rem 0.6rem;
-  margin-top: 0.4rem;
-}
-
-.person-card-display-grid label {
-  display: grid;
-  grid-template-columns: 0.95rem minmax(0, 1fr);
-  align-items: start;
-  gap: 0.35rem;
-  color: var(--muted);
-  font-size: 0.62rem;
-  line-height: 1.25;
-}
-
-.person-card-display-grid input {
-  width: 0.95rem;
-  min-height: 0.95rem;
-  margin: 0;
-  accent-color: var(--forest);
-}
-
 .succession-trace-control {
   display: grid;
   gap: 0.5rem;
+  margin-top: 1rem;
   border: 1px solid #c9d7cf;
   border-radius: 7px;
   background: #f7faf8;
@@ -4639,7 +4527,8 @@ textarea {
   gap: 0.1rem;
 }
 
-.succession-trace-heading span {
+.succession-trace-heading h3 {
+  margin: 0;
   color: var(--forest);
   font-size: 0.72rem;
   font-weight: 850;
@@ -4783,7 +4672,7 @@ body.succession-history-open {
 
 .succession-history-header h2 {
   color: var(--ink);
-  font: 500 clamp(1.5rem, 4vw, 2.1rem) / 1.1 var(--tracker-serif);
+  font: 600 clamp(1.35rem, 3vw, 1.75rem) / 1.1 var(--tracker-serif);
 }
 
 .succession-history-header > div:first-child > p:last-child {
@@ -4980,7 +4869,7 @@ body.succession-history-open {
   background: transparent;
   color: var(--ink);
   padding: 0.18rem 0.45rem;
-  font: 500 clamp(1.2rem, 2.2vw, 1.65rem) / 1.1 var(--tracker-serif);
+  font: 600 clamp(1rem, 1.8vw, 1.25rem) / 1.15 var(--tracker-serif);
   letter-spacing: -0.018em;
   text-align: left;
 }
@@ -5009,7 +4898,7 @@ body.succession-history-open {
   border-color: #7fa18e !important;
   background: #fff !important;
   color: var(--ink);
-  font: 500 clamp(1.15rem, 2.1vw, 1.55rem) / 1.1 var(--tracker-serif) !important;
+  font: 600 clamp(1rem, 1.8vw, 1.25rem) / 1.15 var(--tracker-serif) !important;
   letter-spacing: -0.015em;
 }
 
@@ -5037,6 +4926,8 @@ body.succession-history-open {
 .person-card-display-control {
   position: relative;
   flex: 0 0 auto;
+  pointer-events: auto;
+  touch-action: auto;
 }
 
 .person-card-display-control summary {
@@ -5067,11 +4958,14 @@ body.succession-history-open {
 .person-card-display-menu {
   position: absolute;
   top: calc(100% + 0.45rem);
-  right: 0;
+  right: auto;
+  left: 0;
   z-index: 30;
   display: grid;
   gap: 0.45rem;
   width: min(330px, calc(100vw - 1.2rem));
+  max-height: calc(100dvh - 8rem);
+  overflow-y: auto;
   border: 1px solid #cbd5d0;
   border-radius: 9px;
   background: #fff;
@@ -5235,6 +5129,10 @@ body.succession-history-open {
   gap: 0.35rem;
   max-width: calc(100% - 1.5rem);
   pointer-events: none;
+}
+
+.initial-owner-pick-active .tree-navigation-tools {
+  visibility: hidden;
 }
 
 .tree-navigation-tools button,
@@ -5425,7 +5323,7 @@ body.a3-print-preview-open {
   color: #111;
   content: "✝";
   font:
-    900 15px/1 Georgia,
+    900 15px/1 "Tracker Fraunces",
     serif;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
 }
@@ -5823,23 +5721,33 @@ body.a3-print-preview-open {
   display: none;
 }
 
-/* Shared visual language with the File Tracker. */
+/* Shared visual language with the Notarial Billing Calculator. */
+.family-library-page,
+.property-workspace-page,
+.commercial-auth-page,
+.legal-page,
 .tree-workbench {
-  background: var(--paper);
   color: var(--ink);
   font-family: var(--tracker-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+.family-library-page,
+.property-workspace-page,
+.commercial-auth-page,
+.legal-page,
+.tree-workbench {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(198, 146, 58, 0.13), transparent 34rem),
+    radial-gradient(circle at 92% 8%, rgba(0, 66, 37, 0.1), transparent 38rem), var(--paper);
+}
+
 .workbench-brand strong,
 .inspector-section h3,
-.tree-workbench h1,
-.tree-workbench h2,
-.tree-workbench h3,
 .tree-stage .family-chart-title {
   font-family: var(--tracker-serif);
-  font-weight: 400 !important;
+  font-weight: 600 !important;
   letter-spacing: -0.012em;
 }
 
@@ -5874,9 +5782,76 @@ body.a3-print-preview-open {
 .tree-workbench input:focus,
 .tree-workbench select:focus,
 .tree-workbench textarea:focus {
-  border-color: var(--plum);
-  outline: 2px solid rgba(75, 17, 111, 0.2);
+  border-color: var(--accent);
+  outline: 2px solid rgba(0, 66, 37, 0.2);
   outline-offset: 1px;
+}
+
+.tree-home-button,
+.ownership-tax-button,
+.person-finder > summary,
+.tree-stage-toolbar-unified > .secondary-button,
+.property-tree-button,
+.library-account-action,
+.library-primary-button,
+.library-secondary-button,
+.person-card-display-control summary,
+.tree-navigation-tools button {
+  min-height: 2.75rem;
+  border-radius: 10px;
+  font-family: var(--tracker-sans);
+  font-size: var(--type-control);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.tree-home-button,
+.ownership-tax-button,
+.person-finder > summary,
+.tree-stage-toolbar-unified > .secondary-button,
+.property-tree-button,
+.library-account-action,
+.library-secondary-button,
+.person-card-display-control summary,
+.tree-navigation-tools button {
+  border-color: var(--line);
+  background: #fff;
+  color: var(--accent);
+}
+
+.tree-home-button:hover,
+.ownership-tax-button:hover,
+.person-finder > summary:hover,
+.tree-stage-toolbar-unified > .secondary-button:hover,
+.property-tree-button:hover,
+.library-account-action:hover,
+.library-secondary-button:hover,
+.person-card-display-control summary:hover,
+.tree-navigation-tools button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--forest-soft);
+}
+
+.person-finder[open] > summary,
+.person-card-display-control[open] summary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(15, 27, 45, 0.18);
+}
+
+.library-primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.inspector-profile h2,
+.property-workspace-section h2 {
+  font-family: var(--tracker-serif);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .workbench-header {
@@ -6062,7 +6037,7 @@ body.a3-print-preview-open {
   }
 
   .commercial-auth-intro h1 {
-    font-size: clamp(2rem, 11vw, 3.4rem);
+    font-size: var(--type-title);
   }
 
   .commercial-auth-card {
@@ -6257,9 +6232,9 @@ body.a3-print-preview-open {
   .tree-stage-toolbar-unified .ownership-tax-button {
     grid-column: 2;
     grid-row: 1;
-    min-height: 2.25rem;
+    min-height: 2.75rem;
     padding: 0 0.5rem;
-    font-size: 0.64rem;
+    font-size: var(--type-control-mobile);
   }
 
   .tree-stage-toolbar-unified .tree-zoom-slider {
@@ -6278,7 +6253,8 @@ body.a3-print-preview-open {
   }
 
   .tree-navigation-tools {
-    top: 6.55rem;
+    top: 7rem;
+    right: auto;
     left: 0.55rem;
   }
 
@@ -6288,10 +6264,14 @@ body.a3-print-preview-open {
   }
 
   .tree-navigation-tools button {
-    width: 2.5rem;
-    min-width: 2.5rem;
-    min-height: 2.5rem;
+    width: 2.75rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
     padding: 0;
+  }
+
+  .tree-navigation-tools .person-card-display-control summary {
+    min-height: 2.75rem;
   }
 
   .tree-navigation-tools button span,
@@ -6305,44 +6285,6 @@ body.a3-print-preview-open {
     bottom: 6rem;
     width: 92px;
     height: 60px;
-  }
-
-  .tree-tools-panel,
-  .tree-tools-panel.collapsed {
-    position: absolute;
-    z-index: 70;
-    top: 0.45rem;
-    right: auto;
-    bottom: auto;
-    left: 0.6rem;
-    width: 3rem;
-    max-width: 3rem;
-    min-height: auto;
-    max-height: 3.2rem;
-    overflow: hidden;
-    border: 1px solid #b8c9c0;
-    border-radius: 8px;
-    box-shadow: 0 4px 14px rgba(17, 46, 33, 0.12);
-  }
-
-  .tree-tools-panel.collapsed .tree-tools-panel-toggle {
-    height: auto;
-    min-height: 3rem;
-    padding: 0;
-  }
-
-  .tree-tools-panel.expanded {
-    position: fixed;
-    top: 0.6rem;
-    right: auto;
-    bottom: 0.6rem;
-    left: 0.6rem;
-    width: min(340px, calc(100vw - 1.2rem));
-    max-width: none;
-    max-height: calc(100dvh - 1.2rem);
-    overflow: auto;
-    border-radius: 12px;
-    box-shadow: 0 16px 46px rgba(17, 46, 33, 0.22);
   }
 
   .stage-family-title {
@@ -6426,7 +6368,7 @@ body.a3-print-preview-open {
 
   .tree-stage-toolbar-unified .ownership-tax-button {
     padding: 0 0.35rem;
-    font-size: 0.58rem;
+    font-size: var(--type-control-mobile);
   }
 
   .context-dashboard {
@@ -6527,13 +6469,15 @@ body.a3-print-preview-open {
   .property-workspace-menu {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.35rem;
+    gap: 0.5rem;
     overflow: visible;
   }
 
   .property-workspace-menu button {
     min-width: 0;
+    min-height: 3.5rem;
     padding-inline: 0.35rem;
+    font-size: var(--type-control-mobile);
     text-align: center;
   }
 
@@ -6600,7 +6544,7 @@ body.a3-print-preview-open {
   }
 
   .workspace-save-status {
-    font-size: 0.62rem;
+    font-size: var(--type-caption);
   }
 
   .family-library-content {
@@ -6656,7 +6600,7 @@ body.a3-print-preview-open {
   .library-account-actions {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(5.3rem, 1fr));
-    gap: 0.3rem;
+    gap: 0.5rem;
   }
 
   .library-account-action {
@@ -6664,7 +6608,7 @@ body.a3-print-preview-open {
     min-width: 0;
     min-height: 2.75rem;
     padding-inline: 0.35rem;
-    font-size: 0.68rem;
+    font-size: var(--type-control-mobile);
     white-space: nowrap;
   }
 
@@ -6968,16 +6912,6 @@ body.a3-print-preview-open {
     display: none;
   }
 
-  .person-card-display-control summary {
-    width: 34px;
-    justify-content: center;
-    padding: 0;
-  }
-
-  .person-card-display-control summary span {
-    display: none;
-  }
-
   .stage-dashboard-button {
     display: none;
   }
@@ -7016,7 +6950,7 @@ body.a3-print-preview-open {
   .workbench-header,
   .context-dashboard,
   .tree-stage-toolbar,
-  .tree-tools-panel,
+  .tree-navigation-tools,
   .fraction-launcher {
     display: none !important;
   }
@@ -7034,7 +6968,8 @@ body.a3-print-preview-open {
     background: #fff;
   }
 
-  body.succession-history-open .tree-workbench {
+  body.succession-history-open .tree-workbench,
+  body.succession-history-open .property-workspace-page {
     display: none !important;
   }
 

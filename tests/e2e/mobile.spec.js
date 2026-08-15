@@ -109,4 +109,43 @@ test.describe("phone layout", () => {
     });
     expect(overlapping).toBe(false);
   });
+
+  test("keeps Person card details labelled below the toolbar and clear of Fit tree", async ({
+    page,
+  }) => {
+    const launcher = page.locator(".person-card-display-control summary");
+    await expect(launcher).toContainText("Person card details");
+
+    const layout = await page.evaluate(() => {
+      const panel = document
+        .querySelector(".person-card-display-control summary")
+        .getBoundingClientRect();
+      const toolbar = document.querySelector(".tree-stage-toolbar").getBoundingClientRect();
+      const fitTree = document
+        .querySelector('.tree-navigation-tools button[title="Fit the whole tree in view"]')
+        .getBoundingClientRect();
+      const label = document.querySelector(".person-card-display-control summary span");
+      const overlaps = (first, second) =>
+        first.left < second.right &&
+        second.left < first.right &&
+        first.top < second.bottom &&
+        second.top < first.bottom;
+
+      return {
+        belowToolbar: panel.top >= toolbar.bottom,
+        overlapsFitTree: overlaps(panel, fitTree),
+        insideViewport: panel.left >= 0 && panel.right <= window.innerWidth,
+        toolbarInsideViewport: toolbar.left >= 0 && toolbar.right <= window.innerWidth,
+        labelVisible: getComputedStyle(label).display !== "none",
+      };
+    });
+
+    expect(layout).toEqual({
+      belowToolbar: true,
+      overlapsFitTree: false,
+      insideViewport: true,
+      toolbarInsideViewport: true,
+      labelVisible: true,
+    });
+  });
 });

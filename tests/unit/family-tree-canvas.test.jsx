@@ -97,6 +97,29 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
+  it("keeps person-card display choices in the top-left tree controls", () => {
+    const onPersonCardFieldsChange = vi.fn();
+    renderCanvas({
+      people: [person("a", "Solitary Person")],
+      personCardFields: { ownershipFraction: true, ownershipValue: false },
+      onPersonCardFieldsChange,
+    });
+
+    const navigation = container.querySelector(".tree-navigation-tools");
+    const control = navigation.querySelector(".person-card-display-control");
+    expect(control.querySelector("summary").textContent).toContain("Person card details");
+    expect(navigation.firstElementChild).toBe(control);
+
+    const valueToggle = [...control.querySelectorAll("label")]
+      .find((label) => label.textContent.includes("Current holding value"))
+      .querySelector("input");
+    act(() => valueToggle.click());
+
+    expect(onPersonCardFieldsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ ownershipValue: true }),
+    );
+  });
+
   it("shows a compact red-action key only while a card needs action", () => {
     renderCanvas({
       people: [person("a", "Joseph Borg")],
@@ -399,6 +422,52 @@ describe("FamilyTreeCanvas", () => {
     expect(scrollRegion.scrollLeft).toBe(170);
     expect(scrollRegion.scrollTop).toBe(140);
     expect(onToolbarClick).not.toHaveBeenCalled();
+  });
+
+  it("leaves the card-details disclosure and choices usable by touch", () => {
+    const onPersonCardFieldsChange = vi.fn();
+    renderCanvas({
+      people: family(),
+      personCardFields: { ownershipFraction: true, ownershipValue: false },
+      onPersonCardFieldsChange,
+    });
+    const scrollRegion = container.querySelector(".tree-canvas-scroll-region");
+    const gestureSurface = container.querySelector(".tree-panel");
+    const summary = container.querySelector(".person-card-display-control summary");
+    scrollRegion.scrollLeft = 80;
+    scrollRegion.scrollTop = 60;
+
+    const start = { identifier: 1, clientX: 90, clientY: 140 };
+    const moved = { identifier: 1, clientX: 50, clientY: 95 };
+    const summaryMove = touchEvent("touchmove", [moved]);
+    act(() => {
+      summary.dispatchEvent(touchEvent("touchstart", [start]));
+      gestureSurface.dispatchEvent(summaryMove);
+      gestureSurface.dispatchEvent(touchEvent("touchend", [], [moved]));
+      summary.click();
+    });
+
+    expect(summaryMove.defaultPrevented).toBe(false);
+    expect(scrollRegion.scrollLeft).toBe(80);
+    expect(scrollRegion.scrollTop).toBe(60);
+    expect(summary.parentElement.open).toBe(true);
+
+    const valueToggle = [...container.querySelectorAll(".person-card-display-menu label")]
+      .find((label) => label.textContent.includes("Current holding value"))
+      .querySelector("input");
+    const choiceMove = touchEvent("touchmove", [moved]);
+    act(() => {
+      valueToggle.dispatchEvent(touchEvent("touchstart", [start]));
+      gestureSurface.dispatchEvent(choiceMove);
+      gestureSurface.dispatchEvent(touchEvent("touchend", [], [moved]));
+      valueToggle.click();
+    });
+
+    expect(choiceMove.defaultPrevented).toBe(false);
+    expect(scrollRegion.scrollLeft).toBe(80);
+    expect(onPersonCardFieldsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ ownershipValue: true }),
+    );
   });
 
   it("pans from a person card with the mouse without opening the card", () => {

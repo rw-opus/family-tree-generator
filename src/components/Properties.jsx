@@ -2,6 +2,7 @@ import { Home, Trash2 } from "lucide-react";
 import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyOwnershipSummary } from "./PropertyOwnershipSummary.jsx";
+import { SuccessionTraceControl } from "./SuccessionTraceControl.jsx";
 import { TaxCalculationPanel } from "./TaxCalculationPanel.jsx";
 
 const makeProperty = () => ({
@@ -160,31 +161,40 @@ export function Properties({
                 <h2>Current ownership & history</h2>
               </div>
               {startingOwnership.isComplete ? (
-                <PropertyOwnershipSummary
-                  people={people}
-                  outsideParties={outsideParties}
-                  transfers={property.transfers || []}
-                  startingOwnership={ownership.ownershipByPerson}
-                  property={property}
-                  vendorReport={vendorReport}
-                  onSelectPerson={onSelectPerson}
-                  selectedOutsideOwnerId={selectedOutsideOwnerId}
-                  onSelectOutsideOwner={onSelectOutsideOwner}
-                  onOutsideOwnerTransactionsChange={({
-                    property: nextProperty,
-                    transfers,
-                    outsideParties: nextParties,
-                  }) =>
-                    onChange({
-                      properties: properties.map((candidate) =>
-                        candidate.id === property.id
-                          ? nextProperty || { ...candidate, transfers }
-                          : candidate,
-                      ),
+                <>
+                  <PropertyOwnershipSummary
+                    people={people}
+                    outsideParties={outsideParties}
+                    transfers={property.transfers || []}
+                    startingOwnership={ownership.ownershipByPerson}
+                    property={property}
+                    vendorReport={vendorReport}
+                    onSelectPerson={onSelectPerson}
+                    selectedOutsideOwnerId={selectedOutsideOwnerId}
+                    onSelectOutsideOwner={onSelectOutsideOwner}
+                    onOutsideOwnerTransactionsChange={({
+                      property: nextProperty,
+                      transfers,
                       outsideParties: nextParties,
-                    })
-                  }
-                />
+                    }) =>
+                      onChange({
+                        properties: properties.map((candidate) =>
+                          candidate.id === property.id
+                            ? nextProperty || { ...candidate, transfers }
+                            : candidate,
+                        ),
+                        outsideParties: nextParties,
+                      })
+                    }
+                  />
+                  <SuccessionTraceControl
+                    property={property}
+                    people={people}
+                    outsideParties={outsideParties}
+                    propertyReport={vendorReport}
+                    onSelectPerson={onSelectPerson}
+                  />
+                </>
               ) : (
                 <p className="helper-text">
                   Complete the initial ownership above to calculate the current title.

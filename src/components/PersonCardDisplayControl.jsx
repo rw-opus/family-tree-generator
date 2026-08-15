@@ -26,23 +26,12 @@ function FieldChoices({ fields, onChange }) {
   ));
 }
 
-export function PersonCardDisplayControl({ fields, onChange, embedded = false }) {
-  if (embedded) {
-    return (
-      <fieldset className="person-card-display-fields">
-        <legend>Show on person cards and printouts</legend>
-        <div className="person-card-display-grid">
-          <FieldChoices fields={fields} onChange={onChange} />
-        </div>
-      </fieldset>
-    );
-  }
-
+export function PersonCardDisplayControl({ fields, onChange }) {
   return (
     <details className="person-card-display-control">
-      <summary aria-label="Choose details shown on person cards">
+      <summary>
         <SlidersHorizontal size={16} />
-        <span>Card details</span>
+        <span>Person card details</span>
       </summary>
       <div className="person-card-display-menu">
         <strong>Show on person cards and printouts</strong>
