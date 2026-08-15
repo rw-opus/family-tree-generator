@@ -670,9 +670,30 @@ textarea:focus-visible {
   grid-template-columns: 85px minmax(180px, 0.9fr) minmax(220px, 1.2fr);
 }
 
+/* An underline set on the button cannot be cancelled by a descendant, so it
+   ran across the gap and under the appended hint: "Vella Holdings Ltd" and
+   "Open owner card" read as one run-on word. The name carries its own
+   underline instead, and the hint is left undecorated. */
+.ownership-person-link.outside-owner-link {
+  flex-wrap: wrap;
+  text-decoration: none;
+}
+
+.outside-owner-link .outside-owner-name {
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 84, 50, 0.35);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.outside-owner-link:hover .outside-owner-name,
+.outside-owner-link:focus-visible .outside-owner-name {
+  text-decoration-color: currentColor;
+}
+
 .outside-owner-link::after {
   content: "Open owner card";
-  margin-left: 0.35rem;
+  margin-left: 0.45rem;
   color: var(--muted);
   font-size: var(--type-micro);
   font-weight: 700;
@@ -6566,10 +6587,10 @@ body.a3-print-preview-open {
     grid-column: 1 / -1;
   }
 
-  .outside-owner-link::after {
-    display: block;
-    margin: 0.08rem 0 0;
-  }
+  /* This used to set the hint to display:block to drop it onto its own line.
+     The button is an inline-flex row, so the hint stayed beside the name and
+     only lost its margin, welding the two together. It now keeps the base
+     spacing and wraps by itself when the name is too long to share the row. */
 
   .outside-owner-dialog {
     padding: 0;

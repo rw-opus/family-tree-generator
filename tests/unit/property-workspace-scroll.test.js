@@ -104,6 +104,21 @@ describe("property workspace scrolling", () => {
     expect(controlRule).toMatch(/min-height:\s*2\.75rem/);
   });
 
+  it("keeps the outside-owner hint spaced from the name it follows", () => {
+    // The hint sits beside the name on one row. A previous phone override set
+    // it to display:block to stack it, but the button is an inline-flex row so
+    // it stayed alongside and only lost its margin, welding the two together.
+    const button = blockFor(stylesheet, ".ownership-person-link.outside-owner-link");
+    const name = blockFor(stylesheet, ".outside-owner-link .outside-owner-name");
+    const hint = blockFor(stylesheet, ".outside-owner-link::after");
+
+    expect(button).toMatch(/text-decoration:\s*none/);
+    expect(button).toMatch(/flex-wrap:\s*wrap/);
+    expect(name).toMatch(/text-decoration:\s*underline/);
+    expect(hint).toMatch(/margin-left:/);
+    expect(stylesheet).not.toMatch(/\.outside-owner-link::after\s*\{[^}]*display:\s*block/);
+  });
+
   // The share used to sit stacked above its own percentage, spending two lines
   // per owner to say one thing twice.
   it("keeps an owner's share and percentage on one line", () => {
