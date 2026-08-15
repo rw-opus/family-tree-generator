@@ -113,6 +113,17 @@ textarea:focus-visible {
   margin: clamp(1.25rem, 4vw, 3.5rem) auto;
 }
 
+/* The account column will not go below 15rem, so on a small tablet the two
+   columns left the families table about 270px wide — narrower than the same
+   table gets on a phone, where the page is already a single column. The family
+   name was squeezed out of the row entirely and there was nothing left to
+   click. Stay in one column until both columns can actually be afforded. */
+@media (max-width: 760px) {
+  .family-library-content {
+    grid-template-columns: 1fr;
+  }
+}
+
 .account-summary,
 .family-library {
   border: 1px solid #d4ddd7;
@@ -340,7 +351,10 @@ textarea:focus-visible {
 
 .family-library-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 7rem auto;
+  /* The name is the only way into a family, so it keeps a floor and the date
+     yields its width first. A plain 1fr let the fixed date column and the
+     actions crowd the name down to nothing. */
+  grid-template-columns: minmax(6rem, 1fr) minmax(0, 7rem) auto;
   align-items: center;
   gap: 0.65rem;
   min-height: 3.15rem;
