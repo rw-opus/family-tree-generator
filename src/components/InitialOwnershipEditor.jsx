@@ -1,6 +1,7 @@
 import { Building2, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
+import { reconcileFractionPercentageDisplay } from "../domain/ownershipPresentation.js";
 import {
   assignInitialOwnerPerson,
   propertyStartingOwnershipStatus,
@@ -31,11 +32,17 @@ export function InitialOwnershipEditor({
   onCreateOutsideParty,
 }) {
   const [outsidePartyOpen, setOutsidePartyOpen] = useState(false);
+  const percentageEditsRef = useRef(new Set());
   const owners = property.owners || [];
   const status = propertyStartingOwnershipStatus(property);
-  const totalLabel = status.enteredTotalPercent.toLocaleString("en-MT", {
-    maximumFractionDigits: 2,
+  const percentageDisplay = reconcileFractionPercentageDisplay(owners.map(fractionForShare), {
+    keys: owners.map((owner) => owner.personId || owner.id),
   });
+  const totalPercentageLabel =
+    percentageDisplay.totalDisplayPercentageLabel ||
+    `${status.enteredTotalPercent.toLocaleString("en-MT", {
+      maximumFractionDigits: 2,
+    })}%`;
   const unassignedLabel = status.unassignedFraction?.denominator
     ? `${status.unassignedFraction.numerator}/${status.unassignedFraction.denominator}`
     : "an entered share";
@@ -67,12 +74,12 @@ export function InitialOwnershipEditor({
           <h3>{heading}</h3>
         </div>
         <span className={`initial-title-badge ${status.isComplete ? "valid" : "invalid"}`}>
-          {totalLabel}%
+          {totalPercentageLabel}
         </span>
       </div>
       {helperText && <p className="helper-text">{helperText}</p>}
       <p className={`share-status ${status.isComplete ? "valid" : "invalid"}`}>
-        Fractions entered: {totalLabel}% — {statusMessage}
+        Fractions entered: {totalPercentageLabel} — {statusMessage}
       </p>
       <div className="initial-owner-list">
         {owners.length > 0 && (
@@ -83,8 +90,10 @@ export function InitialOwnershipEditor({
             <span />
           </div>
         )}
-        {owners.map((owner) => {
+        {owners.map((owner, index) => {
           const ownerFraction = fractionForShare(owner);
+          const displayedPercentage = percentageDisplay.rows[index]?.displayPercentage;
+          const percentageBeingEdited = percentageEditsRef.current.has(owner.id);
           const ownerNeedsSelection =
             !owner.personId && !ownerFraction.error && Number(ownerFraction.numerator) > 0;
           const ownerNumerator = owner.shareNumerator ?? ownerFraction.numerator;
@@ -175,11 +184,22 @@ export function InitialOwnershipEditor({
                   type="number"
                   min="0"
                   max="100"
-                  step="any"
-                  value={owner.sharePercentInput ?? owner.sharePercent ?? ""}
-                  onChange={(event) =>
-                    updateOwner(owner.id, shareFromPercentageInput(event.target.value))
+                  step="0.01"
+                  inputMode="decimal"
+                  value={
+                    percentageBeingEdited
+                      ? (owner.sharePercentInput ?? "")
+                      : (displayedPercentage ?? owner.sharePercent ?? "")
                   }
+                  onChange={(event) => {
+                    percentageEditsRef.current.add(owner.id);
+                    updateOwner(owner.id, shareFromPercentageInput(event.target.value));
+                  }}
+                  onBlur={() => {
+                    percentageEditsRef.current.delete(owner.id);
+                    if (owner.sharePercentInput === undefined) return;
+                    updateOwner(owner.id, shareFromFractionInput(owner));
+                  }}
                 />
                 <b>%</b>
               </span>
@@ -198,7 +218,7 @@ export function InitialOwnershipEditor({
       </div>
       {status.hasUnassignedOwners && (
         <p className="initial-owner-assignment-warning" role="alert">
-          Fractions total {totalLabel}%, but {unassignedLabel} still needs an owner.
+          Fractions total {totalPercentageLabel}, but {unassignedLabel} still needs an owner.
         </p>
       )}
       <div className="initial-owner-actions">

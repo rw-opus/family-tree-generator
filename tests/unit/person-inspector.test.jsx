@@ -1972,6 +1972,7 @@ describe("PersonInspector", () => {
               share: 1 / 3,
               shareFraction: { numerator: 1, denominator: 3 },
               percentage: 100 / 3,
+              displayPercentageLabel: "33.34%",
               value: 0.34,
             },
           }}
@@ -1983,7 +1984,7 @@ describe("PersonInspector", () => {
       ),
     );
 
-    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.33%");
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.34%");
     expect(container.querySelector(".person-share-value small").textContent).toContain("€0.34");
   });
 
@@ -2056,16 +2057,18 @@ describe("PersonInspector", () => {
       id: "deceased",
       share: 1 / 3,
       shareFraction: { numerator: 1, denominator: 3 },
+      displayPercentageLabel: "33.34%",
       value: 0.34,
     });
 
-    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.33%");
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.34%");
     expect(container.querySelector(".person-share-value small").textContent).toContain("€0.34");
 
     renderWithPresentation({
       id: "deceased",
       share: 0.1,
       shareFraction: { numerator: 1, denominator: 10 },
+      displayPercentageLabel: "10.01%",
       value: 0.1,
     });
 
@@ -3106,6 +3109,105 @@ describe("PersonInspector", () => {
     expect(latestPeople[0].willHeirs).toEqual([]);
     expect(latestPeople[0].willHeirsConfirmed).toBe(false);
     expect(latestPeople[0].willHeirsConfirmationSource).toBe("");
+  });
+
+  it("shows exact will thirds as reconciled two-decimal percentage boxes", () => {
+    let latestPeople = [];
+    const heirs = ["first", "second", "third"].map((id) => ({
+      id,
+      fullName: `${id} heir`,
+      sex: "",
+      spouseIds: [],
+      designations: [],
+    }));
+    const initialPeople = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirsConfirmed: true,
+        willHeirsConfirmationSource: "manual",
+        willHeirs: heirs.map((heir, index) => ({
+          id: `will-${index}`,
+          personId: heir.id,
+          sharePercent: 100 / 3,
+          shareNumerator: 1,
+          shareDenominator: 3,
+          sharePercentInput: "33.3333333333333",
+        })),
+        designations: ["Deceased"],
+        spouseIds: [],
+        siblingIds: [],
+      },
+      ...heirs,
+    ];
+
+    function Harness() {
+      const [people, setPeople] = useState(initialPeople);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          shareDisplay="percentage"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    let percentageInputs = [
+      ...container.querySelectorAll('input[aria-label="Will share percentage"]'),
+    ];
+    expect(percentageInputs.map((input) => input.value)).toEqual(["33.34", "33.33", "33.33"]);
+    expect(percentageInputs.reduce((total, input) => total + Number(input.value), 0)).toBe(100);
+    percentageInputs.forEach((input) => {
+      expect(input.step).toBe("0.01");
+      expect(input.inputMode).toBe("decimal");
+    });
+    act(() => {
+      percentageInputs[0].focus();
+      percentageInputs[0].blur();
+    });
+    expect(
+      latestPeople[0].willHeirs.map(({ shareNumerator, shareDenominator }) => ({
+        numerator: shareNumerator,
+        denominator: shareDenominator,
+      })),
+    ).toEqual([
+      { numerator: 1, denominator: 3 },
+      { numerator: 1, denominator: 3 },
+      { numerator: 1, denominator: 3 },
+    ]);
+    expect(latestPeople[0].willHeirs[0].sharePercentInput).toBeUndefined();
+
+    percentageInputs = [...container.querySelectorAll('input[aria-label="Will share percentage"]')];
+    const firstPercentage = percentageInputs[0];
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        firstPercentage,
+        "33.335",
+      );
+      firstPercentage.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    percentageInputs = [...container.querySelectorAll('input[aria-label="Will share percentage"]')];
+    act(() => {
+      percentageInputs[0].focus();
+      percentageInputs[0].blur();
+    });
+    expect(container.querySelectorAll('input[aria-label="Will share percentage"]')[0].value).toBe(
+      "33.34",
+    );
+    expect(
+      [...container.querySelectorAll(".succession-total")]
+        .find((label) => label.textContent.includes("Total:"))
+        .textContent.replace(/\s+/g, " "),
+    ).toContain("Total: 100.01% — must equal 100%");
   });
 
   it("selects the calculated heirs when adding a causa mortis declaration", () => {
@@ -5415,13 +5517,19 @@ describe("PersonInspector provenance designation", () => {
       format.dispatchEvent(new Event("change", { bubbles: true }));
     });
     const percentage = container.querySelector('input[aria-label="Transfer percentage"]');
+    expect(percentage.step).toBe("0.01");
+    expect(percentage.inputMode).toBe("decimal");
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         percentage,
-        "75.01",
+        "75.015",
       );
       percentage.dispatchEvent(new Event("input", { bubbles: true }));
+      percentage.focus();
+      percentage.blur();
     });
+
+    expect(container.querySelector('input[aria-label="Transfer percentage"]').value).toBe("75.02");
 
     expect(container.textContent).toContain(
       "The transferred share cannot be greater than this person's current holding.",
@@ -5434,6 +5542,66 @@ describe("PersonInspector provenance designation", () => {
     expect(container.querySelector('[role="alert"]').textContent).toContain(
       "The transferred share cannot be greater than this person's current holding.",
     );
+  });
+
+  it("rounds and records a standalone transfer percentage when submitted without blur", () => {
+    const singleSourceProperty = {
+      ...property,
+      owners: [{ id: "single-source", personId: "seller", shareNumerator: 1, shareDenominator: 1 }],
+      transfers: [],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(singleSourceProperty, people, []);
+    const onRecordDonation = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[singleSourceProperty]}
+          vendorReport={vendorReport}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={onRecordDonation}
+        />,
+      ),
+    );
+
+    act(() => container.querySelector('input[aria-label="Sold/Donated Property Share"]').click());
+    const setSelect = (selector, value) => {
+      const select = container.querySelector(selector);
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, value);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    act(() => setSelect('select[aria-label="Transfer measurement"]', "defined-share"));
+    act(() => {
+      setSelect('select[aria-label="Transfer share format"]', "percentage");
+      setSelect('select[aria-label="Existing acquirer"]', "other");
+    });
+    const percentage = container.querySelector('input[aria-label="Transfer percentage"]');
+    const donationDate = container.querySelector('input[aria-label="Donation date"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        percentage,
+        "33.335",
+      );
+      percentage.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        donationDate,
+        "01/01/2021",
+      );
+      donationDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(percentage.validity.stepMismatch).toBe(true);
+    expect(container.querySelector(".person-donation-form").noValidate).toBe(true);
+    act(() => container.querySelector(".person-donation-form").requestSubmit());
+
+    expect(onRecordDonation).toHaveBeenCalledTimes(1);
+    expect(onRecordDonation.mock.calls[0][0].transfer).toMatchObject({
+      numerator: "1667",
+      denominator: "5000",
+      amountType: "whole-property",
+    });
   });
 });
 

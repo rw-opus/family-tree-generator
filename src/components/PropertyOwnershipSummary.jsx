@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { buildPropertyLedger } from "../domain/ownership.js";
 import {
   buildCurrentOwnerPresentations,
+  formatPercentageHundredths,
   formatOwnershipFraction,
   formatOwnershipPercentage,
   ownerPresentationsById,
@@ -94,6 +95,13 @@ export function PropertyOwnershipSummary({
   };
 
   const selectedOutsideOwner = outsideParties.find((party) => party.id === selectedOutsideOwnerId);
+  const titleDisplayHundredths = ledger.owners.reduce((total, owner) => {
+    const value = currentOwnerPresentations[owner.id]?.displayPercentageHundredths;
+    return Number.isSafeInteger(total) && Number.isSafeInteger(value) ? total + value : null;
+  }, 0);
+  const titlePercentageLabel =
+    formatPercentageHundredths(titleDisplayHundredths) ||
+    formatOwnershipPercentage(ledger.total, ledger.totalFraction);
 
   return (
     <section className="ownership-panel property-ownership-summary" aria-labelledby="current-title">
@@ -121,7 +129,8 @@ export function PropertyOwnershipSummary({
                     {formatOwnershipFraction(presentation.share, presentation.shareFraction)}
                   </strong>
                   <small>
-                    {formatOwnershipPercentage(presentation.share, presentation.shareFraction)}
+                    {presentation.displayPercentageLabel ||
+                      formatOwnershipPercentage(presentation.share, presentation.shareFraction)}
                   </small>
                   {currentValue !== null && (
                     <small className="owner-value">
@@ -140,7 +149,7 @@ export function PropertyOwnershipSummary({
 
       <div className={`ledger-total ${Math.abs(ledger.total - 1) < 1e-8 ? "valid" : "invalid"}`}>
         <span>Total title</span>
-        <strong>{formatOwnershipPercentage(ledger.total, ledger.totalFraction)}</strong>
+        <strong>{titlePercentageLabel}</strong>
       </div>
 
       {selectedOutsideOwner && property && onOutsideOwnerTransactionsChange && (

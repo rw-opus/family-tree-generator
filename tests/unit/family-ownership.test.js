@@ -1832,6 +1832,58 @@ describe("per-property ownership", () => {
     expect(unresolved).toHaveLength(1);
   });
 
+  it.each([
+    {
+      label: "under",
+      firstShare: { numerator: 3333, denominator: 10000 },
+      expected: "99.99%",
+    },
+    {
+      label: "over",
+      firstShare: { numerator: 6667, denominator: 20000 },
+      expected: "100.01%",
+    },
+  ])("keeps a near-whole $label-allocation will warning truthful", ({ firstShare, expected }) => {
+    const beneficiaries = ["first", "second", "third"].map((id) => person(id));
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "will",
+        willHeirs: [
+          {
+            id: "gift-first",
+            personId: "first",
+            shareNumerator: firstShare.numerator,
+            shareDenominator: firstShare.denominator,
+          },
+          {
+            id: "gift-second",
+            personId: "second",
+            shareNumerator: 1,
+            shareDenominator: 3,
+          },
+          {
+            id: "gift-third",
+            personId: "third",
+            shareNumerator: 1,
+            shareDenominator: 3,
+          },
+        ],
+      }),
+      ...beneficiaries,
+    ];
+    const result = buildPropertyOwnership(people, {
+      id: "flat-1",
+      owners: [{ personId: "owner", sharePercent: 100 }],
+    });
+
+    expect(result.transmissions[0].warnings).toContain(
+      `Will beneficiary shares total ${expected}, not 100%.`,
+    );
+    expect(result.transmissions[0].warnings.join(" ")).not.toContain("shares total 100%, not 100%");
+  });
+
   it("records a circular inheritance path as unresolved instead of losing the share", () => {
     const people = [
       person("owner", {

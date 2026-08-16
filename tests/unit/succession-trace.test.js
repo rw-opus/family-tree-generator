@@ -324,7 +324,7 @@ describe("succession trace", () => {
     };
     const propertyReport = buildPropertyVendorTaxReport(property, people, []);
 
-    const proposedSale = buildSuccessionTrace({
+    const events = buildSuccessionTrace({
       property,
       people,
       propertyReport,
@@ -336,12 +336,124 @@ describe("succession trace", () => {
           value: 0.34,
         },
       },
-    }).at(-1);
+    });
+    const proposedSale = events.at(-1);
 
+    expect(events.slice(0, 3).map((event) => event.description)).toEqual([
+      expect.stringContaining("First Owner starts with 1/3 (33.34%)"),
+      expect.stringContaining("Second Owner starts with 1/3 (33.33%)"),
+      expect.stringContaining("Third Owner starts with 1/3 (33.33%)"),
+    ]);
     expect(proposedSale.title).toBe("Proposed property sale");
-    expect(proposedSale.description).toContain("First Owner 1/3 (33.33%), worth €0.34");
+    expect(proposedSale.description).toContain("First Owner 1/3 (33.34%), worth €0.34");
     expect(proposedSale.description).toContain("Second Owner 1/3 (33.33%), worth €0.33");
     expect(proposedSale.description).toContain("Third Owner 1/3 (33.33%), worth €0.33");
+  });
+
+  it("reconciles succession recipients to the exact estate share without changing fractions", () => {
+    const people = [
+      { id: "deceased", fullName: "Deceased Owner", isDeceased: true, dateOfDeath: "2020-01-01" },
+      { id: "first", fullName: "First Heir" },
+      { id: "second", fullName: "Second Heir" },
+      { id: "third", fullName: "Third Heir" },
+    ];
+    const third = { numerator: 1, denominator: 3 };
+    const property = {
+      id: "house",
+      owners: [
+        {
+          id: "initial-owner",
+          personId: "deceased",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+    const propertyReport = {
+      ownership: {
+        transmissions: [
+          {
+            deceasedId: "deceased",
+            amount: 1,
+            amountFraction: { numerator: 1, denominator: 1 },
+            allocations: new Map([
+              ["first", 1 / 3],
+              ["second", 1 / 3],
+              ["third", 1 / 3],
+            ]),
+            exactAllocations: new Map([
+              ["first", third],
+              ["second", third],
+              ["third", third],
+            ]),
+            chronologyOrder: 0,
+          },
+        ],
+      },
+      ledger: {
+        entries: [],
+        owners: [
+          { id: "first", name: "First Heir", share: 1 / 3, shareFraction: third },
+          { id: "second", name: "Second Heir", share: 1 / 3, shareFraction: third },
+          { id: "third", name: "Third Heir", share: 1 / 3, shareFraction: third },
+        ],
+      },
+    };
+
+    const succession = buildSuccessionTrace({ property, people, propertyReport }).find(
+      (event) => event.type === "succession",
+    );
+
+    expect(succession.description).toContain("First Heir receives 1/3 (33.34%)");
+    expect(succession.description).toContain("Second Heir receives 1/3 (33.33%)");
+    expect(succession.description).toContain("Third Heir receives 1/3 (33.33%)");
+    expect(propertyReport.ownership.transmissions[0].exactAllocations.get("first")).toEqual(third);
+  });
+
+  it("assigns a rounding remainder to the same owner across differently ordered views", () => {
+    const people = [
+      { id: "a", fullName: "Owner A" },
+      { id: "b", fullName: "Owner B" },
+      { id: "c", fullName: "Owner C" },
+    ];
+    const third = { numerator: 1, denominator: 3 };
+    const property = {
+      id: "house",
+      saleValue: 3,
+      owners: [...people].reverse().map((person) => ({
+        id: `initial-${person.id}`,
+        personId: person.id,
+        shareNumerator: 1,
+        shareDenominator: 3,
+      })),
+    };
+    const propertyReport = {
+      ownership: { transmissions: [] },
+      ledger: {
+        entries: [],
+        owners: people.map((person) => ({
+          id: person.id,
+          name: person.fullName,
+          share: 1 / 3,
+          shareFraction: third,
+        })),
+      },
+    };
+
+    const events = buildSuccessionTrace({ property, people, propertyReport });
+    const initialDescriptions = Object.fromEntries(
+      events
+        .filter((event) => event.type === "initial")
+        .map((event) => [event.personId, event.description]),
+    );
+    const proposedSale = events.at(-1);
+
+    expect(initialDescriptions.a).toContain("1/3 (33.34%)");
+    expect(initialDescriptions.b).toContain("1/3 (33.33%)");
+    expect(initialDescriptions.c).toContain("1/3 (33.33%)");
+    expect(proposedSale.description).toContain("Owner A 1/3 (33.34%)");
+    expect(proposedSale.description).toContain("Owner B 1/3 (33.33%)");
+    expect(proposedSale.description).toContain("Owner C 1/3 (33.33%)");
   });
 
   it("preserves an explicitly recorded zero selling price in the proposed-sale allocation", () => {

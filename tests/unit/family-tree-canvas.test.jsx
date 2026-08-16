@@ -1004,6 +1004,7 @@ describe("FamilyTreeCanvas", () => {
           share: 1 / 3,
           shareFraction: { numerator: 1, denominator: 3 },
           percentage: 100 / 3,
+          displayPercentageLabel: "33.34%",
           value: 0.34,
         },
       },
@@ -1016,7 +1017,7 @@ describe("FamilyTreeCanvas", () => {
 
     const card = container.querySelector('[data-person-id="owner"]');
     expect(card.querySelector(".family-node-ownership").textContent).toContain("1/3");
-    expect(card.querySelector(".family-node-ownership").textContent).toContain("33.33%");
+    expect(card.querySelector(".family-node-ownership").textContent).toContain("33.34%");
     expect(card.textContent).toContain("Current value €0.34");
     expect(card.textContent).not.toContain("1/2");
   });

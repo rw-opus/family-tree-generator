@@ -42,6 +42,7 @@ import {
   formatOwnershipFraction,
   formatOwnershipPercentage,
   ownerPresentationsById,
+  reconcileFractionPercentageDisplay,
   recordedNonNegativeMoney,
 } from "../domain/ownershipPresentation.js";
 import {
@@ -55,6 +56,7 @@ import {
 import { applyLegacyProtectedPortionsToWill } from "../domain/legacyLegitim.js";
 import {
   fractionForShare,
+  normalisePercentageInput,
   shareFromFractionInput,
   shareFromPercentage,
   shareFromPercentageInput,
@@ -159,9 +161,14 @@ function initials(name) {
     .join("");
 }
 
-function ownershipLabel(share = 0, shareDisplay = "both", exactFraction = null) {
+function ownershipLabel(
+  share = 0,
+  shareDisplay = "both",
+  exactFraction = null,
+  displayPercentageLabel = "",
+) {
   const fractionText = formatOwnershipFraction(share, exactFraction);
-  const percentageText = formatOwnershipPercentage(share, exactFraction);
+  const percentageText = displayPercentageLabel || formatOwnershipPercentage(share, exactFraction);
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;
   return `${fractionText} · ${percentageText}`;
@@ -238,6 +245,7 @@ export function PersonInspector({
   const [donationOpen, setDonationOpen] = useState(false);
   const [donationDraft, setDonationDraft] = useState(blankDonationDraft);
   const [editingTransferId, setEditingTransferId] = useState("");
+  const willPercentageEditsRef = useRef(new Set());
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
@@ -958,7 +966,7 @@ export function PersonInspector({
 
     let fraction;
     if (donationDraft.shareInputMode === "percentage") {
-      const percentageInput = String(donationDraft.percentage ?? "").trim();
+      const percentageInput = normalisePercentageInput(donationDraft.percentage).trim();
       const percentage = Number(percentageInput);
       if (!percentageInput || !Number.isFinite(percentage)) {
         return { error: "Enter a valid percentage." };
@@ -1493,6 +1501,10 @@ export function PersonInspector({
     ]),
   );
   const willHeirs = selectedPerson.willHeirs || [];
+  const willPercentageDisplay = reconcileFractionPercentageDisplay(
+    willHeirs.map(fractionForShare),
+    { keys: willHeirs.map((heir) => heir.personId || heir.id) },
+  );
   const willReadiness = willAllocationReadiness(
     selectedPerson,
     new Set([...people.map((person) => person.id), ...outsideParties.map((party) => party.id)]),
@@ -1805,6 +1817,9 @@ export function PersonInspector({
                 displayedPropertyShare,
                 ownershipDisplay,
                 displayedPropertyShareFraction,
+                !isDeceased || estateShareIsCurrent
+                  ? currentOwnerPresentation?.displayPercentageLabel
+                  : "",
               )
             : "Not yet calculated"}
         </strong>
@@ -1859,7 +1874,7 @@ export function PersonInspector({
         className="person-donation"
         data-person-section="donation"
       >
-        <form className="person-donation-form" onSubmit={submitDonation}>
+        <form className="person-donation-form" noValidate onSubmit={submitDonation}>
           <label>
             Type of contract
             <select
@@ -2028,11 +2043,17 @@ export function PersonInspector({
                       type="number"
                       min="0"
                       max={Math.min(100, fractionToNumber(donorLedgerHolding) * 100)}
-                      step="any"
+                      step="0.01"
                       inputMode="decimal"
                       value={donationDraft.percentage}
                       onChange={(event) =>
                         setDonationField({ percentage: event.target.value, designation: {} })
+                      }
+                      onBlur={(event) =>
+                        setDonationField({
+                          percentage: normalisePercentageInput(event.currentTarget.value),
+                          designation: {},
+                        })
                       }
                     />
                     <span>%</span>
@@ -2876,10 +2897,11 @@ export function PersonInspector({
                             onCancel={() => setWillOutsidePartyOpen(false)}
                           />
                         )}
-                        {willHeirs.map((heir) => {
+                        {willHeirs.map((heir, heirIndex) => {
                           const fraction = fractionForShare(heir);
                           const numerator = heir.shareNumerator ?? fraction.numerator;
                           const denominator = heir.shareDenominator ?? fraction.denominator;
+                          const percentageBeingEdited = willPercentageEditsRef.current.has(heir.id);
                           return (
                             <div className={`will-heir-row ${ownershipDisplay}`} key={heir.id}>
                               <select
@@ -2959,11 +2981,25 @@ export function PersonInspector({
                                     type="number"
                                     min="0"
                                     max="100"
-                                    step="any"
-                                    value={heir.sharePercentInput ?? heir.sharePercent ?? ""}
-                                    onChange={(event) =>
-                                      updateWillHeirPercentage(heir.id, event.target.value)
+                                    step="0.01"
+                                    inputMode="decimal"
+                                    value={
+                                      percentageBeingEdited
+                                        ? (heir.sharePercentInput ?? "")
+                                        : (willPercentageDisplay.rows[heirIndex]
+                                            ?.displayPercentage ??
+                                          heir.sharePercent ??
+                                          "")
                                     }
+                                    onChange={(event) => {
+                                      willPercentageEditsRef.current.add(heir.id);
+                                      updateWillHeirPercentage(heir.id, event.target.value);
+                                    }}
+                                    onBlur={() => {
+                                      willPercentageEditsRef.current.delete(heir.id);
+                                      if (heir.sharePercentInput === undefined) return;
+                                      updateWillHeirFraction(heir, {});
+                                    }}
                                   />
                                   <b>%</b>
                                 </span>
@@ -2986,7 +3022,13 @@ export function PersonInspector({
                               : "succession-total invalid"
                           }
                         >
-                          Total: {ownershipLabel(willTotal / 100, ownershipDisplay)}{" "}
+                          Total:{" "}
+                          {ownershipLabel(
+                            willTotal / 100,
+                            ownershipDisplay,
+                            null,
+                            willPercentageDisplay.totalDisplayPercentageLabel,
+                          )}{" "}
                           {willReadiness.valid
                             ? "✓"
                             : willReadiness.totalComplete

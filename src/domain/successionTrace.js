@@ -4,6 +4,7 @@ import {
   formatOwnershipFraction,
   formatOwnershipPercentage,
   ownerPresentationsById,
+  reconcileFractionPercentageDisplay,
   recordedNonNegativeMoney,
 } from "./ownershipPresentation.js";
 import {
@@ -23,11 +24,10 @@ const money = new Intl.NumberFormat("en-MT", {
   maximumFractionDigits: 2,
 });
 
-const shareLabel = (share, exactFraction = null) =>
-  `${formatOwnershipFraction(share, exactFraction)} (${formatOwnershipPercentage(
-    share,
-    exactFraction,
-  )})`;
+const shareLabel = (share, exactFraction = null, displayPercentageLabel = "") =>
+  `${formatOwnershipFraction(share, exactFraction)} (${
+    displayPercentageLabel || formatOwnershipPercentage(share, exactFraction)
+  })`;
 
 const initialOwnerShare = (owner) => {
   const numerator = fractionComponentNumber(owner.shareNumerator);
@@ -133,25 +133,31 @@ export function buildSuccessionTrace({
   const initialOwnershipSnapshot = ownershipSnapshot(initialHoldings);
   const initialOwnershipFractionSnapshot = ownershipFractionSnapshot(initialHoldings);
 
-  const initialEvents = (property.owners || [])
-    .filter((owner) => owner.personId && initialOwnerShare(owner) > 0)
-    .map((owner, index) => {
-      const share = initialOwnerShare(owner);
-      const shareFraction = initialOwnerFraction(owner);
-      return {
-        id: `initial-${owner.id || index}`,
-        type: "initial",
-        personId: owner.personId,
-        ownershipSnapshot: initialOwnershipSnapshot,
-        ownershipFractionSnapshot: initialOwnershipFractionSnapshot,
-        date: "",
-        title: "Initial ownership",
-        description: `${partyName(owner.personId)} starts with ${shareLabel(
-          share,
-          shareFraction,
-        )} of ${propertyName}.`,
-      };
-    });
+  const eligibleInitialOwners = (property.owners || []).filter(
+    (owner) => owner.personId && initialOwnerShare(owner) > 0,
+  );
+  const initialPercentageDisplay = reconcileFractionPercentageDisplay(
+    eligibleInitialOwners.map(initialOwnerFraction),
+    { keys: eligibleInitialOwners.map((owner) => owner.personId || owner.id) },
+  ).rows;
+  const initialEvents = eligibleInitialOwners.map((owner, index) => {
+    const share = initialOwnerShare(owner);
+    const shareFraction = initialOwnerFraction(owner);
+    return {
+      id: `initial-${owner.id || index}`,
+      type: "initial",
+      personId: owner.personId,
+      ownershipSnapshot: initialOwnershipSnapshot,
+      ownershipFractionSnapshot: initialOwnershipFractionSnapshot,
+      date: "",
+      title: "Initial ownership",
+      description: `${partyName(owner.personId)} starts with ${shareLabel(
+        share,
+        shareFraction,
+        initialPercentageDisplay[index]?.displayPercentageLabel,
+      )} of ${propertyName}.`,
+    };
+  });
 
   const successionEvents = (propertyReport.ownership?.transmissions || []).map(
     (transmission, index) => {
@@ -159,7 +165,7 @@ export function buildSuccessionTrace({
       const estateShare = Math.max(0, Number(transmission.amount) || 0);
       const estateFraction =
         transmission.amountFraction || approximateFraction(Math.max(0, estateShare));
-      const recipients = allocationEntries(transmission.allocations)
+      const recipientRows = allocationEntries(transmission.allocations)
         .filter(([, allocatedShare]) => Number(allocatedShare) > 0)
         .map(([recipientId, allocatedShare]) => {
           const resultingShare = estateShare * Number(allocatedShare);
@@ -167,11 +173,20 @@ export function buildSuccessionTrace({
             transmission.exactAllocations?.get?.(recipientId) ||
             approximateFraction(Number(allocatedShare) || 0);
           const resultingFraction = multiplyFractions(estateFraction, allocationFraction);
-          return `${partyName(recipientId)} receives ${shareLabel(
+          return { recipientId, resultingShare, resultingFraction };
+        });
+      const recipientPercentageDisplay = reconcileFractionPercentageDisplay(
+        recipientRows.map(({ resultingFraction }) => resultingFraction),
+        { keys: recipientRows.map(({ recipientId }) => recipientId) },
+      ).rows;
+      const recipients = recipientRows.map(
+        ({ recipientId, resultingShare, resultingFraction }, recipientIndex) =>
+          `${partyName(recipientId)} receives ${shareLabel(
             resultingShare,
             resultingFraction.error ? null : resultingFraction,
-          )}`;
-        });
+            recipientPercentageDisplay[recipientIndex]?.displayPercentageLabel,
+          )}`,
+      );
       const basis = transmission.basis === "will" ? "under the will" : "by intestacy";
       return {
         id: `succession-${transmission.deceasedId}-${index}`,
@@ -331,6 +346,7 @@ export function buildSuccessionTrace({
                       return `${owner.name || partyName(owner.id)} ${shareLabel(
                         presentation.share,
                         presentation.shareFraction,
+                        presentation.displayPercentageLabel,
                       )}, worth ${money.format(value)}`;
                     })
                     .join("; ")}`

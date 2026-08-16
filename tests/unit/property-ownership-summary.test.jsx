@@ -167,6 +167,60 @@ describe("PropertyOwnershipSummary", () => {
     expect(
       [...container.querySelectorAll(".owner-value")].map((value) => value.textContent),
     ).toEqual(["Current value €0.34", "Current value €0.33", "Current value €0.33"]);
+    const displayedPercentages = [
+      ...container.querySelectorAll(".owner-share > small:first-of-type"),
+    ]
+      .map((label) => label.textContent)
+      .filter((label) => label.endsWith("%"));
+    expect(displayedPercentages).toEqual(["33.34%", "33.33%", "33.33%"]);
+    expect(displayedPercentages.reduce((total, label) => total + Number.parseFloat(label), 0)).toBe(
+      100,
+    );
+  });
+
+  it("uses the reconciled row total instead of masking a near-whole title as 100%", () => {
+    const people = ["first", "second", "third"].map((id) => ({
+      id,
+      fullName: `Owner ${id}`,
+    }));
+    const owners = [
+      {
+        id: "first",
+        share: 3333 / 10000,
+        shareFraction: { numerator: 3333, denominator: 10000 },
+      },
+      ...people.slice(1).map((person) => ({
+        id: person.id,
+        share: 1 / 3,
+        shareFraction: { numerator: 1, denominator: 3 },
+      })),
+    ];
+
+    act(() =>
+      root.render(
+        <PropertyOwnershipSummary
+          people={people}
+          outsideParties={[]}
+          transfers={[]}
+          startingOwnership={{}}
+          vendorReport={{
+            ledger: {
+              owners,
+              parties: people.map((person) => ({ id: person.id, name: person.fullName })),
+              total: 29999 / 30000,
+              totalFraction: { numerator: 29999, denominator: 30000 },
+            },
+          }}
+        />,
+      ),
+    );
+
+    expect(
+      [...container.querySelectorAll(".owner-share > small:first-of-type")].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(["33.33%", "33.33%", "33.33%"]);
+    expect(container.querySelector(".ledger-total strong").textContent).toBe("99.99%");
   });
 
   it("uses the same owner totals as Tax Calculation for split acquisition sources", () => {
@@ -459,6 +513,46 @@ describe("PropertyOwnershipSummary", () => {
     expect(container.querySelector('[role="alert"]').textContent).toContain(
       "larger share than the calculator shows it owned",
     );
+  });
+
+  it("rounds an outside-owner transfer percentage to two decimal places on blur", () => {
+    renderCompanySummary();
+    act(() =>
+      container
+        .querySelector('button[aria-label="Open Harbour Holdings Limited owner card"]')
+        .click(),
+    );
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Add sale or donation")
+        .click(),
+    );
+    act(() => {
+      setSelect(
+        container.querySelector('select[aria-label="Outside owner transfer measurement"]'),
+        "defined-share",
+      );
+      setSelect(
+        container.querySelector('select[aria-label="Outside owner share format"]'),
+        "percentage",
+      );
+    });
+
+    const percentage = container.querySelector(
+      'input[aria-label="Outside owner transfer percentage"]',
+    );
+    expect(percentage.step).toBe("0.01");
+    expect(percentage.inputMode).toBe("decimal");
+
+    act(() => {
+      percentage.focus();
+      setInput(percentage, "33.335");
+      percentage.blur();
+    });
+
+    expect(
+      container.querySelector('input[aria-label="Outside owner transfer percentage"]').value,
+    ).toBe("33.34");
   });
 
   it("preserves the exact whole-property amount when editing a legacy outside-owner transfer", () => {

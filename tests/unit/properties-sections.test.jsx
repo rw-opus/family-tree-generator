@@ -612,6 +612,49 @@ describe("unified Property & Tax workspace", () => {
     expect(container.querySelector(".property-ownership-summary")).toBeNull();
   });
 
+  it("does not disguise a near-complete initial allocation as 100% in its notice", () => {
+    const nearCompleteOwners = [
+      {
+        id: "first-title",
+        personId: "first",
+        shareNumerator: 3333,
+        shareDenominator: 10000,
+      },
+      {
+        id: "second-title",
+        personId: "second",
+        shareNumerator: 1,
+        shareDenominator: 3,
+      },
+      {
+        id: "third-title",
+        personId: "third",
+        shareNumerator: 1,
+        shareDenominator: 3,
+      },
+    ];
+    const nearCompletePeople = ["first", "second", "third"].map((id) => ({
+      id,
+      fullName: id,
+    }));
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[{ ...properties[0], owners: nearCompleteOwners }]}
+          people={nearCompletePeople}
+          outsideParties={[]}
+          singleProperty
+          section="tax"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Initial ownership totals 99.99%.");
+    expect(container.textContent).not.toContain("Initial ownership totals 100%.");
+  });
+
   describe("multi-property workspace", () => {
     it("lists every property with its own address and lets a second property be added", () => {
       const onChange = vi.fn();

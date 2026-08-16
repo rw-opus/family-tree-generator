@@ -31,6 +31,7 @@ import {
   legacyHistoricalLawWarning,
   successionRuleset,
 } from "./successionRules.js";
+import { reconcileFractionPercentageDisplay } from "./ownershipPresentation.js";
 
 const number = (input) => Math.max(0, Number(input) || 0);
 export const INTESTACY_SHARE_EPSILON = 1e-8;
@@ -1173,17 +1174,17 @@ function buildFamilyOwnershipCore(
     }
     const allocations = result.exactShares || exactShareMap(result.shares);
     const allocatedFraction = sumExactShares(allocations);
-    const allocated = fractionToNumber(allocatedFraction);
     if (
       basis === "will" &&
       !allocatedFraction.error &&
       compareFractions(allocatedFraction, WHOLE_FRACTION) !== 0
     ) {
-      result.warnings.push(
-        `Will beneficiary shares total ${(allocated * 100).toLocaleString("en-MT", {
-          maximumFractionDigits: 2,
-        })}%, not 100%.`,
-      );
+      const allocationEntries = [...allocations.entries()];
+      const allocatedPercentageLabel = reconcileFractionPercentageDisplay(
+        allocationEntries.map(([, fraction]) => fraction),
+        { keys: allocationEntries.map(([personId]) => personId) },
+      ).totalDisplayPercentageLabel;
+      result.warnings.push(`Will beneficiary shares total ${allocatedPercentageLabel}, not 100%.`);
     }
     if (allocatedFraction.error || compareFractions(allocatedFraction, WHOLE_FRACTION) > 0) {
       const warning = allocatedFraction.error
