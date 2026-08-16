@@ -105,13 +105,8 @@ export function FamilyTreeCanvas({
   const dragRef = useRef(null);
   const lastCentredPersonRef = useRef("");
   const [panHintVisible, setPanHintVisible] = useState(true);
-  const [navigatorState, setNavigatorState] = useState({
-    visible: false,
-    left: 0,
-    top: 0,
-    width: 100,
-    height: 100,
-  });
+  const [navigatorState, setNavigatorState] = useState({ visible: false });
+  const navigatorViewportRef = useRef(null);
   const cleanPeople = useMemo(
     () =>
       people.filter((person) => person.id || person.fullName || personDesignations(person).length),
@@ -267,22 +262,18 @@ export function FamilyTreeCanvas({
     // A tenth of a percent is finer than the mini-map can draw, so sub-pixel
     // drift no longer costs a render of the whole tree.
     const round = (value) => Math.round(value * 10) / 10;
-    const next = {
-      visible: scrollWidth > chart.clientWidth + 2 || scrollHeight > chart.clientHeight + 2,
-      left: round((chart.scrollLeft / scrollWidth) * 100),
-      top: round((chart.scrollTop / scrollHeight) * 100),
-      width: round(Math.min(100, (chart.clientWidth / scrollWidth) * 100)),
-      height: round(Math.min(100, (chart.clientHeight / scrollHeight) * 100)),
-    };
-    setNavigatorState((current) =>
-      current.visible === next.visible &&
-      current.left === next.left &&
-      current.top === next.top &&
-      current.width === next.width &&
-      current.height === next.height
-        ? current
-        : next,
-    );
+    const viewport = navigatorViewportRef.current;
+    if (viewport) {
+      viewport.style.left = `${round((chart.scrollLeft / scrollWidth) * 100)}%`;
+      viewport.style.top = `${round((chart.scrollTop / scrollHeight) * 100)}%`;
+      viewport.style.width = `${round(Math.min(100, (chart.clientWidth / scrollWidth) * 100))}%`;
+      viewport.style.height = `${round(Math.min(100, (chart.clientHeight / scrollHeight) * 100))}%`;
+    }
+
+    // Only whether the mini-map exists at all is React's business. That changes
+    // when the tree outgrows the viewport, not while a finger is moving.
+    const visible = scrollWidth > chart.clientWidth + 2 || scrollHeight > chart.clientHeight + 2;
+    setNavigatorState((current) => (current.visible === visible ? current : { visible }));
   }, []);
 
   const updateNavigator = useCallback(() => {
@@ -585,15 +576,10 @@ export function FamilyTreeCanvas({
         });
       }}
     >
-      <span
-        className="tree-mini-map-viewport"
-        style={{
-          left: `${navigatorState.left}%`,
-          top: `${navigatorState.top}%`,
-          width: `${navigatorState.width}%`,
-          height: `${navigatorState.height}%`,
-        }}
-      />
+      {/* Position is written straight to this node during a pan rather than
+          held in state. It changes every frame, so as state it re-rendered the
+          canvas and every person card on every frame of every drag. */}
+      <span ref={navigatorViewportRef} className="tree-mini-map-viewport" />
     </button>
   ) : null;
 
