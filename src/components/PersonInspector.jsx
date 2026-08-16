@@ -36,6 +36,14 @@ import {
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
+import { roundMoney } from "../domain/money.js";
+import {
+  buildCurrentOwnerPresentations,
+  formatOwnershipFraction,
+  formatOwnershipPercentage,
+  ownerPresentationsById,
+  recordedNonNegativeMoney,
+} from "../domain/ownershipPresentation.js";
 import {
   addFractions,
   MAX_FRACTION_INTEGER,
@@ -152,11 +160,8 @@ function initials(name) {
 }
 
 function ownershipLabel(share = 0, shareDisplay = "both", exactFraction = null) {
-  const fraction = exactFraction?.denominator ? exactFraction : approximateFraction(share);
-  const fractionText = `${fraction.numerator}/${fraction.denominator}`;
-  const percentageText = `${(share * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 2,
-  })}%`;
+  const fractionText = formatOwnershipFraction(share, exactFraction);
+  const percentageText = formatOwnershipPercentage(share, exactFraction);
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;
   return `${fractionText} · ${percentageText}`;
@@ -193,6 +198,7 @@ export function PersonInspector({
   taxCalculationReport = null,
   ownershipByPerson = {},
   ownershipFractionsByPerson = {},
+  currentOwnerPresentationsByPerson = null,
   hasAnyPropertyOwnership = false,
   causaMortisCoverage = [],
   selectedPersonId,
@@ -802,6 +808,7 @@ export function PersonInspector({
   };
 
   const activeProperty = properties[0] || null;
+  const activePropertySaleValue = activeProperty?.saleValue;
   const workingTransferProperty = useMemo(
     () =>
       activeProperty && editingTransferId
@@ -822,6 +829,32 @@ export function PersonInspector({
         : null),
     [activeProperty, outsideParties, people, vendorReport],
   );
+  const resolvedCurrentOwnerPresentationsByPerson = useMemo(() => {
+    if (currentOwnerPresentationsByPerson) return currentOwnerPresentationsByPerson;
+    const ledgerOwners = propertyVendorReport?.ledger?.owners || [];
+    const presentationOwners = ledgerOwners.length
+      ? ledgerOwners
+      : Object.entries(ownershipByPerson).map(([id, share]) => ({
+          id,
+          personId: id,
+          share,
+          shareFraction: ownershipFractionsByPerson[id],
+        }));
+    return ownerPresentationsById(
+      buildCurrentOwnerPresentations(
+        presentationOwners,
+        activePropertySaleValue,
+        resolvedTaxCalculationReport,
+      ),
+    );
+  }, [
+    activePropertySaleValue,
+    currentOwnerPresentationsByPerson,
+    ownershipByPerson,
+    ownershipFractionsByPerson,
+    propertyVendorReport?.ledger?.owners,
+    resolvedTaxCalculationReport,
+  ]);
   const workingTransferReport = useMemo(
     () =>
       editingTransferId && workingTransferProperty
@@ -1385,6 +1418,7 @@ export function PersonInspector({
 
   const hasOwnership = Object.prototype.hasOwnProperty.call(ownershipByPerson, selectedPerson.id);
   const ownership = hasOwnership ? ownershipByPerson[selectedPerson.id] : 0;
+  const currentOwnerPresentation = resolvedCurrentOwnerPresentationsByPerson[selectedPerson.id];
   const isDeceased =
     Boolean(selectedPerson.isDeceased) || hasDesignation(selectedPerson, "Deceased");
   const currentInitialTaxRecordIds = new Set(
@@ -1556,15 +1590,19 @@ export function PersonInspector({
         (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
   const displayedGivenNames = personGivenNames(selectedPerson);
   const displayedSurname = personSurname(selectedPerson);
-  const propertySaleValue = Number(properties[0]?.saleValue) || 0;
-  const estimatedPropertyValue = propertySaleValue * ownership;
+  const recordedPropertySaleValue = recordedNonNegativeMoney(properties[0]?.saleValue);
   const estateShareAtDeathFraction = fullyTransferredInterVivos
     ? ZERO_FRACTION
     : calculatedEstateShareFraction;
   const hasEstateShareAtDeath =
     fullyTransferredInterVivos || estateTransmissionFractions.length > 0;
   const estateShareAtDeath = fractionToNumber(estateShareAtDeathFraction);
-  const estateValueAtDeath = propertySaleValue * estateShareAtDeath;
+  const estateShareIsCurrent =
+    Boolean(currentOwnerPresentation) &&
+    compareFractions(estateShareAtDeathFraction, currentOwnerPresentation.shareFraction) === 0;
+  const estateValueAtDeath = estateShareIsCurrent
+    ? recordedNonNegativeMoney(currentOwnerPresentation.value)
+    : null;
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
   const partnerRelationshipsById = new Map(
@@ -1706,12 +1744,25 @@ export function PersonInspector({
               ? "This removes the person from this family only; the shared record remains elsewhere."
               : "No partner or descendant dependencies. Confirmation is required.";
 
-  const displayedPropertyShare = isDeceased ? estateShareAtDeath : ownership;
+  const displayedPropertyShare = isDeceased
+    ? estateShareAtDeath
+    : (currentOwnerPresentation?.share ?? ownership);
   const displayedPropertyShareFraction = isDeceased
     ? estateShareAtDeathFraction
-    : ownershipFractionsByPerson[selectedPerson.id];
-  const hasDisplayedPropertyShare = isDeceased ? hasEstateShareAtDeath : hasOwnership;
-  const displayedPropertyValue = isDeceased ? estateValueAtDeath : estimatedPropertyValue;
+    : (currentOwnerPresentation?.shareFraction ?? ownershipFractionsByPerson[selectedPerson.id]);
+  const hasDisplayedPropertyShare = isDeceased
+    ? hasEstateShareAtDeath
+    : Boolean(currentOwnerPresentation) || hasOwnership;
+  const displayedPropertyValue = isDeceased
+    ? estateValueAtDeath
+    : recordedNonNegativeMoney(currentOwnerPresentation?.value);
+  const unavailablePropertyValueMessage =
+    isDeceased &&
+    hasEstateShareAtDeath &&
+    recordedPropertySaleValue !== null &&
+    !estateShareIsCurrent
+      ? "Current value not shown because this is a historical share."
+      : "Current value not calculated (selling price is optional).";
   const propertyShareSummary = (
     <section
       className={`person-share-summary${isDeceased ? " estate-balance-step" : ""}`}
@@ -1758,9 +1809,9 @@ export function PersonInspector({
             : "Not yet calculated"}
         </strong>
         <small>
-          {hasDisplayedPropertyShare && (propertySaleValue > 0 || displayedPropertyShare === 0)
+          {hasDisplayedPropertyShare && displayedPropertyValue !== null
             ? `Current value ${money.format(displayedPropertyValue)}`
-            : "Current value not calculated (selling price is optional)."}
+            : unavailablePropertyValueMessage}
         </small>
       </div>
       {!isDeceased && (
@@ -2179,7 +2230,10 @@ export function PersonInspector({
             const recipient =
               peopleById.get(entry.buyerId) || outsidePartiesById.get(entry.buyerId);
             const amountFraction = entry.amountFraction || ZERO_FRACTION;
-            const currentValue = propertySaleValue * fractionToNumber(amountFraction);
+            const currentValue =
+              recordedPropertySaleValue === null
+                ? null
+                : roundMoney(recordedPropertySaleValue * fractionToNumber(amountFraction));
             return (
               <div
                 className={`lifetime-transfer-record${entry.error ? " invalid" : ""}`}
@@ -2212,7 +2266,7 @@ export function PersonInspector({
                             amountFraction,
                           )}
                         </b>
-                        {propertySaleValue > 0 && <small>{money.format(currentValue)}</small>}
+                        {currentValue !== null && <small>{money.format(currentValue)}</small>}
                       </>
                     )}
                   </span>

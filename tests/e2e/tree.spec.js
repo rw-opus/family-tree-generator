@@ -93,4 +93,20 @@ test.describe("family tree canvas", () => {
       "Current holding value",
     );
   });
+
+  test("prints the family name once in normal and A3 tree output", async ({ page }) => {
+    const printTitle = page.locator(".family-chart-print-title");
+    await expect(printTitle).toHaveText("Borg Fictional Estate");
+    await expect(printTitle).toBeHidden();
+
+    await page.emulateMedia({ media: "print" });
+    await expect(printTitle).toBeVisible();
+    await page.emulateMedia({ media: "screen" });
+
+    await page.getByRole("button", { name: "Print preview" }).click();
+    const preview = page.locator("iframe.a3-preview-frame").contentFrame();
+    await expect(preview.locator(".a3-page-header strong")).toHaveCount(1);
+    await expect(preview.locator(".a3-page-header strong")).toHaveText("Borg Fictional Estate");
+    await expect(preview.locator(".a3-print-tree .family-chart-print-title")).toBeHidden();
+  });
 });

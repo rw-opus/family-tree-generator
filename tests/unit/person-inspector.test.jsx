@@ -1950,6 +1950,131 @@ describe("PersonInspector", () => {
     expect(onShareDisplayChange).toHaveBeenCalledWith("both");
   });
 
+  it("uses one canonical current-owner presentation for a living person's share and value", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              fullName: "Maria Example",
+              sex: "Female",
+              designations: [],
+              spouseIds: [],
+            },
+          ]}
+          properties={[{ id: "property", saleValue: "1" }]}
+          ownershipByPerson={{ person: 0.5 }}
+          ownershipFractionsByPerson={{ person: { numerator: 1, denominator: 2 } }}
+          currentOwnerPresentationsByPerson={{
+            person: {
+              id: "person",
+              share: 1 / 3,
+              shareFraction: { numerator: 1, denominator: 3 },
+              percentage: 100 / 3,
+              value: 0.34,
+            },
+          }}
+          selectedPersonId="person"
+          shareDisplay="both"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.33%");
+    expect(container.querySelector(".person-share-value small").textContent).toContain("€0.34");
+  });
+
+  it("shows an explicitly recorded zero value for a living current owner", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              fullName: "Maria Example",
+              sex: "Female",
+              designations: [],
+              spouseIds: [],
+            },
+          ]}
+          properties={[{ id: "property", saleValue: 0 }]}
+          ownershipByPerson={{ person: 1 }}
+          ownershipFractionsByPerson={{ person: { numerator: 1, denominator: 1 } }}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".person-share-value small").textContent).toContain("€0.00");
+  });
+
+  it("uses a canonical value only when a deceased share at death is still the current share", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Example",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+        designations: ["Deceased"],
+        spouseIds: [],
+      },
+      { id: "second", fullName: "Second Owner", spouseIds: [], designations: [] },
+      { id: "third", fullName: "Third Owner", spouseIds: [], designations: [] },
+    ];
+    const property = {
+      id: "property",
+      saleValue: 1,
+      owners: people.map((person, index) => ({
+        id: `initial-${index}`,
+        personId: person.id,
+        shareNumerator: 1,
+        shareDenominator: 3,
+      })),
+    };
+    const renderWithPresentation = (presentation) =>
+      act(() =>
+        root.render(
+          <PersonInspector
+            people={people}
+            properties={[property]}
+            currentOwnerPresentationsByPerson={{ deceased: presentation }}
+            selectedPersonId="deceased"
+            shareDisplay="both"
+            onChange={vi.fn()}
+            onSelectPerson={vi.fn()}
+          />,
+        ),
+      );
+
+    renderWithPresentation({
+      id: "deceased",
+      share: 1 / 3,
+      shareFraction: { numerator: 1, denominator: 3 },
+      value: 0.34,
+    });
+
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.33%");
+    expect(container.querySelector(".person-share-value small").textContent).toContain("€0.34");
+
+    renderWithPresentation({
+      id: "deceased",
+      share: 0.1,
+      shareFraction: { numerator: 1, denominator: 10 },
+      value: 0.1,
+    });
+
+    expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.33%");
+    expect(container.querySelector(".person-share-value small").textContent).toBe(
+      "Current value not shown because this is a historical share.",
+    );
+  });
+
   it("shows the selected living vendor's calculated Final Withholding Tax", () => {
     const people = [
       {
@@ -5401,7 +5526,10 @@ describe("PersonInspector deceased property flow", () => {
     expect(transfer.textContent).toContain("Anna Vella");
     expect(transfer.textContent).toContain("1/4");
     expect(balance.textContent).toContain("3/4");
-    expect(balance.textContent).toContain("€750,000.00");
+    expect(balance.textContent).toContain(
+      "Current value not shown because this is a historical share.",
+    );
+    expect(balance.textContent).not.toContain("€750,000.00");
     expect(death.compareDocumentPosition(transfer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
       transfer.compareDocumentPosition(balance) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -5858,7 +5986,7 @@ describe("PersonInspector legacy lifetime disposal records", () => {
     expect(transferCheckbox.disabled).toBe(false);
     expect(container.querySelector(".estate-balance-step").textContent).toContain("0/1");
     expect(container.querySelector(".estate-balance-step").textContent).toContain(
-      "Current value €0.00",
+      "Current value not calculated",
     );
     expect(container.querySelector(".person-succession").classList).toContain("fully-transferred");
     expect(container.querySelector(".estate-succession-step")).toBeNull();

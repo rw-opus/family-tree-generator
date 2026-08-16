@@ -3,6 +3,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PropertyOwnershipSummary } from "../../src/components/PropertyOwnershipSummary.jsx";
+import {
+  buildPropertyVendorTaxReport,
+  buildTaxCalculationReport,
+} from "../../src/domain/propertyVendorTax.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -48,6 +52,26 @@ describe("PropertyOwnershipSummary", () => {
       ),
     );
     return onSelectPerson;
+  }
+
+  function renderOwnerValues({ saleValue, shares, taxCalculationReport = null }) {
+    const people = shares.map((share, index) => ({
+      id: `owner-${index + 1}`,
+      fullName: `Owner ${index + 1}`,
+      share,
+    }));
+    act(() =>
+      root.render(
+        <PropertyOwnershipSummary
+          people={people}
+          outsideParties={[]}
+          property={{ id: "property", saleValue }}
+          startingOwnership={Object.fromEntries(people.map((person) => [person.id, person.share]))}
+          transfers={[]}
+          taxCalculationReport={taxCalculationReport}
+        />,
+      ),
+    );
   }
 
   const setSelect = (select, value) => {
@@ -107,7 +131,7 @@ describe("PropertyOwnershipSummary", () => {
     return { onChange, property };
   }
 
-  it("shows current ownership and immutable transaction history", () => {
+  it("shows current ownership without duplicating the succession trace", () => {
     renderSummary();
 
     const ownerRows = [...container.querySelectorAll(".read-only-owner-row")].map((row) =>
@@ -119,9 +143,8 @@ describe("PropertyOwnershipSummary", () => {
         expect.stringMatching(/Maria Vella.*1\/4.*25%/),
       ]),
     );
-    expect(container.textContent).toContain("Recorded transfer history");
-    expect(container.textContent).toContain("25/05/2025");
-    expect(container.textContent).toContain("Donation · 1/4 of the property (25%)");
+    expect(container.textContent).not.toContain("Recorded transfer history");
+    expect(container.textContent).not.toContain("25/05/2025");
 
     expect(container.querySelector("form")).toBeNull();
     expect(container.querySelector("select")).toBeNull();
@@ -130,13 +153,126 @@ describe("PropertyOwnershipSummary", () => {
     expect(container.textContent).not.toContain("Add an outside buyer or company");
   });
 
-  it("opens family-tree owners from both the title and history", () => {
+  it("shows each current owner's cent-exact share of the recorded property value", () => {
+    renderOwnerValues({ saleValue: "1000000", shares: [0.75, 0.25] });
+
+    expect(
+      [...container.querySelectorAll(".owner-value")].map((value) => value.textContent),
+    ).toEqual(["Current value €750,000.00", "Current value €250,000.00"]);
+  });
+
+  it("reconciles rounded owner values to the recorded total", () => {
+    renderOwnerValues({ saleValue: "1", shares: [1 / 3, 1 / 3, 1 / 3] });
+
+    expect(
+      [...container.querySelectorAll(".owner-value")].map((value) => value.textContent),
+    ).toEqual(["Current value €0.34", "Current value €0.33", "Current value €0.33"]);
+  });
+
+  it("uses the same owner totals as Tax Calculation for split acquisition sources", () => {
+    const people = [
+      { id: "owner-a", fullName: "Owner A", wills: [], causaMortisDeclarations: [] },
+      { id: "owner-b", fullName: "Owner B", wills: [], causaMortisDeclarations: [] },
+    ];
+    const property = {
+      id: "property",
+      saleValue: "1000000",
+      owners: [
+        {
+          id: "initial-a",
+          personId: "owner-a",
+          shareNumerator: 5,
+          shareDenominator: 6,
+          acquisitionDate: "2010-01-01",
+        },
+        {
+          id: "initial-b",
+          personId: "owner-b",
+          shareNumerator: 1,
+          shareDenominator: 6,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [
+        {
+          id: "source-a-1",
+          ownerId: "owner-a",
+          shareNumerator: 1,
+          shareDenominator: 6,
+          acquisitionType: "purchase",
+          acquisitionDate: "2010-01-01",
+          acquisitionValue: 100000,
+        },
+        {
+          id: "source-a-2",
+          ownerId: "owner-a",
+          shareNumerator: 4,
+          shareDenominator: 6,
+          acquisitionType: "purchase",
+          acquisitionDate: "2010-01-01",
+          acquisitionValue: 400000,
+        },
+        {
+          id: "source-b-1",
+          ownerId: "owner-b",
+          shareNumerator: 1,
+          shareDenominator: 6,
+          acquisitionType: "purchase",
+          acquisitionDate: "2010-01-01",
+          acquisitionValue: 100000,
+        },
+      ],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(property, people, []);
+    const taxCalculationReport = buildTaxCalculationReport(property, people, [], vendorReport);
+
+    act(() =>
+      root.render(
+        <PropertyOwnershipSummary
+          people={people}
+          outsideParties={[]}
+          property={property}
+          startingOwnership={vendorReport.ownership.ownershipByPerson}
+          transfers={[]}
+          vendorReport={vendorReport}
+          taxCalculationReport={taxCalculationReport}
+        />,
+      ),
+    );
+
+    expect(
+      [...container.querySelectorAll(".owner-value")].map((value) => value.textContent),
+    ).toEqual(["Current value €833,333.34", "Current value €166,666.66"]);
+    expect(taxCalculationReport.vendors.map((vendor) => vendor.attributedSaleValue)).toEqual([
+      833333.34, 166666.66,
+    ]);
+  });
+
+  it.each(["", "not-a-number", -1])(
+    "does not invent an owner value when the property value is %j",
+    (saleValue) => {
+      renderOwnerValues({ saleValue, shares: [1] });
+
+      expect(container.querySelector(".owner-value")).toBeNull();
+      expect(container.textContent).not.toContain("€0.00");
+    },
+  );
+
+  it("preserves an explicitly recorded zero property value", () => {
+    renderOwnerValues({ saleValue: 0, shares: [1] });
+
+    expect(container.querySelector(".owner-value").textContent).toBe("Current value €0.00");
+  });
+
+  it("opens family-tree owners from the current title", () => {
     const onSelectPerson = renderSummary();
     const sellerButtons = [...container.querySelectorAll(".ownership-person-link")].filter(
       (button) => button.textContent === "Joseph Borg",
     );
 
-    expect(sellerButtons.length).toBeGreaterThanOrEqual(2);
+    expect(sellerButtons).toHaveLength(1);
     act(() => sellerButtons[0].click());
     expect(onSelectPerson).toHaveBeenCalledWith("seller");
   });
@@ -323,31 +459,6 @@ describe("PropertyOwnershipSummary", () => {
     expect(container.querySelector('[role="alert"]').textContent).toContain(
       "larger share than the calculator shows it owned",
     );
-  });
-
-  it("keeps a sold-out outside owner accessible from its transfer-history seller link", () => {
-    renderCompanySummary({
-      transfers: [
-        {
-          id: "sold-out",
-          kind: "sale",
-          sellerId: "company",
-          buyerId: "buyer",
-          numerator: 1,
-          denominator: 1,
-          amountType: "whole-property",
-          date: "2025-05-25",
-        },
-      ],
-    });
-
-    const historyLink = container.querySelector(
-      'button[aria-label="Open Harbour Holdings Limited owner card"]',
-    );
-    expect(historyLink).not.toBeNull();
-    act(() => historyLink.click());
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(container.textContent).not.toContain("Add another sale or donation");
   });
 
   it("preserves the exact whole-property amount when editing a legacy outside-owner transfer", () => {
@@ -538,56 +649,6 @@ describe("PropertyOwnershipSummary", () => {
     // The heading is still named for the section it labels.
     expect(container.querySelector("#current-title").textContent).toBe("Current ownership");
     expect(container.querySelector(".section-heading .eyebrow")).toBeNull();
-  });
-
-  it("opens an outside party from either side of a transfer-history row", () => {
-    // The two sides of a history row were not rendered alike: the seller was
-    // offered its owner card and the buyer was left as bare text, so the same
-    // outside party was a link in one column and dead text in the next.
-    const donor = { id: "company-a", name: "Alpha Holdings Limited", type: "company" };
-    const donee = { id: "company-b", name: "Beta Holdings Limited", type: "company" };
-    const gift = {
-      id: "outside-gift",
-      kind: "donation",
-      sellerId: donor.id,
-      buyerId: donee.id,
-      numerator: 1,
-      denominator: 2,
-      amountType: "whole-property",
-      date: "2025-01-01",
-    };
-    act(() =>
-      root.render(
-        <PropertyOwnershipSummary
-          people={[]}
-          outsideParties={[donor, donee]}
-          property={{
-            id: "outside-chain",
-            owners: [
-              { id: "alpha-title", personId: donor.id, shareNumerator: 1, shareDenominator: 1 },
-            ],
-            transfers: [gift],
-            declarations: [],
-            saleLots: [],
-          }}
-          startingOwnership={{ [donor.id]: 1 }}
-          transfers={[gift]}
-          onOutsideOwnerTransactionsChange={vi.fn()}
-        />,
-      ),
-    );
-
-    const historyRow = container.querySelector(".read-only-transfer-history .history-row");
-    const partyLinks = [...historyRow.querySelectorAll("button.ownership-person-link")].map(
-      (button) => button.textContent,
-    );
-    expect(partyLinks).toEqual(["Alpha Holdings Limited", "Beta Holdings Limited"]);
-
-    // The buyer link opens the buyer's card, not the seller's.
-    act(() => historyRow.querySelectorAll("button.ownership-person-link")[1].click());
-    expect(container.querySelector("#outside-owner-title").textContent).toBe(
-      "Beta Holdings Limited",
-    );
   });
 
   it("switches directly from an outside donee to its outside donor's owner card", () => {

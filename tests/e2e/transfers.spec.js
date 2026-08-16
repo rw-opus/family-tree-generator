@@ -17,6 +17,12 @@ const recordOutsideSale = async (page, { date = "02/02/2020", acquirer = /Pawlu/
   await page.getByRole("button", { name: "Record transfer" }).click();
 };
 
+const openTransferSellerFromTrace = async (page) => {
+  await page.getByRole("button", { name: "View full history" }).click();
+  const history = page.locator(".succession-history-dialog");
+  await history.getByRole("button", { name: /^Open seller / }).click();
+};
+
 test.describe("ownership transfers", () => {
   test.beforeEach(async ({ seeded, page }) => {
     await seeded();
@@ -31,9 +37,13 @@ test.describe("ownership transfers", () => {
     await page.getByRole("button", { name: "Back to ownership" }).click();
 
     const ownership = page.locator("#property-workspace-ownership");
-    await expect(ownership).toContainText("Recorded transfer history");
-    await expect(ownership).toContainText("Sale · 1/2 of the property (50%)");
+    await expect(ownership).not.toContainText("Recorded transfer history");
     await expect(ownership.locator(".ledger-total")).toContainText("100%");
+
+    await page.getByRole("button", { name: "View full history" }).click();
+    const history = page.locator(".succession-history-dialog");
+    await expect(history).toContainText("Property share sale");
+    await expect(history).toContainText("sells 1/2 (50%)");
   });
 
   test("reopens a sold-out owner and edits the recorded share", async ({ page }) => {
@@ -41,8 +51,8 @@ test.describe("ownership transfers", () => {
     await recordOutsideSale(page);
     await page.getByRole("button", { name: "Back to ownership" }).click();
 
-    // The company now holds nothing, but its card must still be reachable.
-    await page.locator(".outside-owner-link").first().click();
+    // The company now holds nothing, but its seller link remains in Trace succession.
+    await openTransferSellerFromTrace(page);
     await expect(page.locator(".outside-owner-dialog")).toContainText("0/1");
 
     await page.getByRole("button", { name: /Edit sale record/ }).click();
@@ -53,16 +63,15 @@ test.describe("ownership transfers", () => {
 
     await expect(page.locator(".outside-owner-dialog")).toContainText("1/4");
     await page.getByRole("button", { name: "Back to ownership" }).click();
-    await expect(page.locator("#property-workspace-ownership")).toContainText(
-      "Sale · 1/4 of the property (25%)",
-    );
+    await page.getByRole("button", { name: "View full history" }).click();
+    await expect(page.locator(".succession-history-dialog")).toContainText("sells 1/4 (25%)");
   });
 
   test("deletes a transfer and restores the previous title", async ({ page }) => {
     await openPropertyWorkspace(page);
     await recordOutsideSale(page);
     await page.getByRole("button", { name: "Back to ownership" }).click();
-    await page.locator(".outside-owner-link").first().click();
+    await openTransferSellerFromTrace(page);
 
     await page.getByRole("button", { name: /Delete sale record/ }).click();
     await expect(page.locator(".outside-owner-dialog")).toContainText("Transfer deleted.");

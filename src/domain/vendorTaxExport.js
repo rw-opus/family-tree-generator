@@ -102,14 +102,17 @@ const taxChoiceRows = (report, { sellingPriceAvailable = false } = {}) =>
 
 const successionHistoryRows = (events = []) =>
   events.length
-    ? events.map((event, index) =>
-        rowXml([
+    ? events.map((event, index) => {
+        const description = [event.description, ...(event.warnings || [])]
+          .filter(Boolean)
+          .join(" ");
+        return rowXml([
           numberCell(index + 1, "Integer"),
           stringCell(isoDateToDisplay(event.date) || event.date || "Undated"),
           stringCell(event.title || "Ownership event"),
-          mergedCell(event.description || "", 14),
-        ]),
-      )
+          mergedCell(description, 14),
+        ]);
+      })
     : [rowXml([mergedCell("No succession or ownership events are available.", 17)])];
 
 export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = []) {

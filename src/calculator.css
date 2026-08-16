@@ -667,28 +667,6 @@ button.index-row.selected {
   font-size: 0.8rem;
   font-weight: 700;
 }
-.transfer-history {
-  margin-top: 1rem;
-  border-top: 1px solid #d8e2dc;
-  padding-top: 0.8rem;
-}
-.history-row {
-  display: grid;
-  grid-template-columns: 85px minmax(180px, 0.9fr) minmax(220px, 1.2fr) auto;
-  align-items: center;
-  gap: 0.65rem;
-  border-bottom: 1px solid #e3ebe6;
-  padding: 0.55rem 0;
-  font-size: 0.78rem;
-}
-.history-row strong {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-.history-row.invalid {
-  color: #9f1f1f;
-}
 .declaration-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(230px, 0.65fr);
@@ -1068,12 +1046,6 @@ button:disabled {
 @media (max-width: 800px) {
   .declaration-layout {
     grid-template-columns: 1fr;
-  }
-  .history-row {
-    grid-template-columns: 1fr auto;
-  }
-  .history-row > :nth-child(3) {
-    grid-column: 1 / -1;
   }
 }
 @media (max-width: 620px) {
