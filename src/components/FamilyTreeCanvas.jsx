@@ -247,19 +247,51 @@ export function FamilyTreeCanvas({
     });
   }, [afterZoom, onZoomChange, zoom]);
 
-  const updateNavigator = useCallback(() => {
+  /**
+   * The mini-map follows the scroll position, so this runs on every scroll
+   * event — during a pan, that is every frame, on the same main thread that is
+   * moving the tree. Two things stop it making the pan stutter on a phone.
+   *
+   * It coalesces to one animation frame, since a phone can deliver several
+   * scroll events per frame and each one used to schedule work. And it
+   * compares against what was last published: the previous version always
+   * built a fresh object, so React could never bail out and re-rendered every
+   * person card on every frame even when the mini-map had not visibly moved.
+   */
+  const navigatorFrameRef = useRef(0);
+  const measureNavigator = useCallback(() => {
     const chart = treeRef.current;
     if (!chart) return;
     const scrollWidth = Math.max(1, chart.scrollWidth);
     const scrollHeight = Math.max(1, chart.scrollHeight);
-    setNavigatorState({
+    // A tenth of a percent is finer than the mini-map can draw, so sub-pixel
+    // drift no longer costs a render of the whole tree.
+    const round = (value) => Math.round(value * 10) / 10;
+    const next = {
       visible: scrollWidth > chart.clientWidth + 2 || scrollHeight > chart.clientHeight + 2,
-      left: (chart.scrollLeft / scrollWidth) * 100,
-      top: (chart.scrollTop / scrollHeight) * 100,
-      width: Math.min(100, (chart.clientWidth / scrollWidth) * 100),
-      height: Math.min(100, (chart.clientHeight / scrollHeight) * 100),
-    });
+      left: round((chart.scrollLeft / scrollWidth) * 100),
+      top: round((chart.scrollTop / scrollHeight) * 100),
+      width: round(Math.min(100, (chart.clientWidth / scrollWidth) * 100)),
+      height: round(Math.min(100, (chart.clientHeight / scrollHeight) * 100)),
+    };
+    setNavigatorState((current) =>
+      current.visible === next.visible &&
+      current.left === next.left &&
+      current.top === next.top &&
+      current.width === next.width &&
+      current.height === next.height
+        ? current
+        : next,
+    );
   }, []);
+
+  const updateNavigator = useCallback(() => {
+    if (navigatorFrameRef.current) return;
+    navigatorFrameRef.current = window.requestAnimationFrame(() => {
+      navigatorFrameRef.current = 0;
+      measureNavigator();
+    });
+  }, [measureNavigator]);
 
   useEffect(() => {
     const chart = treeRef.current;
@@ -294,6 +326,19 @@ export function FamilyTreeCanvas({
       chart.classList.add("is-panning");
       setPanHintVisible(false);
     };
+    // A phone can deliver several touchmove events per displayed frame, and
+    // writing scrollLeft forces layout each time. The latest position is kept
+    // and applied once per frame instead, so the work per frame is constant
+    // however fast the finger reports.
+    let panFrame = 0;
+    let panTarget = null;
+    const applyPan = () => {
+      panFrame = 0;
+      if (!panTarget) return;
+      chart.scrollLeft = panTarget.left;
+      chart.scrollTop = panTarget.top;
+      panTarget = null;
+    };
     const moveDrag = (clientX, clientY, event) => {
       const state = dragRef.current;
       if (!state) return;
@@ -302,17 +347,21 @@ export function FamilyTreeCanvas({
       // The same small threshold applies to every pointer type, so the slight
       // wobble of an ordinary click still selects the person underneath.
       if (!state.moved && Math.hypot(deltaX, deltaY) < 4) return;
+      if (!state.moved) setPanHintVisible(false);
       state.moved = true;
       event.preventDefault();
-      chart.scrollLeft = state.left - deltaX;
-      chart.scrollTop = state.top - deltaY;
-      setPanHintVisible(false);
+      panTarget = { left: state.left - deltaX, top: state.top - deltaY };
+      if (!panFrame) panFrame = window.requestAnimationFrame(applyPan);
     };
     const finishDrag = () => {
       // A pan that actually moved must not also select whatever it started on,
       // whichever pointer type made it.
       const panned = dragRef.current?.moved === true;
       dragRef.current = null;
+      // Land on the last reported position rather than wherever the coalescing
+      // frame happened to leave it.
+      if (panFrame) window.cancelAnimationFrame(panFrame);
+      applyPan();
       chart.classList.remove("is-panning");
       if (panned) suppressClickUntil = Date.now() + 500;
     };
@@ -406,6 +455,7 @@ export function FamilyTreeCanvas({
       gestureSurface.removeEventListener("touchend", stopTouchDrag);
       gestureSurface.removeEventListener("touchcancel", stopTouchDrag);
       gestureSurface.removeEventListener("click", suppressClickAfterPan, true);
+      if (panFrame) window.cancelAnimationFrame(panFrame);
     };
   }, []);
 
