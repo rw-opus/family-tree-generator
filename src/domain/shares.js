@@ -6,6 +6,23 @@ const finiteNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+/**
+ * Normalise a percentage typed by a user to the two decimal places shown by
+ * percentage controls. Empty or temporarily unusable input is left alone so a
+ * controlled field can still be cleared and retyped naturally.
+ */
+export function normalisePercentageInput(value) {
+  const input = String(value ?? "");
+  if (!input.trim()) return input;
+
+  const percentage = Number(input);
+  if (!Number.isFinite(percentage)) return input;
+
+  const adjusted = percentage + Number.EPSILON * Math.sign(percentage) * Math.abs(percentage);
+  const rounded = Math.round(adjusted * 100) / 100;
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
 export function shareFromPercentage(percentage) {
   const sharePercent = Math.max(0, finiteNumber(percentage));
   const fraction = approximateFraction(sharePercent / 100);

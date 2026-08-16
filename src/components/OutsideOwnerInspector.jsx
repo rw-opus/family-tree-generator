@@ -17,7 +17,7 @@ import {
   setDonationAcquisitionValue,
   setLivingInitialOwnerAcquisitionDate,
 } from "../domain/propertyVendorTax.js";
-import { shareFromPercentage } from "../domain/shares.js";
+import { normalisePercentageInput, shareFromPercentage } from "../domain/shares.js";
 import { selectTranchePortions } from "../domain/trancheOwnership.js";
 import { validateTransferDateChronology } from "../domain/chronology.js";
 import { DateInput } from "./DateInput.jsx";
@@ -253,7 +253,7 @@ export function OutsideOwnerInspector({
   const calculateAmount = () => {
     if (draft.amountType === "all-share") return currentHolding;
     if (draft.shareInputMode === "percentage") {
-      const input = String(draft.percentage ?? "").trim();
+      const input = normalisePercentageInput(draft.percentage).trim();
       const value = Number(input);
       if (!input || !Number.isFinite(value)) return { error: "Enter a valid percentage." };
       if (value <= 0) return { error: "The transferred percentage must be greater than zero." };
@@ -593,7 +593,7 @@ export function OutsideOwnerInspector({
             {outgoingTransfers.length ? "Add another sale or donation" : "Add sale or donation"}
           </button>
         ) : formOpen ? (
-          <form className="outside-owner-transfer-form" onSubmit={submit}>
+          <form className="outside-owner-transfer-form" noValidate onSubmit={submit}>
             <h3>{editingTransferId ? "Edit transfer" : "New transfer"}</h3>
             <label>
               Contract
@@ -725,10 +725,17 @@ export function OutsideOwnerInspector({
                         type="number"
                         min="0"
                         max={fractionToNumber(currentHolding) * 100}
-                        step="any"
+                        step="0.01"
+                        inputMode="decimal"
                         value={draft.percentage}
                         onChange={(event) =>
                           setField({ percentage: event.target.value, designation: {} })
+                        }
+                        onBlur={(event) =>
+                          setField({
+                            percentage: normalisePercentageInput(event.currentTarget.value),
+                            designation: {},
+                          })
                         }
                       />
                       <span>%</span>

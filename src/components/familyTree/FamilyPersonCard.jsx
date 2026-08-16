@@ -29,10 +29,11 @@ import {
 } from "../../domain/personCardDisplay.js";
 import { capitalisedName, compactNodeWidth, isDeceasedPerson } from "./treePresentation.js";
 
-function ownershipParts(ownership, fields, exactFraction) {
+function ownershipParts(ownership, fields, exactFraction, displayPercentageLabel = "") {
   return [
     fields.ownershipFraction && formatOwnershipFraction(ownership, exactFraction),
-    fields.ownershipPercentage && formatOwnershipPercentage(ownership, exactFraction),
+    fields.ownershipPercentage &&
+      (displayPercentageLabel || formatOwnershipPercentage(ownership, exactFraction)),
   ].filter(Boolean);
 }
 
@@ -185,7 +186,12 @@ export function FamilyPersonCard({
   const hasDisplayedOwnership = useCurrentPresentation || hasOwnership;
   const fields = normalisePersonCardFields({ personCardFields });
   const shareParts = hasDisplayedOwnership
-    ? ownershipParts(displayedOwnership, fields, displayedOwnershipFraction)
+    ? ownershipParts(
+        displayedOwnership,
+        fields,
+        displayedOwnershipFraction,
+        useCurrentPresentation ? currentOwnerPresentation.displayPercentageLabel : "",
+      )
     : [];
   const displayedShareIsCurrent =
     currentOwnerPresentation &&

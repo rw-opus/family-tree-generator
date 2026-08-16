@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import {
   editedIntestacyAllocations,
   intestacyLegalContextSignature,
   intestacyConfirmationReadiness,
-  intestacyShareTotalIsComplete,
   isPersonDeceased,
   linkedLegalSpousesFor,
   linkedSpousesMissingDeathDates,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
+import { reconcileFractionPercentageDisplay } from "../domain/ownershipPresentation.js";
 import { personChoiceLabel, sortPeopleForChoice } from "../domain/people.js";
 import {
   fractionForShare,
@@ -22,23 +22,23 @@ import { DateInput } from "./DateInput.jsx";
 import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 
 const CREATE_OUTSIDE_PARTY = "__create_outside_party__";
-const totalPercentage = (rows = []) =>
-  rows.reduce((total, row) => total + (Number(row.sharePercent) || 0), 0);
-
-function shareLabel(share, shareDisplay) {
+function shareLabel(share, shareDisplay, reconciledPercentageLabel = "") {
   const fraction = approximateFraction(share);
   const fractionText = `${fraction.numerator}/${fraction.denominator}`;
-  const percentageText = `${(share * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 2,
-  })}%`;
+  const percentageText =
+    reconciledPercentageLabel ||
+    `${(share * 100).toLocaleString("en-MT", {
+      maximumFractionDigits: 2,
+    })}%`;
   if (shareDisplay === "fraction") return fractionText;
   if (shareDisplay === "percentage") return percentageText;
   return `${fractionText} · ${percentageText}`;
 }
 
-function totalLabel(totalPercent, shareDisplay) {
-  if (intestacyShareTotalIsComplete(totalPercent)) return shareLabel(1, shareDisplay);
-  return `${totalPercent.toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
+function totalLabel(shareDisplay, percentageDisplay) {
+  const percentageLabel = percentageDisplay.totalDisplayPercentageLabel;
+  if (percentageDisplay.isWhole) return shareLabel(1, shareDisplay, percentageLabel);
+  return percentageLabel;
 }
 
 export function IntestacyProposal({
@@ -52,6 +52,13 @@ export function IntestacyProposal({
   onConfirmationChange,
 }) {
   const entries = [...(calculated?.shares || new Map()).entries()];
+  const percentageDisplay = reconcileFractionPercentageDisplay(
+    entries.map(
+      ([personId, share]) =>
+        calculated?.exactShares?.get?.(personId) || approximateFraction(Number(share) || 0),
+    ),
+    { keys: entries.map(([personId]) => personId) },
+  );
   const peopleById = new Map(people.map((person) => [person.id, person]));
   return (
     <div className="calculated-intestacy">
@@ -71,12 +78,18 @@ export function IntestacyProposal({
         )}
       </div>
       {entries.length > 0 ? (
-        entries.map(([personId, share]) => {
+        entries.map(([personId, share], index) => {
           const person = peopleById.get(personId);
           return (
             <div className="calculated-intestacy-row" key={personId}>
               <span>{displayName(person)}</span>
-              <b>{shareLabel(share, shareDisplay)}</b>
+              <b>
+                {shareLabel(
+                  share,
+                  shareDisplay,
+                  percentageDisplay.rows[index]?.displayPercentageLabel,
+                )}
+              </b>
             </div>
           );
         })
@@ -113,6 +126,7 @@ export function IntestateHeirConfirmation({
   );
   const [editingHeirs, setEditingHeirs] = useState(false);
   const [draftRows, setDraftRows] = useState([]);
+  const percentageEditsRef = useRef(new Set());
   const [draftContextSignature, setDraftContextSignature] = useState("");
   const [draftRowsModified, setDraftRowsModified] = useState(false);
   const calculatedShares = new Map(calculatedEntries);
@@ -147,7 +161,10 @@ export function IntestateHeirConfirmation({
         numeric: true,
       }),
     );
-  const total = totalPercentage(draftRows);
+  const draftPercentageDisplay = reconcileFractionPercentageDisplay(
+    draftRows.map(fractionForShare),
+    { keys: draftRows.map((row) => row.personId || row.id) },
+  );
   const editedAllocation = editedIntestacyAllocations(
     people,
     deceased.id,
@@ -369,9 +386,11 @@ export function IntestateHeirConfirmation({
               Beneficiaries before applying them.
             </small>
           )}
-          {draftRows.map((row) => {
+          {draftRows.map((row, index) => {
             const person = peopleById.get(row.personId) || outsidePartiesById.get(row.personId);
             const fraction = fractionForShare(row);
+            const displayedPercentage = draftPercentageDisplay.rows[index]?.displayPercentage;
+            const percentageBeingEdited = percentageEditsRef.current.has(row.id);
             const numerator = row.shareNumerator ?? fraction.numerator;
             const denominator = row.shareDenominator ?? fraction.denominator;
             return (
@@ -411,9 +430,22 @@ export function IntestateHeirConfirmation({
                       type="number"
                       min="0"
                       max="100"
-                      step="any"
-                      value={row.sharePercentInput ?? row.sharePercent ?? ""}
-                      onChange={(event) => updateRowPercentage(row.id, event.target.value)}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={
+                        percentageBeingEdited
+                          ? (row.sharePercentInput ?? "")
+                          : (displayedPercentage ?? row.sharePercent ?? "")
+                      }
+                      onChange={(event) => {
+                        percentageEditsRef.current.add(row.id);
+                        updateRowPercentage(row.id, event.target.value);
+                      }}
+                      onBlur={() => {
+                        percentageEditsRef.current.delete(row.id);
+                        if (row.sharePercentInput === undefined) return;
+                        updateRowFraction(row, {});
+                      }}
                     />
                     <b>%</b>
                   </span>
@@ -493,7 +525,7 @@ export function IntestateHeirConfirmation({
             >
               {draftRows.length === 0
                 ? "No edited heirs. Automatic proposal applies."
-                : `Total: ${totalLabel(total, shareDisplay)} - must equal ${
+                : `Total: ${totalLabel(shareDisplay, draftPercentageDisplay)} - must equal ${
                     shareDisplay === "fraction"
                       ? "1/1"
                       : shareDisplay === "percentage"

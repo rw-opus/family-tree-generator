@@ -6,7 +6,9 @@ import {
 import {
   buildCurrentOwnerPresentations,
   ownerPresentationsById,
+  reconcileFractionPercentageDisplay,
 } from "../domain/ownershipPresentation.js";
+import { fractionForShare } from "../domain/shares.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyOwnershipSummary } from "./PropertyOwnershipSummary.jsx";
 import { SuccessionTraceControl } from "./SuccessionTraceControl.jsx";
@@ -58,17 +60,23 @@ export function Properties({
             taxCalculationReport,
           ),
         );
-        const ownershipTotalLabel = (
-          startingOwnership.enteredTotalPercent ?? startingOwnership.totalPercent
-        ).toLocaleString("en-MT", { maximumFractionDigits: 2 });
+        const startingPercentageDisplay = reconcileFractionPercentageDisplay(
+          (property.owners || []).map(fractionForShare),
+          { keys: (property.owners || []).map((owner) => owner.personId || owner.id) },
+        );
+        const ownershipTotalLabel =
+          startingPercentageDisplay.totalDisplayPercentageLabel ||
+          `${(
+            startingOwnership.enteredTotalPercent ?? startingOwnership.totalPercent
+          ).toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
         const unassignedOwnershipLabel = startingOwnership.unassignedFraction?.denominator
           ? `${startingOwnership.unassignedFraction.numerator}/${startingOwnership.unassignedFraction.denominator}`
           : "an entered share";
         const ownershipNoticeTitle = startingOwnership.hasUnassignedOwners
-          ? `Fractions total ${ownershipTotalLabel}%, but ${unassignedOwnershipLabel} has no owner.`
+          ? `Fractions total ${ownershipTotalLabel}, but ${unassignedOwnershipLabel} has no owner.`
           : startingOwnership.isUnset
             ? "No initial ownership has been entered."
-            : `Initial ownership totals ${ownershipTotalLabel}%.`;
+            : `Initial ownership totals ${ownershipTotalLabel}.`;
         const ownershipNoticeDetail = startingOwnership.hasUnassignedOwners
           ? "Choose a person for every positive fraction."
           : startingOwnership.isUnset

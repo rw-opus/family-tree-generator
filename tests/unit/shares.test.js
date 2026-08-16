@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   fractionForShare,
+  normalisePercentageInput,
   shareFromFraction,
   shareFromFractionInput,
   shareFromPercentage,
@@ -86,5 +87,17 @@ describe("inheritance share conversion", () => {
       shareDenominator: 20,
       sharePercentInput: "45",
     });
+  });
+
+  it("rounds percentage input to at most two decimal places for display", () => {
+    expect(normalisePercentageInput("33.333")).toBe("33.33");
+    expect(normalisePercentageInput("33.335")).toBe("33.34");
+    expect(normalisePercentageInput("8.045")).toBe("8.05");
+    expect(normalisePercentageInput("50.00")).toBe("50");
+  });
+
+  it("preserves a cleared or temporarily unusable percentage input", () => {
+    expect(normalisePercentageInput("")).toBe("");
+    expect(normalisePercentageInput("not-a-number")).toBe("not-a-number");
   });
 });

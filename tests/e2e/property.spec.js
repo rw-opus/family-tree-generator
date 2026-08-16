@@ -157,3 +157,35 @@ test.describe("incomplete initial ownership", () => {
     );
   });
 });
+
+test.describe("percentage reconciliation", () => {
+  test("shows exact thirds to two decimals while the visible group totals 100%", async ({
+    seeded,
+    page,
+  }) => {
+    const thirds = estate();
+    thirds.properties[0].owners = thirds.people.map((person, index) => ({
+      id: `third-owner-${index}`,
+      personId: person.id,
+      shareNumerator: 1,
+      shareDenominator: 3,
+      sharePercent: 100 / 3,
+      acquisitionDate: "2010-05-01",
+    }));
+    await seeded(thirds);
+    await openEstate(page);
+    await openPropertyWorkspace(page);
+
+    const inputs = page.locator('input[aria-label="Initial ownership percentage"]');
+    await expect(inputs).toHaveCount(3);
+    await expect(inputs.nth(0)).toHaveValue("33.34");
+    await expect(inputs.nth(1)).toHaveValue("33.33");
+    await expect(inputs.nth(2)).toHaveValue("33.33");
+
+    const currentLabels = await page
+      .locator(".read-only-owner-row .owner-share > small:first-of-type")
+      .allTextContents();
+    expect(currentLabels).toEqual(["33.34%", "33.33%", "33.33%"]);
+    expect(currentLabels.reduce((total, label) => total + Number.parseFloat(label), 0)).toBe(100);
+  });
+});
