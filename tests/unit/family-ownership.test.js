@@ -957,7 +957,7 @@ describe("automatic family ownership", () => {
     expect(allocation.warnings).toEqual([]);
   });
 
-  it("does not block pre-2005 descendant ownership when a possible spouse death is undated", () => {
+  it("does not require a spouse death date for a resolved pre-2005 descendant estate", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -974,6 +974,24 @@ describe("automatic family ownership", () => {
     expect(allocation.destination).toBe("legacy-descendants");
     expect(allocation.shares.get("child-a")).toBeCloseTo(1 / 2);
     expect(allocation.shares.get("child-b")).toBeCloseTo(1 / 2);
+    expect(allocation.warnings.join(" ")).not.toContain("Enter the date of death for spouse");
+  });
+
+  it("requires the spouse death date from the 1 March 2005 boundary", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2005-03-01",
+        spouseIds: ["spouse"],
+      }),
+      person("spouse", { isDeceased: true, spouseIds: ["owner"] }),
+      person("child", { fatherId: "owner", motherId: "spouse" }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.destination).toBe("spouse-survival-unresolved");
+    expect(allocation.shares.size).toBe(0);
     expect(allocation.warnings.join(" ")).toContain("Enter the date of death for spouse");
   });
 
@@ -1111,7 +1129,7 @@ describe("automatic family ownership", () => {
         dateOfDeath: "1990-04-02",
         spouseIds: ["giovanna"],
       }),
-      person("giovanna", { spouseIds: ["edgar"] }),
+      person("giovanna", { isDeceased: true, spouseIds: ["edgar"] }),
       ...["wallace", "harvey", "roland", "eric"].map((id) =>
         person(id, { fatherId: "edgar", motherId: "giovanna" }),
       ),
@@ -1128,6 +1146,7 @@ describe("automatic family ownership", () => {
     expect(allocation.warnings.join(" ")).toContain("01-12-1993");
     expect(allocation.warnings.join(" ")).toContain("28-02-2005");
     expect(allocation.warnings.join(" ")).not.toContain("808");
+    expect(allocation.warnings.join(" ")).not.toContain("Enter the date of death for giovanna");
   });
 
   it("waits to identify an applicable changed section while spouse survival is unresolved", () => {

@@ -2649,6 +2649,52 @@ describe("PersonInspector", () => {
     expect(onChange.mock.calls.at(-1)[0][1].dateOfDeath).toBe("2025-01-01");
   });
 
+  it("treats an undated spouse as optional for a pre-2005 intestacy with descendants", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2005-02-28",
+        inheritanceBasis: "intestacy",
+        designations: ["Deceased"],
+        spouseIds: ["spouse"],
+      },
+      {
+        id: "spouse",
+        fullName: "Maria Borg",
+        isDeceased: true,
+        dateOfDeath: "",
+        spouseIds: ["deceased"],
+        designations: ["Deceased"],
+      },
+      {
+        id: "child",
+        fullName: "Paul Borg",
+        fatherId: "deceased",
+        motherId: "spouse",
+        spouseIds: [],
+        designations: [],
+      },
+    ];
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(
+      container.querySelector('input[aria-label="Date of death for Maria Borg"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain("Enter missing spouse death dates");
+  });
+
   it("prefills a man's surname at birth from his full name", () => {
     const person = {
       id: "person",

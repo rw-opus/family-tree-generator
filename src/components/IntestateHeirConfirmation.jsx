@@ -7,6 +7,7 @@ import {
   isPersonDeceased,
   linkedLegalSpousesFor,
   linkedSpousesMissingDeathDates,
+  spouseDeathDatesAreOptionalForIntestacy,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
@@ -133,11 +134,9 @@ export function IntestateHeirConfirmation({
   const calculatedPersonIds = new Set(calculatedShares.keys());
   const selectedPersonIds = new Set(draftRows.map((row) => row.personId).filter(Boolean));
   const linkedPartners = linkedLegalSpousesFor(people, deceased.id, deceased.dateOfDeath);
-  const partnersMissingDeathDate = linkedSpousesMissingDeathDates(
-    people,
-    deceased.id,
-    deceased.dateOfDeath,
-  );
+  const partnersMissingDeathDate = spouseDeathDatesAreOptionalForIntestacy(people, deceased.id)
+    ? []
+    : linkedSpousesMissingDeathDates(people, deceased.id, deceased.dateOfDeath);
   const availableCalledPeople = sortPeopleForChoice(
     people.filter(
       (person) => calculatedPersonIds.has(person.id) && !selectedPersonIds.has(person.id),

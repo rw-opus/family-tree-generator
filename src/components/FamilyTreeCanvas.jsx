@@ -12,6 +12,7 @@ import {
   ownerPresentationsById,
   ownershipShare,
 } from "../domain/ownershipPresentation.js";
+import { requiredSpouseDeathDatePersonIds } from "../domain/familyOwnership.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { FamilyPersonCard, familyPersonCardState } from "./familyTree/FamilyPersonCard.jsx";
 import { familyGenerationById, widestFamilyGeneration } from "./familyTree/generationRows.js";
@@ -159,6 +160,10 @@ export function FamilyTreeCanvas({
     () => widestFamilyGeneration(generationByPerson),
     [generationByPerson],
   );
+  const requiredSpouseDeathDateIds = useMemo(
+    () => requiredSpouseDeathDatePersonIds(cleanPeople),
+    [cleanPeople],
+  );
   const showActionRequiredKey = useMemo(
     () =>
       cleanPeople.some(
@@ -166,11 +171,17 @@ export function FamilyTreeCanvas({
           familyPersonCardState({
             person,
             people: cleanPeople,
+            deathDateMissing: requiredSpouseDeathDateIds.has(person.id),
             historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
             causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
           }).redActionRequired,
       ),
-    [causaMortisCoverageByPerson, cleanPeople, historicalLawWarningsByPerson],
+    [
+      causaMortisCoverageByPerson,
+      cleanPeople,
+      historicalLawWarningsByPerson,
+      requiredSpouseDeathDateIds,
+    ],
   );
 
   const centerPerson = useCallback(
@@ -522,6 +533,7 @@ export function FamilyTreeCanvas({
       person={person}
       variant={variant}
       people={cleanPeople}
+      deathDateMissing={requiredSpouseDeathDateIds.has(person.id)}
       cardName={cardName}
       ownershipByPerson={ownershipByPerson}
       ownershipFractionsByPerson={ownershipFractionsByPerson}

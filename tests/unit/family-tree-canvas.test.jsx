@@ -217,6 +217,57 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
+  it("does not mark an optional spouse death date for a pre-2005 estate with descendants", () => {
+    renderCanvas({
+      people: [
+        person("owner", "Joseph Borg", {
+          isDeceased: true,
+          dateOfDeath: "2005-02-28",
+          inheritanceBasis: "intestacy",
+          spouseIds: ["spouse"],
+        }),
+        person("spouse", "Maria Borg", {
+          isDeceased: true,
+          spouseIds: ["owner"],
+        }),
+        person("child", "Paul Borg", { fatherId: "owner", motherId: "spouse" }),
+      ],
+    });
+
+    const ownerCard = container.querySelector('[data-person-id="owner"]');
+    const spouseCard = container.querySelector('[data-person-id="spouse"]');
+    expect(ownerCard.textContent).not.toContain("Date of death missing");
+    expect(spouseCard.textContent).not.toContain("Date of death missing");
+    expect(ownerCard.classList).not.toContain("succession-date-incomplete");
+    expect(spouseCard.classList).not.toContain("succession-date-incomplete");
+  });
+
+  it("marks a required missing date on that spouse's own card from 1 March 2005", () => {
+    renderCanvas({
+      people: [
+        person("owner", "Joseph Borg", {
+          isDeceased: true,
+          dateOfDeath: "2005-03-01",
+          inheritanceBasis: "intestacy",
+          spouseIds: ["spouse"],
+        }),
+        person("spouse", "Maria Borg", {
+          isDeceased: true,
+          spouseIds: ["owner"],
+        }),
+        person("child", "Paul Borg", { fatherId: "owner", motherId: "spouse" }),
+      ],
+    });
+
+    const ownerCard = container.querySelector('[data-person-id="owner"]');
+    const spouseCard = container.querySelector('[data-person-id="spouse"]');
+    expect(ownerCard.textContent).not.toContain("Date of death missing");
+    expect(ownerCard.classList).not.toContain("succession-date-incomplete");
+    expect(spouseCard.textContent).toContain("Date of death missing");
+    expect(spouseCard.classList).toContain("succession-date-incomplete");
+    expect(spouseCard.getAttribute("aria-label")).toContain("Date of death missing");
+  });
+
   it("does not flag co-parents because they are treated as married by default", () => {
     renderCanvas({
       people: [

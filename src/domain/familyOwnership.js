@@ -17,7 +17,9 @@ import {
 import {
   findPartnerRelationship,
   legalSpouseIdsForPerson,
+  normalizePartnerRelationships,
   partnerIdsForPerson,
+  partnerRelationshipKey,
   partnerRelationshipStatusAt,
 } from "./partnerRelationships.js";
 import { applyLegacyProtectedPortionsToWill } from "./legacyLegitim.js";
@@ -240,6 +242,108 @@ export function descendantsMissingDeathDates(people = [], deceasedId) {
     deceased.dateOfDeath,
     index,
   );
+}
+
+function legacyDescendantsControlIntestacyOwnership({
+  deceased,
+  ruleset,
+  descendantProbe,
+  descendantSurvivalResolved = true,
+}) {
+  return (
+    deceased?.inheritanceBasis !== "will" &&
+    ruleset.key === "pre2005" &&
+    descendantSurvivalResolved &&
+    descendantProbe.size > 0
+  );
+}
+
+/**
+ * A spouse's survival does not alter this app's full-ownership allocation when
+ * a pre-reform intestate estate passes to a resolved descendant class.
+ */
+export function spouseDeathDatesAreOptionalForIntestacy(people = [], deceasedId) {
+  const index = familyIndex(people);
+  const deceased = index.peopleById.get(deceasedId);
+  if (!deceased || !isPersonDeceased(deceased) || !deceased.dateOfDeath) return false;
+
+  const children = index.childrenByParent.get(deceased.id) || [];
+  const descendantSurvivalResolved =
+    branchesMissingSurvivalDates(children, deceased.dateOfDeath, index).length === 0;
+  const descendantProbe = descendantSurvivalResolved
+    ? allocateBranches(children, deceased.dateOfDeath, 1, index)
+    : new Map();
+
+  return legacyDescendantsControlIntestacyOwnership({
+    deceased,
+    ruleset: successionRuleset(deceased.dateOfDeath),
+    descendantProbe,
+    descendantSurvivalResolved,
+  });
+}
+
+/**
+ * Returns the people whose own missing death date is still material to a
+ * linked spouse's intestate succession. A date needed by any linked
+ * succession remains marked even if another old-law succession can omit it.
+ */
+export function requiredSpouseDeathDatePersonIds(people = []) {
+  const requiredIds = new Set();
+  const normalizedPeople = normalizePartnerRelationships(people);
+  const index = familyIndex(normalizedPeople);
+  const relationshipsByKey = new Map();
+
+  normalizedPeople.forEach((person) => {
+    (person.partnerRelationships || []).forEach((relationship) => {
+      const key = partnerRelationshipKey(person.id, relationship.personId);
+      if (key) relationshipsByKey.set(key, relationship);
+    });
+  });
+
+  normalizedPeople.forEach((deceased) => {
+    if (
+      !isPersonDeceased(deceased) ||
+      !deceased.dateOfDeath ||
+      deceased.inheritanceBasis === "will" ||
+      deceased.unmarriedOrWidowedAtDeath === true ||
+      !(deceased.spouseIds || []).length
+    ) {
+      return;
+    }
+
+    const children = index.childrenByParent.get(deceased.id) || [];
+    const descendantSurvivalResolved =
+      branchesMissingSurvivalDates(children, deceased.dateOfDeath, index).length === 0;
+    const descendantProbe = descendantSurvivalResolved
+      ? allocateBranches(children, deceased.dateOfDeath, 1, index)
+      : new Map();
+    const spouseDateOptional = legacyDescendantsControlIntestacyOwnership({
+      deceased,
+      ruleset: successionRuleset(deceased.dateOfDeath),
+      descendantProbe,
+      descendantSurvivalResolved,
+    });
+    if (spouseDateOptional) return;
+
+    (deceased.spouseIds || []).forEach((spouseId) => {
+      const spouse = index.peopleById.get(spouseId);
+      const relationship = relationshipsByKey.get(
+        partnerRelationshipKey(deceased.id, spouseId),
+      ) || {
+        type: "marriage",
+      };
+      if (
+        spouse &&
+        partnerRelationshipStatusAt(relationship, deceased.dateOfDeath) === "active" &&
+        isPersonDeceased(spouse) &&
+        !spouse.dateOfDeath
+      ) {
+        requiredIds.add(spouse.id);
+      }
+    });
+  });
+
+  return requiredIds;
 }
 
 function linkedSiblings(person, people, peopleById) {
@@ -504,7 +608,11 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     return { shares, warnings, destination: "survival-date-unresolved" };
   }
   const descendantProbe = allocateBranches(children, atDate, 1, index);
-  const legacyDescendantsControlOwnership = ruleset.key === "pre2005" && descendantProbe.size > 0;
+  const legacyDescendantsControlOwnership = legacyDescendantsControlIntestacyOwnership({
+    deceased,
+    ruleset,
+    descendantProbe,
+  });
   const marriagesMissingEndDates = linkedMarriagesMissingEndDates(people, deceased.id, atDate);
   if (marriagesMissingEndDates.length) {
     warnings.push(
@@ -519,16 +627,14 @@ function calculateIntestateAllocations(people = [], deceasedId) {
 
   const spouses = linkedLegalSpousesFor(people, deceased.id, atDate);
   const spousesWithUnknownSurvival = linkedSpousesMissingDeathDates(people, deceased.id, atDate);
-  if (spousesWithUnknownSurvival.length) {
+  if (spousesWithUnknownSurvival.length && !legacyDescendantsControlOwnership) {
     const names = spousesWithUnknownSurvival.map((person) => person.fullName || "Unnamed partner");
     warnings.push(
       `Enter the date of death for ${names.join(
         ", ",
       )} before deciding whether the linked spouse survived the deceased.`,
     );
-    if (!legacyDescendantsControlOwnership) {
-      return { shares, warnings, destination: "spouse-survival-unresolved" };
-    }
+    return { shares, warnings, destination: "spouse-survival-unresolved" };
   }
   const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
   if (livingSpouses.length > 1) {
@@ -549,7 +655,7 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         addShare(shares, spouse.id, spouseTotal / livingSpouses.length),
       );
     }
-    if (isLegacy && livingSpouses.length === 1) {
+    if (isLegacy && (livingSpouses.length || spousesWithUnknownSurvival.length)) {
       addHistoricalLawWarning(warnings, atDate, ["825"]);
     }
     if (ruleset.article815ReviewRequired) warnings.push(article815ReviewWarning());

@@ -5,7 +5,7 @@ import {
   ownershipFraction,
   recordedNonNegativeMoney,
 } from "../../domain/ownershipPresentation.js";
-import { isPersonDeceased, linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
+import { isPersonDeceased } from "../../domain/familyOwnership.js";
 import {
   findPartnerRelationship,
   partnerIdsForPerson,
@@ -67,10 +67,13 @@ export function familyPersonCardState({
   person,
   people = [],
   variant = "",
+  deathDateMissing = false,
   historicalLawWarnings = [],
   causaMortisCoverage = [],
 }) {
   const isDeceased = isDeceasedPerson(person, variant);
+  const ownDeathDateMissing =
+    deathDateMissing === true && isDeceased && !String(person.dateOfDeath || "").trim();
   const causaMortisActionRequired = causaMortisCoverage.some(isCausaMortisCoverageActionRequired);
   const recordedWills = personWills(person).filter(
     (will) => will.date || will.notaryName || will.description,
@@ -82,8 +85,6 @@ export function familyPersonCardState({
   const isTestate = person.inheritanceBasis === "will";
   const willDetailsActionRequired =
     isDeceased && isTestate && (validRecordedWills.length !== recordedWills.length || !latestWill);
-  const spousesMissingDeathDates =
-    isDeceased && !isTestate ? linkedSpousesMissingDeathDates(people, person.id) : [];
   const excludedLinkedSpouses =
     isDeceased && person.unmarriedOrWidowedAtDeath === true
       ? partnerIdsForPerson(people, person.id)
@@ -115,7 +116,7 @@ export function familyPersonCardState({
     isTestate,
     latestWill,
     validRecordedWills,
-    spousesMissingDeathDates,
+    deathDateMissing: ownDeathDateMissing,
     excludedLinkedSpouses,
     spouseAtDeathConflict,
     survivalStatusRequired,
@@ -135,6 +136,7 @@ export function FamilyPersonCard({
   person,
   variant = "",
   people,
+  deathDateMissing = false,
   cardName,
   ownershipByPerson,
   ownershipFractionsByPerson = {},
@@ -156,6 +158,7 @@ export function FamilyPersonCard({
     person,
     people,
     variant,
+    deathDateMissing,
     historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
     causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
   });
@@ -166,7 +169,7 @@ export function FamilyPersonCard({
     isTestate,
     latestWill,
     validRecordedWills,
-    spousesMissingDeathDates,
+    deathDateMissing: ownDeathDateMissing,
     excludedLinkedSpouses,
     spouseAtDeathConflict,
     survivalStatusRequired,
@@ -197,9 +200,6 @@ export function FamilyPersonCard({
     currentOwnerPresentation &&
     compareFractions(displayedOwnershipFraction, currentOwnerPresentation.shareFraction) === 0;
   const causaMortisDetails = availableCausaMortisDetails(person, propertyId);
-  const missingSpouseNames = spousesMissingDeathDates.map((spouse) =>
-    capitalisedName(personDisplayName(spouse, people)),
-  );
   const excludedSpouseNames = excludedLinkedSpouses.map((spouse) =>
     capitalisedName(personDisplayName(spouse, people)),
   );
@@ -214,11 +214,7 @@ export function FamilyPersonCard({
     !person.isPlaceholder && String(person.fullName || "").trim()
       ? capitalisedName(personDisplayName(person, people))
       : name;
-  const accessibleName = `${personName}${
-    missingSpouseNames.length
-      ? `. Missing spouse death ${missingSpouseNames.length === 1 ? "date" : "dates"} for ${missingSpouseNames.join(", ")}`
-      : ""
-  }${
+  const accessibleName = `${personName}${ownDeathDateMissing ? ". Date of death missing" : ""}${
     spouseAtDeathConflict
       ? `. No spouse survived is selected, so ${excludedSpouseNames.join(", ")} is excluded from the succession`
       : ""
@@ -242,7 +238,7 @@ export function FamilyPersonCard({
     sexClass,
     isDeceased && "deceased",
     causaMortisActionRequired && "cm-share-incomplete",
-    spousesMissingDeathDates.length && "succession-date-incomplete",
+    ownDeathDateMissing && "succession-date-incomplete",
     survivalStatusRequired && "survival-status-required",
     surnameAtBirthReviewRequired && "surname-at-birth-review-required",
     spouseAtDeathConflict && "spouse-at-death-conflict",
@@ -285,11 +281,8 @@ export function FamilyPersonCard({
           {name}
         </div>
       )}
-      {!person.isPlaceholder && missingSpouseNames.length > 0 && (
-        <div className="family-node-succession-alert">
-          Missing spouse death {missingSpouseNames.length === 1 ? "date" : "dates"}:{" "}
-          {missingSpouseNames.join(", ")}
-        </div>
+      {!person.isPlaceholder && ownDeathDateMissing && (
+        <div className="family-node-succession-alert">Date of death missing</div>
       )}
       {!person.isPlaceholder && spouseAtDeathConflict && (
         <div className="family-node-succession-alert">
