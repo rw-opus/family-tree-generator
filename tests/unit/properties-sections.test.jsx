@@ -116,6 +116,62 @@ describe("unified Property & Tax workspace", () => {
     expect(container.querySelector('button[aria-label="Remove transfer"]')).toBeNull();
   });
 
+  it("links both parties from the single transfer event in Tax history", () => {
+    const onSelectPerson = vi.fn();
+    const onSelectOutsideOwner = vi.fn();
+    const seller = { id: "company", name: "Harbour Holdings Limited", type: "company" };
+    const transferredProperty = {
+      ...properties[0],
+      owners: [
+        { id: "company-title", personId: seller.id, shareNumerator: 1, shareDenominator: 1 },
+      ],
+      transfers: [
+        {
+          id: "company-sale",
+          kind: "sale",
+          sellerId: seller.id,
+          buyerId: "buyer",
+          numerator: 1,
+          denominator: 1,
+          amountType: "whole-property",
+          date: "2020-01-01",
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[transferredProperty]}
+          people={[{ id: "buyer", fullName: "Maria Vella" }]}
+          outsideParties={[seller]}
+          singleProperty
+          onChange={vi.fn()}
+          onSelectPerson={onSelectPerson}
+          onSelectOutsideOwner={onSelectOutsideOwner}
+        />,
+      ),
+    );
+
+    const history = container.querySelector(".tax-calculation-history");
+    expect(
+      [...history.querySelectorAll("h3, strong")].filter(
+        (element) => element.textContent === "Property share sale",
+      ),
+    ).toHaveLength(1);
+
+    const sellerLink = history.querySelector(
+      'button[aria-label="Open seller Harbour Holdings Limited"]',
+    );
+    const buyerLink = history.querySelector('button[aria-label="Open buyer Maria Vella"]');
+    expect(sellerLink).not.toBeNull();
+    expect(buyerLink).not.toBeNull();
+    act(() => sellerLink.click());
+    act(() => buyerLink.click());
+    expect(onSelectOutsideOwner).toHaveBeenCalledWith("company");
+    expect(onSelectPerson).toHaveBeenCalledWith("buyer");
+  });
+
   it("updates today's property value without exposing property-level declarations", () => {
     const onChange = vi.fn();
     act(() =>

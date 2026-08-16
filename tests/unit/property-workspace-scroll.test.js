@@ -130,26 +130,74 @@ describe("property workspace scrolling", () => {
     expect(rule).toMatch(/display:\s*flex/);
     expect(rule).not.toMatch(/display:\s*grid/);
     expect(rule).toMatch(/align-items:\s*baseline/);
+    expect(rule).toMatch(/font-family:\s*var\(--tracker-sans\)/);
+    expect(rule).toMatch(/font-size:\s*var\(--type-caption\)/);
+    expect(rule).toMatch(/white-space:\s*nowrap/);
+
+    const values = blockFor(
+      stylesheet,
+      ".property-ownership-summary .owner-row > .owner-share > *",
+    );
+    const separators = blockFor(
+      stylesheet,
+      ".property-ownership-summary .owner-row > .owner-share > * + *::before",
+    );
+    expect(values).toMatch(/font-size:\s*inherit/);
+    expect(separators).toMatch(/content:/);
   });
 
-  it("lets the initial-ownership row shrink to a 320px viewport", () => {
+  it("compacts the initial-ownership row across phone widths", () => {
     const baseColumns = blockFor(stylesheet, ".initial-owner-columns,\n.initial-owner-row").match(
       /grid-template-columns:([^;]+);/,
     );
-    const narrowRules = blockFor(stylesheet, "@media (max-width: 360px)");
-    const narrowColumns = blockFor(
-      narrowRules,
+    const phoneRules = blockFor(stylesheet, "@media (max-width: 520px)");
+    const phoneColumns = blockFor(
+      phoneRules,
       ".initial-owner-columns,\n  .initial-owner-row",
     ).match(/grid-template-columns:([^;]+);/);
 
-    // The unconditional grid keeps px minima that add up past a 320px phone.
+    // The unconditional desktop grid keeps px minima that do not belong on a phone.
     expect(baseColumns[1]).toMatch(/minmax\(\s*\d+px/);
-    expect(narrowColumns).not.toBeNull();
+    expect(phoneColumns).not.toBeNull();
 
-    const minima = [...narrowColumns[1].matchAll(/minmax\(\s*([^,]+),/g)].map((match) =>
+    const minima = [...phoneColumns[1].matchAll(/minmax\(\s*([^,]+),/g)].map((match) =>
       match[1].trim(),
     );
     expect(minima.length).toBeGreaterThan(0);
     expect(minima.every((value) => value === "0")).toBe(true);
+
+    const compactFields = blockFor(
+      phoneRules,
+      ".single-property-case .initial-owner-person-control select:not(:focus),\n  .single-property-case .initial-owner-row input:not(:focus)",
+    );
+    expect(compactFields).toMatch(/font-size:\s*var\(--type-label\)\s*!important/);
+    expect(compactFields).toMatch(/font-family:\s*var\(--tracker-sans\)/);
+  });
+
+  it("keeps all initial-owner actions in one compact phone row", () => {
+    const phoneRules = blockFor(stylesheet, "@media (max-width: 520px)");
+    const actions = blockFor(phoneRules, ".initial-owner-actions");
+    const buttons = blockFor(phoneRules, ".initial-owner-actions > button");
+
+    expect(actions).toMatch(/display:\s*flex/);
+    expect(actions).toMatch(/flex-wrap:\s*nowrap/);
+    expect(buttons).toMatch(/flex:\s*1\s+1\s+0/);
+    expect(buttons).toMatch(/font-size:\s*var\(--type-label\)/);
+  });
+
+  it("keeps trace party routes touch-sized on phones and out of printed history", () => {
+    const phoneRules = blockFor(stylesheet, "@media (max-width: 520px)");
+    const partyButtons = blockFor(
+      phoneRules,
+      ".trace-party-link,\n  .history-party-link,\n  .tax-history-party-link",
+    );
+    expect(partyButtons).toMatch(/min-height:\s*2\.75rem/);
+
+    const printRules = blockFor(stylesheet, "@media print");
+    const printedActions = blockFor(
+      printRules,
+      "body.succession-history-open .succession-history-participants",
+    );
+    expect(printedActions).toMatch(/display:\s*none\s*!important/);
   });
 });

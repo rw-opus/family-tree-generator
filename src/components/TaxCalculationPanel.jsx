@@ -41,15 +41,20 @@ export function TaxCalculationPanel({
   people,
   outsideParties,
   vendorReport,
+  taxCalculationReport = null,
+  currentOwnerPresentationsById = null,
   onSelectPerson,
   onSelectOutsideOwner,
 }) {
-  const report = buildTaxCalculationReport(property, people, outsideParties, vendorReport);
+  const report =
+    taxCalculationReport ||
+    buildTaxCalculationReport(property, people, outsideParties, vendorReport);
   const historyEvents = buildSuccessionTrace({
     property,
     people,
     outsideParties,
     propertyReport: vendorReport,
+    currentOwnerPresentationsById,
   });
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const outsidePartyIds = new Set(outsideParties.map((party) => party.id));
@@ -131,6 +136,31 @@ export function TaxCalculationPanel({
                     {warning}
                   </p>
                 ))}
+                {(event.participants || []).some(
+                  (participant) =>
+                    (participant.source === "person" && onSelectPerson) ||
+                    (participant.source === "outside" && onSelectOutsideOwner),
+                ) && (
+                  <div className="tax-history-participants" aria-label="Transfer parties">
+                    {(event.participants || [])
+                      .filter(
+                        (participant) =>
+                          (participant.source === "person" && onSelectPerson) ||
+                          (participant.source === "outside" && onSelectOutsideOwner),
+                      )
+                      .map((participant) => (
+                        <button
+                          type="button"
+                          className="tax-history-party-link"
+                          aria-label={`Open ${participant.role.toLowerCase()} ${participant.name}`}
+                          key={`${participant.role}-${participant.id}`}
+                          onClick={() => openParty(participant.id)}
+                        >
+                          <span>{participant.role}</span> {participant.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </li>
             ))}
           </ol>

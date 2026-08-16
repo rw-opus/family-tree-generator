@@ -1,5 +1,12 @@
 import { Home, Trash2 } from "lucide-react";
-import { buildPropertyVendorTaxReport } from "../domain/propertyVendorTax.js";
+import {
+  buildPropertyVendorTaxReport,
+  buildTaxCalculationReport,
+} from "../domain/propertyVendorTax.js";
+import {
+  buildCurrentOwnerPresentations,
+  ownerPresentationsById,
+} from "../domain/ownershipPresentation.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyOwnershipSummary } from "./PropertyOwnershipSummary.jsx";
 import { SuccessionTraceControl } from "./SuccessionTraceControl.jsx";
@@ -41,6 +48,16 @@ export function Properties({
       {properties.map((property) => {
         const vendorReport = buildPropertyVendorTaxReport(property, people, outsideParties);
         const { startingOwnership, ownership } = vendorReport;
+        const taxCalculationReport = startingOwnership.isComplete
+          ? buildTaxCalculationReport(property, people, outsideParties, vendorReport)
+          : null;
+        const currentOwnerPresentationsById = ownerPresentationsById(
+          buildCurrentOwnerPresentations(
+            vendorReport.ledger.owners,
+            property.saleValue,
+            taxCalculationReport,
+          ),
+        );
         const ownershipTotalLabel = (
           startingOwnership.enteredTotalPercent ?? startingOwnership.totalPercent
         ).toLocaleString("en-MT", { maximumFractionDigits: 2 });
@@ -115,7 +132,7 @@ export function Properties({
                     type="number"
                     min="0"
                     step="any"
-                    value={property.saleValue || ""}
+                    value={property.saleValue ?? ""}
                     onChange={(event) =>
                       updateProperty(property.id, { saleValue: event.target.value })
                     }
@@ -169,6 +186,8 @@ export function Properties({
                     startingOwnership={ownership.ownershipByPerson}
                     property={property}
                     vendorReport={vendorReport}
+                    taxCalculationReport={taxCalculationReport}
+                    currentOwnerPresentationsById={currentOwnerPresentationsById}
                     onSelectPerson={onSelectPerson}
                     selectedOutsideOwnerId={selectedOutsideOwnerId}
                     onSelectOutsideOwner={onSelectOutsideOwner}
@@ -192,7 +211,9 @@ export function Properties({
                     people={people}
                     outsideParties={outsideParties}
                     propertyReport={vendorReport}
+                    currentOwnerPresentationsById={currentOwnerPresentationsById}
                     onSelectPerson={onSelectPerson}
+                    onSelectOutsideOwner={onSelectOutsideOwner}
                   />
                 </>
               ) : (
@@ -214,6 +235,8 @@ export function Properties({
                   people={people}
                   outsideParties={outsideParties}
                   vendorReport={vendorReport}
+                  taxCalculationReport={taxCalculationReport}
+                  currentOwnerPresentationsById={currentOwnerPresentationsById}
                   onSelectPerson={onSelectPerson}
                   onSelectOutsideOwner={onSelectOutsideOwner}
                 />

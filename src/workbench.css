@@ -659,15 +659,22 @@ textarea:focus-visible {
   align-items: baseline;
   justify-content: flex-end;
   gap: 0.32rem;
+  color: var(--ink);
+  font-family: var(--tracker-sans);
+  font-size: var(--type-caption);
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
-.property-ownership-summary .owner-row > .owner-share small::before {
+.property-ownership-summary .owner-row > .owner-share > * {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.property-ownership-summary .owner-row > .owner-share > * + *::before {
   content: "·";
   margin-right: 0.32rem;
-}
-
-.property-ownership-summary .read-only-transfer-history .history-row {
-  grid-template-columns: 85px minmax(180px, 0.9fr) minmax(220px, 1.2fr);
 }
 
 /* An underline set on the button cannot be cancelled by a descendant, so it
@@ -4725,6 +4732,43 @@ textarea {
   line-height: 1.38;
 }
 
+.succession-trace-participants,
+.succession-history-participants,
+.tax-history-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.trace-party-link,
+.history-party-link,
+.tax-history-party-link {
+  min-height: 1.75rem;
+  border: 1px solid #b8cbc0;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--forest);
+  padding: 0.18rem 0.42rem;
+  font-family: var(--tracker-sans);
+  font-size: var(--type-micro);
+  font-weight: 750;
+  text-align: left;
+}
+
+.trace-party-link span,
+.history-party-link span,
+.tax-history-party-link span {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.succession-trace-event.invalid .succession-trace-description,
+.succession-history-item.invalid > div {
+  border-left: 3px solid #b42318;
+  padding-left: 0.55rem;
+}
+
 body.succession-history-open {
   overflow: hidden;
 }
@@ -5326,6 +5370,10 @@ body.a3-print-preview-open {
 .tree-stage .family-chart-title {
   color: #294737;
   font-size: 1.08rem;
+}
+
+.tree-stage .family-chart-print-title {
+  display: none;
 }
 
 .tree-stage .family-node {
@@ -6450,6 +6498,12 @@ body.a3-print-preview-open {
 }
 
 @media (max-width: 520px) {
+  .trace-party-link,
+  .history-party-link,
+  .tax-history-party-link {
+    min-height: 2.75rem;
+  }
+
   .tree-stage-toolbar-unified {
     gap: 0.35rem;
     padding: 0.4rem;
@@ -6579,12 +6633,54 @@ body.a3-print-preview-open {
     padding-inline: 0.65rem;
   }
 
-  .property-ownership-summary .read-only-transfer-history .history-row {
-    grid-template-columns: 1fr auto;
+  .initial-owner-columns,
+  .initial-owner-row {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.95fr) minmax(0, 0.75fr) 28px;
+    gap: 0.2rem;
   }
 
-  .property-ownership-summary .read-only-transfer-history .history-row > :nth-child(3) {
-    grid-column: 1 / -1;
+  .initial-owner-row {
+    padding: 0.22rem;
+  }
+
+  .initial-owner-person-control {
+    gap: 0.18rem;
+  }
+
+  .single-property-case .initial-owner-person-control select:not(:focus),
+  .single-property-case .initial-owner-row input:not(:focus) {
+    padding-inline: 0.18rem;
+    font-family: var(--tracker-sans);
+    font-size: var(--type-label) !important;
+  }
+
+  .initial-owner-tree-pick-button {
+    min-width: 34px;
+    padding-inline: 0.18rem;
+    font-size: var(--type-micro);
+  }
+
+  .initial-owner-actions {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+  }
+
+  .initial-owner-actions > button {
+    flex: 1 1 0;
+    gap: 0.2rem;
+    min-height: 2.75rem;
+    padding-inline: 0.22rem;
+    font-size: var(--type-label);
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .initial-owner-actions > button svg {
+    flex: 0 0 auto;
+    width: 0.85rem;
+    height: 0.85rem;
   }
 
   /* This used to set the hint to display:block to drop it onto its own line.
@@ -7056,6 +7152,16 @@ body.a3-print-preview-open {
     overflow: visible;
   }
 
+  .tree-stage .family-chart-print-title {
+    display: block;
+    margin: 0 0 1.2rem;
+    color: #0f1b2d;
+    font-family: var(--tracker-serif);
+    font-size: 18pt;
+    font-weight: 600;
+    text-align: center;
+  }
+
   body.succession-history-open {
     overflow: visible;
     background: #fff;
@@ -7083,6 +7189,10 @@ body.a3-print-preview-open {
   }
 
   body.succession-history-open .succession-history-actions {
+    display: none !important;
+  }
+
+  body.succession-history-open .succession-history-participants {
     display: none !important;
   }
 }

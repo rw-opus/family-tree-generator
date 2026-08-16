@@ -1,4 +1,10 @@
-import { approximateFraction } from "../../domain/ownership.js";
+import { compareFractions } from "../../domain/fractions.js";
+import {
+  formatOwnershipFraction,
+  formatOwnershipPercentage,
+  ownershipFraction,
+  recordedNonNegativeMoney,
+} from "../../domain/ownershipPresentation.js";
 import { isPersonDeceased, linkedSpousesMissingDeathDates } from "../../domain/familyOwnership.js";
 import {
   findPartnerRelationship,
@@ -24,15 +30,9 @@ import {
 import { capitalisedName, compactNodeWidth, isDeceasedPerson } from "./treePresentation.js";
 
 function ownershipParts(ownership, fields, exactFraction) {
-  const fraction = exactFraction?.denominator ? exactFraction : approximateFraction(ownership);
-  const fractionText = `${fraction.numerator}/${fraction.denominator}`;
-  const percentageText = `${(ownership * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 2,
-  })}%`;
-
   return [
-    fields.ownershipFraction && fractionText,
-    fields.ownershipPercentage && percentageText,
+    fields.ownershipFraction && formatOwnershipFraction(ownership, exactFraction),
+    fields.ownershipPercentage && formatOwnershipPercentage(ownership, exactFraction),
   ].filter(Boolean);
 }
 
@@ -137,11 +137,10 @@ export function FamilyPersonCard({
   cardName,
   ownershipByPerson,
   ownershipFractionsByPerson = {},
-  currentOwnershipByPerson = {},
+  currentOwnerPresentationsByPerson = {},
   historicalLawWarningsByPerson = {},
   causaMortisCoverageByPerson = {},
   personCardFields = DEFAULT_PERSON_CARD_FIELDS,
-  propertyValue,
   propertyId = "",
   ownershipSnapshotActive = false,
   selectedPersonId,
@@ -175,16 +174,22 @@ export function FamilyPersonCard({
   } = cardState;
   const hasOwnership = Object.prototype.hasOwnProperty.call(ownershipByPerson, person.id);
   const ownership = hasOwnership ? ownershipByPerson[person.id] : 0;
-  const hasCurrentOwnership = Object.prototype.hasOwnProperty.call(
-    currentOwnershipByPerson,
-    person.id,
-  );
-  const currentOwnership = hasCurrentOwnership ? currentOwnershipByPerson[person.id] : 0;
+  const currentOwnerPresentation = currentOwnerPresentationsByPerson[person.id] || null;
+  const currentOwnershipValue = recordedNonNegativeMoney(currentOwnerPresentation?.value);
+  const hasCurrentOwnership = Boolean(currentOwnerPresentation);
+  const useCurrentPresentation = !ownershipSnapshotActive && !isDeceased && hasCurrentOwnership;
+  const displayedOwnership = useCurrentPresentation ? currentOwnerPresentation.share : ownership;
+  const displayedOwnershipFraction = useCurrentPresentation
+    ? currentOwnerPresentation.shareFraction
+    : ownershipFraction(ownership, ownershipFractionsByPerson[person.id]);
+  const hasDisplayedOwnership = useCurrentPresentation || hasOwnership;
   const fields = normalisePersonCardFields({ personCardFields });
-  const shareParts = hasOwnership
-    ? ownershipParts(ownership, fields, ownershipFractionsByPerson[person.id])
+  const shareParts = hasDisplayedOwnership
+    ? ownershipParts(displayedOwnership, fields, displayedOwnershipFraction)
     : [];
-  const currentOwnershipValue = Number(propertyValue) * currentOwnership;
+  const displayedShareIsCurrent =
+    currentOwnerPresentation &&
+    compareFractions(displayedOwnershipFraction, currentOwnerPresentation.shareFraction) === 0;
   const causaMortisDetails = availableCausaMortisDetails(person, propertyId);
   const missingSpouseNames = spousesMissingDeathDates.map((spouse) =>
     capitalisedName(personDisplayName(spouse, people)),
@@ -303,7 +308,8 @@ export function FamilyPersonCard({
       {!person.isPlaceholder &&
         fields.ownershipValue &&
         hasCurrentOwnership &&
-        Number(propertyValue) > 0 && (
+        displayedShareIsCurrent &&
+        currentOwnershipValue !== null && (
           <div className="family-node-detail">
             {ownershipSnapshotActive ? "Value at this step" : "Current value"}{" "}
             {formattedCurrency(currentOwnershipValue)}

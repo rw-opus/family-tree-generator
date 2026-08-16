@@ -2,6 +2,7 @@ import { Printer, X } from "lucide-react";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { recordedNonNegativeMoney } from "../domain/ownershipPresentation.js";
 
 const money = new Intl.NumberFormat("en-MT", {
   style: "currency",
@@ -9,13 +10,32 @@ const money = new Intl.NumberFormat("en-MT", {
   maximumFractionDigits: 2,
 });
 
-const eventTypeLabel = (type) => {
-  if (type === "initial") return "Initial title";
-  if (type === "succession") return "Succession";
+const eventTypeLabel = (event) => {
+  if (event.type === "initial") return "Initial title";
+  if (event.type === "succession") return "Succession";
+  if (event.id === "proposed-sale") return "Proposed sale";
+  if (event.transferKind === "donation") return "Donation";
+  if (event.transferKind === "sale") return "Sale";
   return "Sale or transfer";
 };
 
-export function SuccessionHistoryDialog({ property, events, onSelectPerson, onClose }) {
+export function SuccessionHistoryDialog({
+  property,
+  events,
+  onSelectPerson,
+  onSelectOutsideOwner,
+  onClose,
+}) {
+  const sellingPrice = recordedNonNegativeMoney(property.saleValue);
+  const canOpenParticipant = (participant) =>
+    (participant.source === "person" && onSelectPerson) ||
+    (participant.source === "outside" && onSelectOutsideOwner);
+  const openParticipant = (participant) => {
+    onClose();
+    if (participant.source === "person") onSelectPerson?.(participant.id);
+    if (participant.source === "outside") onSelectOutsideOwner?.(participant.id);
+  };
+
   useEffect(() => {
     document.body.classList.add("succession-history-open");
     const closeOnEscape = (event) => {
@@ -55,11 +75,7 @@ export function SuccessionHistoryDialog({ property, events, onSelectPerson, onCl
         <section className="succession-history-summary">
           <div>
             <span>Selling price</span>
-            <strong>
-              {Number(property.saleValue) > 0
-                ? money.format(Number(property.saleValue))
-                : "Not entered"}
-            </strong>
+            <strong>{sellingPrice === null ? "Not entered" : money.format(sellingPrice)}</strong>
           </div>
           <div>
             <span>Recorded events</span>
@@ -70,11 +86,14 @@ export function SuccessionHistoryDialog({ property, events, onSelectPerson, onCl
         {events.length ? (
           <ol className="succession-history-list">
             {events.map((event, index) => (
-              <li key={event.id} className={`succession-history-item ${event.type}`}>
+              <li
+                key={event.id}
+                className={`succession-history-item ${event.type}${event.invalid ? " invalid" : ""}`}
+              >
                 <span className="succession-history-number">{index + 1}</span>
                 <div>
                   <p>
-                    <span>{eventTypeLabel(event.type)}</span>
+                    <span>{eventTypeLabel(event)}</span>
                     <time>{event.date ? isoDateToDisplay(event.date) : "Undated event"}</time>
                   </p>
                   {event.personId && onSelectPerson ? (
@@ -99,6 +118,21 @@ export function SuccessionHistoryDialog({ property, events, onSelectPerson, onCl
                       {warning}
                     </p>
                   ))}
+                  {(event.participants || []).some(canOpenParticipant) && (
+                    <div className="succession-history-participants" aria-label="Transfer parties">
+                      {(event.participants || []).filter(canOpenParticipant).map((participant) => (
+                        <button
+                          type="button"
+                          className="history-party-link"
+                          aria-label={`Open ${participant.role.toLowerCase()} ${participant.name}`}
+                          key={`${participant.role}-${participant.id}`}
+                          onClick={() => openParticipant(participant)}
+                        >
+                          <span>{participant.role}</span> {participant.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

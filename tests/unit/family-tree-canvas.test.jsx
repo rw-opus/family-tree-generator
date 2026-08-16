@@ -992,6 +992,78 @@ describe("FamilyTreeCanvas", () => {
     );
   });
 
+  it("renders a living owner's fraction, percentage, and value from one current presentation", () => {
+    renderCanvas({
+      people: [person("owner", "Maria Borg")],
+      ownershipByPerson: { owner: 0.5 },
+      ownershipFractionsByPerson: { owner: { numerator: 1, denominator: 2 } },
+      currentOwnershipByPerson: {},
+      currentOwnerPresentationsByPerson: {
+        owner: {
+          id: "owner",
+          share: 1 / 3,
+          shareFraction: { numerator: 1, denominator: 3 },
+          percentage: 100 / 3,
+          value: 0.34,
+        },
+      },
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipPercentage: true,
+        ownershipValue: true,
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="owner"]');
+    expect(card.querySelector(".family-node-ownership").textContent).toContain("1/3");
+    expect(card.querySelector(".family-node-ownership").textContent).toContain("33.33%");
+    expect(card.textContent).toContain("Current value €0.34");
+    expect(card.textContent).not.toContain("1/2");
+  });
+
+  it("shows an explicit zero current value but never pairs a historical deceased share with it", () => {
+    const presentation = {
+      id: "owner",
+      share: 0.1,
+      shareFraction: { numerator: 1, denominator: 10 },
+      percentage: 10,
+      value: 0,
+    };
+    renderCanvas({
+      people: [person("owner", "Maria Borg")],
+      ownershipByPerson: { owner: 0.1 },
+      ownershipFractionsByPerson: { owner: { numerator: 1, denominator: 10 } },
+      currentOwnerPresentationsByPerson: { owner: presentation },
+      personCardFields: { ownershipFraction: true, ownershipValue: true },
+    });
+
+    expect(container.querySelector('[data-person-id="owner"]').textContent).toContain(
+      "Current value €0.00",
+    );
+
+    renderCanvas({
+      people: [
+        person("owner", "Maria Borg", {
+          isDeceased: true,
+          dateOfDeath: "2020-01-01",
+        }),
+      ],
+      ownershipByPerson: { owner: 0.5 },
+      ownershipFractionsByPerson: { owner: { numerator: 1, denominator: 2 } },
+      currentOwnerPresentationsByPerson: { owner: presentation },
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipPercentage: true,
+        ownershipValue: true,
+      },
+    });
+
+    const historicalCard = container.querySelector('[data-person-id="owner"]');
+    expect(historicalCard.querySelector(".family-node-ownership").textContent).toContain("1/2");
+    expect(historicalCard.querySelector(".family-node-ownership").textContent).toContain("50%");
+    expect(historicalCard.textContent).not.toContain("Current value");
+  });
+
   it("labels a traced person's percentage and value as belonging to that history step", () => {
     const people = [
       person("ancestor", "Karmnu Borg"),
@@ -1247,17 +1319,21 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelectorAll("[data-person-id]")).toHaveLength(people.length);
   });
 
-  it("does not repeat a generated title inside the tree canvas", () => {
+  it("adds the generated family title to the print-only tree heading", () => {
     renderCanvas({
       people: family().map((entry) => (entry.id === "gf" ? { ...entry, isDeceased: true } : entry)),
     });
 
-    expect(container.querySelector(".family-chart-title")).toBeNull();
+    const title = container.querySelector(".family-chart-print-title");
+    expect(title).not.toBeNull();
+    expect(title.textContent).toBe("Family Tree of Karmnu Borg");
   });
 
-  it("does not repeat a supplied title inside the tree canvas", () => {
+  it("uses the supplied family name in the print-only tree heading", () => {
     renderCanvas({ people: family(), treeTitle: "Borg succession" });
 
-    expect(container.querySelector(".family-chart-title")).toBeNull();
+    const title = container.querySelector(".family-chart-print-title");
+    expect(title).not.toBeNull();
+    expect(title.textContent).toBe("Borg succession");
   });
 });

@@ -1423,6 +1423,7 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
   const unresolved = [];
   const transferEntries = [];
   const transferFractionsById = {};
+  let chronologyOrder = 0;
   let tranches = propertyStartingTranches(property);
 
   const processDeathsBefore = (deathBefore) => {
@@ -1438,9 +1439,13 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
       })),
     });
     tranches = contributionsAsTranches(core.contributions);
-    transmissions.push(...core.transmissions);
+    const orderedTransmissions = core.transmissions.map((transmission) => ({
+      ...transmission,
+      chronologyOrder: chronologyOrder++,
+    }));
+    transmissions.push(...orderedTransmissions);
     unresolved.push(...core.unresolved);
-    core.transmissions.forEach((transmission) => settledDeathIds.add(transmission.deceasedId));
+    orderedTransmissions.forEach((transmission) => settledDeathIds.add(transmission.deceasedId));
   };
 
   chronologicalTransfers(property.transfers || []).forEach((transfer) => {
@@ -1512,6 +1517,7 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
         transferFractionsById[transfer.id] = entry.amountFraction;
       }
     }
+    entry = { ...entry, chronologyOrder: chronologyOrder++ };
     transferEntries.push(entry);
     if (entry.error) {
       unresolved.push({

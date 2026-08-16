@@ -1,19 +1,22 @@
 import { useMemo, useState } from "react";
-import { ArrowRight } from "lucide-react";
-import { isoDateToDisplay } from "../domain/dateFormat.js";
-import { approximateFraction, buildPropertyLedger } from "../domain/ownership.js";
+import { buildPropertyLedger } from "../domain/ownership.js";
+import {
+  buildCurrentOwnerPresentations,
+  formatOwnershipFraction,
+  formatOwnershipPercentage,
+  ownerPresentationsById,
+  recordedNonNegativeMoney,
+} from "../domain/ownershipPresentation.js";
 import { OutsideOwnerInspector } from "./OutsideOwnerInspector.jsx";
 
-const percent = (share) =>
-  `${(share * 100).toLocaleString("en-MT", { maximumFractionDigits: 2 })}%`;
-
-const fractionLabel = (share, exactFraction = null) => {
-  const fraction = exactFraction?.denominator ? exactFraction : approximateFraction(share);
-  return `${fraction.numerator}/${fraction.denominator}`;
-};
+const money = new Intl.NumberFormat("en-MT", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 2,
+});
 
 /**
- * Read-only title and history calculated from initial ownership, successions and transfers.
+ * Read-only current title calculated from initial ownership, successions and transfers.
  * A linked owner card remains the only place where a transaction can be changed.
  */
 export function PropertyOwnershipSummary({
@@ -23,6 +26,8 @@ export function PropertyOwnershipSummary({
   startingOwnership,
   property = null,
   vendorReport = null,
+  taxCalculationReport = null,
+  currentOwnerPresentationsById: suppliedCurrentOwnerPresentationsById = null,
   onSelectPerson,
   selectedOutsideOwnerId: controlledOutsideOwnerId,
   onSelectOutsideOwner,
@@ -40,6 +45,19 @@ export function PropertyOwnershipSummary({
       buildPropertyLedger(people, outsideParties, transfers, startingOwnership),
     [outsideParties, people, startingOwnership, transfers, vendorReport],
   );
+  const currentOwnerPresentations = useMemo(() => {
+    const generatedPresentationsById = ownerPresentationsById(
+      buildCurrentOwnerPresentations(ledger.owners, property?.saleValue, taxCalculationReport),
+    );
+    return suppliedCurrentOwnerPresentationsById
+      ? { ...generatedPresentationsById, ...suppliedCurrentOwnerPresentationsById }
+      : generatedPresentationsById;
+  }, [
+    ledger.owners,
+    property?.saleValue,
+    suppliedCurrentOwnerPresentationsById,
+    taxCalculationReport,
+  ]);
   const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
   const partyName = (id) =>
     ledger.parties.find((party) => party.id === id)?.name || "Unknown party";
@@ -87,20 +105,34 @@ export function PropertyOwnershipSummary({
 
       <div className="owner-list">
         {ledger.owners.length ? (
-          ledger.owners.map((owner) => (
-            <div className="owner-row read-only-owner-row" key={owner.id}>
-              {/* No provenance line. The name is the row; an outside owner is
+          ledger.owners.map((owner) => {
+            const presentation = currentOwnerPresentations[owner.id];
+            const currentValue = recordedNonNegativeMoney(presentation.value);
+            return (
+              <div className="owner-row read-only-owner-row" key={owner.id}>
+                {/* No provenance line. The name is the row; an outside owner is
                   already marked by the "Open owner card" affordance on its
                   link, so a second label under every name only added height. */}
-              <span className="owner-identity">
-                <strong>{renderPartyName(owner.id, { allowOutsideOwnerCard: true })}</strong>
-              </span>
-              <span className="owner-share">
-                <strong>{fractionLabel(owner.share, owner.shareFraction)}</strong>
-                <small>{percent(owner.share)}</small>
-              </span>
-            </div>
-          ))
+                <span className="owner-identity">
+                  <strong>{renderPartyName(owner.id, { allowOutsideOwnerCard: true })}</strong>
+                </span>
+                <span className="owner-share">
+                  <strong>
+                    {formatOwnershipFraction(presentation.share, presentation.shareFraction)}
+                  </strong>
+                  <small>
+                    {formatOwnershipPercentage(presentation.share, presentation.shareFraction)}
+                  </small>
+                  {currentValue !== null && (
+                    <small className="owner-value">
+                      <span className="sr-only">Current value </span>
+                      {money.format(currentValue)}
+                    </small>
+                  )}
+                </span>
+              </div>
+            );
+          })
         ) : (
           <p className="helper-text">Complete the initial ownership to calculate current title.</p>
         )}
@@ -108,31 +140,8 @@ export function PropertyOwnershipSummary({
 
       <div className={`ledger-total ${Math.abs(ledger.total - 1) < 1e-8 ? "valid" : "invalid"}`}>
         <span>Total title</span>
-        <strong>{percent(ledger.total)}</strong>
+        <strong>{formatOwnershipPercentage(ledger.total, ledger.totalFraction)}</strong>
       </div>
-
-      {ledger.entries.length > 0 && (
-        <div className="transfer-history read-only-transfer-history">
-          <h3>Recorded transfer history</h3>
-          <p className="helper-text">
-            Sales and donations are edited from the relevant person or outside-owner card.
-          </p>
-          {ledger.entries.map((entry) => (
-            <div className={`history-row ${entry.error ? "invalid" : ""}`} key={entry.id}>
-              <span>{isoDateToDisplay(entry.date) || "Undated"}</span>
-              <strong>
-                {renderPartyName(entry.sellerId, { allowOutsideOwnerCard: true })}{" "}
-                <ArrowRight size={13} aria-hidden="true" />{" "}
-                {renderPartyName(entry.buyerId, { allowOutsideOwnerCard: true })}
-              </strong>
-              <span>
-                {entry.error ||
-                  `${entry.kind === "donation" ? "Donation" : "Sale"} · ${fractionLabel(entry.amount, entry.amountFraction)} of the property (${percent(entry.amount)})`}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {selectedOutsideOwner && property && onOutsideOwnerTransactionsChange && (
         <OutsideOwnerInspector

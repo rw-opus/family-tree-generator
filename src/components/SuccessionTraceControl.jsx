@@ -10,17 +10,34 @@ export function SuccessionTraceControl({
   people = [],
   outsideParties = [],
   propertyReport,
+  currentOwnerPresentationsById = null,
   onSelectPerson,
+  onSelectOutsideOwner,
 }) {
   const headingId = useId();
   const [traceIndex, setTraceIndex] = useState(-1);
   const [historyOpen, setHistoryOpen] = useState(false);
   const traceEvents = useMemo(
-    () => buildSuccessionTrace({ property, people, outsideParties, propertyReport }),
-    [outsideParties, people, property, propertyReport],
+    () =>
+      buildSuccessionTrace({
+        property,
+        people,
+        outsideParties,
+        propertyReport,
+        currentOwnerPresentationsById,
+      }),
+    [currentOwnerPresentationsById, outsideParties, people, property, propertyReport],
   );
   const traceEvent = traceIndex >= 0 ? traceEvents[traceIndex] : null;
   const personIds = useMemo(() => new Set(people.map((person) => person.id)), [people]);
+
+  const canOpenParticipant = (participant) =>
+    (participant.source === "person" && onSelectPerson) ||
+    (participant.source === "outside" && onSelectOutsideOwner);
+  const openParticipant = (participant) => {
+    if (participant.source === "person") onSelectPerson?.(participant.id);
+    if (participant.source === "outside") onSelectOutsideOwner?.(participant.id);
+  };
 
   useEffect(() => {
     if (traceIndex >= traceEvents.length) setTraceIndex(traceEvents.length ? 0 : -1);
@@ -57,7 +74,7 @@ export function SuccessionTraceControl({
 
         {traceEvent ? (
           <div
-            className={`succession-trace-event ${traceEvent.type}`}
+            className={`succession-trace-event ${traceEvent.type}${traceEvent.invalid ? " invalid" : ""}`}
             aria-live="polite"
             aria-atomic="true"
           >
@@ -101,6 +118,21 @@ export function SuccessionTraceControl({
                   {warning}
                 </p>
               ))}
+              {(traceEvent.participants || []).some(canOpenParticipant) && (
+                <div className="succession-trace-participants" aria-label="Transfer parties">
+                  {(traceEvent.participants || []).filter(canOpenParticipant).map((participant) => (
+                    <button
+                      type="button"
+                      className="trace-party-link"
+                      aria-label={`Open ${participant.role.toLowerCase()} ${participant.name}`}
+                      key={`${participant.role}-${participant.id}`}
+                      onClick={() => openParticipant(participant)}
+                    >
+                      <span>{participant.role}</span> {participant.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -126,6 +158,7 @@ export function SuccessionTraceControl({
           property={property}
           events={traceEvents}
           onSelectPerson={onSelectPerson}
+          onSelectOutsideOwner={onSelectOutsideOwner}
           onClose={() => setHistoryOpen(false)}
         />
       )}

@@ -7,6 +7,11 @@ import {
   personDisplayName,
 } from "../domain/people.js";
 import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
+import {
+  buildCurrentOwnerPresentations,
+  ownerPresentationsById,
+  ownershipShare,
+} from "../domain/ownershipPresentation.js";
 import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { FamilyPersonCard, familyPersonCardState } from "./familyTree/FamilyPersonCard.jsx";
 import { familyGenerationById, widestFamilyGeneration } from "./familyTree/generationRows.js";
@@ -37,6 +42,7 @@ function TreePanel({
   treeRef,
   gestureSurfaceRef,
   onPrint,
+  title,
   relational,
   helperText,
   toolbar,
@@ -61,7 +67,10 @@ function TreePanel({
       </header>
       {navigation}
       <div className="family-chart tree-canvas-scroll-region" ref={treeRef}>
-        <div className={`family-canvas ${relational ? "relational-canvas" : ""}`}>{children}</div>
+        <div className={`family-canvas ${relational ? "relational-canvas" : ""}`}>
+          <h2 className="family-chart-title family-chart-print-title">{title}</h2>
+          {children}
+        </div>
       </div>
       {navigator}
       <p className="helper-text">{helperText}</p>
@@ -75,6 +84,7 @@ export function FamilyTreeCanvas({
   ownershipByPerson = {},
   ownershipFractionsByPerson = {},
   currentOwnershipByPerson = {},
+  currentOwnerPresentationsByPerson = null,
   historicalLawWarningsByPerson = {},
   causaMortisCoverageByPerson = {},
   onPrint,
@@ -121,6 +131,28 @@ export function FamilyTreeCanvas({
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");
   const printHandler = onPrint || ((node) => openA3PrintPreview(node, title));
+  const resolvedCurrentOwnerPresentationsByPerson = useMemo(() => {
+    if (currentOwnerPresentationsByPerson) return currentOwnerPresentationsByPerson;
+    const owners = Object.entries(currentOwnershipByPerson).map(([id, share]) => {
+      const candidateFraction = ownershipFractionsByPerson[id];
+      const exactShare = candidateFraction ? ownershipShare(share, candidateFraction) : Number.NaN;
+      return {
+        id,
+        personId: id,
+        share,
+        shareFraction:
+          Number.isFinite(exactShare) && Math.abs(exactShare - Number(share)) < 1e-12
+            ? candidateFraction
+            : null,
+      };
+    });
+    return ownerPresentationsById(buildCurrentOwnerPresentations(owners, propertyValue));
+  }, [
+    currentOwnerPresentationsByPerson,
+    currentOwnershipByPerson,
+    ownershipFractionsByPerson,
+    propertyValue,
+  ]);
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
   const usesStackedLegalCards = personCardFields?.stackLegalDetails === true;
@@ -452,11 +484,10 @@ export function FamilyTreeCanvas({
       cardName={cardName}
       ownershipByPerson={ownershipByPerson}
       ownershipFractionsByPerson={ownershipFractionsByPerson}
-      currentOwnershipByPerson={currentOwnershipByPerson}
+      currentOwnerPresentationsByPerson={resolvedCurrentOwnerPresentationsByPerson}
       historicalLawWarningsByPerson={historicalLawWarningsByPerson}
       causaMortisCoverageByPerson={causaMortisCoverageByPerson}
       personCardFields={personCardFields}
-      propertyValue={propertyValue}
       propertyId={propertyId}
       ownershipSnapshotActive={ownershipSnapshotActive}
       selectedPersonId={selectedPersonId}
@@ -522,6 +553,7 @@ export function FamilyTreeCanvas({
         treeRef={treeRef}
         gestureSurfaceRef={gestureSurfaceRef}
         onPrint={printHandler}
+        title={title}
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
         toolbar={toolbar}
@@ -547,6 +579,7 @@ export function FamilyTreeCanvas({
       treeRef={treeRef}
       gestureSurfaceRef={gestureSurfaceRef}
       onPrint={printHandler}
+      title={title}
       helperText="The diagram is a working visual aid. Dashed entries are connectors added only when a relative is needed to make another branch intelligible."
       toolbar={toolbar}
       navigation={navigation}

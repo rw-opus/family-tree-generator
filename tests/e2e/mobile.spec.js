@@ -21,6 +21,78 @@ test.describe("phone layout", () => {
     );
   });
 
+  for (const width of [320, 393, 430]) {
+    test(`keeps the ownership editor and current values compact at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openPropertyWorkspace(page);
+
+      const layout = await page.evaluate(() => {
+        const within = (inner, outer) =>
+          inner.left >= outer.left - 1 && inner.right <= outer.right + 1;
+        const ownerRows = [...document.querySelectorAll(".initial-owner-row")];
+        const actionContainer = document.querySelector(".initial-owner-actions");
+        const actions = [...actionContainer.querySelectorAll(":scope > button")];
+        const actionRects = actions.map((button) => button.getBoundingClientRect());
+        const currentRows = [...document.querySelectorAll(".read-only-owner-row")];
+        const firstCurrentRow = currentRows[0];
+        const name = firstCurrentRow.querySelector(
+          ".owner-identity .ownership-person-link, .owner-identity > strong",
+        );
+        const shareParts = [
+          ...firstCurrentRow.querySelectorAll(".owner-share > strong, .owner-share > small"),
+        ];
+
+        return {
+          editorRowsFit: ownerRows.every((row) => {
+            const rowRect = row.getBoundingClientRect();
+            return (
+              row.scrollWidth <= row.clientWidth + 1 &&
+              [...row.children].every((child) => within(child.getBoundingClientRect(), rowRect))
+            );
+          }),
+          fieldFonts: [
+            ...document.querySelectorAll(".initial-owner-row select, .initial-owner-row input"),
+          ].map((field) => getComputedStyle(field).fontSize),
+          actionCount: actions.length,
+          actionsShareRow:
+            actionRects.length > 0 &&
+            actionRects.every((rect) => Math.abs(rect.top - actionRects[0].top) <= 1),
+          actionsFit:
+            actionContainer.scrollWidth <= actionContainer.clientWidth + 1 &&
+            actionRects.every((rect) => within(rect, actionContainer.getBoundingClientRect())),
+          actionFonts: actions.map((button) => getComputedStyle(button).fontSize),
+          currentRowsFit: currentRows.every((row) => row.scrollWidth <= row.clientWidth + 1),
+          currentValues: currentRows.map(
+            (row) => row.querySelector(".owner-value")?.textContent.trim() || "",
+          ),
+          nameFont: getComputedStyle(name).fontSize,
+          shareFonts: shareParts.map((part) => getComputedStyle(part).fontSize),
+        };
+      });
+
+      expect(layout.editorRowsFit).toBe(true);
+      expect(new Set(layout.fieldFonts)).toEqual(new Set(["11px"]));
+      expect(layout.actionCount).toBe(3);
+      expect(layout.actionsShareRow).toBe(true);
+      expect(layout.actionsFit).toBe(true);
+      expect(new Set(layout.actionFonts)).toEqual(new Set(["11px"]));
+      expect(layout.currentRowsFit).toBe(true);
+      expect(layout.currentValues).toEqual([
+        "Current value €200,000.00",
+        "Current value €200,000.00",
+      ]);
+      expect(new Set(layout.shareFonts)).toEqual(new Set([layout.nameFont]));
+
+      const firstOwner = page
+        .locator('.initial-owner-row select[aria-label="Initial owner"]')
+        .first();
+      await firstOwner.focus();
+      expect(await firstOwner.evaluate((field) => getComputedStyle(field).fontSize)).toBe("16px");
+    });
+  }
+
   test("keeps the section menu reachable while the page scrolls", async ({ page }) => {
     await openPropertyWorkspace(page);
     await page.evaluate(() => {

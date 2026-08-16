@@ -35,6 +35,10 @@ import {
   normalisePersonCardFields,
 } from "./domain/personCardDisplay.js";
 import {
+  buildCurrentOwnerPresentations,
+  ownerPresentationsById,
+} from "./domain/ownershipPresentation.js";
+import {
   assignInitialOwnerPerson,
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
@@ -441,15 +445,14 @@ export function App({
     () => buildTreeCardHistoricalWarningsByPerson(propertyReport.ownership.transmissions),
     [propertyReport.ownership.transmissions],
   );
-  const currentOwnershipByPerson = useMemo(
-    () =>
-      Object.fromEntries(
-        (propertyReport.ledger.owners || [])
-          .filter((owner) => owner.personId && Number(owner.share) > 0)
-          .map((owner) => [owner.personId, owner.share]),
-      ),
-    [propertyReport.ledger.owners],
-  );
+  const currentOwnerPresentationsByPerson = useMemo(() => {
+    const presentations = buildCurrentOwnerPresentations(
+      propertyReport.ledger.owners,
+      activeProperty.saleValue,
+      taxCalculationReport,
+    ).filter((owner) => owner.personId);
+    return ownerPresentationsById(presentations.map((owner) => ({ ...owner, id: owner.personId })));
+  }, [activeProperty.saleValue, propertyReport.ledger.owners, taxCalculationReport]);
   const completeProperties = useMemo(
     () =>
       currentTree.properties.filter(
@@ -1631,6 +1634,7 @@ export function App({
                 taxCalculationReport={taxCalculationReport}
                 ownershipByPerson={ownershipByPerson}
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
+                currentOwnerPresentationsByPerson={currentOwnerPresentationsByPerson}
                 hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
                 selectedPersonId={selectedPersonId}
@@ -1697,7 +1701,7 @@ export function App({
                 people={visiblePeople}
                 ownershipByPerson={ownershipByPerson}
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
-                currentOwnershipByPerson={currentOwnershipByPerson}
+                currentOwnerPresentationsByPerson={currentOwnerPresentationsByPerson}
                 historicalLawWarningsByPerson={historicalLawWarningsByPerson}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}
@@ -1712,7 +1716,6 @@ export function App({
                     settings: { ...currentTree.settings, personCardFields },
                   })
                 }
-                propertyValue={activeProperty.saleValue}
                 propertyId={activeProperty.id}
                 toolbar={
                   <>

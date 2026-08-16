@@ -122,6 +122,26 @@ describe("vendor tax Excel export", () => {
     expect(xml).toContain('<Data ss:Type="Number">-10</Data>');
   });
 
+  it("keeps an invalid recorded-transfer warning in its single history row", () => {
+    const warning = "Recorded sale needs attention: Select a seller and buyer.";
+    const xml = vendorTaxSpreadsheetXml(
+      { vendors: [] },
+      { address: "1 Republic Street", saleValue: "" },
+      [
+        {
+          id: "transfer-invalid",
+          date: "2025-01-01",
+          title: "Property share sale",
+          description: "A recorded sale could not be applied to the title.",
+          warnings: [warning],
+        },
+      ],
+    );
+
+    expect(xml).toContain(warning);
+    expect(xml.match(/Property share sale/g) || []).toHaveLength(1);
+  });
+
   it("escapes workbook text and strips invalid XML controls", () => {
     const xml = vendorTaxSpreadsheetXml(
       {

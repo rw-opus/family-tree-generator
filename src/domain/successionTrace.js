@@ -1,5 +1,12 @@
 import { approximateFraction } from "./ownership.js";
 import {
+  buildCurrentOwnerPresentations,
+  formatOwnershipFraction,
+  formatOwnershipPercentage,
+  ownerPresentationsById,
+  recordedNonNegativeMoney,
+} from "./ownershipPresentation.js";
+import {
   addFractions,
   compareFractions,
   fractionComponentNumber,
@@ -16,22 +23,11 @@ const money = new Intl.NumberFormat("en-MT", {
   maximumFractionDigits: 2,
 });
 
-const percentage = (share) =>
-  `${(Math.max(0, Number(share) || 0) * 100).toLocaleString("en-MT", {
-    maximumFractionDigits: 2,
-  })}%`;
-
-const fraction = (share, exactFraction = null) => {
-  const result = exactFraction?.denominator
-    ? exactFraction
-    : approximateFraction(Math.max(0, Number(share) || 0));
-  return `${result.numerator}/${result.denominator}`;
-};
-
-const shareLabel = (share, exactFraction = null) => {
-  const exactShare = exactFraction?.denominator ? fractionToNumber(exactFraction) : share;
-  return `${fraction(share, exactFraction)} (${percentage(exactShare)})`;
-};
+const shareLabel = (share, exactFraction = null) =>
+  `${formatOwnershipFraction(share, exactFraction)} (${formatOwnershipPercentage(
+    share,
+    exactFraction,
+  )})`;
 
 const initialOwnerShare = (owner) => {
   const numerator = fractionComponentNumber(owner.shareNumerator);
@@ -112,15 +108,24 @@ export function buildSuccessionTrace({
   people = [],
   outsideParties = [],
   propertyReport = {},
+  currentOwnerPresentationsById = null,
 } = {}) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const partiesById = new Map([
     ...people.map((person) => [person.id, person.fullName || "Unnamed person"]),
     ...outsideParties.map((party) => [party.id, party.name || "Unnamed party"]),
   ]);
   const partyName = (id) => partiesById.get(id) || "Unknown party";
+  const participant = (id, role) => ({
+    id: id || "",
+    name: partyName(id),
+    role,
+    source: peopleById.has(id) ? "person" : outsidePartiesById.has(id) ? "outside" : "unknown",
+  });
   const propertyName = property.address || "the property";
-  const saleValue = Math.max(0, Number(property.saleValue) || 0);
+  const recordedSaleValue = recordedNonNegativeMoney(property.saleValue);
+  const saleValue = recordedSaleValue ?? 0;
   const initialHoldings = new Map();
   (property.owners || []).forEach((owner) =>
     addHolding(initialHoldings, owner.personId, initialOwnerFraction(owner)),
@@ -144,9 +149,7 @@ export function buildSuccessionTrace({
         description: `${partyName(owner.personId)} starts with ${shareLabel(
           share,
           shareFraction,
-        )} of ${propertyName}${
-          saleValue ? `, currently worth ${money.format(saleValue * share)}` : ""
-        }.`,
+        )} of ${propertyName}.`,
       };
     });
 
@@ -173,6 +176,7 @@ export function buildSuccessionTrace({
       return {
         id: `succession-${transmission.deceasedId}-${index}`,
         type: "succession",
+        chronologyOrder: transmission.chronologyOrder,
         personId: transmission.deceasedId,
         change: {
           kind: "succession",
@@ -195,49 +199,90 @@ export function buildSuccessionTrace({
     },
   );
 
-  const transferEvents = (propertyReport.ledger?.entries || [])
-    .filter((entry) => !entry.error && Number(entry.amount) > 0)
-    .map((entry, index) => ({
+  const transferEvents = (propertyReport.ledger?.entries || []).map((entry, index) => {
+    const transferKind = entry.kind === "donation" ? "donation" : "sale";
+    const action = transferKind === "donation" ? "donates" : "sells";
+    const sellerRole = transferKind === "donation" ? "Donor" : "Seller";
+    const buyerRole = transferKind === "donation" ? "Donee" : "Buyer";
+    const exactAmountIsPositive =
+      entry.amountFraction?.denominator &&
+      compareFractions(entry.amountFraction, ZERO_FRACTION) > 0;
+    const applied = !entry.error && (exactAmountIsPositive || Number(entry.amount) > 0);
+    const invalidReason =
+      entry.error || "The recorded transferred share could not be applied to the title.";
+    const description = applied
+      ? `${partyName(entry.sellerId)} ${action} ${shareLabel(
+          entry.amount,
+          entry.amountFraction,
+        )} of ${propertyName} to ${partyName(entry.buyerId)}${
+          transferKind === "sale" && Number(entry.consideration) > 0
+            ? ` for ${money.format(Number(entry.consideration))}`
+            : ""
+        }.`
+      : `${partyName(entry.sellerId)} has a recorded ${transferKind} to ${partyName(
+          entry.buyerId,
+        )}, but it was not applied to the title.`;
+
+    return {
       id: `transfer-${entry.id || index}`,
       type: "sale",
+      transferKind,
+      invalid: !applied,
+      chronologyOrder: entry.chronologyOrder,
       personId: "",
-      change: {
-        kind: "transfer",
-        sellerId: entry.sellerId,
-        buyerId: entry.buyerId,
-        amount: entry.amount,
-        amountFraction: entry.amountFraction,
-      },
+      ...(applied
+        ? {
+            change: {
+              kind: "transfer",
+              sellerId: entry.sellerId,
+              buyerId: entry.buyerId,
+              amount: entry.amount,
+              amountFraction: entry.amountFraction,
+            },
+          }
+        : {}),
+      participants: [
+        participant(entry.sellerId, sellerRole),
+        participant(entry.buyerId, buyerRole),
+      ],
       date: entry.date || "",
-      title: Number(entry.consideration) > 0 ? "Property share sale" : "Ownership transfer",
-      description: `${partyName(entry.sellerId)} transfers ${shareLabel(
-        entry.amount,
-        entry.amountFraction,
-      )} of ${property.address || "the property"} to ${partyName(entry.buyerId)}${
-        Number(entry.consideration) > 0 ? ` for ${money.format(Number(entry.consideration))}` : ""
-      }.`,
-    }));
+      title: `Property share ${transferKind}`,
+      description,
+      warnings: applied ? [] : [`Recorded ${transferKind} needs attention: ${invalidReason}`],
+    };
+  });
 
   const byDate = (first, second) => {
     const dateComparison = eventDateSort(first).localeCompare(eventDateSort(second));
     if (dateComparison) return dateComparison;
     return first.type.localeCompare(second.type);
   };
-  const legalEvents = [...successionEvents.sort(byDate), ...transferEvents.sort(byDate)];
+  const legalEvents = [...successionEvents, ...transferEvents];
+  const hasCompleteChronology = legalEvents.every(
+    (event) => typeof event.chronologyOrder === "number" && Number.isFinite(event.chronologyOrder),
+  );
+  legalEvents.sort(
+    hasCompleteChronology
+      ? (first, second) => first.chronologyOrder - second.chronologyOrder
+      : byDate,
+  );
   const runningHoldings = new Map(initialHoldings);
   const tracedLegalEvents = legalEvents.map((event) => {
     const snapshotBeforeEvent = ownershipSnapshot(runningHoldings);
     const fractionSnapshotBeforeEvent = ownershipFractionSnapshot(runningHoldings);
-    if (event.change.kind === "succession") applySuccession(runningHoldings, event.change);
-    if (event.change.kind === "transfer") applyTransfer(runningHoldings, event.change);
+    if (event.change?.kind === "succession") applySuccession(runningHoldings, event.change);
+    if (event.change?.kind === "transfer") applyTransfer(runningHoldings, event.change);
     const snapshotForCards =
-      event.change.kind === "succession" ? snapshotBeforeEvent : ownershipSnapshot(runningHoldings);
+      event.change?.kind === "succession"
+        ? snapshotBeforeEvent
+        : ownershipSnapshot(runningHoldings);
     const fractionSnapshotForCards =
-      event.change.kind === "succession"
+      event.change?.kind === "succession"
         ? fractionSnapshotBeforeEvent
         : ownershipFractionSnapshot(runningHoldings);
     const publicEvent = { ...event };
     delete publicEvent.change;
+    delete publicEvent.chronologyOrder;
     return {
       ...publicEvent,
       ownershipSnapshot: snapshotForCards,
@@ -248,38 +293,52 @@ export function buildSuccessionTrace({
   const currentOwners = (propertyReport.ledger?.owners || []).filter(
     (owner) => Number(owner.share) > 0,
   );
-  const proposedSaleEvent = saleValue
-    ? [
-        {
-          id: "proposed-sale",
-          type: "sale",
-          personId: "",
-          ownershipSnapshot: Object.fromEntries(
-            currentOwners.map((owner) => [owner.id, Number(owner.share) || 0]),
-          ),
-          ownershipFractionSnapshot: Object.fromEntries(
-            currentOwners
-              .filter((owner) => owner.shareFraction?.denominator)
-              .map((owner) => [owner.id, owner.shareFraction]),
-          ),
-          date: property.saleDate || "",
-          title: "Proposed property sale",
-          description: `${propertyName} is being sold for ${money.format(saleValue)}${
-            currentOwners.length
-              ? `. Current allocation: ${currentOwners
-                  .map(
-                    (owner) =>
-                      `${owner.name || partyName(owner.id)} ${shareLabel(
-                        owner.share,
-                        owner.shareFraction,
-                      )}, worth ${money.format(saleValue * owner.share)}`,
-                  )
-                  .join("; ")}`
-              : ""
-          }.`,
-        },
-      ]
-    : [];
+  const generatedCurrentOwnerPresentationsById = ownerPresentationsById(
+    buildCurrentOwnerPresentations(currentOwners, property.saleValue),
+  );
+  const resolvedCurrentOwnerPresentationsById =
+    currentOwnerPresentationsById || generatedCurrentOwnerPresentationsById;
+  const proposedSaleEvent =
+    recordedSaleValue !== null
+      ? [
+          {
+            id: "proposed-sale",
+            type: "sale",
+            personId: "",
+            ownershipSnapshot: Object.fromEntries(
+              currentOwners.map((owner) => [owner.id, Number(owner.share) || 0]),
+            ),
+            ownershipFractionSnapshot: Object.fromEntries(
+              currentOwners
+                .filter((owner) => owner.shareFraction?.denominator)
+                .map((owner) => [owner.id, owner.shareFraction]),
+            ),
+            date: property.saleDate || "",
+            title: "Proposed property sale",
+            description: `${propertyName} is being sold for ${money.format(saleValue)}${
+              currentOwners.length
+                ? `. Current allocation: ${currentOwners
+                    .map((owner) => {
+                      const generatedPresentation =
+                        generatedCurrentOwnerPresentationsById[owner.id];
+                      const suppliedPresentation = resolvedCurrentOwnerPresentationsById[owner.id];
+                      const presentation = suppliedPresentation
+                        ? { ...generatedPresentation, ...suppliedPresentation }
+                        : generatedPresentation;
+                      const suppliedValue = recordedNonNegativeMoney(presentation.value);
+                      const value =
+                        suppliedValue === null ? generatedPresentation.value : suppliedValue;
+                      return `${owner.name || partyName(owner.id)} ${shareLabel(
+                        presentation.share,
+                        presentation.shareFraction,
+                      )}, worth ${money.format(value)}`;
+                    })
+                    .join("; ")}`
+                : ""
+            }.`,
+          },
+        ]
+      : [];
 
   return [...initialEvents, ...tracedLegalEvents, ...proposedSaleEvent];
 }
