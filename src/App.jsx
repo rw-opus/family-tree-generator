@@ -8,6 +8,7 @@ import {
   MousePointerClick,
   X,
 } from "lucide-react";
+import { AdminConsole } from "./components/AdminConsole.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
@@ -76,11 +77,13 @@ import {
   upsertWorkspaceTree,
 } from "./services/localWorkspace.js";
 import {
+  DEFAULT_FREE_TREE_LIMIT,
   defaultTreeEntitlement,
   isTreePaymentRequiredError,
   loadTreeEntitlement,
   startTreeCreditCheckout,
 } from "./services/treeBilling.js";
+import { isPlatformAdmin } from "./services/adminConsole.js";
 
 const makePrimaryProperty = (id = crypto.randomUUID()) => ({
   id,
@@ -293,6 +296,8 @@ export function App({
   const [entitlement, setEntitlement] = useState(localOnlyMode ? defaultTreeEntitlement : null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingMessage, setBillingMessage] = useState("");
+  const [platformAdmin, setPlatformAdmin] = useState(false);
+  const [adminConsoleOpen, setAdminConsoleOpen] = useState(false);
   const [showLibrary, setShowLibrary] = useState(true);
   const [workspaceView, setWorkspaceView] = useState("tree");
   const [propertyWorkspaceSection, setPropertyWorkspaceSection] = useState("setup");
@@ -393,6 +398,20 @@ export function App({
     const nextEntitlement = await loadTreeEntitlement(authenticatedUserId);
     setEntitlement(nextEntitlement);
     return nextEntitlement;
+  }, [authenticatedUserId, cloudMode]);
+
+  useEffect(() => {
+    if (!cloudMode) {
+      setPlatformAdmin(false);
+      return undefined;
+    }
+    let live = true;
+    isPlatformAdmin().then((admin) => {
+      if (live) setPlatformAdmin(admin);
+    });
+    return () => {
+      live = false;
+    };
   }, [authenticatedUserId, cloudMode]);
 
   const currentTree = useMemo(() => normaliseTree(tree), [tree]);
@@ -795,10 +814,11 @@ export function App({
   const handleCreationError = async (error) => {
     if (isTreePaymentRequiredError(error)) {
       const nextEntitlement = await refreshTreeEntitlement().catch(() => null);
+      const freeLimit = nextEntitlement?.freeTreeLimit ?? DEFAULT_FREE_TREE_LIMIT;
       setBillingMessage(
         nextEntitlement?.unlimitedTrees
           ? "Unlimited tree creation is active. Please try creating the tree again."
-          : "Your five free trees have been used. Buy one tree credit for €30.",
+          : `Your ${freeLimit} free tree${freeLimit === 1 ? " has" : "s have"} been used. Buy one tree credit for €30.`,
       );
       return;
     }
@@ -1473,6 +1493,10 @@ export function App({
     }
   };
 
+  if (adminConsoleOpen) {
+    return <AdminConsole onClose={() => setAdminConsoleOpen(false)} />;
+  }
+
   if (showLibrary) {
     return (
       <FamilyLibrary
@@ -1489,6 +1513,8 @@ export function App({
         saveState={saveState}
         backupDisabled={cloudMode && !cloudListState.complete}
         recoveryAvailable={Boolean(startupWorkspace.recoveryKey)}
+        isPlatformAdmin={platformAdmin}
+        onOpenAdminConsole={() => setAdminConsoleOpen(true)}
         onDownloadRecovery={downloadLocalRecovery}
         onDownloadBackup={downloadWorkspaceBackup}
         onCreate={createNewTree}

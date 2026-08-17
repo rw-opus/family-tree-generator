@@ -1,0 +1,464 @@
+/* Platform admin console, site feedback inbox/form and announcement banner.
+   Shares the design tokens declared in workbench.css (--ink, --forest, --paper,
+   etc.) rather than duplicating a palette. */
+
+.admin-console-page {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.admin-console-content {
+  width: min(1080px, calc(100% - 2rem));
+  margin: clamp(1.25rem, 4vw, 3rem) auto;
+}
+
+.admin-console-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-console-header h1 {
+  margin: 0;
+  color: var(--ink);
+  font: 700 1.4rem var(--tracker-serif);
+}
+
+.admin-console-header p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+.admin-console-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1rem;
+}
+
+.admin-console-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.55rem 0.75rem;
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: 700;
+}
+
+.admin-console-tab.active {
+  border-bottom-color: var(--forest);
+  color: var(--forest);
+}
+
+.admin-console-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(7, 50, 32, 0.06);
+  overflow: hidden;
+}
+
+.admin-console-loader {
+  padding: 1.1rem;
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+
+.admin-console-loader.error {
+  color: var(--danger);
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table th {
+  border-bottom: 1px solid var(--line);
+  background: #fafaf7;
+  padding: 0.55rem 0.7rem;
+  color: var(--muted);
+  font-size: var(--type-micro);
+  font-weight: 800;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.admin-table td {
+  border-bottom: 1px solid #eef1ee;
+  padding: 0.55rem 0.7rem;
+  vertical-align: top;
+  font-size: var(--type-caption);
+}
+
+.admin-table tr:hover td {
+  background: #fbfbf8;
+}
+
+.admin-table-email {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: var(--type-micro);
+  font-weight: 700;
+}
+
+.admin-badge.unlimited {
+  background: var(--forest-soft);
+  color: var(--forest);
+}
+
+.admin-badge.limited {
+  background: #f1f0ea;
+  color: var(--muted);
+}
+
+.admin-inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #c9d7cf;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+  padding: 0.3rem 0.55rem;
+  color: var(--forest);
+  font-size: var(--type-micro);
+  font-weight: 800;
+}
+
+.admin-inline-action:hover {
+  background: var(--forest-soft);
+}
+
+.admin-inline-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-console-footnote {
+  border-top: 1px solid #eef1ee;
+  padding: 0.6rem 0.7rem;
+  color: var(--muted);
+  font-size: var(--type-micro);
+}
+
+.admin-announcement-editor {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 34rem;
+  padding: 1.1rem;
+}
+
+.admin-announcement-editor h3 {
+  margin: 0;
+  font: 700 1rem var(--tracker-serif);
+}
+
+.admin-announcement-editor p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-micro);
+}
+
+.admin-announcement-editor textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--field);
+  border-radius: 5px;
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  font-size: var(--type-control);
+}
+
+.admin-announcement-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-announcement-controls select {
+  border: 1px solid var(--field);
+  border-radius: 5px;
+  padding: 0.4rem 0.5rem;
+  font-size: var(--type-caption);
+}
+
+.admin-announcement-status {
+  color: var(--muted);
+  font-size: var(--type-micro);
+}
+
+/* Feedback inbox */
+
+.feedback-inbox {
+  padding: 1.1rem;
+}
+
+.feedback-inbox-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.feedback-inbox-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font: 700 1.05rem var(--tracker-serif);
+}
+
+.feedback-new-count {
+  border-radius: 999px;
+  background: var(--forest-soft);
+  padding: 0.05rem 0.5rem;
+  color: var(--forest);
+  font-size: var(--type-micro);
+  font-weight: 800;
+}
+
+.feedback-inbox-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.feedback-inbox-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: var(--type-micro);
+  font-weight: 700;
+}
+
+.feedback-inbox-note {
+  margin: 0 0 0.7rem;
+  color: var(--muted);
+  font-size: var(--type-micro);
+}
+
+.feedback-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feedback-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 0.6rem;
+  border-top: 1px solid #eef1ee;
+  padding: 0.7rem 0;
+}
+
+.feedback-item:first-child {
+  border-top: none;
+}
+
+.feedback-item.handled {
+  opacity: 0.6;
+}
+
+.feedback-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: var(--type-micro);
+  font-weight: 700;
+}
+
+.feedback-kind.bug {
+  background: #fbe4e4;
+  color: #a9232d;
+}
+
+.feedback-kind.suggestion {
+  background: #fdedd3;
+  color: #8a5b00;
+}
+
+.feedback-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.feedback-item-message {
+  margin: 0;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  font-size: var(--type-caption);
+}
+
+.feedback-item-meta {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: var(--type-micro);
+}
+
+/* Feedback submission control */
+
+.feedback-form-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  border: 1px solid #c9d7cf;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+  padding: 0.45rem 0.6rem;
+  color: var(--forest);
+  font-size: var(--type-caption);
+  font-weight: 800;
+}
+
+.feedback-form-trigger:hover {
+  background: var(--forest-soft);
+}
+
+.feedback-form-dialog-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 27, 45, 0.45);
+  padding: 1rem;
+}
+
+.feedback-form-dialog {
+  width: min(28rem, 100%);
+  border-radius: 8px;
+  background: #fff;
+  padding: 1.1rem;
+}
+
+.feedback-form-dialog h3 {
+  margin: 0 0 0.2rem;
+  font: 700 1.05rem var(--tracker-serif);
+}
+
+.feedback-form-dialog p {
+  margin: 0 0 0.7rem;
+  color: var(--muted);
+  font-size: var(--type-micro);
+}
+
+.feedback-form-kind {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.feedback-form-kind label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--field);
+  border-radius: 5px;
+  padding: 0.35rem 0.6rem;
+  font-size: var(--type-caption);
+}
+
+.feedback-form-dialog textarea {
+  width: 100%;
+  min-height: 6rem;
+  resize: vertical;
+  border: 1px solid var(--field);
+  border-radius: 5px;
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  font-size: var(--type-control);
+}
+
+.feedback-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.feedback-form-status {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: var(--type-micro);
+}
+
+/* Announcement banner */
+
+.announcement-banner {
+  display: flex;
+  align-items: start;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  font-size: var(--type-caption);
+}
+
+.announcement-banner.info {
+  background: var(--forest-soft);
+  color: var(--forest);
+}
+
+.announcement-banner.warning {
+  background: #fdedd3;
+  color: #7a4b00;
+}
+
+.announcement-banner p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.announcement-banner button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.15rem;
+  color: inherit;
+}
+
+.announcement-banner button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}

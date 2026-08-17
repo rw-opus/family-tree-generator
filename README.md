@@ -4,7 +4,7 @@ A commercial Maltese property ownership and succession workspace. It combines a 
 
 ## Commercial model
 
-- Every registered account receives five lifetime tree generations free of charge.
+- Every registered account receives three lifetime tree generations free of charge.
 - Every later new tree or GEDCOM import consumes one paid tree credit costing €30, unless an operator has granted that account unlimited tree creation.
 - Editing, renaming and reopening an existing tree does not consume another credit.
 - Deleting a tree does not restore its free or paid generation credit.

@@ -1,13 +1,13 @@
 # Commercial deployment setup
 
-This application uses Supabase for authentication, row-isolated tree storage and lifetime tree allowances. Stripe Checkout sells one additional tree credit for €30 after the first five free generations have been used.
+This application uses Supabase for authentication, row-isolated tree storage and lifetime tree allowances. Stripe Checkout sells one additional tree credit for €30 after the first three free generations have been used.
 
 ## Commercial rule
 
 The database is authoritative:
 
-- creations 1–5 are allocated from the free lifetime allowance;
-- creation 6 and later consumes one paid credit;
+- creations 1–3 are allocated from the free lifetime allowance;
+- creation 4 and later consumes one paid credit;
 - an operator may grant a specific account unlimited tree creation without consuming free or paid credits;
 - creating from a blank tree and importing a GEDCOM are treated identically;
 - updates never consume a new credit;

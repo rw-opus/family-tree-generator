@@ -6,11 +6,11 @@ import {
 } from "../../src/services/treeBilling.js";
 
 describe("commercial tree entitlements", () => {
-  it("gives a new account five free tree generations", () => {
+  it("gives a new account three free tree generations", () => {
     expect(defaultTreeEntitlement).toMatchObject({
-      freeTreeLimit: 5,
+      freeTreeLimit: 3,
       freeTreesUsed: 0,
-      freeTreesRemaining: 5,
+      freeTreesRemaining: 3,
       paidTreeCredits: 0,
       unlimitedTrees: false,
       canCreate: true,

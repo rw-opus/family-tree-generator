@@ -1,7 +1,7 @@
 import { supabase } from "../supabaseClient.js";
 
 export const TREE_PRICE_EUR = 30;
-export const DEFAULT_FREE_TREE_LIMIT = 5;
+export const DEFAULT_FREE_TREE_LIMIT = 3;
 
 export const defaultTreeEntitlement = Object.freeze({
   freeTreeLimit: DEFAULT_FREE_TREE_LIMIT,

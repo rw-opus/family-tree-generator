@@ -13,11 +13,14 @@ import {
   LogOut,
   Pencil,
   Search,
+  ShieldCheck,
   Trash2,
   UserRound,
   X,
 } from "lucide-react";
 import { AccountPasswordDialog } from "./AccountPasswordDialog.jsx";
+import { AnnouncementBanner } from "./AnnouncementBanner.jsx";
+import { SiteFeedbackForm } from "./SiteFeedbackForm.jsx";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
 import { TREE_DATA_LIMITS } from "../domain/treeData.js";
 import { LOCAL_TRASH_RETENTION_DAYS } from "../services/localWorkspace.js";
@@ -69,6 +72,8 @@ export function FamilyLibrary({
   saveState,
   backupDisabled = false,
   recoveryAvailable = false,
+  isPlatformAdmin = false,
+  onOpenAdminConsole,
   onCreate,
   onImport,
   onOpen,
@@ -189,7 +194,10 @@ export function FamilyLibrary({
     const file = event.target.files?.[0];
     if (!file) return;
     if (!canCreate) {
-      setImportStatus("Your five free trees have been used. Buy a €30 tree credit first.");
+      const freeLimit = entitlement?.freeTreeLimit ?? 3;
+      setImportStatus(
+        `Your ${freeLimit} free tree${freeLimit === 1 ? " has" : "s have"} been used. Buy a €30 tree credit first.`,
+      );
       event.target.value = "";
       return;
     }
@@ -205,6 +213,7 @@ export function FamilyLibrary({
 
   return (
     <main className="family-library-page">
+      {commercialMode && <AnnouncementBanner />}
       <header className="family-library-header">
         <div className="family-library-brand">
           <FolderOpen size={22} aria-hidden="true" />
@@ -280,6 +289,17 @@ export function FamilyLibrary({
                     <span className="library-action-label-short" aria-hidden="true">
                       Password
                     </span>
+                  </button>
+                )}
+                <SiteFeedbackForm />
+                {isPlatformAdmin && (
+                  <button
+                    type="button"
+                    className="library-account-action"
+                    onClick={onOpenAdminConsole}
+                    aria-label="Open admin console"
+                  >
+                    <ShieldCheck size={15} /> Admin console
                   </button>
                 )}
                 <button
