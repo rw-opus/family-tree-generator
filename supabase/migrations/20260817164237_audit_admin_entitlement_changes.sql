@@ -99,7 +99,7 @@ begin
     credit_delta,
     null
   )
-  on conflict (request_id) do nothing
+  on conflict on constraint admin_entitlement_audit_pkey do nothing
   returning inserted_audit.request_id into inserted_request;
 
   if inserted_request is null then
@@ -170,7 +170,7 @@ begin
     null,
     requested_enabled
   )
-  on conflict (request_id) do nothing
+  on conflict on constraint admin_entitlement_audit_pkey do nothing
   returning inserted_audit.request_id into inserted_request;
 
   if inserted_request is null then

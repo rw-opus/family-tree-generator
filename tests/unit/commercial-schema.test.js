@@ -322,7 +322,12 @@ describe("commercial Supabase schema", () => {
     expect(normaliseSql(schema)).toContain(normaliseSql(entitlementAuditMigration));
     expect(entitlementAuditMigration).toContain("private.admin_entitlement_audit");
     expect(entitlementAuditMigration).toContain("credit_delta < 1 or credit_delta > 100");
-    expect(entitlementAuditMigration).toContain("on conflict (request_id) do nothing");
+    expect(
+      entitlementAuditMigration.match(
+        /on conflict on constraint admin_entitlement_audit_pkey do nothing/g,
+      ),
+    ).toHaveLength(2);
+    expect(entitlementAuditMigration).not.toContain("on conflict (request_id) do nothing");
     expect(entitlementAuditMigration).toContain(
       "drop function public.admin_grant_tree_credits(uuid, integer)",
     );
