@@ -2,7 +2,8 @@
 -- supabase/migrations/ is the authoritative database history.
 -- Family Tree Generator commercial schema.
 -- Run this only in the Family Tree Generator's own Supabase project.
--- Commercial rule: the first five lifetime tree generations are free;
+-- Commercial rule: the first three lifetime tree generations are free
+-- (accounts provisioned before 2026-08-17 keep the five they were given);
 -- every later creation or GEDCOM import consumes one paid EUR 30 credit,
 -- unless an operator has granted the account unlimited tree creation.
 
@@ -1935,3 +1936,390 @@ with check ((select auth.uid()) = user_id);
 
 revoke all on table public.terms_acceptances from anon, authenticated;
 grant select, insert on table public.terms_acceptances to authenticated;
+
+-- Lower the free lifetime tree allowance for new accounts from five to three
+-- (2026-08-17). Deliberately does NOT rewrite free_tree_limit on existing
+-- tree_accounts rows: an account already provisioned at five keeps its five,
+-- so this cannot claw back an allowance someone was already given. Only
+-- accounts created from now on default to three.
+
+alter table public.tree_accounts
+  alter column free_tree_limit set default 3;
+
+-- The quota-consuming trigger's payment-required message hard-coded "five",
+-- which would now be wrong for new three-tree accounts (and inconsistent for
+-- any grandfathered five-tree account). Read the account's own limit instead.
+create or replace function private.consume_tree_entitlement()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  account public.tree_accounts%rowtype;
+  allocation_source text;
+begin
+  if caller_id is null or new.owner_id <> caller_id then
+    raise exception using
+      errcode = '42501',
+      message = 'TREE_OWNER_REQUIRED';
+  end if;
+
+  insert into public.tree_accounts (user_id)
+  values (caller_id)
+  on conflict (user_id) do nothing;
+
+  select * into account
+  from public.tree_accounts
+  where user_id = caller_id
+  for update;
+
+  if account.unlimited_trees then
+    allocation_source := 'admin';
+    update public.tree_accounts
+    set total_trees_created = total_trees_created + 1
+    where user_id = caller_id;
+  elsif account.free_trees_used < account.free_tree_limit then
+    allocation_source := 'free';
+    update public.tree_accounts
+    set
+      free_trees_used = free_trees_used + 1,
+      total_trees_created = total_trees_created + 1
+    where user_id = caller_id;
+  elsif account.paid_tree_credits > 0 then
+    allocation_source := 'paid';
+    update public.tree_accounts
+    set
+      paid_tree_credits = paid_tree_credits - 1,
+      total_trees_created = total_trees_created + 1
+    where user_id = caller_id;
+  else
+    raise exception using
+      errcode = 'P0001',
+      message = 'TREE_PAYMENT_REQUIRED',
+      detail = format(
+        'The %s free tree generation%s been used. Purchase one EUR 30 tree credit.',
+        account.free_tree_limit,
+        case when account.free_tree_limit = 1 then ' has' else 's have' end
+      );
+  end if;
+
+  insert into public.tree_generations (
+    tree_id,
+    owner_id,
+    entitlement_source,
+    tree_title
+  ) values (
+    new.id,
+    caller_id,
+    allocation_source,
+    new.title
+  );
+
+  return new;
+end;
+$$;
+
+revoke all on function private.consume_tree_entitlement() from public, anon, authenticated;
+
+-- Platform Super Administrator console (2026-08-17).
+--
+-- The product owner (a single auth account) reviews every account from
+-- inside the app. Cross-account reads happen ONLY through the
+-- security-definer function below, gated by is_platform_admin(): the browser
+-- calls it with its own JWT and never receives the service-role key, and
+-- non-admins are refused outright. RLS on the underlying tables is
+-- unchanged.
+
+create table if not exists public.platform_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.platform_admins enable row level security;
+revoke all on table public.platform_admins from public, anon, authenticated;
+
+-- Seed the product owner. Add more admins the same way (another insert row).
+insert into public.platform_admins (user_id)
+select id from auth.users where lower(email) = 'rolandwadge@gmail.com'
+on conflict (user_id) do nothing;
+
+create or replace function public.is_platform_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.platform_admins where user_id = (select auth.uid())
+  );
+$$;
+revoke all on function public.is_platform_admin() from public, anon;
+grant execute on function public.is_platform_admin() to authenticated;
+
+-- Every account at a glance: tree counts, allowance/credit state and last
+-- activity. Adapted to this product's individual-account model (there are no
+-- organisations/workspaces here, unlike the notarial tracker this pattern was
+-- ported from).
+create or replace function public.admin_platform_overview()
+returns table (
+  user_id uuid,
+  email text,
+  created_at timestamptz,
+  trees_active bigint,
+  trees_trashed bigint,
+  total_trees_created integer,
+  free_tree_limit smallint,
+  free_trees_used smallint,
+  paid_tree_credits integer,
+  unlimited_trees boolean,
+  stripe_customer_id text,
+  last_activity timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+
+  return query
+  select
+    acct.id,
+    acct.email,
+    acct.created_at,
+    coalesce(tree_stats.active_total, 0) as trees_active,
+    coalesce(tree_stats.trashed_total, 0) as trees_trashed,
+    coalesce(ta.total_trees_created, 0) as total_trees_created,
+    coalesce(ta.free_tree_limit, 3) as free_tree_limit,
+    coalesce(ta.free_trees_used, 0) as free_trees_used,
+    coalesce(ta.paid_tree_credits, 0) as paid_tree_credits,
+    coalesce(ta.unlimited_trees, false) as unlimited_trees,
+    ta.stripe_customer_id,
+    tree_stats.last_activity
+  from auth.users acct
+  left join public.tree_accounts ta on ta.user_id = acct.id
+  left join lateral (
+    select
+      count(*) filter (where t.deleted_at is null) as active_total,
+      count(*) filter (where t.deleted_at is not null) as trashed_total,
+      max(t.updated_at) as last_activity
+    from public.family_trees t
+    where t.owner_id = acct.id
+  ) tree_stats on true
+  order by acct.created_at desc;
+end;
+$$;
+revoke all on function public.admin_platform_overview() from public, anon;
+grant execute on function public.admin_platform_overview() to authenticated;
+
+-- Operator-managed unlimited-tree grant, driven from the console instead of
+-- a manual database edit. Mirrors the existing tree_accounts.unlimited_trees
+-- column already used by the entitlement trigger.
+create or replace function public.admin_set_unlimited_trees(target_user uuid, unlimited boolean)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+
+  insert into public.tree_accounts (user_id, unlimited_trees)
+  values (target_user, coalesce(unlimited, false))
+  on conflict (user_id) do update
+  set unlimited_trees = coalesce(unlimited, false);
+end;
+$$;
+revoke all on function public.admin_set_unlimited_trees(uuid, boolean) from public, anon;
+grant execute on function public.admin_set_unlimited_trees(uuid, boolean) to authenticated;
+
+-- Operator-managed paid-credit grant (comps, support gestures) without
+-- touching Stripe. Adds to whatever credits the account already holds.
+create or replace function public.admin_grant_tree_credits(target_user uuid, credits integer)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+  if credits is null or credits <= 0 then
+    raise exception 'Credits must be a positive number';
+  end if;
+
+  insert into public.tree_accounts (user_id, paid_tree_credits)
+  values (target_user, credits)
+  on conflict (user_id) do update
+  set paid_tree_credits = public.tree_accounts.paid_tree_credits + credits;
+end;
+$$;
+revoke all on function public.admin_grant_tree_credits(uuid, integer) from public, anon;
+grant execute on function public.admin_grant_tree_credits(uuid, integer) to authenticated;
+
+-- One-way, anonymous product feedback for the product owner (2026-08-17).
+--
+-- Any signed-in account may submit a bug report or suggestion; the message is
+-- stored with NO submitter identity (no user_id column at all), so even a
+-- platform admin browsing the inbox cannot tell who sent a given message.
+
+create table if not exists public.site_feedback (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('suggestion', 'bug')),
+  message text not null check (char_length(message) between 5 and 3000),
+  created_at timestamptz not null default now(),
+  handled_at timestamptz
+);
+create index if not exists site_feedback_created_idx
+  on public.site_feedback (created_at desc);
+
+alter table public.site_feedback enable row level security;
+revoke all on table public.site_feedback from public, anon, authenticated;
+
+-- Any authenticated account may submit feedback; simple per-account rate
+-- limiting keeps the channel usable without recording who sent what.
+create or replace function public.submit_site_feedback(feedback_kind text, feedback_message text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  clean_kind text := lower(trim(coalesce(feedback_kind, '')));
+  clean_message text := trim(coalesce(feedback_message, ''));
+begin
+  if caller_id is null then
+    raise exception 'Sign in before sending feedback.';
+  end if;
+  if clean_kind not in ('suggestion', 'bug') then
+    raise exception 'Feedback type must be suggestion or bug';
+  end if;
+  if char_length(clean_message) < 5 or char_length(clean_message) > 3000 then
+    raise exception 'Feedback message must be between 5 and 3000 characters';
+  end if;
+
+  if (
+    select count(*)
+    from public.site_feedback
+    where created_at >= now() - interval '1 hour'
+  ) >= 200 then
+    raise exception 'Too many feedback messages have been sent recently. Please try again later.';
+  end if;
+
+  insert into public.site_feedback (kind, message)
+  values (clean_kind, clean_message);
+end;
+$$;
+revoke all on function public.submit_site_feedback(text, text) from public, anon;
+grant execute on function public.submit_site_feedback(text, text) to authenticated;
+
+-- Every message, newest first. Non-admins are refused outright, so the app
+-- can distinguish "not a platform admin" (error) from "admin, empty inbox".
+create or replace function public.list_site_feedback(include_handled boolean default true)
+returns table (
+  id uuid,
+  kind text,
+  message text,
+  created_at timestamptz,
+  handled_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+
+  return query
+  select f.id, f.kind, f.message, f.created_at, f.handled_at
+  from public.site_feedback f
+  where include_handled or f.handled_at is null
+  order by f.created_at desc
+  limit 1000;
+end;
+$$;
+revoke all on function public.list_site_feedback(boolean) from public, anon;
+grant execute on function public.list_site_feedback(boolean) to authenticated;
+
+create or replace function public.set_site_feedback_handled(feedback_id uuid, handled boolean)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+  update public.site_feedback
+  set handled_at = case when handled then coalesce(handled_at, now()) else null end
+  where id = feedback_id;
+end;
+$$;
+revoke all on function public.set_site_feedback_handled(uuid, boolean) from public, anon;
+grant execute on function public.set_site_feedback_handled(uuid, boolean) to authenticated;
+
+-- Platform announcement banner (2026-08-17).
+--
+-- The product owner posts a single banner that every signed-in account sees
+-- at the top of the app. active_announcement() is readable by any
+-- authenticated account; only a platform admin can set or clear it.
+
+create table if not exists public.platform_announcements (
+  id uuid primary key default gen_random_uuid(),
+  message text not null,
+  level text not null default 'info' check (level in ('info', 'warning')),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.platform_announcements enable row level security;
+revoke all on table public.platform_announcements from public, anon, authenticated;
+
+-- The current banner, for every account to display. Returns no row when cleared.
+create or replace function public.active_announcement()
+returns table (id uuid, message text, level text)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select a.id, a.message, a.level
+  from public.platform_announcements a
+  where a.active
+  order by a.updated_at desc
+  limit 1;
+$$;
+revoke all on function public.active_announcement() from public, anon;
+grant execute on function public.active_announcement() to authenticated;
+
+-- Post a banner (empty message clears it). Only one is active at a time.
+create or replace function public.admin_set_announcement(new_message text, new_level text default 'info')
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+  update public.platform_announcements set active = false, updated_at = now() where active;
+  if coalesce(trim(new_message), '') <> '' then
+    insert into public.platform_announcements (message, level, active)
+    values (trim(new_message), case when new_level = 'warning' then 'warning' else 'info' end, true);
+  end if;
+end;
+$$;
+revoke all on function public.admin_set_announcement(text, text) from public, anon;
+grant execute on function public.admin_set_announcement(text, text) to authenticated;
