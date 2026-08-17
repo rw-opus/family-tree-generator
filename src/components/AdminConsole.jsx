@@ -1,12 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Gauge, Megaphone, MessageSquare } from "lucide-react";
 import {
+  createAdminRequestId,
   grantTreeCredits,
   loadPlatformOverview,
+  MAX_ADMIN_CREDIT_GRANT,
   setUnlimitedTrees,
   getAnnouncement,
   setAnnouncement,
 } from "../services/adminConsole.js";
+import {
+  clearPendingAdminMutation,
+  getOrCreatePendingAdminMutation,
+} from "../services/adminMutationRequests.js";
 import { listSiteFeedback, setSiteFeedbackHandled } from "../services/siteFeedback.js";
 import { AnnouncementBanner } from "./AnnouncementBanner.jsx";
 import { SiteFeedbackInbox } from "./SiteFeedbackInbox.jsx";
@@ -39,32 +45,179 @@ function Loader({ status, error, empty, children }) {
   return children;
 }
 
-function CreditsCell({ account, onGrant }) {
+function ActionStatus({ status }) {
+  if (!status.message) return null;
+  return (
+    <p
+      className={`admin-action-status ${status.tone}`}
+      role={status.tone === "error" ? "alert" : "status"}
+      aria-live={status.tone === "error" ? "assertive" : "polite"}
+    >
+      {status.message}
+    </p>
+  );
+}
+
+export function CreditsCell({ account, onGrant }) {
   const [value, setValue] = useState("1");
   const [busy, setBusy] = useState(false);
+  const [actionStatus, setActionStatus] = useState({ message: "", tone: "" });
+  const busyRef = useRef(false);
+  const credits = Number(value);
+  const valid = Number.isInteger(credits) && credits >= 1 && credits <= MAX_ADMIN_CREDIT_GRANT;
+
   const grant = async () => {
-    const credits = parseInt(value, 10);
-    if (!Number.isFinite(credits) || credits <= 0) return;
-    setBusy(true);
+    if (busyRef.current || !valid) return;
+    const nextBalance = account.paidTreeCredits + credits;
+    const confirmed = window.confirm(
+      `Add ${credits} paid tree credit${credits === 1 ? "" : "s"} to ${account.email} (${account.userId})?\n\nBalance: ${account.paidTreeCredits} -> ${nextBalance} (+${credits}).`,
+    );
+    if (!confirmed) return;
+
+    const mutation = {
+      operation: "grant-tree-credits",
+      targetUserId: account.userId,
+      payload: credits,
+    };
+    let requestId;
     try {
-      await onGrant(account.userId, credits);
+      requestId = getOrCreatePendingAdminMutation(mutation, createAdminRequestId);
+    } catch (error) {
+      setActionStatus({
+        message: error?.message || "Could not prepare the credit grant.",
+        tone: "error",
+      });
+      return;
+    }
+
+    busyRef.current = true;
+    setBusy(true);
+    setActionStatus({ message: "", tone: "" });
+    try {
+      await onGrant(account, credits, { requestId });
+      clearPendingAdminMutation(mutation, requestId);
+      setActionStatus({
+        message: `Added ${credits} paid tree credit${credits === 1 ? "" : "s"} to ${account.email}.`,
+        tone: "success",
+      });
+    } catch (error) {
+      setActionStatus({
+        message: error?.message || `Could not add paid credits to ${account.email}.`,
+        tone: "error",
+      });
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-      <span>{account.paidTreeCredits}</span>
-      <input
-        type="number"
-        min="1"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        style={{ width: "3.2rem" }}
-      />
-      <button type="button" className="admin-inline-action" disabled={busy} onClick={grant}>
-        {busy ? "…" : "Add"}
+    <div className="admin-entitlement-action">
+      <div className="admin-entitlement-controls">
+        <span aria-label={`${account.email} has ${account.paidTreeCredits} paid tree credits`}>
+          {account.paidTreeCredits}
+        </span>
+        <input
+          type="number"
+          min="1"
+          max={MAX_ADMIN_CREDIT_GRANT}
+          step="1"
+          inputMode="numeric"
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value);
+          }}
+          disabled={busy}
+          aria-label={`Paid credits to add for ${account.email} (${account.userId}), maximum ${MAX_ADMIN_CREDIT_GRANT}`}
+        />
+        <button
+          type="button"
+          className="admin-inline-action"
+          disabled={busy || !valid}
+          onClick={grant}
+          aria-label={`Add paid credits to ${account.email} (${account.userId})`}
+        >
+          {busy ? "Adding…" : "Add"}
+        </button>
+      </div>
+      <ActionStatus status={actionStatus} />
+    </div>
+  );
+}
+
+export function UnlimitedControl({ account, onToggle }) {
+  const [busy, setBusy] = useState(false);
+  const [actionStatus, setActionStatus] = useState({ message: "", tone: "" });
+  const busyRef = useRef(false);
+
+  const toggle = async () => {
+    if (busyRef.current) return;
+    const next = !account.unlimitedTrees;
+    const confirmed = window.confirm(
+      next
+        ? `Grant unlimited tree creation to ${account.email} (${account.userId}), bypassing free and paid credits?`
+        : `Revoke unlimited tree creation for ${account.email} (${account.userId})? The account will return to its free and paid-credit allowance.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const mutation = {
+      operation: "set-unlimited-trees",
+      targetUserId: account.userId,
+      payload: next,
+    };
+    let requestId;
+    try {
+      requestId = getOrCreatePendingAdminMutation(mutation, createAdminRequestId);
+    } catch (error) {
+      setActionStatus({
+        message: error?.message || "Could not prepare the unlimited-tree change.",
+        tone: "error",
+      });
+      return;
+    }
+
+    busyRef.current = true;
+    setBusy(true);
+    setActionStatus({ message: "", tone: "" });
+    try {
+      await onToggle(account, next, { requestId });
+      clearPendingAdminMutation(mutation, requestId);
+      setActionStatus({
+        message: `Unlimited tree creation ${next ? "granted to" : "revoked for"} ${account.email}.`,
+        tone: "success",
+      });
+    } catch (error) {
+      setActionStatus({
+        message:
+          error?.message || `Could not ${next ? "grant" : "revoke"} unlimited tree creation.`,
+        tone: "error",
+      });
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="admin-entitlement-action">
+      <button
+        type="button"
+        className="admin-inline-action"
+        disabled={busy}
+        onClick={toggle}
+        aria-label={`${account.unlimitedTrees ? "Revoke" : "Grant"} unlimited tree creation for ${account.email} (${account.userId})`}
+      >
+        {busy
+          ? account.unlimitedTrees
+            ? "Revoking…"
+            : "Granting…"
+          : account.unlimitedTrees
+            ? "Revoke unlimited"
+            : "Grant unlimited"}
       </button>
+      <ActionStatus status={actionStatus} />
     </div>
   );
 }
@@ -74,38 +227,41 @@ function OverviewTab() {
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
 
-  const refresh = () =>
-    loadPlatformOverview()
-      .then((rows) => {
-        setAccounts(rows);
-        setStatus(rows.length ? "ready" : "empty");
-      })
-      .catch((e) => {
-        setError(e?.message || "");
-        setStatus("error");
-      });
-
-  useEffect(() => {
-    refresh();
-  }, []);
-
-  const toggleUnlimited = async (account) => {
-    const next = !account.unlimitedTrees;
-    if (
-      next &&
-      !window.confirm(
-        `Grant ${account.email} unlimited tree creation, bypassing free and paid credits?`,
-      )
-    ) {
-      return;
-    }
-    await setUnlimitedTrees(account.userId, next);
-    await refresh();
+  const refresh = async () => {
+    const rows = await loadPlatformOverview();
+    setAccounts(rows);
+    setError("");
+    setStatus(rows.length ? "ready" : "empty");
+    return rows;
   };
 
-  const grant = async (userId, credits) => {
-    await grantTreeCredits(userId, credits);
-    await refresh();
+  useEffect(() => {
+    refresh().catch((e) => {
+      setError(e?.message || "");
+      setStatus("error");
+    });
+  }, []);
+
+  const refreshAfterChange = async (savedMessage) => {
+    try {
+      await refresh();
+    } catch {
+      throw new Error(
+        `${savedMessage} The latest account data could not be reloaded; close and reopen the Overview before making another change.`,
+      );
+    }
+  };
+
+  const toggleUnlimited = async (account, next, options) => {
+    await setUnlimitedTrees(account.userId, next, options);
+    await refreshAfterChange(
+      `Unlimited tree creation was ${next ? "granted" : "revoked"} successfully.`,
+    );
+  };
+
+  const grant = async (account, credits, options) => {
+    await grantTreeCredits(account.userId, credits, options);
+    await refreshAfterChange("The paid credits were added successfully.");
   };
 
   const cards = [
@@ -151,26 +307,30 @@ function OverviewTab() {
         <div className="admin-table-wrap">
           <Loader status={status} error={error} empty="No accounts yet.">
             <table className="admin-table">
+              <caption className="admin-visually-hidden">
+                Platform accounts and tree entitlements
+              </caption>
               <thead>
                 <tr>
-                  <th>Account</th>
-                  <th>Trees</th>
-                  <th>Free used</th>
-                  <th>Paid credits</th>
-                  <th>Unlimited</th>
-                  <th>Last activity</th>
-                  <th>Actions</th>
+                  <th scope="col">Account</th>
+                  <th scope="col">Trees</th>
+                  <th scope="col">Free used</th>
+                  <th scope="col">Paid credits</th>
+                  <th scope="col">Unlimited</th>
+                  <th scope="col">Last activity</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {accounts.map((account) => (
                   <tr key={account.userId}>
-                    <td>
+                    <th scope="row" className="admin-account-cell">
                       <div className="admin-table-email">{account.email}</div>
+                      <div className="admin-account-id">{account.userId}</div>
                       <div style={{ color: "var(--muted)", fontSize: "var(--type-micro)" }}>
                         Joined {dateTime(account.createdAt)}
                       </div>
-                    </td>
+                    </th>
                     <td>
                       {account.treesActive} active
                       {account.treesTrashed > 0 && (
@@ -195,13 +355,7 @@ function OverviewTab() {
                     </td>
                     <td>{dateTime(account.lastActivity)}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="admin-inline-action"
-                        onClick={() => toggleUnlimited(account)}
-                      >
-                        {account.unlimitedTrees ? "Revoke unlimited" : "Grant unlimited"}
-                      </button>
+                      <UnlimitedControl account={account} onToggle={toggleUnlimited} />
                     </td>
                   </tr>
                 ))}
@@ -224,7 +378,8 @@ function AnnouncementTab() {
   const [level, setLevel] = useState("info");
   const [status, setStatus] = useState("loading");
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState("");
+  const [saved, setSaved] = useState({ message: "", tone: "" });
+  const busyRef = useRef(false);
 
   const load = () => {
     setStatus("loading");
@@ -234,22 +389,34 @@ function AnnouncementTab() {
         setLevel(a?.level || "info");
         setStatus("ready");
       })
-      .catch(() => setStatus("error"));
+      .catch((error) => {
+        setStatus("error");
+        setSaved({
+          message: error?.message || "Could not load the current announcement.",
+          tone: "error",
+        });
+      });
   };
   useEffect(() => {
     load();
   }, []);
 
   const publish = async (clear = false) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
-    setSaved("");
+    setSaved({ message: "", tone: "" });
     try {
       await setAnnouncement({ message: clear ? "" : message, level });
       if (clear) setMessage("");
-      setSaved(clear ? "Banner cleared." : "Banner published to every signed-in account.");
+      setSaved({
+        message: clear ? "Banner cleared." : "Banner published to every signed-in account.",
+        tone: "success",
+      });
     } catch (e) {
-      setSaved(e?.message || "Could not save.");
+      setSaved({ message: e?.message || "Could not save.", tone: "error" });
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -259,15 +426,21 @@ function AnnouncementTab() {
   return (
     <div className="admin-console-panel admin-announcement-editor">
       <h3>Announcement banner</h3>
-      <p>
+      <p id="admin-announcement-help">
         Shows at the top of the app for every signed-in account until cleared. Leave empty and clear
         to remove it.
       </p>
+      <label className="admin-announcement-message-label" htmlFor="admin-announcement-message">
+        Banner message
+      </label>
       <textarea
+        id="admin-announcement-message"
         value={message}
         onChange={(event) => setMessage(event.target.value)}
         rows={3}
         placeholder="e.g. Scheduled maintenance on Sunday 22:00–23:00."
+        aria-describedby="admin-announcement-help"
+        disabled={busy}
       />
       <div className="admin-announcement-controls">
         <label>
@@ -293,7 +466,15 @@ function AnnouncementTab() {
         >
           Clear
         </button>
-        {saved && <span className="admin-announcement-status">{saved}</span>}
+        {saved.message && (
+          <span
+            className={`admin-announcement-status ${saved.tone}`}
+            role={saved.tone === "error" ? "alert" : "status"}
+            aria-live={saved.tone === "error" ? "assertive" : "polite"}
+          >
+            {saved.message}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -301,43 +482,85 @@ function AnnouncementTab() {
 
 export function AdminConsole({ onClose }) {
   const [tab, setTab] = useState("overview");
-  const loadFeedback = () => listSiteFeedback();
+  const loadFeedback = (options) => listSiteFeedback(options);
   const markFeedbackHandled = (id, handled) => setSiteFeedbackHandled(id, handled);
 
   return (
-    <main className="admin-console-page">
+    <main className="admin-console-page" aria-labelledby="admin-console-title">
       <AnnouncementBanner />
       <div className="admin-console-content">
         <div className="admin-console-header">
           <div>
-            <h1>Admin Console</h1>
+            <h1 id="admin-console-title">Admin Console</h1>
             <p>Platform administration for the product owner.</p>
           </div>
           {onClose && (
-            <button type="button" className="library-secondary-button" onClick={onClose}>
+            <button
+              type="button"
+              className="library-secondary-button"
+              onClick={onClose}
+              aria-label="Close admin console"
+            >
               Close
             </button>
           )}
         </div>
-        <div className="admin-console-tabs">
-          {TABS.map(([key, label, Icon]) => (
+        <div className="admin-console-tabs" role="tablist" aria-label="Admin console sections">
+          {TABS.map(([key, label, Icon], index) => (
             <button
               key={key}
+              id={`admin-tab-${key}`}
               type="button"
+              role="tab"
+              aria-selected={tab === key}
+              aria-controls={`admin-panel-${key}`}
+              tabIndex={tab === key ? 0 : -1}
               className={`admin-console-tab ${tab === key ? "active" : ""}`}
               onClick={() => setTab(key)}
+              onKeyDown={(event) => {
+                const finalIndex = TABS.length - 1;
+                const nextIndex =
+                  event.key === "ArrowRight"
+                    ? (index + 1) % TABS.length
+                    : event.key === "ArrowLeft"
+                      ? (index + finalIndex) % TABS.length
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? finalIndex
+                          : -1;
+                if (nextIndex < 0) return;
+                event.preventDefault();
+                const nextKey = TABS[nextIndex][0];
+                setTab(nextKey);
+                document.getElementById(`admin-tab-${nextKey}`)?.focus();
+              }}
             >
-              <Icon size={15} /> {label}
+              <Icon size={15} aria-hidden="true" /> {label}
             </button>
           ))}
         </div>
-        {tab === "overview" && <OverviewTab />}
-        {tab === "feedback" && (
-          <div className="admin-console-panel">
-            <SiteFeedbackInbox loadFeedback={loadFeedback} onMarkHandled={markFeedbackHandled} />
-          </div>
+        {tab === "overview" && (
+          <section id="admin-panel-overview" role="tabpanel" aria-labelledby="admin-tab-overview">
+            <OverviewTab />
+          </section>
         )}
-        {tab === "announcement" && <AnnouncementTab />}
+        {tab === "feedback" && (
+          <section id="admin-panel-feedback" role="tabpanel" aria-labelledby="admin-tab-feedback">
+            <div className="admin-console-panel">
+              <SiteFeedbackInbox loadFeedback={loadFeedback} onMarkHandled={markFeedbackHandled} />
+            </div>
+          </section>
+        )}
+        {tab === "announcement" && (
+          <section
+            id="admin-panel-announcement"
+            role="tabpanel"
+            aria-labelledby="admin-tab-announcement"
+          >
+            <AnnouncementTab />
+          </section>
+        )}
       </div>
     </main>
   );

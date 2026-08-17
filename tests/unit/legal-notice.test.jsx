@@ -21,12 +21,22 @@ describe("legal and privacy notices", () => {
     expect(html).toContain(TAX_CALCULATION_DISCLAIMER);
   });
 
-  it("states the privacy roles, deletion path and monitoring limits", () => {
+  it("states the privacy roles, feedback logging and explicit retention period", () => {
     expect(PRIVACY_NOTICE_SECTIONS).toHaveLength(7);
     const html = renderToStaticMarkup(<PrivacyNoticeContent />);
     expect(html).toContain("the User is the data controller");
     expect(html).toContain("account-deletion requests");
     expect(html).toContain("technical error details");
+    expect(html).toContain(
+      "feedback row does not contain the sender&#x27;s account ID or email address",
+    );
+    expect(html).toContain("Supabase service logs may record the authenticated user ID");
+    expect(html).toContain("must not include client names");
+    expect(html).toContain("per-account counters used solely to limit feedback abuse");
+    expect(html).toContain("ordinarily retained for up to 24 months from submission");
+    expect(html).toContain("deleted the next time feedback is submitted");
+    expect(html).toContain("if the service is dormant");
+    expect(html).toContain("rate-limit counters are ordinarily retained for up to 24 hours");
   });
 
   it("provides an immediately visible route back from every public legal page", () => {

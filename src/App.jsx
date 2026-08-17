@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { AdminConsole } from "./components/AdminConsole.jsx";
+import { AnnouncementBanner } from "./components/AnnouncementBanner.jsx";
 import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
@@ -399,6 +400,24 @@ export function App({
     setEntitlement(nextEntitlement);
     return nextEntitlement;
   }, [authenticatedUserId, cloudMode]);
+
+  useEffect(() => {
+    if (!cloudMode) return undefined;
+    const refreshEntitlementWhenActive = () => {
+      if (document.visibilityState === "hidden") return;
+      refreshTreeEntitlement().catch((error) => {
+        setBillingMessage(
+          `Account allowance could not be refreshed: ${error?.message || "Unknown error"}`,
+        );
+      });
+    };
+    window.addEventListener("focus", refreshEntitlementWhenActive);
+    document.addEventListener("visibilitychange", refreshEntitlementWhenActive);
+    return () => {
+      window.removeEventListener("focus", refreshEntitlementWhenActive);
+      document.removeEventListener("visibilitychange", refreshEntitlementWhenActive);
+    };
+  }, [cloudMode, refreshTreeEntitlement]);
 
   useEffect(() => {
     if (!cloudMode) {
@@ -1493,8 +1512,17 @@ export function App({
     }
   };
 
+  const closeAdminConsole = () => {
+    setAdminConsoleOpen(false);
+    refreshTreeEntitlement().catch((error) => {
+      setBillingMessage(
+        `Account allowance could not be refreshed: ${error?.message || "Unknown error"}`,
+      );
+    });
+  };
+
   if (adminConsoleOpen) {
-    return <AdminConsole onClose={() => setAdminConsoleOpen(false)} />;
+    return <AdminConsole onClose={closeAdminConsole} />;
   }
 
   if (showLibrary) {
@@ -1547,6 +1575,7 @@ export function App({
     };
     return (
       <main className="property-workspace-page" ref={propertyWorkspaceRef}>
+        <AnnouncementBanner localOnlyMode={!cloudMode} />
         <div
           ref={propertyWorkspaceNavRef}
           className={`property-workspace-nav-shell${
@@ -1639,6 +1668,7 @@ export function App({
 
   return (
     <main className="tree-workbench">
+      <AnnouncementBanner localOnlyMode={!cloudMode} />
       <div
         className={`workbench-body ${dashboardOpen && selectedPersonId ? "person-card-open" : "person-card-closed"}`}
       >

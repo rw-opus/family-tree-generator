@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { LEGAL_NOTICE_LAST_UPDATED, TERMS_VERSION } from "../domain/legalNoticeVersion.js";
 import "./LegalNotice.css";
 
-export const LEGAL_NOTICE_LAST_UPDATED = "04/08/2026";
-// Change this value whenever the notice changes so every user must accept it again.
-export const TERMS_VERSION = "2026-08-04-family-tax-v1";
+export { LEGAL_NOTICE_LAST_UPDATED, TERMS_VERSION };
 
 export const TAX_CALCULATION_DISCLAIMER =
   "Every succession, ownership and tax result is an indicative estimate based only on the information entered and the assumptions encoded in the System. It is not legal, tax, notarial, financial or other professional advice, an official assessment, a tax return or a payment instruction. The User must independently verify the facts, the applicable law, every available election or exemption and the final calculation before acting, signing a deed, filing a return or making a payment.";
@@ -86,19 +85,19 @@ export const PRIVACY_NOTICE_SECTIONS = [
   },
   {
     h: "2. What is stored",
-    p: "The System stores the account email address and authentication records; family trees and relationship data; names, dates of death, wills, notaries, declarations causa mortis, property details, values, ownership and tax figures entered by the User; tree-credit and payment-status records; acceptance of the Terms; and technical logs required for security and reliability. Stripe processes payment-card details and the System stores only the identifiers and status needed to reconcile a purchase. The System does not use advertising trackers or analytics cookies.",
+    p: "The System stores the account email address and authentication records; family trees and relationship data; names, dates of death, wills, notaries, declarations causa mortis, property details, values, ownership and tax figures entered by the User; tree-credit and payment-status records; acceptance of the Terms; optional feedback messages, their type, submission time and handling status; short-lived per-account counters used solely to limit feedback abuse; and technical logs required for security and reliability. A feedback row does not contain the sender's account ID or email address, but feedback is sent through a signed-in request and Supabase service logs may record the authenticated user ID, IP address and request or device metadata. Users must not include client names, personal data, privileged information or confidential case details in feedback. Stripe processes payment-card details and the System stores only the identifiers and status needed to reconcile a purchase. The System does not use advertising trackers or analytics cookies.",
   },
   {
     h: "3. Purpose and legal basis",
-    p: "Data is processed to provide, secure, support and administer the family-tree and property-calculation service, enforce the tree allowance and reconcile payments. The operator does not sell it, disclose it to third parties for their own marketing or use it to train artificial-intelligence models. Processing rests on the contract with the User and, for security and reliability logs, the operator's legitimate interests.",
+    p: "Data is processed to provide, secure, support and administer the family-tree and property-calculation service, enforce the tree allowance, reconcile payments, review optional feedback, investigate reported faults and improve the System. The operator does not sell it, disclose it to third parties for their own marketing or use it to train artificial-intelligence models. Processing rests on the contract with the User and, for feedback, security and reliability logs, the operator's legitimate interests in supporting, securing and improving the System.",
   },
   {
     h: "4. Access, isolation and service providers",
-    p: "Database-level row access rules isolate each account's family trees. Family-tree records are stored in an EU-region Supabase project. Railway hosts the web application, Stripe processes payments, and optional error monitoring receives deliberately reduced technical error details with names, free text, account details and page context removed. These providers operate under their own contractual terms and retention arrangements.",
+    p: "Database-level row access rules isolate each account's family trees. Authorised platform administrators can review feedback messages and mark them as handled. Family-tree and feedback records are stored in an EU-region Supabase project. Railway hosts the web application, Stripe processes payments, and optional error monitoring receives deliberately reduced technical error details with names, free text, account details and page context removed. Supabase processes signed-in feedback requests and associated service logs. These providers operate under their own contractual terms and retention arrangements.",
   },
   {
     h: "5. Retention, backups and account deletion",
-    p: "Family-tree data remains until the User deletes a tree or the account is closed. A User may download a workspace backup at any time. On a verified written request, the operator can close the account and delete its active Supabase records after allowing a reasonable export period, subject to provider backup-retention periods and any payment, tax, fraud-prevention or other legal records that must be retained separately. Deletion from an active database does not promise immediate removal from immutable provider backups.",
+    p: "Family-tree data remains until the User deletes a tree or the account is closed. Feedback messages and their handling records are ordinarily retained for up to 24 months from submission. Records older than 24 months are excluded from the feedback inbox and deleted the next time feedback is submitted or an administrator reviews the inbox; if the service is dormant, deletion may occur after the 24-month point at that next maintenance event. Per-account feedback rate-limit counters are ordinarily retained for up to 24 hours and expired counters are deleted when feedback is next submitted. A specific record may be retained separately where necessary to establish, exercise or defend a legal claim. Technical service logs follow the configured provider retention periods. A User may download a workspace backup at any time. On a verified written request, the operator can close the account and delete its active Supabase records after allowing a reasonable export period, subject to provider backup-retention periods and any payment, tax, fraud-prevention or other legal records that must be retained separately. Deletion from an active database does not promise immediate removal from immutable provider backups.",
   },
   {
     h: "6. Data-subject rights",

@@ -1,7 +1,8 @@
 import { test as base, expect } from "@playwright/test";
+import { TERMS_VERSION } from "../../src/domain/legalNoticeVersion.js";
 
 export const WORKSPACE_KEY = "family-tree-generator:workspace:v1";
-export const TERMS_KEY = "family-tree-terms-accepted-2026-08-04-family-tax-v1";
+export const TERMS_KEY = `family-tree-terms-accepted-${TERMS_VERSION}`;
 
 const id = (suffix) => `e2e00000-0000-4000-8000-${String(suffix).padStart(12, "0")}`;
 

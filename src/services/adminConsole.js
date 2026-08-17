@@ -6,6 +6,49 @@
 import { supabase } from "../supabaseClient.js";
 
 const str = (value) => (value == null ? "" : String(value));
+export const MAX_ADMIN_CREDIT_GRANT = 100;
+
+let fallbackRequestSequence = 0;
+
+const fallbackAdminRequestId = () => {
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    // This path exists for older test/runtime environments. Request IDs are
+    // still made unique per page process; production browsers use Web Crypto.
+    const seed = `${Date.now()}:${fallbackRequestSequence++}:${Math.random()}`;
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = seed.charCodeAt(index % seed.length) ^ ((index * 37) & 0xff);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+export function createAdminRequestId(
+  randomUUID = globalThis.crypto?.randomUUID?.bind(globalThis.crypto),
+) {
+  return randomUUID ? randomUUID() : fallbackAdminRequestId();
+}
+
+const requiredRequestId = (requestId) => {
+  const value = str(requestId).trim();
+  if (!value) throw new Error("A request ID is required for this admin change.");
+  return value;
+};
+
+const requiredGrantCredits = (credits) => {
+  const value = Number(credits);
+  if (!Number.isInteger(value) || value < 1 || value > MAX_ADMIN_CREDIT_GRANT) {
+    throw new Error(
+      `Paid-credit grants must be whole numbers from 1 to ${MAX_ADMIN_CREDIT_GRANT}.`,
+    );
+  }
+  return value;
+};
 
 const requireSupabase = () => {
   if (!supabase) throw new Error("Secure storage is not configured.");
@@ -38,18 +81,28 @@ export async function loadPlatformOverview() {
   }));
 }
 
-export async function setUnlimitedTrees(userId, unlimited) {
+export async function setUnlimitedTrees(
+  userId,
+  unlimited,
+  { requestId = createAdminRequestId() } = {},
+) {
   const { error } = await requireSupabase().rpc("admin_set_unlimited_trees", {
     target_user: userId,
-    unlimited,
+    enabled: unlimited === true,
+    request_id: requiredRequestId(requestId),
   });
   if (error) throw error;
 }
 
-export async function grantTreeCredits(userId, credits) {
+export async function grantTreeCredits(
+  userId,
+  credits,
+  { requestId = createAdminRequestId() } = {},
+) {
   const { error } = await requireSupabase().rpc("admin_grant_tree_credits", {
     target_user: userId,
-    credits,
+    credits: requiredGrantCredits(credits),
+    request_id: requiredRequestId(requestId),
   });
   if (error) throw error;
 }

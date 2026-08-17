@@ -2323,3 +2323,427 @@ end;
 $$;
 revoke all on function public.admin_set_announcement(text, text) from public, anon;
 grant execute on function public.admin_set_announcement(text, text) to authenticated;
+
+-- Repair the first platform-admin rollout without reducing an existing limit
+-- or rewriting any usage, credit, lifetime-total, or unlimited entitlement.
+--
+-- Production evidence records 2026-08-17 14:40:52.119201+00 as the instant
+-- the three-tree default was introduced (the seeded platform-admin row was
+-- created by that rollout). Auth accounts created before that instant were
+-- already promised five lifetime tree generations, even if they had not yet
+-- created their first tree and therefore had no tree_accounts row.
+insert into public.tree_accounts as entitlement (
+  user_id,
+  free_tree_limit,
+  free_trees_used,
+  paid_tree_credits,
+  total_trees_created,
+  unlimited_trees
+)
+select
+  account.id,
+  5,
+  0,
+  0,
+  0,
+  false
+from auth.users account
+where account.created_at < timestamptz '2026-08-17 14:40:52.119201+00'
+on conflict (user_id) do update
+set free_tree_limit = greatest(
+  entitlement.free_tree_limit,
+  excluded.free_tree_limit
+)
+where entitlement.free_tree_limit < excluded.free_tree_limit;
+
+-- The initial function declared the allowance columns as smallint but its
+-- COALESCE fallbacks were bare integer literals. PL/pgSQL checks the returned
+-- tuple at execution time and rejects that integer/smallint mismatch. Cast all
+-- values whose source type can differ from the public RPC contract explicitly.
+create or replace function public.admin_platform_overview()
+returns table (
+  user_id uuid,
+  email text,
+  created_at timestamptz,
+  trees_active bigint,
+  trees_trashed bigint,
+  total_trees_created integer,
+  free_tree_limit smallint,
+  free_trees_used smallint,
+  paid_tree_credits integer,
+  unlimited_trees boolean,
+  stripe_customer_id text,
+  last_activity timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+
+  return query
+  select
+    account.id::uuid,
+    account.email::text,
+    account.created_at::timestamptz,
+    coalesce(tree_stats.active_total, 0)::bigint,
+    coalesce(tree_stats.trashed_total, 0)::bigint,
+    coalesce(entitlement.total_trees_created, 0)::integer,
+    coalesce(entitlement.free_tree_limit, 3::smallint)::smallint,
+    coalesce(entitlement.free_trees_used, 0::smallint)::smallint,
+    coalesce(entitlement.paid_tree_credits, 0)::integer,
+    coalesce(entitlement.unlimited_trees, false)::boolean,
+    entitlement.stripe_customer_id::text,
+    tree_stats.last_activity::timestamptz
+  from auth.users account
+  left join public.tree_accounts entitlement on entitlement.user_id = account.id
+  left join lateral (
+    select
+      count(*) filter (where tree.deleted_at is null) as active_total,
+      count(*) filter (where tree.deleted_at is not null) as trashed_total,
+      max(tree.updated_at) as last_activity
+    from public.family_trees tree
+    where tree.owner_id = account.id
+  ) tree_stats on true
+  order by account.created_at desc;
+end;
+$$;
+
+revoke all on function public.admin_platform_overview() from public, anon, authenticated;
+grant execute on function public.admin_platform_overview() to authenticated;
+
+-- Keep abuse-control identity metadata separate from feedback content. The
+-- bucket records prove only how many submissions an account attempted during
+-- an hour; they never record an exact request time, reference a site_feedback
+-- row, or contain message text.
+create table if not exists private.site_feedback_rate_limits (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  hour_bucket timestamptz not null,
+  message_count integer not null check (message_count between 1 and 20),
+  primary key (user_id, hour_bucket)
+);
+
+create index if not exists site_feedback_rate_limits_bucket_idx
+  on private.site_feedback_rate_limits (hour_bucket);
+
+alter table private.site_feedback_rate_limits enable row level security;
+revoke all on table private.site_feedback_rate_limits from public, anon, authenticated;
+
+-- Any authenticated account may submit feedback. The atomic upsert serializes
+-- concurrent requests for the same account/hour and enforces a per-account
+-- ceiling without adding sender identity to the feedback record itself.
+create or replace function public.submit_site_feedback(feedback_kind text, feedback_message text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  clean_kind text := lower(trim(coalesce(feedback_kind, '')));
+  clean_message text := trim(coalesce(feedback_message, ''));
+  current_hour timestamptz := date_trunc('hour', now());
+  accepted_count integer;
+begin
+  if caller_id is null then
+    raise exception 'Sign in before sending feedback.';
+  end if;
+  if clean_kind not in ('suggestion', 'bug') then
+    raise exception 'Feedback type must be suggestion or bug';
+  end if;
+  if char_length(clean_message) < 5 or char_length(clean_message) > 3000 then
+    raise exception 'Feedback message must be between 5 and 3000 characters';
+  end if;
+
+  -- Feedback older than 24 months is removed on this submission (and on the
+  -- next admin read), so dormant records can remain until that next event.
+  -- Expired hourly rate buckets are likewise removed on the next submission.
+  delete from public.site_feedback
+  where created_at < now() - interval '24 months';
+
+  delete from private.site_feedback_rate_limits
+  where hour_bucket <= current_hour - interval '24 hours';
+
+  insert into private.site_feedback_rate_limits (
+    user_id,
+    hour_bucket,
+    message_count
+  ) values (
+    caller_id,
+    current_hour,
+    1
+  )
+  on conflict (user_id, hour_bucket) do update
+  set message_count = private.site_feedback_rate_limits.message_count + 1
+  where private.site_feedback_rate_limits.message_count < 20
+  returning message_count into accepted_count;
+
+  if accepted_count is null then
+    raise exception 'Too many feedback messages have been sent recently. Please try again later.';
+  end if;
+
+  insert into public.site_feedback (kind, message)
+  values (clean_kind, clean_message);
+end;
+$$;
+
+revoke all on function public.submit_site_feedback(text, text)
+  from public, anon, authenticated;
+grant execute on function public.submit_site_feedback(text, text) to authenticated;
+
+-- Clean expired rows before every admin read and apply the retention predicate
+-- to the result as a fail-closed guard. `include_handled = false` is filtered
+-- in SQL before the 1,000-row cap, so handled messages cannot crowd unresolved
+-- feedback out of the inbox.
+create or replace function public.list_site_feedback(include_handled boolean default true)
+returns table (
+  id uuid,
+  kind text,
+  message text,
+  created_at timestamptz,
+  handled_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+
+  delete from public.site_feedback
+  where created_at < now() - interval '24 months';
+
+  return query
+  select feedback.id, feedback.kind, feedback.message, feedback.created_at, feedback.handled_at
+  from public.site_feedback feedback
+  where feedback.created_at >= now() - interval '24 months'
+    and (coalesce(include_handled, false) or feedback.handled_at is null)
+  order by feedback.created_at desc, feedback.id desc
+  limit 1000;
+end;
+$$;
+
+revoke all on function public.list_site_feedback(boolean)
+  from public, anon, authenticated;
+grant execute on function public.list_site_feedback(boolean) to authenticated;
+
+-- Immutable, browser-inaccessible audit ledger for operator changes to tree
+-- entitlements. UUID identifiers are retained as historical evidence without
+-- foreign keys, so deleting an Auth account cannot rewrite or cascade an audit
+-- row. Every browser-callable mutation below is idempotent by request_id.
+create table if not exists private.admin_entitlement_audit (
+  request_id uuid primary key,
+  actor_user_id uuid not null,
+  target_user_id uuid not null,
+  operation text not null check (
+    operation in ('grant_tree_credits', 'set_unlimited_trees')
+  ),
+  integer_value integer,
+  boolean_value boolean,
+  created_at timestamptz not null default now(),
+  check (
+    (
+      operation = 'grant_tree_credits'
+      and integer_value between 1 and 100
+      and boolean_value is null
+    )
+    or
+    (
+      operation = 'set_unlimited_trees'
+      and integer_value is null
+      and boolean_value is not null
+    )
+  )
+);
+
+create index if not exists admin_entitlement_audit_target_created_idx
+  on private.admin_entitlement_audit (target_user_id, created_at desc);
+
+alter table private.admin_entitlement_audit enable row level security;
+revoke all on table private.admin_entitlement_audit from public, anon, authenticated;
+
+create or replace function private.reject_admin_entitlement_audit_mutation()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  raise exception 'Admin entitlement audit rows are immutable';
+end;
+$$;
+
+revoke all on function private.reject_admin_entitlement_audit_mutation()
+  from public, anon, authenticated;
+
+drop trigger if exists admin_entitlement_audit_immutable
+  on private.admin_entitlement_audit;
+create trigger admin_entitlement_audit_immutable
+before update or delete on private.admin_entitlement_audit
+for each row execute function private.reject_admin_entitlement_audit_mutation();
+
+create or replace function public.admin_grant_tree_credits(
+  target_user uuid,
+  credits integer,
+  request_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  target_account_id uuid := target_user;
+  credit_delta integer := credits;
+  requested_id uuid := request_id;
+  inserted_request uuid;
+  prior private.admin_entitlement_audit%rowtype;
+begin
+  if caller_id is null or not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+  if requested_id is null then
+    raise exception 'A request ID is required';
+  end if;
+  if credit_delta is null or credit_delta < 1 or credit_delta > 100 then
+    raise exception 'Credits must be between 1 and 100';
+  end if;
+  if not exists (select 1 from auth.users account where account.id = target_account_id) then
+    raise exception 'Target account does not exist';
+  end if;
+
+  insert into private.admin_entitlement_audit (
+    request_id,
+    actor_user_id,
+    target_user_id,
+    operation,
+    integer_value,
+    boolean_value
+  ) values (
+    requested_id,
+    caller_id,
+    target_account_id,
+    'grant_tree_credits',
+    credit_delta,
+    null
+  )
+  on conflict (request_id) do nothing
+  returning request_id into inserted_request;
+
+  if inserted_request is null then
+    select * into prior
+    from private.admin_entitlement_audit audit
+    where audit.request_id = requested_id;
+
+    if prior.actor_user_id is distinct from caller_id
+      or prior.target_user_id is distinct from target_account_id
+      or prior.operation is distinct from 'grant_tree_credits'
+      or prior.integer_value is distinct from credit_delta
+      or prior.boolean_value is not null then
+      raise exception 'Request ID has already been used for a different admin operation';
+    end if;
+    return;
+  end if;
+
+  insert into public.tree_accounts (user_id, paid_tree_credits)
+  values (target_account_id, credit_delta)
+  on conflict (user_id) do update
+  set paid_tree_credits = public.tree_accounts.paid_tree_credits + credit_delta;
+end;
+$$;
+
+create or replace function public.admin_set_unlimited_trees(
+  target_user uuid,
+  enabled boolean,
+  request_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := (select auth.uid());
+  target_account_id uuid := target_user;
+  requested_enabled boolean := enabled;
+  requested_id uuid := request_id;
+  inserted_request uuid;
+  prior private.admin_entitlement_audit%rowtype;
+begin
+  if caller_id is null or not public.is_platform_admin() then
+    raise exception 'Not allowed';
+  end if;
+  if requested_id is null then
+    raise exception 'A request ID is required';
+  end if;
+  if requested_enabled is null then
+    raise exception 'Unlimited-tree state is required';
+  end if;
+  if not exists (select 1 from auth.users account where account.id = target_account_id) then
+    raise exception 'Target account does not exist';
+  end if;
+
+  insert into private.admin_entitlement_audit (
+    request_id,
+    actor_user_id,
+    target_user_id,
+    operation,
+    integer_value,
+    boolean_value
+  ) values (
+    requested_id,
+    caller_id,
+    target_account_id,
+    'set_unlimited_trees',
+    null,
+    requested_enabled
+  )
+  on conflict (request_id) do nothing
+  returning request_id into inserted_request;
+
+  if inserted_request is null then
+    select * into prior
+    from private.admin_entitlement_audit audit
+    where audit.request_id = requested_id;
+
+    if prior.actor_user_id is distinct from caller_id
+      or prior.target_user_id is distinct from target_account_id
+      or prior.operation is distinct from 'set_unlimited_trees'
+      or prior.integer_value is not null
+      or prior.boolean_value is distinct from requested_enabled then
+      raise exception 'Request ID has already been used for a different admin operation';
+    end if;
+    return;
+  end if;
+
+  insert into public.tree_accounts (user_id, unlimited_trees)
+  values (target_account_id, requested_enabled)
+  on conflict (user_id) do update
+  set unlimited_trees = requested_enabled;
+end;
+$$;
+
+-- Remove the unaudited overloads so browser code cannot accidentally bypass
+-- request idempotency or the immutable audit ledger.
+revoke all on function public.admin_grant_tree_credits(uuid, integer)
+  from public, anon, authenticated;
+revoke all on function public.admin_set_unlimited_trees(uuid, boolean)
+  from public, anon, authenticated;
+drop function public.admin_grant_tree_credits(uuid, integer);
+drop function public.admin_set_unlimited_trees(uuid, boolean);
+
+revoke all on function public.admin_grant_tree_credits(uuid, integer, uuid)
+  from public, anon, authenticated;
+grant execute on function public.admin_grant_tree_credits(uuid, integer, uuid)
+  to authenticated;
+
+revoke all on function public.admin_set_unlimited_trees(uuid, boolean, uuid)
+  from public, anon, authenticated;
+grant execute on function public.admin_set_unlimited_trees(uuid, boolean, uuid)
+  to authenticated;

@@ -14,8 +14,14 @@ export function AnnouncementBanner({ localOnlyMode = false }) {
   useEffect(() => {
     if (localOnlyMode) return undefined;
     let live = true;
-    getAnnouncement().then((a) => {
-      if (!live || !a) return;
+    const refresh = async () => {
+      const a = await getAnnouncement();
+      if (!live) return;
+      if (!a) {
+        setAnnouncement(null);
+        setDismissed(false);
+        return;
+      }
       let seen = false;
       try {
         seen = localStorage.getItem(`family-tree-ann-dismissed:${a.id}`) === "1";
@@ -24,9 +30,20 @@ export function AnnouncementBanner({ localOnlyMode = false }) {
       }
       setDismissed(seen);
       setAnnouncement(a);
-    });
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+
+    void refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    const refreshInterval = window.setInterval(refresh, 60_000);
     return () => {
       live = false;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.clearInterval(refreshInterval);
     };
   }, [localOnlyMode]);
 
@@ -45,6 +62,9 @@ export function AnnouncementBanner({ localOnlyMode = false }) {
     <div
       className={`announcement-banner ${warn ? "warning" : "info"}`}
       data-testid="announcement-banner"
+      role={warn ? "alert" : "status"}
+      aria-live={warn ? "assertive" : "polite"}
+      aria-atomic="true"
     >
       <Megaphone size={16} aria-hidden="true" />
       <p>{announcement.message}</p>

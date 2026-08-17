@@ -15,38 +15,60 @@ const fmtWhen = (at) => {
       });
 };
 
-/* Product-owner inbox for anonymous feedback from every account. It only
-   renders for a platform admin: loadFeedback rejects for anyone else (and
-   when the migration is not applied yet), and we hide the whole panel in
-   that case. */
+/* Product-owner inbox for feedback records that omit account identifiers.
+   The parent admin console controls access; backend authorization remains the
+   source of truth and load failures are reported without exposing data. */
 export function SiteFeedbackInbox({ loadFeedback, onMarkHandled }) {
-  const [status, setStatus] = useState("loading"); // loading | ready | hidden
+  const [status, setStatus] = useState("loading"); // loading | ready | error
   const [items, setItems] = useState([]);
   const [showHandled, setShowHandled] = useState(false);
   const [busyId, setBusyId] = useState("");
+  const [actionStatus, setActionStatus] = useState({ message: "", tone: "" });
 
-  const refresh = async () => {
+  const refresh = async (includeHandled = showHandled) => {
+    setStatus("loading");
+    setActionStatus({ message: "", tone: "" });
     try {
-      const rows = await loadFeedback();
+      const rows = await loadFeedback({ includeHandled });
       setItems(Array.isArray(rows) ? rows : []);
       setStatus("ready");
     } catch {
-      setStatus("hidden"); // not a platform admin, or backend not ready
+      setStatus("error");
     }
   };
 
   useEffect(() => {
-    refresh();
+    refresh(showHandled);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [showHandled]);
 
-  if (status === "loading" || status === "hidden") return null;
+  if (status === "loading") {
+    return (
+      <p className="admin-console-loader" role="status" aria-live="polite">
+        Loading feedback…
+      </p>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <section className="feedback-inbox" data-testid="site-feedback-inbox">
+        <p className="admin-console-loader error" role="alert">
+          Feedback could not be loaded. Check your connection or administrator access and try again.
+        </p>
+        <button type="button" className="admin-inline-action" onClick={() => refresh(showHandled)}>
+          Retry
+        </button>
+      </section>
+    );
+  }
 
   const newItems = items.filter((item) => !item.handledAt);
   const visible = showHandled ? items : newItems;
 
   const mark = async (item, handled) => {
     setBusyId(item.id);
+    setActionStatus({ message: "", tone: "" });
     try {
       await onMarkHandled(item.id, handled);
       setItems((current) =>
@@ -56,8 +78,15 @@ export function SiteFeedbackInbox({ loadFeedback, onMarkHandled }) {
             : row,
         ),
       );
+      setActionStatus({
+        message: handled ? "Feedback marked as done." : "Feedback reopened.",
+        tone: "success",
+      });
     } catch {
-      /* leave as-is; a refresh will reconcile */
+      setActionStatus({
+        message: "The feedback status could not be updated. Try again.",
+        tone: "error",
+      });
     } finally {
       setBusyId("");
     }
@@ -79,14 +108,29 @@ export function SiteFeedbackInbox({ loadFeedback, onMarkHandled }) {
             />{" "}
             Show done
           </label>
-          <button type="button" className="admin-inline-action" onClick={refresh}>
+          <button
+            type="button"
+            className="admin-inline-action"
+            onClick={() => refresh(showHandled)}
+          >
             Refresh
           </button>
         </div>
       </div>
       <p className="feedback-inbox-note">
-        Anonymous suggestions and bug reports from every account. No sender identity is recorded.
+        Feedback rows do not contain an account ID or email address. Supabase service logs may
+        identify the signed-in requester, and messages may identify a sender if they include
+        personal details.
       </p>
+      {actionStatus.message && (
+        <p
+          className={`feedback-inbox-action-status ${actionStatus.tone}`}
+          role={actionStatus.tone === "error" ? "alert" : "status"}
+          aria-live={actionStatus.tone === "error" ? "assertive" : "polite"}
+        >
+          {actionStatus.message}
+        </p>
+      )}
       {visible.length === 0 ? (
         <p className="admin-console-loader">
           {showHandled ? "No feedback yet." : "No new feedback - you're all caught up."}

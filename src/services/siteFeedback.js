@@ -1,8 +1,9 @@
-/* Anonymous product feedback. submit_site_feedback stores no submitter
-   identity at all, so nobody - including a platform admin - can see who sent
-   a given message. The list/mark-handled RPCs reject for non-admins, so a
-   thrown error there means "not a platform admin" (or the migration isn't
-   applied yet) - callers hide the inbox in that case. */
+/* Product feedback rows omit the submitter's account ID and email address.
+   The request is nevertheless authenticated and service logs may identify
+   the signed-in requester, so the UI does not promise anonymity. The
+   list/mark-handled RPCs reject for non-admins, so a thrown error there means
+   "not a platform admin" (or the migration isn't applied yet) - callers hide
+   the inbox in that case. */
 import { supabase } from "../supabaseClient.js";
 
 const FEEDBACK_TYPES = new Set(["suggestion", "bug"]);
