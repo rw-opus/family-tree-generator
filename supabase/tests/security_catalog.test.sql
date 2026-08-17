@@ -12,8 +12,11 @@ select is(
     where n.nspname = 'public'
       and c.relkind in ('r', 'p')
   ),
-  array[
+    array[
     'family_trees',
+    'platform_admins',
+    'platform_announcements',
+    'site_feedback',
     'stripe_tree_events',
     'terms_acceptances',
     'tree_accounts',
@@ -80,11 +83,20 @@ select is(
       and lower(grantee) in ('public', 'anon', 'authenticated')
       and privilege_type = 'EXECUTE'
   ),
-  array[
+    array[
+    'active_announcement:authenticated',
+    'admin_grant_tree_credits:authenticated',
+    'admin_platform_overview:authenticated',
+    'admin_set_announcement:authenticated',
+    'admin_set_unlimited_trees:authenticated',
+    'is_platform_admin:authenticated',
+    'list_site_feedback:authenticated',
     'list_trashed_family_trees:authenticated',
     'permanently_delete_family_tree:authenticated',
     'restore_family_tree:authenticated',
     'save_family_tree:authenticated',
+    'set_site_feedback_handled:authenticated',
+    'submit_site_feedback:authenticated',
     'trash_family_tree:authenticated'
   ]::text[],
   'only owner-checked family-tree RPCs are executable by a browser role'
