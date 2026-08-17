@@ -6,7 +6,13 @@ const fmtWhen = (at) => {
   const d = new Date(at);
   return Number.isNaN(d.getTime())
     ? ""
-    : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+    : d.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 };
 
 /* Product-owner inbox for anonymous feedback from every account. It only
@@ -45,7 +51,9 @@ export function SiteFeedbackInbox({ loadFeedback, onMarkHandled }) {
       await onMarkHandled(item.id, handled);
       setItems((current) =>
         current.map((row) =>
-          row.id === item.id ? { ...row, handledAt: handled ? new Date().toISOString() : null } : row,
+          row.id === item.id
+            ? { ...row, handledAt: handled ? new Date().toISOString() : null }
+            : row,
         ),
       );
     } catch {

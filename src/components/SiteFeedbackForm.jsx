@@ -89,7 +89,12 @@ export function SiteFeedbackForm() {
             />
             {status && <p className="feedback-form-status">{status}</p>}
             <div className="feedback-form-actions">
-              <button type="button" className="library-secondary-button" onClick={close} disabled={busy}>
+              <button
+                type="button"
+                className="library-secondary-button"
+                onClick={close}
+                disabled={busy}
+              >
                 Cancel
               </button>
               <button type="submit" className="library-primary-button" disabled={busy}>

@@ -60,7 +60,11 @@ export async function getAnnouncement() {
   if (error) return null;
   const row = Array.isArray(data) ? data[0] : data;
   return row
-    ? { id: str(row.id), message: str(row.message), level: row.level === "warning" ? "warning" : "info" }
+    ? {
+        id: str(row.id),
+        message: str(row.message),
+        level: row.level === "warning" ? "warning" : "info",
+      }
     : null;
 }
 

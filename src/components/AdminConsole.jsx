@@ -93,7 +93,9 @@ function OverviewTab() {
     const next = !account.unlimitedTrees;
     if (
       next &&
-      !window.confirm(`Grant ${account.email} unlimited tree creation, bypassing free and paid credits?`)
+      !window.confirm(
+        `Grant ${account.email} unlimited tree creation, bypassing free and paid credits?`,
+      )
     ) {
       return;
     }
@@ -172,7 +174,10 @@ function OverviewTab() {
                     <td>
                       {account.treesActive} active
                       {account.treesTrashed > 0 && (
-                        <span style={{ color: "var(--muted)" }}> / {account.treesTrashed} trashed</span>
+                        <span style={{ color: "var(--muted)" }}>
+                          {" "}
+                          / {account.treesTrashed} trashed
+                        </span>
                       )}
                     </td>
                     <td>
@@ -182,7 +187,9 @@ function OverviewTab() {
                       <CreditsCell account={account} onGrant={grant} />
                     </td>
                     <td>
-                      <span className={`admin-badge ${account.unlimitedTrees ? "unlimited" : "limited"}`}>
+                      <span
+                        className={`admin-badge ${account.unlimitedTrees ? "unlimited" : "limited"}`}
+                      >
                         {account.unlimitedTrees ? "Unlimited" : "Standard"}
                       </span>
                     </td>
@@ -203,8 +210,9 @@ function OverviewTab() {
           </Loader>
         </div>
         <p className="admin-console-footnote">
-          Every tree costs €30 after the free allowance. Unlimited bypasses both free and paid credits;
-          grant it sparingly. Paid credits are added on top of whatever the account already holds.
+          Every tree costs €30 after the free allowance. Unlimited bypasses both free and paid
+          credits; grant it sparingly. Paid credits are added on top of whatever the account already
+          holds.
         </p>
       </div>
     </div>
@@ -251,7 +259,10 @@ function AnnouncementTab() {
   return (
     <div className="admin-console-panel admin-announcement-editor">
       <h3>Announcement banner</h3>
-      <p>Shows at the top of the app for every signed-in account until cleared. Leave empty and clear to remove it.</p>
+      <p>
+        Shows at the top of the app for every signed-in account until cleared. Leave empty and clear
+        to remove it.
+      </p>
       <textarea
         value={message}
         onChange={(event) => setMessage(event.target.value)}
@@ -274,7 +285,12 @@ function AnnouncementTab() {
         >
           {busy ? "Saving…" : "Publish"}
         </button>
-        <button type="button" className="library-secondary-button" disabled={busy} onClick={() => publish(true)}>
+        <button
+          type="button"
+          className="library-secondary-button"
+          disabled={busy}
+          onClick={() => publish(true)}
+        >
           Clear
         </button>
         {saved && <span className="admin-announcement-status">{saved}</span>}
