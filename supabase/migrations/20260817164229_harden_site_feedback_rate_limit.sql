@@ -44,8 +44,8 @@ begin
   -- Feedback older than 24 months is removed on this submission (and on the
   -- next admin read), so dormant records can remain until that next event.
   -- Expired hourly rate buckets are likewise removed on the next submission.
-  delete from public.site_feedback
-  where created_at < now() - interval '24 months';
+  delete from public.site_feedback as expired_feedback
+  where expired_feedback.created_at < now() - interval '24 months';
 
   delete from private.site_feedback_rate_limits
   where hour_bucket <= current_hour - interval '24 hours';
@@ -98,8 +98,8 @@ begin
     raise exception 'Not allowed';
   end if;
 
-  delete from public.site_feedback
-  where created_at < now() - interval '24 months';
+  delete from public.site_feedback as expired_feedback
+  where expired_feedback.created_at < now() - interval '24 months';
 
   return query
   select feedback.id, feedback.kind, feedback.message, feedback.created_at, feedback.handled_at

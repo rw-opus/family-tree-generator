@@ -84,7 +84,7 @@ begin
     raise exception 'Target account does not exist';
   end if;
 
-  insert into private.admin_entitlement_audit (
+  insert into private.admin_entitlement_audit as inserted_audit (
     request_id,
     actor_user_id,
     target_user_id,
@@ -100,7 +100,7 @@ begin
     null
   )
   on conflict (request_id) do nothing
-  returning request_id into inserted_request;
+  returning inserted_audit.request_id into inserted_request;
 
   if inserted_request is null then
     select * into prior
@@ -155,7 +155,7 @@ begin
     raise exception 'Target account does not exist';
   end if;
 
-  insert into private.admin_entitlement_audit (
+  insert into private.admin_entitlement_audit as inserted_audit (
     request_id,
     actor_user_id,
     target_user_id,
@@ -171,7 +171,7 @@ begin
     requested_enabled
   )
   on conflict (request_id) do nothing
-  returning request_id into inserted_request;
+  returning inserted_audit.request_id into inserted_request;
 
   if inserted_request is null then
     select * into prior

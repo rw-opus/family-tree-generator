@@ -306,6 +306,12 @@ describe("commercial Supabase schema", () => {
     expect(feedbackHardeningMigration).toContain(
       "hour_bucket <= current_hour - interval '24 hours'",
     );
+    expect(feedbackHardeningMigration).toContain(
+      "where expired_feedback.created_at < now() - interval '24 months'",
+    );
+    expect(feedbackHardeningMigration).not.toMatch(
+      /delete from public\.site_feedback\s+where created_at\b/i,
+    );
     expect(feedbackHardeningMigration).not.toMatch(/\bupdated_at\b/i);
     expect(feedbackHardeningMigration).not.toMatch(
       /insert into public\.site_feedback\s*\([^)]*(user_id|owner_id|email)/i,
@@ -329,5 +335,11 @@ describe("commercial Supabase schema", () => {
     expect(entitlementAuditMigration).toContain(
       "public.admin_set_unlimited_trees(uuid, boolean, uuid)",
     );
+    expect(
+      entitlementAuditMigration.match(
+        /returning inserted_audit\.request_id into inserted_request/g,
+      ),
+    ).toHaveLength(2);
+    expect(entitlementAuditMigration).not.toContain("returning request_id into inserted_request");
   });
 });
