@@ -59,6 +59,27 @@ const trashRestoreMigration = readFileSync(
   ),
   "utf8",
 );
+const adminRepairMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260817164224_repair_admin_overview_and_allowances.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const feedbackHardeningMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260817164229_harden_site_feedback_rate_limit.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const entitlementAuditMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260817164237_audit_admin_entitlement_changes.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -254,5 +275,76 @@ describe("commercial Supabase schema", () => {
       expect(sql).not.toContain("pg_catalog.btrim(coalesce(reference.person_id, '')) <> ''");
       expect(sql).not.toContain("pg_catalog.btrim(family_group.value ->> 'rootPersonId') <> ''");
     }
+  });
+
+  it("repairs the typed admin overview and grandfathers dormant pre-rollout accounts", () => {
+    expect(normaliseSql(schema)).toContain(normaliseSql(adminRepairMigration));
+    expect(adminRepairMigration).toContain("account.email::text");
+    expect(adminRepairMigration).toContain(
+      "coalesce(entitlement.free_tree_limit, 3::smallint)::smallint",
+    );
+    expect(adminRepairMigration).toContain(
+      "coalesce(entitlement.free_trees_used, 0::smallint)::smallint",
+    );
+    expect(adminRepairMigration).toContain("timestamptz '2026-08-17 14:40:52.119201+00'");
+    expect(adminRepairMigration).toContain("on conflict (user_id) do update");
+    expect(adminRepairMigration).toContain(
+      "greatest(\n  entitlement.free_tree_limit,\n  excluded.free_tree_limit\n)",
+    );
+    expect(adminRepairMigration).toContain(
+      "where entitlement.free_tree_limit < excluded.free_tree_limit",
+    );
+  });
+
+  it("rate-limits anonymous feedback per account and enforces its retention window", () => {
+    expect(normaliseSql(schema)).toContain(normaliseSql(feedbackHardeningMigration));
+    expect(feedbackHardeningMigration).toContain("private.site_feedback_rate_limits");
+    expect(feedbackHardeningMigration).toContain("message_count between 1 and 20");
+    expect(feedbackHardeningMigration).toContain("message_count < 20");
+    expect(feedbackHardeningMigration).toContain("interval '24 months'");
+    expect(feedbackHardeningMigration).toContain("interval '24 hours'");
+    expect(feedbackHardeningMigration).toContain(
+      "hour_bucket <= current_hour - interval '24 hours'",
+    );
+    expect(feedbackHardeningMigration).toContain(
+      "where expired_feedback.created_at < now() - interval '24 months'",
+    );
+    expect(feedbackHardeningMigration).not.toMatch(
+      /delete from public\.site_feedback\s+where created_at\b/i,
+    );
+    expect(feedbackHardeningMigration).not.toMatch(/\bupdated_at\b/i);
+    expect(feedbackHardeningMigration).not.toMatch(
+      /insert into public\.site_feedback\s*\([^)]*(user_id|owner_id|email)/i,
+    );
+  });
+
+  it("makes admin entitlement changes audited, bounded and idempotent", () => {
+    expect(normaliseSql(schema)).toContain(normaliseSql(entitlementAuditMigration));
+    expect(entitlementAuditMigration).toContain("private.admin_entitlement_audit");
+    expect(entitlementAuditMigration).toContain("credit_delta < 1 or credit_delta > 100");
+    expect(
+      entitlementAuditMigration.match(
+        /on conflict on constraint admin_entitlement_audit_pkey do nothing/g,
+      ),
+    ).toHaveLength(2);
+    expect(entitlementAuditMigration).not.toContain("on conflict (request_id) do nothing");
+    expect(entitlementAuditMigration).toContain(
+      "drop function public.admin_grant_tree_credits(uuid, integer)",
+    );
+    expect(entitlementAuditMigration).toContain(
+      "drop function public.admin_set_unlimited_trees(uuid, boolean)",
+    );
+    expect(entitlementAuditMigration).toContain(
+      "public.admin_grant_tree_credits(uuid, integer, uuid)",
+    );
+    expect(entitlementAuditMigration).toContain(
+      "public.admin_set_unlimited_trees(uuid, boolean, uuid)",
+    );
+    expect(
+      entitlementAuditMigration.match(
+        /returning inserted_audit\.request_id into inserted_request/g,
+      ),
+    ).toHaveLength(2);
+    expect(entitlementAuditMigration).not.toContain("returning request_id into inserted_request");
   });
 });

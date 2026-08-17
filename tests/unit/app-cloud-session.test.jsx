@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const cloudHarness = vi.hoisted(() => ({
+  isPlatformAdmin: vi.fn(),
   listFamilyTrees: vi.fn(),
   listTrashedFamilyTrees: vi.fn(),
   loadTreeEntitlement: vi.fn(),
@@ -49,6 +50,10 @@ vi.mock("../../src/services/treeBilling.js", () => ({
   isTreePaymentRequiredError: vi.fn(() => false),
   loadTreeEntitlement: cloudHarness.loadTreeEntitlement,
   startTreeCreditCheckout: vi.fn(),
+}));
+
+vi.mock("../../src/services/adminConsole.js", () => ({
+  isPlatformAdmin: cloudHarness.isPlatformAdmin,
 }));
 
 vi.mock("../../src/services/cloudSaveQueue.js", () => ({
@@ -98,10 +103,19 @@ vi.mock("../../src/components/FamilyLibrary.jsx", () => ({
     backupDisabled,
     storageStatus,
     saveState,
+    entitlement,
+    isPlatformAdmin,
+    onOpenAdminConsole,
   }) => (
     <div data-testid="family-library" data-active-tree-id={activeTreeId}>
       <span role="status">{saveState?.phase}</span>
       <span data-testid="storage-status">{storageStatus}</span>
+      <span data-testid="paid-tree-credits">{entitlement?.paidTreeCredits ?? "loading"}</span>
+      {isPlatformAdmin && (
+        <button type="button" onClick={onOpenAdminConsole}>
+          Open admin console
+        </button>
+      )}
       <button type="button" onClick={onDownloadBackup} disabled={backupDisabled}>
         Download backup
       </button>
@@ -131,6 +145,20 @@ vi.mock("../../src/components/FamilyLibrary.jsx", () => ({
       ))}
     </div>
   ),
+}));
+
+vi.mock("../../src/components/AdminConsole.jsx", () => ({
+  AdminConsole: ({ onClose }) => (
+    <div data-testid="admin-console">
+      <button type="button" onClick={onClose}>
+        Close admin console
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("../../src/components/AnnouncementBanner.jsx", () => ({
+  AnnouncementBanner: () => <div data-testid="announcement-banner" />,
 }));
 
 vi.mock("../../src/components/FamilyTreeCanvas.jsx", () => ({
@@ -170,6 +198,7 @@ describe("App cloud session identity", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    cloudHarness.isPlatformAdmin.mockResolvedValue(true);
     cloudHarness.listFamilyTrees.mockResolvedValue([
       tree("first", "First family"),
       tree("second", "Second family"),
@@ -209,6 +238,62 @@ describe("App cloud session identity", () => {
     container.remove();
   });
 
+  it("refreshes the signed-in allowance after closing admin and when a target session regains focus", async () => {
+    const initialEntitlement = {
+      freeTreeLimit: 3,
+      freeTreesUsed: 3,
+      freeTreesRemaining: 0,
+      paidTreeCredits: 0,
+      totalTreesCreated: 3,
+      unlimitedTrees: false,
+      canCreate: false,
+    };
+    const refreshedEntitlement = {
+      ...initialEntitlement,
+      paidTreeCredits: 4,
+      canCreate: true,
+    };
+    cloudHarness.loadTreeEntitlement
+      .mockResolvedValueOnce(initialEntitlement)
+      .mockResolvedValue(refreshedEntitlement);
+
+    await act(async () => {
+      root.render(
+        <App
+          localOnlyMode={false}
+          session={{ access_token: "token", user: { id: "user-1", email: "user@example.com" } }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="paid-tree-credits"]').textContent).toBe("0");
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open admin console")
+        .click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="admin-console"]')).not.toBeNull();
+
+    await act(async () => {
+      container.querySelector('[data-testid="admin-console"] button').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(cloudHarness.loadTreeEntitlement).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-testid="paid-tree-credits"]').textContent).toBe("4");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(cloudHarness.loadTreeEntitlement).toHaveBeenCalledTimes(3);
+  });
+
   it("does not reload or reactivate the first tree when the same user's token refreshes", async () => {
     const initialSession = {
       access_token: "initial-token",
@@ -232,6 +317,7 @@ describe("App cloud session identity", () => {
     expect(container.querySelector('[data-testid="tree-canvas"]').textContent).toBe(
       "Second family",
     );
+    expect(container.querySelector('[data-testid="announcement-banner"]')).not.toBeNull();
 
     await act(async () => {
       root.render(

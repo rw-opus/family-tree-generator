@@ -77,7 +77,7 @@ export function AuthScreen() {
           vendor&apos;s Maltese property tax position in one secure workspace.
         </p>
         <div className="commercial-price-callout">
-          <strong>First 5 trees free</strong>
+          <strong>First 3 trees free</strong>
           <span>Then €30 for each additional tree. Editing an existing tree remains free.</span>
         </div>
         <span className="commercial-security-note">

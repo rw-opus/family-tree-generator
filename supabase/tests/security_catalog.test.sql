@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(11);
+select plan(17);
 
 select is(
   (
@@ -12,8 +12,11 @@ select is(
     where n.nspname = 'public'
       and c.relkind in ('r', 'p')
   ),
-  array[
+    array[
     'family_trees',
+    'platform_admins',
+    'platform_announcements',
+    'site_feedback',
     'stripe_tree_events',
     'terms_acceptances',
     'tree_accounts',
@@ -80,11 +83,20 @@ select is(
       and lower(grantee) in ('public', 'anon', 'authenticated')
       and privilege_type = 'EXECUTE'
   ),
-  array[
+    array[
+    'active_announcement:authenticated',
+    'admin_grant_tree_credits:authenticated',
+    'admin_platform_overview:authenticated',
+    'admin_set_announcement:authenticated',
+    'admin_set_unlimited_trees:authenticated',
+    'is_platform_admin:authenticated',
+    'list_site_feedback:authenticated',
     'list_trashed_family_trees:authenticated',
     'permanently_delete_family_tree:authenticated',
     'restore_family_tree:authenticated',
     'save_family_tree:authenticated',
+    'set_site_feedback_handled:authenticated',
+    'submit_site_feedback:authenticated',
     'trash_family_tree:authenticated'
   ]::text[],
   'only owner-checked family-tree RPCs are executable by a browser role'
@@ -165,6 +177,85 @@ select is(
   ),
   0,
   'every application SECURITY DEFINER function pins its search_path'
+);
+
+select ok(
+  not exists (
+    select 1
+    from information_schema.table_privileges
+    where table_schema = 'private'
+      and lower(grantee) in ('public', 'anon', 'authenticated')
+  ),
+  'browser roles have no privileges on private audit or rate-limit tables'
+);
+
+select is(
+  (
+    select array_agg(c.relname::text order by c.relname)
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'private'
+      and c.relname in ('admin_entitlement_audit', 'site_feedback_rate_limits')
+      and c.relkind in ('r', 'p')
+      and c.relrowsecurity
+  ),
+  array['admin_entitlement_audit', 'site_feedback_rate_limits']::text[],
+  'private audit and rate-limit tables exist with RLS enabled'
+);
+
+select ok(
+  pg_catalog.to_regprocedure(
+    'public.admin_grant_tree_credits(uuid,integer,uuid)'
+  ) is not null
+    and pg_catalog.to_regprocedure(
+      'public.admin_set_unlimited_trees(uuid,boolean,uuid)'
+    ) is not null
+    and pg_catalog.to_regprocedure(
+      'public.admin_grant_tree_credits(uuid,integer)'
+    ) is null
+    and pg_catalog.to_regprocedure(
+      'public.admin_set_unlimited_trees(uuid,boolean)'
+    ) is null,
+  'only audited idempotent admin-entitlement RPC signatures remain'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_catalog.pg_trigger t
+    join pg_catalog.pg_class relation on relation.oid = t.tgrelid
+    join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'private'
+      and relation.relname = 'admin_entitlement_audit'
+      and t.tgname = 'admin_entitlement_audit_immutable'
+      and t.tgenabled = 'O'
+      and not t.tgisinternal
+  ),
+  'the admin-entitlement audit ledger rejects updates and deletes'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'site_feedback'
+      and column_name in ('user_id', 'owner_id', 'email')
+  ),
+  0,
+  'anonymous feedback rows contain no account identity column'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from information_schema.columns
+    where table_schema = 'private'
+      and table_name = 'site_feedback_rate_limits'
+      and column_name = 'updated_at'
+  ),
+  0,
+  'the feedback rate limiter stores no exact request timestamp'
 );
 
 select * from finish();

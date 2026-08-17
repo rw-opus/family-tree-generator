@@ -62,6 +62,11 @@ describe("AuthScreen public responses", () => {
     container.remove();
   });
 
+  it("advertises the same three-tree allowance enforced for new accounts", () => {
+    expect(container.textContent).toContain("First 3 trees free");
+    expect(container.textContent).not.toContain("First 5 trees free");
+  });
+
   it.each([
     ["a successful reset request", { error: null }],
     [

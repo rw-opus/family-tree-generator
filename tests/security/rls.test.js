@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { assertLocalDatabaseUrl } from "../../scripts/backup/evidence.js";
 
 /**
@@ -51,6 +52,33 @@ if (
   throw new Error("RLS tests are forbidden unless the Supabase API is local and disposable.");
 }
 const localDatabaseUrl = assertLocalDatabaseUrl(databaseUrl, "SUPABASE_DB_URL").toString();
+const adminRepairMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260817164224_repair_admin_overview_and_allowances.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
+function localSql(input, variables = {}) {
+  const variableArguments = Object.entries(variables).map(([name, value]) => {
+    if (!/^[a-z][a-z0-9_]*$/i.test(name)) throw new Error(`Invalid psql variable name: ${name}`);
+    return `--set=${name}=${String(value)}`;
+  });
+  return execFileSync(
+    "psql",
+    [
+      localDatabaseUrl,
+      "--no-psqlrc",
+      "--quiet",
+      "--tuples-only",
+      "--no-align",
+      "--set=ON_ERROR_STOP=1",
+      ...variableArguments,
+    ],
+    { encoding: "utf8", input, stdio: ["pipe", "pipe", "pipe"] },
+  ).trim();
+}
 
 const signedLocalJwt = (payload) => {
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -1133,5 +1161,437 @@ describe("terms acceptance is append-only", () => {
     });
 
     expect(response.ok).toBe(false);
+  });
+});
+
+describe("platform administration and anonymous site feedback", () => {
+  let operator;
+  let account;
+  let concurrentAccount;
+
+  beforeAll(async () => {
+    const stamp = crypto.randomUUID().slice(0, 8);
+    [operator, account, concurrentAccount] = await Promise.all([
+      createUser(`platform-operator-${stamp}@fictional.invalid`),
+      createUser(`platform-account-${stamp}@fictional.invalid`),
+      createUser(`platform-concurrent-${stamp}@fictional.invalid`),
+    ]);
+
+    // The real migration ran before these disposable users existed. Move the
+    // operator fixture before the recorded rollout instant and execute the
+    // actual idempotent repair migration to prove its one-time backfill.
+    localSql(
+      `
+        delete from public.tree_accounts where user_id = :'operator_id'::uuid;
+        update auth.users
+        set created_at = timestamptz '2026-08-03 12:00:00+00'
+        where id in (:'operator_id'::uuid, :'concurrent_id'::uuid);
+
+        insert into public.tree_accounts (
+          user_id,
+          free_tree_limit,
+          free_trees_used,
+          paid_tree_credits,
+          total_trees_created,
+          unlimited_trees
+        )
+        values (:'concurrent_id'::uuid, 3, 1, 2, 3, true)
+        on conflict (user_id) do update
+        set free_tree_limit = 3,
+            free_trees_used = 1,
+            paid_tree_credits = 2,
+            total_trees_created = 3,
+            unlimited_trees = true;
+      `,
+      { operator_id: operator.id, concurrent_id: concurrentAccount.id },
+    );
+    localSql(adminRepairMigration);
+    localSql(
+      `
+        insert into public.platform_admins (user_id)
+        values (:'operator_id'::uuid)
+        on conflict (user_id) do nothing;
+      `,
+      { operator_id: operator.id },
+    );
+  }, 60_000);
+
+  afterAll(async () => {
+    for (const user of [operator, account, concurrentAccount]) {
+      if (user?.id) await admin(`/auth/v1/admin/users/${user.id}`, { method: "DELETE" });
+    }
+  });
+
+  it("grandfathers a pre-rollout account that had no entitlement row", async () => {
+    const response = await rest(
+      `tree_accounts?select=free_tree_limit,free_trees_used,paid_tree_credits,total_trees_created,unlimited_trees&user_id=eq.${operator.id}`,
+      { token: operator.token },
+    );
+    const rows = await readJson(response);
+
+    expect(response.status).toBe(200);
+    expect(rows).toEqual([
+      {
+        free_tree_limit: 5,
+        free_trees_used: 0,
+        paid_tree_credits: 0,
+        total_trees_created: 0,
+        unlimited_trees: false,
+      },
+    ]);
+  });
+
+  it("raises an existing pre-rollout limit to five without changing other entitlement state", async () => {
+    const response = await rest(
+      `tree_accounts?select=free_tree_limit,free_trees_used,paid_tree_credits,total_trees_created,unlimited_trees&user_id=eq.${concurrentAccount.id}`,
+      { token: concurrentAccount.token },
+    );
+    const rows = await readJson(response);
+
+    expect(response.status).toBe(200);
+    expect(rows).toEqual([
+      {
+        free_tree_limit: 5,
+        free_trees_used: 1,
+        paid_tree_credits: 2,
+        total_trees_created: 3,
+        unlimited_trees: true,
+      },
+    ]);
+  });
+
+  it("does not touch an entitlement that is already grandfathered", () => {
+    const before = localSql(
+      `select updated_at::text from public.tree_accounts where user_id = :'operator_id'::uuid;`,
+      { operator_id: operator.id },
+    );
+
+    localSql(adminRepairMigration);
+
+    const after = localSql(
+      `select updated_at::text from public.tree_accounts where user_id = :'operator_id'::uuid;`,
+      { operator_id: operator.id },
+    );
+    expect(after).toBe(before);
+  });
+
+  it("executes the typed overview RPC for an admin and denies a normal account", async () => {
+    const allowed = await rest("rpc/admin_platform_overview", {
+      token: operator.token,
+      method: "POST",
+      body: {},
+    });
+    const rows = await readJson(allowed);
+    const denied = await rest("rpc/admin_platform_overview", {
+      token: account.token,
+      method: "POST",
+      body: {},
+    });
+
+    expect(allowed.status).toBe(200);
+    expect(rows.find((row) => row.user_id === operator.id)).toMatchObject({
+      email: operator.email,
+      free_tree_limit: 5,
+      free_trees_used: 0,
+    });
+    expect(rows.find((row) => row.user_id === account.id)).toMatchObject({
+      email: account.email,
+      free_tree_limit: 3,
+      free_trees_used: 0,
+    });
+    expect(denied.ok).toBe(false);
+  });
+
+  it("grants credits exactly once per audited request and removes the old overload", async () => {
+    const requestId = crypto.randomUUID();
+    const request = {
+      target_user: account.id,
+      credits: 2,
+      request_id: requestId,
+    };
+    const first = await rest("rpc/admin_grant_tree_credits", {
+      token: operator.token,
+      method: "POST",
+      body: request,
+    });
+    const replay = await rest("rpc/admin_grant_tree_credits", {
+      token: operator.token,
+      method: "POST",
+      body: request,
+    });
+    const collision = await rest("rpc/admin_grant_tree_credits", {
+      token: operator.token,
+      method: "POST",
+      body: { ...request, credits: 3 },
+    });
+    const unauditedOverload = await rest("rpc/admin_grant_tree_credits", {
+      token: operator.token,
+      method: "POST",
+      body: { target_user: account.id, credits: 1 },
+    });
+    const allowance = await rest(
+      `tree_accounts?select=paid_tree_credits&user_id=eq.${account.id}`,
+      { token: account.token },
+    );
+
+    expect(first.ok).toBe(true);
+    expect(replay.ok).toBe(true);
+    expect(collision.ok).toBe(false);
+    expect(unauditedOverload.ok).toBe(false);
+    expect(await readJson(allowance)).toEqual([{ paid_tree_credits: 2 }]);
+    expect(
+      Number(
+        localSql(
+          `
+            select count(*)
+            from private.admin_entitlement_audit
+            where request_id = :'request_id'::uuid
+              and actor_user_id = :'operator_id'::uuid
+              and target_user_id = :'account_id'::uuid
+              and operation = 'grant_tree_credits'
+              and integer_value = 2;
+          `,
+          { request_id: requestId, operator_id: operator.id, account_id: account.id },
+        ),
+      ),
+    ).toBe(1);
+  });
+
+  it("bounds credit grants and denies entitlement mutations by a non-admin", async () => {
+    const oversized = await rest("rpc/admin_grant_tree_credits", {
+      token: operator.token,
+      method: "POST",
+      body: { target_user: account.id, credits: 101, request_id: crypto.randomUUID() },
+    });
+    const denied = await rest("rpc/admin_grant_tree_credits", {
+      token: account.token,
+      method: "POST",
+      body: { target_user: account.id, credits: 1, request_id: crypto.randomUUID() },
+    });
+    const allowance = await rest(
+      `tree_accounts?select=paid_tree_credits&user_id=eq.${account.id}`,
+      { token: account.token },
+    );
+
+    expect(oversized.ok).toBe(false);
+    expect(denied.ok).toBe(false);
+    expect(await readJson(allowance)).toEqual([{ paid_tree_credits: 2 }]);
+  });
+
+  it("sets unlimited access idempotently and records an immutable audit row", async () => {
+    const requestId = crypto.randomUUID();
+    const request = {
+      target_user: account.id,
+      enabled: true,
+      request_id: requestId,
+    };
+    const first = await rest("rpc/admin_set_unlimited_trees", {
+      token: operator.token,
+      method: "POST",
+      body: request,
+    });
+    const replay = await rest("rpc/admin_set_unlimited_trees", {
+      token: operator.token,
+      method: "POST",
+      body: request,
+    });
+    const collision = await rest("rpc/admin_set_unlimited_trees", {
+      token: operator.token,
+      method: "POST",
+      body: { ...request, enabled: false },
+    });
+    const allowance = await rest(`tree_accounts?select=unlimited_trees&user_id=eq.${account.id}`, {
+      token: account.token,
+    });
+
+    expect(first.ok).toBe(true);
+    expect(replay.ok).toBe(true);
+    expect(collision.ok).toBe(false);
+    expect(await readJson(allowance)).toEqual([{ unlimited_trees: true }]);
+    expect(() =>
+      localSql(
+        `
+          update private.admin_entitlement_audit
+          set boolean_value = false
+          where request_id = :'request_id'::uuid;
+        `,
+        { request_id: requestId },
+      ),
+    ).toThrow();
+  });
+
+  it("stores anonymous feedback, filters on the server, and denies inbox access", async () => {
+    const marker = crypto.randomUUID();
+    const submitted = await rest("rpc/submit_site_feedback", {
+      token: account.token,
+      method: "POST",
+      body: { feedback_kind: "suggestion", feedback_message: `Suggestion ${marker}` },
+    });
+    const handledId = crypto.randomUUID();
+    localSql(
+      `
+        insert into public.site_feedback (id, kind, message, handled_at)
+        values (
+          :'handled_id'::uuid,
+          'bug',
+          'Already handled regression fixture',
+          now()
+        );
+      `,
+      { handled_id: handledId },
+    );
+    const openOnly = await rest("rpc/list_site_feedback", {
+      token: operator.token,
+      method: "POST",
+      body: { include_handled: false },
+    });
+    const openRows = await readJson(openOnly);
+    const denied = await rest("rpc/list_site_feedback", {
+      token: account.token,
+      method: "POST",
+      body: { include_handled: true },
+    });
+
+    expect(submitted.ok).toBe(true);
+    expect(openOnly.status).toBe(200);
+    expect(openRows.some((row) => row.message === `Suggestion ${marker}`)).toBe(true);
+    expect(openRows.some((row) => row.id === handledId)).toBe(false);
+    expect(denied.ok).toBe(false);
+    expect(
+      localSql(
+        `
+          select count(*)
+          from information_schema.columns
+          where table_schema = 'public'
+            and table_name = 'site_feedback'
+            and column_name in ('user_id', 'owner_id', 'email');
+        `,
+      ),
+    ).toBe("0");
+    expect(
+      localSql(
+        `
+          select count(*)
+          from information_schema.columns
+          where table_schema = 'private'
+            and table_name = 'site_feedback_rate_limits'
+            and column_name = 'updated_at';
+        `,
+      ),
+    ).toBe("0");
+  });
+
+  it("enforces the feedback cap atomically per account", async () => {
+    localSql(
+      `
+        insert into private.site_feedback_rate_limits (
+          user_id,
+          hour_bucket,
+          message_count
+        ) values (
+          :'account_id'::uuid,
+          date_trunc('hour', now()),
+          19
+        )
+        on conflict (user_id, hour_bucket) do update
+        set message_count = 19;
+      `,
+      { account_id: account.id },
+    );
+
+    const marker = crypto.randomUUID();
+    const responses = await Promise.all([
+      rest("rpc/submit_site_feedback", {
+        token: account.token,
+        method: "POST",
+        body: { feedback_kind: "bug", feedback_message: `Concurrent A ${marker}` },
+      }),
+      rest("rpc/submit_site_feedback", {
+        token: account.token,
+        method: "POST",
+        body: { feedback_kind: "bug", feedback_message: `Concurrent B ${marker}` },
+      }),
+    ]);
+
+    expect(responses.filter((response) => response.ok)).toHaveLength(1);
+    expect(responses.filter((response) => !response.ok)).toHaveLength(1);
+    expect(
+      localSql(
+        `
+          select message_count
+          from private.site_feedback_rate_limits
+          where user_id = :'account_id'::uuid
+            and hour_bucket = date_trunc('hour', now());
+        `,
+        { account_id: account.id },
+      ),
+    ).toBe("20");
+  });
+
+  it("purges feedback after 24 months and stale rate buckets after 24 hours", async () => {
+    const expiredId = crypto.randomUUID();
+    localSql(
+      `
+        insert into public.site_feedback (id, kind, message, created_at)
+        values (
+          :'expired_id'::uuid,
+          'bug',
+          'Expired retention regression fixture',
+          now() - interval '25 months'
+        );
+        insert into private.site_feedback_rate_limits (
+          user_id,
+          hour_bucket,
+          message_count
+        ) values (
+          :'operator_id'::uuid,
+          date_trunc('hour', now()) - interval '48 hours',
+          1
+        )
+        on conflict (user_id, hour_bucket) do update
+        set message_count = 1;
+        insert into private.site_feedback_rate_limits (
+          user_id,
+          hour_bucket,
+          message_count
+        ) values (
+          :'operator_id'::uuid,
+          date_trunc('hour', now()) - interval '24 hours',
+          1
+        )
+        on conflict (user_id, hour_bucket) do update
+        set message_count = 1;
+      `,
+      { expired_id: expiredId, operator_id: operator.id },
+    );
+    const listed = await rest("rpc/list_site_feedback", {
+      token: operator.token,
+      method: "POST",
+      body: { include_handled: true },
+    });
+    const submitted = await rest("rpc/submit_site_feedback", {
+      token: operator.token,
+      method: "POST",
+      body: { feedback_kind: "suggestion", feedback_message: "Retention cleanup trigger" },
+    });
+
+    expect(listed.status).toBe(200);
+    expect((await readJson(listed)).some((row) => row.id === expiredId)).toBe(false);
+    expect(submitted.ok).toBe(true);
+    expect(
+      localSql(
+        `
+          select
+            (select count(*) from public.site_feedback where id = :'expired_id'::uuid),
+            (
+              select count(*)
+              from private.site_feedback_rate_limits
+              where user_id = :'operator_id'::uuid
+                and hour_bucket <= date_trunc('hour', now()) - interval '24 hours'
+            );
+        `,
+        { expired_id: expiredId, operator_id: operator.id },
+      ),
+    ).toBe("0|0");
   });
 });

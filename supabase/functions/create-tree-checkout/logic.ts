@@ -49,7 +49,7 @@ export function checkoutGate(account: TreeAccountAllowance | null | undefined): 
   if (account?.unlimited_trees === true) {
     return { allowed: false, status: 409, reason: "account has unlimited tree creation" };
   }
-  const freeLimit = Number(account?.free_tree_limit ?? 5);
+  const freeLimit = Number(account?.free_tree_limit ?? 3);
   const freeUsed = Number(account?.free_trees_used ?? 0);
   const paidCredits = Number(account?.paid_tree_credits ?? 0);
   if (freeUsed < freeLimit) {
