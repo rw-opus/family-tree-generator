@@ -356,8 +356,11 @@ function normalizeFamilyGroup(group, index, caseData, validPersonIds, warnings) 
   const requestedRootId = text(group?.rootPersonId);
   const requestedPersonIds = uniqueIds(group?.personIds);
   const personIds = requestedPersonIds.filter((personId) => validPersonIds.has(personId));
+  // Exclusions are durable deletion tombstones, not live Person references.
+  // Keep them even after an unreferenced Person has been removed from the
+  // canonical registry so a delayed editor update cannot recreate that card.
   const excludedPersonIds = uniqueIds(group?.excludedPersonIds).filter(
-    (personId) => validPersonIds.has(personId) && !personIds.includes(personId),
+    (personId) => !personIds.includes(personId),
   );
   requestedPersonIds
     .filter((personId) => !validPersonIds.has(personId))
@@ -366,7 +369,10 @@ function normalizeFamilyGroup(group, index, caseData, validPersonIds, warnings) 
         `Family group ${index + 1} referred to missing person “${personId}”; the reference needs review.`,
       ),
     );
-  const rootPersonId = validPersonIds.has(requestedRootId) ? requestedRootId : personIds[0] || "";
+  const rootPersonId =
+    validPersonIds.has(requestedRootId) && !excludedPersonIds.includes(requestedRootId)
+      ? requestedRootId
+      : personIds[0] || "";
   if (rootPersonId && !personIds.includes(rootPersonId)) personIds.unshift(rootPersonId);
 
   return {
@@ -788,31 +794,41 @@ function referencedPartyIds(caseData) {
   );
 }
 
-function scrubPersonFromRelationships(people, personId) {
+function scrubPeopleFromRelationships(people, personIds) {
+  const removedPersonIds = new Set(uniqueIds(personIds));
+  if (!removedPersonIds.size) return people;
   return people
-    .filter((person) => person.id !== personId)
+    .filter((person) => !removedPersonIds.has(person.id))
     .map((person) => {
       const nextPerson = { ...person };
 
-      if (person.fatherId === personId) nextPerson.fatherId = "";
-      if (person.motherId === personId) nextPerson.motherId = "";
-      if (person.survivalStatusReferencePersonId === personId) {
+      if (removedPersonIds.has(person.fatherId)) nextPerson.fatherId = "";
+      if (removedPersonIds.has(person.motherId)) nextPerson.motherId = "";
+      if (removedPersonIds.has(person.survivalStatusReferencePersonId)) {
         nextPerson.survivalStatusReferencePersonId = "";
       }
       if (Array.isArray(person.spouseIds)) {
-        nextPerson.spouseIds = uniqueIds(person.spouseIds).filter((id) => id !== personId);
+        nextPerson.spouseIds = uniqueIds(person.spouseIds).filter(
+          (id) => !removedPersonIds.has(id),
+        );
       }
       if (Array.isArray(person.siblingIds)) {
-        nextPerson.siblingIds = uniqueIds(person.siblingIds).filter((id) => id !== personId);
+        nextPerson.siblingIds = uniqueIds(person.siblingIds).filter(
+          (id) => !removedPersonIds.has(id),
+        );
       }
       if (Array.isArray(person.partnerRelationships)) {
         nextPerson.partnerRelationships = person.partnerRelationships.filter(
-          (relationship) => text(relationship?.personId) !== personId,
+          (relationship) => !removedPersonIds.has(text(relationship?.personId)),
         );
       }
 
       return nextPerson;
     });
+}
+
+function scrubPersonFromRelationships(people, personId) {
+  return scrubPeopleFromRelationships(people, [personId]);
 }
 
 /**
@@ -892,8 +908,12 @@ export function reconcilePeopleUpdate(caseValue, activeGroupId, incomingPeople, 
 
   const previousIds = new Set(caseData.people.map((person) => person.id));
   const incomingIds = new Set(people.map((person) => person.id).filter(Boolean));
+  const activeExcludedPersonIds = new Set(activeGroup.excludedPersonIds || []);
   const addedIds = people
-    .filter((person) => person.id && !previousIds.has(person.id))
+    .filter(
+      (person) =>
+        person.id && !previousIds.has(person.id) && !activeExcludedPersonIds.has(person.id),
+    )
     .map((person) => person.id);
   const replacesActiveGroup =
     options.replaceFamilyGroup === true ||
@@ -944,7 +964,15 @@ export function reconcilePeopleUpdate(caseValue, activeGroupId, incomingPeople, 
     });
   }
 
-  const nextCase = normalizeCase({ ...caseData, people });
+  // A mounted editor can finish an update after deletion (for example while a
+  // new relative is being created). Do not let that stale payload put a fully
+  // deleted identity back into the canonical registry. Retained legal
+  // identities are already present in previousIds and continue to be updated.
+  const permanentlyDeletedPersonIds = [...activeExcludedPersonIds].filter(
+    (personId) => !previousIds.has(personId),
+  );
+  const reconciledPeople = scrubPeopleFromRelationships(people, permanentlyDeletedPersonIds);
+  const nextCase = normalizeCase({ ...caseData, people: reconciledPeople });
   const nextActiveGroup = nextCase.familyGroups.find((group) => group.id === activeGroupId);
   const membershipSeeds = new Set([...(nextActiveGroup?.personIds || []), ...addedIds]);
   const excludedPersonIds = new Set(nextActiveGroup?.excludedPersonIds || []);

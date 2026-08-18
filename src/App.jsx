@@ -1758,13 +1758,21 @@ export function App({
 
   const buyTreeCredit = async () => {
     if (!cloudMode || billingBusy) return;
-    if (entitlement?.unlimitedTrees) {
-      setBillingMessage("This account already has unlimited tree creation.");
-      return;
-    }
     setBillingBusy(true);
-    setBillingMessage("Opening secure Stripe checkout...");
+    setBillingMessage("Checking the latest account allowance...");
     try {
+      const latestEntitlement = await refreshTreeEntitlement();
+      if (latestEntitlement.unlimitedTrees) {
+        setBillingMessage("Unlimited tree creation is active for this account.");
+        setBillingBusy(false);
+        return;
+      }
+      if (latestEntitlement.canCreate) {
+        setBillingMessage("Tree creation is available. You can create the new family now.");
+        setBillingBusy(false);
+        return;
+      }
+      setBillingMessage("Opening secure Stripe checkout...");
       const checkoutUrl = await startTreeCreditCheckout();
       window.location.assign(checkoutUrl);
     } catch (error) {
