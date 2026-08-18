@@ -1,4 +1,4 @@
-import { test, expect, openEstate, PEOPLE } from "./fixtures.js";
+import { test, expect, openEstate, PEOPLE, WORKSPACE_KEY } from "./fixtures.js";
 
 const chartState = (page) =>
   page.evaluate(() => {
@@ -80,6 +80,130 @@ test.describe("family tree canvas", () => {
     await page.locator(".person-finder").getByText("Marija Borg").first().click();
 
     await expect(page.locator(`[data-person-id="${PEOPLE.marija}"]`)).toHaveClass(/selected/);
+  });
+
+  test("keeps a deleted parent removed when another relative is added", async ({ page }) => {
+    await page.locator(`[data-person-id="${PEOPLE.marija}"]`).click();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Delete person" }).click();
+
+    await expect(page.locator(`[data-person-id="${PEOPLE.marija}"]`)).toHaveCount(0);
+
+    await page.locator(`[data-person-id="${PEOPLE.gorg}"]`).click();
+    await page.getByTitle("Add father").click();
+
+    await expect(page.locator("[data-person-id]")).toHaveCount(3);
+    await expect(page.locator(`[data-person-id="${PEOPLE.marija}"]`)).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ([key, personId]) => {
+            const savedWorkspace = JSON.parse(window.localStorage.getItem(key) || "{}");
+            const savedTree = savedWorkspace.trees?.[0];
+            return {
+              inPeople: savedTree?.people?.some((person) => person.id === personId) ?? true,
+              inFamily:
+                savedTree?.familyGroups?.some((group) => group.personIds?.includes(personId)) ??
+                true,
+            };
+          },
+          [WORKSPACE_KEY, PEOPLE.marija],
+        ),
+      )
+      .toEqual({ inPeople: false, inFamily: false });
+
+    await page.reload();
+    await openEstate(page);
+    await expect(page.locator(`[data-person-id="${PEOPLE.marija}"]`)).toHaveCount(0);
+    await expect(page.locator("[data-person-id]")).toHaveCount(3);
+  });
+
+  test("keeps Done beside Delete and permits tree removal with retained legal records", async ({
+    page,
+  }) => {
+    await page.locator(`[data-person-id="${PEOPLE.gorg}"]`).click();
+    await page.getByRole("button", { name: "Edit identity" }).click();
+
+    const profile = page.locator(".inspector-profile");
+    const deleteButton = page.locator('[data-person-action="delete"]');
+    const doneButton = page.locator('[data-person-action="done-editing"]');
+    await expect(profile.getByRole("button", { name: "Done" })).toHaveCount(0);
+    await expect(deleteButton).toBeEnabled();
+    await expect(doneButton).toBeVisible();
+    await expect(page.getByText("Switch to Property, succession & tax")).toHaveCount(0);
+
+    const [profileBox, deleteBox, doneBox] = await Promise.all([
+      profile.boundingBox(),
+      deleteButton.boundingBox(),
+      doneButton.boundingBox(),
+    ]);
+    expect(doneBox.x).toBeGreaterThanOrEqual(deleteBox.x + deleteBox.width);
+    expect(Math.abs(doneBox.y - deleteBox.y)).toBeLessThan(2);
+    expect(doneBox.y).toBeGreaterThan(profileBox.y + profileBox.height);
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await deleteButton.click();
+
+    await expect(page.locator(`[data-person-id="${PEOPLE.gorg}"]`)).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ([key, personId]) => {
+            const savedWorkspace = JSON.parse(window.localStorage.getItem(key) || "{}");
+            const savedTree = savedWorkspace.trees?.[0];
+            return {
+              identityRetained:
+                savedTree?.people?.some((person) => person.id === personId) ?? false,
+              familyMembership:
+                savedTree?.familyGroups?.some((group) => group.personIds?.includes(personId)) ??
+                true,
+              ownershipRetained:
+                savedTree?.properties?.some((property) =>
+                  property.owners?.some((owner) => owner.personId === personId),
+                ) ?? false,
+            };
+          },
+          [WORKSPACE_KEY, PEOPLE.gorg],
+        ),
+      )
+      .toEqual({
+        identityRetained: true,
+        familyMembership: false,
+        ownershipRetained: true,
+      });
+
+    await page.locator(`[data-person-id="${PEOPLE.marija}"]`).click();
+    await page.getByLabel("Surname at birth").fill("Camilleri");
+    await page.locator('[data-person-action="done-editing"]').click();
+    await page.getByTitle("Add child").click();
+    await expect(page.getByLabel("Child's other parent")).toHaveValue(PEOPLE.gorg);
+    await page.getByRole("button", { name: "Add child", exact: true }).click();
+
+    await expect(page.locator("[data-person-id]")).toHaveCount(3);
+    await expect(page.locator(`[data-person-id="${PEOPLE.gorg}"]`)).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ([key, personId]) => {
+            const savedWorkspace = JSON.parse(window.localStorage.getItem(key) || "{}");
+            const group = savedWorkspace.trees?.[0]?.familyGroups?.[0];
+            return {
+              visible: group?.personIds?.includes(personId) ?? true,
+              excluded: group?.excludedPersonIds?.includes(personId) ?? false,
+            };
+          },
+          [WORKSPACE_KEY, PEOPLE.gorg],
+        ),
+      )
+      .toEqual({ visible: false, excluded: true });
+
+    await page.locator(".person-finder > summary").click();
+    await expect(page.locator(".person-finder-results > button")).toHaveCount(3);
+
+    await page.reload();
+    await openEstate(page);
+    await expect(page.locator(`[data-person-id="${PEOPLE.gorg}"]`)).toHaveCount(0);
+    await expect(page.locator("[data-person-id]")).toHaveCount(3);
   });
 
   test("names its controls in plain sight rather than hiding them", async ({ page }) => {

@@ -227,4 +227,25 @@ describe("InitialOwnershipEditor percentage display", () => {
     expect(onChange).toHaveBeenCalledTimes(2);
     expect(onChange.mock.calls[1][0][0].shareDenominator).toBe("3");
   });
+
+  it("keeps all three ways to add an owner in one action row", () => {
+    act(() =>
+      root.render(
+        <InitialOwnershipEditor
+          property={{ owners: [] }}
+          people={[]}
+          onChange={() => ({})}
+          onPickFromTree={() => {}}
+          onCreateOutsideParty={() => ({})}
+        />,
+      ),
+    );
+
+    const actions = container.querySelector(".initial-owner-actions");
+    expect([...actions.children].map((button) => button.textContent.trim())).toEqual([
+      "Add initial owner",
+      "Select from tree",
+      "Add outside owner",
+    ]);
+  });
 });

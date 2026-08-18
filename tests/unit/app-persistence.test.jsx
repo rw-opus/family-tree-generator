@@ -144,6 +144,7 @@ describe("App local recovery", () => {
     act(() => root.unmount());
     container.remove();
     window.localStorage.clear();
+    vi.restoreAllMocks();
   });
 
   it("restores the active tree and lets the user reopen another saved tree", () => {
@@ -601,6 +602,7 @@ describe("App local recovery", () => {
   });
 
   it("reaches the property and tax workspace from the tree screen and returns", () => {
+    const print = vi.spyOn(window, "print").mockImplementation(() => {});
     saveLocalWorkspace(
       [
         {
@@ -630,6 +632,12 @@ describe("App local recovery", () => {
     expect(container.textContent).toContain("Current ownership & history");
     expect(container.textContent).toContain("Tax Calculation");
     expect(container.textContent).not.toContain("Record a sale or transfer");
+    const propertyPrint = container.querySelector(
+      'button[aria-label="Print current generator screen"]',
+    );
+    expect(propertyPrint).not.toBeNull();
+    act(() => propertyPrint.click());
+    expect(print).toHaveBeenCalledOnce();
 
     const backToTree = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Back to Tree"),
@@ -639,6 +647,7 @@ describe("App local recovery", () => {
     expect(container.querySelector(".ownership-tax-button")).not.toBeNull();
     expect(container.querySelector(".context-dashboard")).toBeNull();
     expect(container.querySelector(".family-node.selected")).toBeNull();
+    print.mockRestore();
   });
 
   it("opens an outside provenance owner from a family recipient's tax details", () => {

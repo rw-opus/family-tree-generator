@@ -3,10 +3,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Properties } from "../../src/components/Properties.jsx";
+import { TaxCalculationPanel } from "../../src/components/TaxCalculationPanel.jsx";
 import {
   intestacyAllocationSignature,
   intestateAllocations,
 } from "../../src/domain/familyOwnership.js";
+import { buildPropertyVendorTaxReport } from "../../src/domain/propertyVendorTax.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -73,6 +75,107 @@ describe("unified Property & Tax workspace", () => {
     expect(container.querySelector("#property-workspace-setup")).not.toBeNull();
     expect(container.querySelector("#property-workspace-ownership")).not.toBeNull();
     expect(container.querySelector("#property-workspace-tax")).not.toBeNull();
+  });
+
+  it("keeps a detailed inheritance provenance summary to two compact visual lines", () => {
+    const inheritedPeople = [
+      {
+        id: "edgar",
+        fullName: "Edgar Wadge",
+        isDeceased: true,
+        dateOfDeath: "2008-05-20",
+        inheritanceBasis: "will",
+        spouseIds: [],
+      },
+      { id: "vendor", fullName: "Vendor Wadge", spouseIds: [] },
+    ];
+    const inheritedProperty = {
+      id: "property",
+      address: "1 Republic Street",
+      saleValue: "80000",
+      owners: [
+        {
+          id: "edgar-title",
+          personId: "edgar",
+          shareNumerator: 1,
+          shareDenominator: 4,
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [],
+    };
+    const vendorReport = buildPropertyVendorTaxReport(inheritedProperty, inheritedPeople, []);
+    const taxCalculationReport = {
+      vendors: [
+        {
+          id: "vendor",
+          name: "Vendor Wadge",
+          share: 0.25,
+          shareFraction: { numerator: 1, denominator: 4 },
+          attributedSaleValue: 20000,
+          rows: [
+            {
+              id: "inheritance-row",
+              provenance: "Inherited from Edgar Wadge",
+              provenancePersonId: "edgar",
+              inheritanceDate: "2008-05-20",
+              share: 0.25,
+              shareFraction: { numerator: 1, denominator: 4 },
+              declarations: [
+                {
+                  id: "cm-edgar",
+                  date: "2025-05-25",
+                  notaryName: "wadge roland J.",
+                  declaredShare: 0.25,
+                  declaredShareFraction: { numerator: 1, denominator: 4 },
+                  declaredValue: 20000,
+                  hasDeclaredValue: true,
+                },
+              ],
+              declaredValue: 20000,
+              attributedSaleValue: 20000,
+              difference: 0,
+              methods: [{ key: "inheritance", label: "Inheritance", tax: 0 }],
+              selectedMethod: { key: "inheritance", label: "Inheritance", tax: 0 },
+              tax: 0,
+              net: 20000,
+            },
+          ],
+          tax: 0,
+          net: 20000,
+          incompleteRowCount: 0,
+          incompleteSourceCount: 0,
+          ignoredStoredTaxLots: [],
+        },
+      ],
+      completeSourceCount: 1,
+      incompleteSourceCount: 0,
+      totalsComplete: true,
+      totalSaleValue: 20000,
+      totalTax: 0,
+      totalNet: 20000,
+      excludedLotCount: 0,
+    };
+
+    act(() =>
+      root.render(
+        <TaxCalculationPanel
+          property={inheritedProperty}
+          people={inheritedPeople}
+          outsideParties={[]}
+          vendorReport={vendorReport}
+          taxCalculationReport={taxCalculationReport}
+        />,
+      ),
+    );
+
+    const summary = container.querySelector(".tax-provenance-summary");
+    expect(summary.textContent).toBe(
+      "Inherited from Edgar Wadge · d. 20/05/2008 · CM 25/05/2025 · Not. wadge roland J. · CM fraction 1/4 · €20,000.00",
+    );
+    expect(summary.title).toBe(summary.textContent);
+    expect(summary.querySelector("small")).toBeNull();
   });
 
   it("keeps exact ownership available when every monetary value is omitted", () => {

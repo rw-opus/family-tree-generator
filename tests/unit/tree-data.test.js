@@ -153,6 +153,27 @@ describe("persisted family-tree schema", () => {
     }
   });
 
+  it("persists hidden retained identities as validated family-group exclusions", () => {
+    const retained = currentTree({
+      people: [{ id: "person-1" }, { id: "retained-person" }],
+      familyGroups: [
+        {
+          id: "group-1",
+          rootPersonId: "person-1",
+          personIds: ["person-1"],
+          excludedPersonIds: ["retained-person"],
+        },
+      ],
+    });
+    const missing = structuredClone(retained);
+    missing.familyGroups[0].excludedPersonIds = ["missing-person"];
+
+    expect(prepareTreeForPersistence(retained)).toEqual(retained);
+    expect(() => prepareTreeForPersistence(missing)).toThrowError(
+      expect.objectContaining({ code: TREE_DATA_ERROR_CODES.INVALID }),
+    );
+  });
+
   it("rejects cycles in parent relationships", () => {
     const tree = currentTree({
       people: [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcilePeopleUpdate } from "../../src/domain/caseModel.js";
+import { reconcilePeopleUpdate, removePersonFromFamilyGroup } from "../../src/domain/caseModel.js";
 
 const groupedCase = () => ({
   schemaVersion: 2,
@@ -109,5 +109,29 @@ describe("case-wide people updates", () => {
     expect(result.people.filter((person) => person.id === "root-b")).toHaveLength(1);
     expect(result.people.filter((person) => person.id === "mother-b")).toHaveLength(1);
     expect(result.people.filter((person) => person.id === "partner-b")).toHaveLength(1);
+  });
+
+  it("does not restore a shared relative removed from the active family on an unrelated add", () => {
+    const input = groupedCase();
+    input.people = input.people.map((person) =>
+      person.id === "owner-a" ? { ...person, fatherId: "root-a" } : person,
+    );
+    input.familyGroups[1].personIds.push("root-a");
+
+    const removed = removePersonFromFamilyGroup(input, "family-a", "root-a");
+    const result = reconcilePeopleUpdate(removed, "family-a", [
+      ...removed.people,
+      { id: "new-person", fullName: "New Person" },
+    ]);
+
+    expect(result.familyGroups.find((group) => group.id === "family-a").personIds).toEqual([
+      "owner-a",
+      "new-person",
+    ]);
+    expect(result.familyGroups.find((group) => group.id === "family-b").personIds).toEqual([
+      "root-b",
+      "root-a",
+    ]);
+    expect(result.people.some((person) => person.id === "root-a")).toBe(true);
   });
 });

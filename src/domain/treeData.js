@@ -607,6 +607,14 @@ function validateCurrentTree(tree) {
     } else {
       requireArray(group.personIds, `${groupPath}.personIds`, issues);
     }
+    if (group.excludedPersonIds !== undefined) {
+      relationshipReferences += validateReferenceArray(
+        group.excludedPersonIds,
+        `${groupPath}.excludedPersonIds`,
+        peopleIds,
+        issues,
+      );
+    }
     if (typeof group.rootPersonId !== "string") {
       issues.push(
         issue(
