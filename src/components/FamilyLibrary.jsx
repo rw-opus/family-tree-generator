@@ -22,7 +22,9 @@ import { AccountPasswordDialog } from "./AccountPasswordDialog.jsx";
 import { AnnouncementBanner } from "./AnnouncementBanner.jsx";
 import { SiteFeedbackForm } from "./SiteFeedbackForm.jsx";
 import { isoDateToDisplay } from "../domain/dateFormat.js";
+import { isLegalGedcomWarning } from "../domain/gedcom.js";
 import { TREE_DATA_LIMITS } from "../domain/treeData.js";
+import { TREE_WORKSPACE_MODES } from "../domain/treeWorkspaceMode.js";
 import { LOCAL_TRASH_RETENTION_DAYS } from "../services/localWorkspace.js";
 import { WorkspaceSaveStatus } from "./WorkspaceSaveStatus.jsx";
 
@@ -96,6 +98,7 @@ export function FamilyLibrary({
     givenNames: "",
     surname: "",
     sex: "",
+    workspaceMode: TREE_WORKSPACE_MODES.FAMILY_TREE,
   });
   const [pendingDelete, setPendingDelete] = useState(null);
   const [pendingPermanentDelete, setPendingPermanentDelete] = useState(null);
@@ -118,7 +121,13 @@ export function FamilyLibrary({
   const closeCreation = () => {
     if (creationBusy) return;
     setCreationOpen(false);
-    setCreationDraft({ title: "", givenNames: "", surname: "", sex: "" });
+    setCreationDraft({
+      title: "",
+      givenNames: "",
+      surname: "",
+      sex: "",
+      workspaceMode: TREE_WORKSPACE_MODES.FAMILY_TREE,
+    });
   };
 
   const submitCreation = async (event) => {
@@ -131,10 +140,17 @@ export function FamilyLibrary({
         givenNames: creationDraft.givenNames.trim(),
         surname: creationDraft.surname.trim(),
         sex: creationDraft.sex,
+        workspaceMode: creationDraft.workspaceMode,
       });
       if (created !== false) {
         setCreationOpen(false);
-        setCreationDraft({ title: "", givenNames: "", surname: "", sex: "" });
+        setCreationDraft({
+          title: "",
+          givenNames: "",
+          surname: "",
+          sex: "",
+          workspaceMode: TREE_WORKSPACE_MODES.FAMILY_TREE,
+        });
       }
     } finally {
       setCreationBusy(false);
@@ -443,8 +459,17 @@ export function FamilyLibrary({
               <span role="columnheader">Actions</span>
             </div>
             {filteredTrees.map((tree) => {
+              const familyTreeOnly =
+                tree.settings?.workspaceMode === TREE_WORKSPACE_MODES.FAMILY_TREE;
+              const importReviewCount = familyTreeOnly
+                ? (tree.importWarnings || []).filter((warning) => !isLegalGedcomWarning(warning))
+                    .length
+                : tree.importWarnings?.length || 0;
+              const legalImportReviewCount = familyTreeOnly
+                ? 0
+                : tree.legalImportWarnings?.length || 0;
               const reviewCount =
-                (tree.dataWarnings?.length || 0) + (tree.importWarnings?.length || 0);
+                (tree.dataWarnings?.length || 0) + importReviewCount + legalImportReviewCount;
               const isActive = tree.id === activeTreeId;
               const isRenaming = renamingId === tree.id;
 
@@ -720,6 +745,47 @@ export function FamilyLibrary({
                   <span>{sex}</span>
                 </label>
               ))}
+            </fieldset>
+            <fieldset className="library-workspace-mode-options">
+              <legend>Start as</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="new-family-workspace-mode"
+                  value={TREE_WORKSPACE_MODES.FAMILY_TREE}
+                  checked={creationDraft.workspaceMode === TREE_WORKSPACE_MODES.FAMILY_TREE}
+                  onChange={(event) =>
+                    setCreationDraft((current) => ({
+                      ...current,
+                      workspaceMode: event.target.value,
+                    }))
+                  }
+                />
+                <span>
+                  <b>Family tree only</b>
+                  <small>
+                    Build relationships and print at any time. No legal or tax warnings.
+                  </small>
+                </span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="new-family-workspace-mode"
+                  value={TREE_WORKSPACE_MODES.PROPERTY_TAX}
+                  checked={creationDraft.workspaceMode === TREE_WORKSPACE_MODES.PROPERTY_TAX}
+                  onChange={(event) =>
+                    setCreationDraft((current) => ({
+                      ...current,
+                      workspaceMode: event.target.value,
+                    }))
+                  }
+                />
+                <span>
+                  <b>Property, succession &amp; tax</b>
+                  <small>Start ownership and inheritance calculations immediately.</small>
+                </span>
+              </label>
             </fieldset>
             {commercialMode && !unlimitedTrees && (
               <p className="library-credit-notice">

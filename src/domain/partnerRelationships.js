@@ -219,7 +219,7 @@ function canonicalMetadata(candidatesByKey) {
   return metadataByKey;
 }
 
-function topologyKeys(people, candidatesByKey) {
+function topologyKeys(people, candidatesByKey, { inferCoParents = true } = {}) {
   const validPersonIds = new Set(people.map((person) => text(person?.id)).filter(Boolean));
   const keys = new Set(candidatesByKey.keys());
 
@@ -236,21 +236,27 @@ function topologyKeys(people, candidatesByKey) {
   // married by default. A marriage date is not required. An explicit
   // partnerRelationships record can still classify the pair as an unmarried
   // partnership, because its metadata is retained against the same key.
-  people.forEach((child) => {
-    const fatherId = text(child?.fatherId);
-    const motherId = text(child?.motherId);
-    if (
-      !fatherId ||
-      !motherId ||
-      fatherId === motherId ||
-      !validPersonIds.has(fatherId) ||
-      !validPersonIds.has(motherId)
-    ) {
-      return;
-    }
-    const key = partnerRelationshipKey(fatherId, motherId);
-    if (key) keys.add(key);
-  });
+  if (inferCoParents) {
+    people.forEach((child) => {
+      // Pure-tree records carry this marker when parentage was entered without
+      // an explicit partner link. It remains authoritative if legal tools are
+      // enabled later; a recorded spouseId/metadata link still wins above.
+      if (child?.coParentRelationshipExplicitOnly === true) return;
+      const fatherId = text(child?.fatherId);
+      const motherId = text(child?.motherId);
+      if (
+        !fatherId ||
+        !motherId ||
+        fatherId === motherId ||
+        !validPersonIds.has(fatherId) ||
+        !validPersonIds.has(motherId)
+      ) {
+        return;
+      }
+      const key = partnerRelationshipKey(fatherId, motherId);
+      if (key) keys.add(key);
+    });
+  }
 
   return keys;
 }
@@ -261,12 +267,12 @@ function topologyKeys(people, candidatesByKey) {
  * requiring a marriage date. Metadata is stored on the lexically first Person
  * ID, but lookup is deliberately direction-independent.
  */
-export function normalizePartnerRelationships(people = []) {
+export function normalizePartnerRelationships(people = [], options = {}) {
   if (!Array.isArray(people)) return [];
 
   const candidatesByKey = relationshipCandidates(people);
   const metadataByKey = canonicalMetadata(candidatesByKey);
-  const keys = topologyKeys(people, candidatesByKey);
+  const keys = topologyKeys(people, candidatesByKey, options);
   const partnerIdsByPerson = new Map(
     people.map((person) => [text(person?.id), uniqueIds(person?.spouseIds)]),
   );

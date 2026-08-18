@@ -134,7 +134,11 @@ export function IntestateHeirConfirmation({
   const calculatedPersonIds = new Set(calculatedShares.keys());
   const selectedPersonIds = new Set(draftRows.map((row) => row.personId).filter(Boolean));
   const linkedPartners = linkedLegalSpousesFor(people, deceased.id, deceased.dateOfDeath);
-  const partnersMissingDeathDate = spouseDeathDatesAreOptionalForIntestacy(people, deceased.id)
+  const spouseSurvivalNotMaterialToOwnership = spouseDeathDatesAreOptionalForIntestacy(
+    people,
+    deceased.id,
+  );
+  const partnersMissingDeathDate = spouseSurvivalNotMaterialToOwnership
     ? []
     : linkedSpousesMissingDeathDates(people, deceased.id, deceased.dateOfDeath);
   const availableCalledPeople = sortPeopleForChoice(
@@ -302,7 +306,7 @@ export function IntestateHeirConfirmation({
         )}
       </div>
 
-      {linkedPartners.length > 0 && (
+      {!spouseSurvivalNotMaterialToOwnership && linkedPartners.length > 0 && (
         <div className="partner-survival">
           <strong>Spouses at the date of death</strong>
           {linkedPartners.map((partner) => (

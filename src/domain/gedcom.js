@@ -161,6 +161,11 @@ function importedRelationshipType(relationship = {}) {
     : PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP;
 }
 
+export const isLegalGedcomWarning = (warning) =>
+  /not used as an exact legal date|needs manual legal review|confirm the surname at birth/i.test(
+    String(warning || ""),
+  );
+
 export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
   const individuals = new Map();
   const families = [];
@@ -452,10 +457,15 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
       );
     }
   });
+  const uniqueWarnings = [...new Set(warnings)];
+  const legalWarnings = uniqueWarnings.filter(isLegalGedcomWarning);
+  const legalWarningSet = new Set(legalWarnings);
   return {
     people,
     individualCount: people.length,
     familyCount: families.length,
-    warnings: [...new Set(warnings)],
+    warnings: uniqueWarnings,
+    structuralWarnings: uniqueWarnings.filter((warning) => !legalWarningSet.has(warning)),
+    legalWarnings,
   };
 }

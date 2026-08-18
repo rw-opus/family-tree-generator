@@ -1119,6 +1119,59 @@ body.outside-owner-inspector-open {
   outline-offset: 2px;
 }
 
+.library-workspace-mode-options {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.library-workspace-mode-options legend {
+  margin-bottom: 0.15rem;
+  color: var(--ink);
+  font-size: var(--type-label);
+  font-weight: 800;
+}
+
+.library-workspace-mode-options label {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.65rem;
+  border: 1px solid #c9d7cf;
+  border-radius: 7px;
+  background: #fff;
+  padding: 0.7rem;
+  cursor: pointer;
+}
+
+.library-workspace-mode-options label:has(input:checked) {
+  border-color: var(--forest);
+  background: var(--forest-soft);
+  box-shadow: inset 0 0 0 1px var(--forest);
+}
+
+.library-workspace-mode-options input {
+  width: 1rem;
+  min-height: 1rem;
+  margin: 0.12rem 0 0;
+  accent-color: var(--forest);
+}
+
+.library-workspace-mode-options span {
+  display: grid;
+  gap: 0.15rem;
+  color: var(--ink);
+}
+
+.library-workspace-mode-options small {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .library-credit-notice {
   border-left: 3px solid var(--plum);
   background: #f6f0f8;
@@ -2127,6 +2180,25 @@ textarea {
   font-weight: 800;
 }
 
+.family-tree-only-notice {
+  display: grid;
+  gap: 0.2rem;
+  border-bottom: 1px solid #d8e5dc;
+  background: var(--forest-soft);
+  padding: 0.65rem 0.75rem;
+  color: var(--forest);
+}
+
+.family-tree-only-notice strong {
+  font-size: var(--type-caption);
+}
+
+.family-tree-only-notice span {
+  color: var(--muted);
+  font-size: var(--type-label);
+  line-height: 1.4;
+}
+
 .person-edit-button {
   display: inline-flex;
   align-items: center;
@@ -2712,6 +2784,33 @@ textarea {
   border-radius: 7px;
   background: #f5f9f7;
   padding: 0.55rem;
+}
+
+.family-tree-life-details {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+  border: 1px solid #cbd9d1;
+  border-radius: 7px;
+  background: #f8faf9;
+  padding: 0.65rem;
+}
+
+.family-tree-life-details h3,
+.family-tree-life-details p {
+  margin: 0;
+}
+
+.family-tree-life-details h3 {
+  color: var(--ink);
+  font-size: var(--type-caption);
+}
+
+.family-tree-life-details p,
+.family-tree-life-details small {
+  color: var(--muted);
+  font-size: var(--type-micro);
+  line-height: 1.35;
 }
 
 .estate-flow-heading {
@@ -4349,7 +4448,9 @@ textarea {
 
 .tree-stage-toolbar-unified {
   display: grid;
-  grid-template-columns: auto auto minmax(180px, 1fr) auto minmax(190px, 300px) auto;
+  grid-template-columns:
+    auto auto auto minmax(150px, 1fr) auto minmax(160px, 260px)
+    auto;
 }
 
 .ownership-tax-button {
@@ -5065,6 +5166,103 @@ body.succession-history-open {
   flex: 0 0 auto;
   pointer-events: auto;
   touch-action: auto;
+}
+
+.tree-workspace-mode-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.tree-workspace-mode-control summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  border: 1px solid #cbd5d0;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--forest);
+  padding: 0 0.65rem;
+  font-size: var(--type-label);
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tree-workspace-mode-control summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree-workspace-mode-control[open] summary {
+  border-color: var(--forest);
+  box-shadow: 0 0 0 2px rgba(0, 66, 37, 0.1);
+}
+
+.tree-workspace-mode-menu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 50;
+  display: grid;
+  gap: 0.6rem;
+  width: min(360px, calc(100vw - 1.2rem));
+  border: 1px solid #cbd5d0;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.2);
+  padding: 0.8rem;
+}
+
+.tree-workspace-mode-menu > strong,
+.tree-workspace-mode-menu > p {
+  margin: 0;
+}
+
+.tree-workspace-mode-menu > p {
+  color: var(--muted);
+  font-size: var(--type-caption);
+  line-height: 1.4;
+}
+
+.tree-workspace-mode-menu label {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0.65rem;
+  cursor: pointer;
+}
+
+.tree-workspace-mode-menu label:has(input:checked) {
+  border-color: var(--forest);
+  background: var(--forest-soft);
+}
+
+.tree-workspace-mode-menu input {
+  width: 1rem;
+  min-height: 1rem;
+  margin: 0.12rem 0 0;
+  accent-color: var(--forest);
+}
+
+.tree-workspace-mode-menu label > span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.tree-workspace-mode-menu small {
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.tree-workspace-mode-menu .tree-workspace-mode-note {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--forest);
 }
 
 .person-card-display-control summary {
@@ -5930,6 +6128,7 @@ body.a3-print-preview-open {
 
 .tree-home-button,
 .ownership-tax-button,
+.tree-workspace-mode-control summary,
 .person-finder > summary,
 .tree-stage-toolbar-unified > .secondary-button,
 .property-tree-button,
@@ -5948,6 +6147,7 @@ body.a3-print-preview-open {
 
 .tree-home-button,
 .ownership-tax-button,
+.tree-workspace-mode-control summary,
 .person-finder > summary,
 .tree-stage-toolbar-unified > .secondary-button,
 .property-tree-button,
@@ -5962,6 +6162,7 @@ body.a3-print-preview-open {
 
 .tree-home-button:hover,
 .ownership-tax-button:hover,
+.tree-workspace-mode-control summary:hover,
 .person-finder > summary:hover,
 .tree-stage-toolbar-unified > .secondary-button:hover,
 .property-tree-button:hover,
@@ -5974,6 +6175,7 @@ body.a3-print-preview-open {
 }
 
 .person-finder[open] > summary,
+.tree-workspace-mode-control[open] summary,
 .person-card-display-control[open] summary {
   border-color: var(--accent);
   background: var(--accent);
@@ -6163,6 +6365,23 @@ body.a3-print-preview-open {
 
   .stage-person-picker {
     display: none;
+  }
+
+  .tree-stage-toolbar-unified {
+    grid-template-columns:
+      auto auto auto minmax(100px, 1fr) auto minmax(130px, 200px)
+      auto;
+    gap: 0.4rem;
+  }
+
+  .tree-home-label-full,
+  .person-finder-label-full {
+    display: none;
+  }
+
+  .tree-home-label-short,
+  .person-finder-label-short {
+    display: inline;
   }
 }
 
@@ -6354,6 +6573,36 @@ body.a3-print-preview-open {
     padding: 0.45rem 0.6rem;
   }
 
+  .tree-stage-toolbar-unified .tree-home-button {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .tree-stage-toolbar-unified .tree-workspace-mode-control {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .tree-stage-toolbar-unified .tree-workspace-mode-control summary {
+    width: 2.75rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .tree-stage-toolbar-unified .tree-workspace-mode-control summary span,
+  .tree-stage-toolbar-unified .ownership-tax-button span {
+    display: none;
+  }
+
+  .tree-stage-toolbar-unified .stage-family-title {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .tree-stage-toolbar-unified:not(:has(.ownership-tax-button)) .stage-family-title {
+    grid-column: 2 / 4;
+  }
+
   .tree-home-label-full,
   .person-finder-label-full {
     display: none;
@@ -6379,7 +6628,7 @@ body.a3-print-preview-open {
   }
 
   .tree-stage-toolbar-unified .tree-zoom-slider {
-    grid-column: 1 / 4;
+    grid-column: 2 / 4;
     grid-row: 2;
   }
 
@@ -7102,6 +7351,23 @@ body.a3-print-preview-open {
   }
 
   .stage-dashboard-button {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .tree-stage-toolbar-unified .tree-home-button,
+  .tree-stage-toolbar-unified .person-finder > summary,
+  .tree-stage-toolbar-unified > .secondary-button {
+    justify-content: center;
+    width: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0;
+  }
+
+  .tree-stage-toolbar-unified .tree-home-label-short,
+  .tree-stage-toolbar-unified .person-finder-label-short,
+  .tree-stage-toolbar-unified > .secondary-button span {
     display: none;
   }
 }

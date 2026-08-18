@@ -4,6 +4,7 @@ import { normalisePersonNameFields, personGivenNames } from "./people.js";
 import { synchroniseDeceasedStatus } from "./deceasedStatus.js";
 import { synchronisePotentialParentSurvival } from "./potentialParentSurvival.js";
 import { personWithWills } from "./wills.js";
+import { propertyTaxWorkspaceEnabled } from "./treeWorkspaceMode.js";
 import {
   INTESTACY_CONFIRMATION_SIGNATURE_VERSION,
   intestacyAllocationSignature,
@@ -76,7 +77,10 @@ function normalizeLegacyPersonNulls(person) {
   return normalized;
 }
 
-function normalizePeople(people = []) {
+function normalizePeople(
+  people = [],
+  { applyLegalNormalisation = true, inferCoParentMarriages = true } = {},
+) {
   if (!Array.isArray(people)) {
     return { people: [], warnings: ["The saved people list was malformed and needs review."] };
   }
@@ -109,11 +113,26 @@ function normalizePeople(people = []) {
     );
     return result;
   }, []);
-  const survivalNormalised = normalized
-    .map(synchroniseDeceasedStatus)
-    .map(synchronisePotentialParentSurvival);
+  const deceasedPeople = normalized.map(synchroniseDeceasedStatus);
+  // A father and mother recorded in a pure genealogy are co-parents, not proof
+  // of marriage. Persist that distinction so enabling legal tools later cannot
+  // silently manufacture a surviving-spouse assumption.
+  const relationshipPeople = applyLegalNormalisation
+    ? deceasedPeople
+    : deceasedPeople.map((person) =>
+        person.fatherId && person.motherId
+          ? { ...person, coParentRelationshipExplicitOnly: true }
+          : person,
+      );
+  const relationalPeople = normalizePartnerRelationships(relationshipPeople, {
+    inferCoParents: inferCoParentMarriages,
+  });
+  if (!applyLegalNormalisation) {
+    return { people: relationalPeople, warnings };
+  }
+  const survivalNormalised = relationalPeople.map(synchronisePotentialParentSurvival);
   return {
-    people: synchroniseMaritalStatusAtDeath(normalizePartnerRelationships(survivalNormalised)),
+    people: synchroniseMaritalStatusAtDeath(survivalNormalised),
     warnings,
   };
 }
@@ -312,16 +331,25 @@ function legacyFamilyGroup(caseData) {
  */
 export function normalizeCase(value = {}) {
   const source = isRecord(value) ? cloneValue(value) : {};
-  const peopleResult = normalizePeople(source.people);
-  const people = migrateIntestacyConfirmationSignatures(peopleResult.people);
+  const applyLegalNormalisation = propertyTaxWorkspaceEnabled(source.settings?.workspaceMode);
+  const peopleResult = normalizePeople(source.people, {
+    applyLegalNormalisation,
+    inferCoParentMarriages: applyLegalNormalisation,
+  });
+  const people = applyLegalNormalisation
+    ? migrateIntestacyConfirmationSignatures(peopleResult.people)
+    : peopleResult.people;
   const dataWarnings = [...(Array.isArray(source.dataWarnings) ? source.dataWarnings : [])];
   dataWarnings.push(...peopleResult.warnings);
-  const caseData = removeLegacyPotentialParents({
+  const normalizedCaseData = {
     ...source,
     id: text(source.id) || DEFAULT_CASE_ID,
     people,
     schemaVersion: CASE_SCHEMA_VERSION,
-  });
+  };
+  const caseData = applyLegalNormalisation
+    ? removeLegacyPotentialParents(normalizedCaseData)
+    : normalizedCaseData;
   const validPersonIds = new Set(caseData.people.map((person) => person.id));
   const sourceGroups = Array.isArray(source.familyGroups)
     ? source.familyGroups
@@ -520,6 +548,10 @@ function collectCasePersonReferences(caseData, options = {}) {
       ),
     );
   });
+
+  records(caseData.statusToggleSessions).forEach((session) =>
+    add(session.personId, "a pending legal-status change"),
+  );
 
   return references;
 }

@@ -139,6 +139,77 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector(".tree-required-data-key")).toBeNull();
   });
 
+  it("keeps an incomplete pure family tree clean and printable", () => {
+    const onPrint = vi.fn();
+    renderCanvas({
+      legalWorkspaceEnabled: false,
+      people: [
+        person("a", "Joseph Borg", {
+          isDeceased: true,
+          designations: ["Deceased"],
+          dateOfDeath: "",
+          deathDateText: "about 1858",
+          inheritanceBasis: "will",
+          survivalStatusRequired: true,
+          surnameAtBirthReviewRequired: true,
+        }),
+      ],
+      ownershipByPerson: { a: 1 },
+      causaMortisCoverageByPerson: { a: [{ status: "missing" }] },
+      historicalLawWarningsByPerson: { a: ["Check historical succession law."] },
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipPercentage: true,
+        ownershipValue: true,
+        dateOfDeath: true,
+        successionBasis: true,
+        willDetails: true,
+        causaMortisDetails: true,
+        stackLegalDetails: true,
+      },
+      onPrint,
+      onPersonCardFieldsChange: vi.fn(),
+    });
+
+    const card = container.querySelector('[data-person-id="a"]');
+    expect(container.querySelector(".tree-required-data-key")).toBeNull();
+    expect(card.className).not.toMatch(
+      /cm-share-incomplete|survival-status-required|surname-at-birth-review-required|will-details-invalid|historical-law-review-required/,
+    );
+    expect(card.textContent).not.toMatch(
+      /Date of death missing|Confirm whether alive|Confirm surname|Fix will|Check historical law|100%|Intestate|Testate/,
+    );
+    expect(card.textContent).toContain("d. about 1858");
+    const displayControl = container.querySelector(".person-card-display-control");
+    expect(displayControl.textContent).toContain("Dates of death");
+    expect(displayControl.textContent).not.toContain("Fractions");
+    expect(displayControl.textContent).not.toContain("Causa mortis");
+
+    const print = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Print preview"),
+    );
+    expect(print.disabled).toBe(false);
+    act(() => print.click());
+    expect(onPrint).toHaveBeenCalledWith(container.querySelector(".family-chart"));
+  });
+
+  it("keeps an incomplete legal workspace printable while showing its warnings", () => {
+    const onPrint = vi.fn();
+    renderCanvas({
+      people: [person("a", "Joseph Borg")],
+      causaMortisCoverageByPerson: { a: [{ status: "missing" }] },
+      onPrint,
+    });
+
+    expect(container.querySelector(".tree-required-data-key")).not.toBeNull();
+    const print = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Print preview"),
+    );
+    expect(print.disabled).toBe(false);
+    act(() => print.click());
+    expect(onPrint).toHaveBeenCalledWith(container.querySelector(".family-chart"));
+  });
+
   it("does not mark an excess CM declaration as action required on the person card", () => {
     renderCanvas({
       people: [person("edgar", "Edgar Wadge")],
@@ -215,6 +286,27 @@ describe("FamilyTreeCanvas", () => {
     expect(card.getAttribute("aria-label")).toContain(
       "Giovanna Wadge is excluded from the succession",
     );
+  });
+
+  it("suppresses an irrelevant spouse-conflict badge for a pre-2005 estate with descendants", () => {
+    renderCanvas({
+      people: [
+        person("owner", "Joseph Borg", {
+          isDeceased: true,
+          dateOfDeath: "2005-02-28",
+          inheritanceBasis: "intestacy",
+          spouseIds: ["spouse"],
+          unmarriedOrWidowedAtDeath: true,
+        }),
+        person("spouse", "Maria Borg", { spouseIds: ["owner"] }),
+        person("child", "Paul Borg", { fatherId: "owner", motherId: "spouse" }),
+      ],
+    });
+
+    const card = container.querySelector('[data-person-id="owner"]');
+    expect(card.classList).not.toContain("spouse-at-death-conflict");
+    expect(card.textContent).not.toContain("No spouse at death");
+    expect(card.getAttribute("aria-label")).not.toContain("excluded from the succession");
   });
 
   it("does not mark an optional spouse death date for a pre-2005 estate with descendants", () => {

@@ -220,4 +220,46 @@ test.describe("phone layout", () => {
       labelVisible: true,
     });
   });
+
+  test("keeps tree controls usable at 320px in legal and family-only modes", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+
+    const readToolbarLayout = () =>
+      page.evaluate(() => {
+        const zoom = document.querySelector(".tree-zoom-slider").getBoundingClientRect();
+        const range = document.querySelector('.tree-zoom-slider input[type="range"]');
+        const rangeRect = range.getBoundingClientRect();
+        const print = document
+          .querySelector('.tree-stage-toolbar button[aria-label="Print preview"]')
+          .getBoundingClientRect();
+        const title = document.querySelector(".stage-family-title").getBoundingClientRect();
+        const overlaps = (first, second) =>
+          first.left < second.right &&
+          second.left < first.right &&
+          first.top < second.bottom &&
+          second.top < first.bottom;
+        return {
+          zoomWidth: zoom.width,
+          rangeWidth: rangeRect.width,
+          titleWidth: title.width,
+          zoomOverlapsPrint: overlaps(zoom, print),
+          printLabelHidden: getComputedStyle(
+            document.querySelector('.tree-stage-toolbar button[aria-label="Print preview"] span'),
+          ).display,
+        };
+      });
+
+    for (const familyTreeOnly of [false, true]) {
+      if (familyTreeOnly) {
+        await page.locator(".tree-workspace-mode-control summary").click();
+        await page.getByLabel("Family tree only").check();
+      }
+      const layout = await readToolbarLayout();
+      expect(layout.zoomWidth).toBeGreaterThanOrEqual(120);
+      expect(layout.rangeWidth).toBeGreaterThanOrEqual(72);
+      expect(layout.titleWidth).toBeGreaterThanOrEqual(40);
+      expect(layout.zoomOverlapsPrint).toBe(false);
+      expect(layout.printLabelHidden).toBe("none");
+    }
+  });
 });

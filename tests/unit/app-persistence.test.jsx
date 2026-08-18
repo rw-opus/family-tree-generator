@@ -325,6 +325,45 @@ describe("App local recovery", () => {
     confirm.mockRestore();
   });
 
+  it("imports approximate GEDCOM dates into a pure tree without a visible legal review", async () => {
+    const content = `0 HEAD
+0 @I1@ INDI
+1 NAME Maria /Borg/
+1 SEX F
+1 DEAT
+2 DATE ABT 1900
+0 TRLR`;
+    const file = {
+      name: "Borg-family.ged",
+      size: new TextEncoder().encode(content).byteLength,
+      text: vi.fn(async () => content),
+    };
+
+    act(() => root.render(<App />));
+    const input = container.querySelector('input[aria-label="Import GEDCOM"]');
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const stored = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));
+    expect(stored.trees[0]).toMatchObject({
+      settings: { workspaceMode: "family-tree" },
+      importWarnings: [],
+    });
+    expect(stored.trees[0].legalImportWarnings.join(" ")).toMatch(
+      /not used as an exact legal date/i,
+    );
+    expect(stored.trees[0].people[0]).toMatchObject({
+      gedcomDeathDate: "ABT 1900",
+      dateOfDeath: "",
+    });
+    expect(container.textContent).not.toContain("need manual review");
+  });
+
   it("does not infer property ownership from family relationships", () => {
     saveLocalWorkspace(
       [
@@ -479,6 +518,44 @@ describe("App local recovery", () => {
     });
 
     expect(container.querySelector(".tree-zoom-slider output").textContent).toBe("25%");
+  });
+
+  it("starts new families as printable pure trees and enables legal tools later", async () => {
+    act(() => root.render(<App />));
+    await createFamily();
+
+    expect(container.querySelector(".tree-workspace-mode-control summary").textContent).toContain(
+      "Tree only",
+    );
+    expect(container.querySelector(".ownership-tax-button")).toBeNull();
+    expect(container.textContent).toContain("legal and tax checks are off");
+    expect(
+      [...container.querySelectorAll("button")].find((button) =>
+        button.textContent.includes("Print preview"),
+      ).disabled,
+    ).toBe(false);
+
+    const chooseMode = (labelText) => {
+      const label = [...container.querySelectorAll(".tree-workspace-mode-menu label")].find(
+        (candidate) => candidate.textContent.includes(labelText),
+      );
+      expect(label).not.toBeNull();
+      act(() => label.querySelector("input").click());
+    };
+
+    chooseMode("Property, succession & tax");
+
+    expect(container.querySelector(".ownership-tax-button")).not.toBeNull();
+    expect(container.querySelector(".tree-workspace-mode-control summary").textContent).toContain(
+      "Legal workspace",
+    );
+
+    chooseMode("Family tree only");
+
+    expect(container.querySelector(".ownership-tax-button")).toBeNull();
+    const stored = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));
+    expect(stored.trees[0].settings.workspaceMode).toBe("family-tree");
+    expect(stored.trees[0].properties).toHaveLength(1);
   });
 
   it("opens one focused tree without exposing nested family tabs", () => {

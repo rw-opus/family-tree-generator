@@ -1,18 +1,23 @@
 import { SlidersHorizontal } from "lucide-react";
 
-const fieldOptions = [
+const legalFieldOptions = [
   ["ownershipFraction", "Fractions"],
   ["ownershipPercentage", "Percentages"],
   ["ownershipValue", "Current holding value"],
   ["successionBasis", "Testate / intestate"],
   ["willDetails", "Will details"],
   ["causaMortisDetails", "Causa mortis details"],
-  ["dateOfDeath", "Dates of death"],
-  ["stackLegalDetails", "Compact card width (stack legal details)"],
 ];
 
-function FieldChoices({ fields, onChange }) {
+const familyFieldOptions = [["dateOfDeath", "Dates of death"]];
+
+const layoutFieldOptions = [["stackLegalDetails", "Compact card width (stack legal details)"]];
+
+function FieldChoices({ fields, onChange, legalWorkspaceEnabled }) {
   const updateField = (key, checked) => onChange({ ...fields, [key]: checked });
+  const fieldOptions = legalWorkspaceEnabled
+    ? [...legalFieldOptions, ...familyFieldOptions, ...layoutFieldOptions]
+    : familyFieldOptions;
 
   return fieldOptions.map(([key, label]) => (
     <label key={key}>
@@ -26,7 +31,7 @@ function FieldChoices({ fields, onChange }) {
   ));
 }
 
-export function PersonCardDisplayControl({ fields, onChange }) {
+export function PersonCardDisplayControl({ fields, onChange, legalWorkspaceEnabled = true }) {
   return (
     <details className="person-card-display-control">
       <summary>
@@ -35,7 +40,11 @@ export function PersonCardDisplayControl({ fields, onChange }) {
       </summary>
       <div className="person-card-display-menu">
         <strong>Show on person cards and printouts</strong>
-        <FieldChoices fields={fields} onChange={onChange} />
+        <FieldChoices
+          fields={fields}
+          onChange={onChange}
+          legalWorkspaceEnabled={legalWorkspaceEnabled}
+        />
       </div>
     </details>
   );

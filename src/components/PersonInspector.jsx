@@ -33,6 +33,7 @@ import {
   linkedSpousesFor,
   missingPotentialIntestateParents,
   previewPropertyTransferCapacity,
+  spouseDeathDatesAreOptionalForIntestacy,
   willAllocationReadiness,
 } from "../domain/familyOwnership.js";
 import { approximateFraction } from "../domain/ownership.js";
@@ -62,6 +63,7 @@ import {
   shareFromPercentageInput,
 } from "../domain/shares.js";
 import { isValidIsoDate, isoDateToDisplay } from "../domain/dateFormat.js";
+import { genealogyDeathDateText } from "../domain/genealogyDates.js";
 import { operativeWillFromRecords, personWills, personWithWills } from "../domain/wills.js";
 import {
   validateRelationshipDateChronology,
@@ -200,6 +202,7 @@ function legacyProtectedWillForPerson(people, deceased) {
 
 export function PersonInspector({
   people,
+  legalWorkspaceEnabled = true,
   properties = [],
   vendorReport = null,
   taxCalculationReport = null,
@@ -207,6 +210,7 @@ export function PersonInspector({
   ownershipFractionsByPerson = {},
   currentOwnerPresentationsByPerson = null,
   hasAnyPropertyOwnership = false,
+  hiddenPropertyTaxDataPresent = false,
   causaMortisCoverage = [],
   selectedPersonId,
   shareDisplay = "both",
@@ -249,6 +253,11 @@ export function PersonInspector({
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
+  const selectedPersonIdentityIssues = useMemo(() => {
+    if (!selectedPerson) return [];
+    const issues = personIdentityIssues(selectedPerson);
+    return legalWorkspaceEnabled ? issues : issues.filter((issue) => issue !== "Surname at birth");
+  }, [legalWorkspaceEnabled, selectedPerson]);
   const currentFamilyPersonIds = Array.isArray(familyPersonIds)
     ? familyPersonIds
     : people.map((person) => person.id);
@@ -296,16 +305,26 @@ export function PersonInspector({
     [parentSuggestions, selectedPerson],
   );
   const missingIntestateParentRoles = useMemo(
-    () => (selectedPerson ? missingPotentialIntestateParents(people, selectedPerson.id) : []),
-    [people, selectedPerson],
+    () =>
+      legalWorkspaceEnabled && selectedPerson
+        ? missingPotentialIntestateParents(people, selectedPerson.id)
+        : [],
+    [legalWorkspaceEnabled, people, selectedPerson],
   );
   const resolvedTaxCalculationReport = useMemo(() => {
-    if (!properties[0]) return null;
+    if (!legalWorkspaceEnabled || !properties[0]) return null;
     return (
       taxCalculationReport ||
       buildTaxCalculationReport(properties[0], people, outsideParties, vendorReport)
     );
-  }, [outsideParties, people, properties, taxCalculationReport, vendorReport]);
+  }, [
+    legalWorkspaceEnabled,
+    outsideParties,
+    people,
+    properties,
+    taxCalculationReport,
+    vendorReport,
+  ]);
   const selectedVendorTax = useMemo(() => {
     if (!selectedPerson || !resolvedTaxCalculationReport) return null;
     return (
@@ -334,8 +353,8 @@ export function PersonInspector({
     setDonationOpen(Boolean(interVivosStatusSession) && !hasSavedOutgoingTransfer);
     setDonationDraft(blankDonationDraft());
     setEditingTransferId("");
-    setIsEditing(Boolean(selectedPerson && personIdentityIssues(selectedPerson).length));
-  }, [interVivosStatusSession, properties, selectedPerson]);
+    setIsEditing(selectedPersonIdentityIssues.length > 0);
+  }, [interVivosStatusSession, properties, selectedPerson, selectedPersonIdentityIssues]);
 
   useEffect(() => {
     setOwnershipDisplay(shareDisplayMode(shareDisplay));
@@ -373,21 +392,23 @@ export function PersonInspector({
   };
 
   const stampUnsignedIntestacyContexts = (sourcePeople = people) =>
-    sourcePeople.map((person) => {
-      if (
-        !Array.isArray(person.intestateHeirs) ||
-        !person.intestateHeirs.length ||
-        person.intestateHeirsConfirmed !== true ||
-        String(person.intestateConfirmationBasis || "").trim()
-      ) {
-        return person;
-      }
-      const calculated = intestateAllocations(sourcePeople, person.id);
-      return {
-        ...person,
-        intestateConfirmationBasis: intestacyLegalContextSignature(person, calculated),
-      };
-    });
+    legalWorkspaceEnabled
+      ? sourcePeople.map((person) => {
+          if (
+            !Array.isArray(person.intestateHeirs) ||
+            !person.intestateHeirs.length ||
+            person.intestateHeirsConfirmed !== true ||
+            String(person.intestateConfirmationBasis || "").trim()
+          ) {
+            return person;
+          }
+          const calculated = intestateAllocations(sourcePeople, person.id);
+          return {
+            ...person,
+            intestateConfirmationBasis: intestacyLegalContextSignature(person, calculated),
+          };
+        })
+      : sourcePeople;
 
   const updatePerson = (personId, patch) => {
     // Migrate unsigned edited-beneficiary rows against the facts that existed
@@ -396,11 +417,11 @@ export function PersonInspector({
     // silently defeating the recalculated statutory shares.
     const stampedPeople = stampUnsignedIntestacyContexts();
     onChange(
-      stampedPeople.map((person) =>
-        person.id === personId
-          ? synchronisePotentialParentSurvival({ ...person, ...patch })
-          : person,
-      ),
+      stampedPeople.map((person) => {
+        if (person.id !== personId) return person;
+        const updated = { ...person, ...patch };
+        return legalWorkspaceEnabled ? synchronisePotentialParentSurvival(updated) : updated;
+      }),
     );
   };
 
@@ -679,31 +700,38 @@ export function PersonInspector({
       (designation) => String(designation).toLowerCase() !== "deceased",
     );
     if (checked) setIsEditing(true);
-    const survivalPatch = selectedPerson.isPotentialIntestateParent
-      ? checked
-        ? {
-            survivalStatusRequired: !isValidIsoDate(selectedPerson.dateOfDeath),
-            survivalStatusConfirmed: isValidIsoDate(selectedPerson.dateOfDeath)
-              ? "death-date-recorded"
-              : "",
-          }
-        : { survivalStatusRequired: false, survivalStatusConfirmed: "alive" }
-      : {};
-    const patch = {
+    const survivalPatch =
+      legalWorkspaceEnabled && selectedPerson.isPotentialIntestateParent
+        ? checked
+          ? {
+              survivalStatusRequired: !isValidIsoDate(selectedPerson.dateOfDeath),
+              survivalStatusConfirmed: isValidIsoDate(selectedPerson.dateOfDeath)
+                ? "death-date-recorded"
+                : "",
+            }
+          : { survivalStatusRequired: false, survivalStatusConfirmed: "alive" }
+        : {};
+    const genealogicalPatch = {
       designations: checked ? ["Deceased", ...current] : current,
       isDeceased: checked,
-      inheritanceBasis:
-        checked && fullyTransferredInterVivos
-          ? "lifetime-disposal"
-          : selectedPerson.inheritanceBasis === "lifetime-disposal"
-            ? "intestacy"
-            : selectedPerson.inheritanceBasis,
       dateOfDeath: checked ? selectedPerson.dateOfDeath || "" : "",
-      unmarriedOrWidowedAtDeath: checked
-        ? selectedPerson.unmarriedOrWidowedAtDeath === true
-        : false,
-      ...survivalPatch,
+      ...(!legalWorkspaceEnabled && !checked ? { deathDateText: "" } : {}),
     };
+    const patch = legalWorkspaceEnabled
+      ? {
+          ...genealogicalPatch,
+          inheritanceBasis:
+            checked && fullyTransferredInterVivos
+              ? "lifetime-disposal"
+              : selectedPerson.inheritanceBasis === "lifetime-disposal"
+                ? "intestacy"
+                : selectedPerson.inheritanceBasis,
+          unmarriedOrWidowedAtDeath: checked
+            ? selectedPerson.unmarriedOrWidowedAtDeath === true
+            : false,
+          ...survivalPatch,
+        }
+      : genealogicalPatch;
 
     if (onDeceasedStatusChange) {
       onDeceasedStatusChange({
@@ -718,16 +746,28 @@ export function PersonInspector({
   };
 
   const updateDateOfDeath = (dateOfDeath) => {
-    const survivalPatch = selectedPerson.isPotentialIntestateParent
-      ? isValidIsoDate(dateOfDeath)
-        ? { survivalStatusRequired: false, survivalStatusConfirmed: "death-date-recorded" }
-        : { survivalStatusRequired: true, survivalStatusConfirmed: "" }
-      : {};
-    updateSelected({ dateOfDeath, ...survivalPatch });
+    const survivalPatch =
+      legalWorkspaceEnabled && selectedPerson.isPotentialIntestateParent
+        ? isValidIsoDate(dateOfDeath)
+          ? { survivalStatusRequired: false, survivalStatusConfirmed: "death-date-recorded" }
+          : { survivalStatusRequired: true, survivalStatusConfirmed: "" }
+        : {};
+    updateSelected({
+      dateOfDeath,
+      ...(isValidIsoDate(dateOfDeath) ? { deathDateText: isoDateToDisplay(dateOfDeath) } : {}),
+      ...survivalPatch,
+    });
   };
 
   const addRelative = (kind, secondParentId = "") => {
-    if (!selectedPerson || personIdentityIssues(selectedPerson).length) return;
+    if (
+      !selectedPerson ||
+      selectedPersonIdentityIssues.length ||
+      (["child", "marriage", "partnership"].includes(kind) &&
+        !["Male", "Female"].includes(selectedPerson.sex))
+    ) {
+      return;
+    }
     const stampedPeople = stampUnsignedIntestacyContexts();
     const counts = personRelationshipCounts(people, selectedPerson);
     if ((kind === "father" && counts.father) || (kind === "mother" && counts.mother)) {
@@ -831,13 +871,16 @@ export function PersonInspector({
   );
   const propertyVendorReport = useMemo(
     () =>
-      vendorReport ||
-      (activeProperty
-        ? buildPropertyVendorTaxReport(activeProperty, people, outsideParties)
-        : null),
-    [activeProperty, outsideParties, people, vendorReport],
+      legalWorkspaceEnabled
+        ? vendorReport ||
+          (activeProperty
+            ? buildPropertyVendorTaxReport(activeProperty, people, outsideParties)
+            : null)
+        : null,
+    [activeProperty, legalWorkspaceEnabled, outsideParties, people, vendorReport],
   );
   const resolvedCurrentOwnerPresentationsByPerson = useMemo(() => {
+    if (!legalWorkspaceEnabled) return {};
     if (currentOwnerPresentationsByPerson) return currentOwnerPresentationsByPerson;
     const ledgerOwners = propertyVendorReport?.ledger?.owners || [];
     const presentationOwners = ledgerOwners.length
@@ -858,6 +901,7 @@ export function PersonInspector({
   }, [
     activePropertySaleValue,
     currentOwnerPresentationsByPerson,
+    legalWorkspaceEnabled,
     ownershipByPerson,
     ownershipFractionsByPerson,
     propertyVendorReport?.ledger?.owners,
@@ -865,10 +909,19 @@ export function PersonInspector({
   ]);
   const workingTransferReport = useMemo(
     () =>
-      editingTransferId && workingTransferProperty
+      legalWorkspaceEnabled && editingTransferId && workingTransferProperty
         ? buildPropertyVendorTaxReport(workingTransferProperty, people, outsideParties)
-        : propertyVendorReport,
-    [editingTransferId, outsideParties, people, propertyVendorReport, workingTransferProperty],
+        : legalWorkspaceEnabled
+          ? propertyVendorReport
+          : null,
+    [
+      editingTransferId,
+      legalWorkspaceEnabled,
+      outsideParties,
+      people,
+      propertyVendorReport,
+      workingTransferProperty,
+    ],
   );
   const recordedOutgoingInterVivosTransfers = useMemo(
     () =>
@@ -908,7 +961,7 @@ export function PersonInspector({
     : currentLedgerHolding;
   const transferCapacityPreview = useMemo(
     () =>
-      workingTransferProperty && selectedPerson?.id && donationDraft.date
+      legalWorkspaceEnabled && workingTransferProperty && selectedPerson?.id && donationDraft.date
         ? previewPropertyTransferCapacity(workingTransferProperty, people, outsideParties, {
             sellerId: selectedPerson.id,
             date: donationDraft.date,
@@ -918,6 +971,7 @@ export function PersonInspector({
     [
       donationDraft.date,
       donationDraft.kind,
+      legalWorkspaceEnabled,
       outsideParties,
       people,
       selectedPerson?.id,
@@ -925,6 +979,7 @@ export function PersonInspector({
     ],
   );
   const provenanceTranches = useMemo(() => {
+    if (!legalWorkspaceEnabled) return [];
     if (transferCapacityPreview && !transferCapacityPreview.error) {
       return transferCapacityPreview.tranches;
     }
@@ -935,7 +990,13 @@ export function PersonInspector({
           selectedPerson.id,
         )
       : [];
-  }, [selectedPerson.id, transferCapacityPreview, workingTransferProperty, workingTransferReport]);
+  }, [
+    legalWorkspaceEnabled,
+    selectedPerson.id,
+    transferCapacityPreview,
+    workingTransferProperty,
+    workingTransferReport,
+  ]);
   // Once a date has been entered, the dated preview is authoritative even when it
   // reports an error. Falling back to the balance at death/current balance would
   // misleadingly present that share as available on an impossible transfer date.
@@ -946,6 +1007,7 @@ export function PersonInspector({
     recordedOutgoingInterVivosTransfers.length > 0 &&
     compareFractions(baseTransferHolding, ZERO_FRACTION) === 0;
   const canDonate =
+    legalWorkspaceEnabled &&
     Boolean(
       activeProperty &&
       (editingTransferId ? onUpdateInterVivosTransfer : onRecordDonation) &&
@@ -1466,8 +1528,9 @@ export function PersonInspector({
           warning: "Enter this living original owner's acquisition date for the donated share.",
         }));
   const survivalReferencePerson = peopleById.get(selectedPerson.survivalStatusReferencePersonId);
-  const identityIssues = personIdentityIssues(selectedPerson);
+  const identityIssues = selectedPersonIdentityIssues;
   const identityComplete = identityIssues.length === 0;
+  const binaryRelationshipRoleAvailable = ["Male", "Female"].includes(selectedPerson.sex);
   const identityMessage = identityComplete
     ? ""
     : `Complete ${identityIssues.join(
@@ -1478,8 +1541,12 @@ export function PersonInspector({
   // person's later succession. They are independent events: preserve that legacy value only
   // as the initial state of the inter-vivos disclosure, while the estate defaults to intestacy.
   const inheritanceBasis = selectedPerson.inheritanceBasis === "will" ? "will" : "intestacy";
+  const spouseSurvivalNotMaterialToOwnership =
+    legalWorkspaceEnabled &&
+    isDeceased &&
+    spouseDeathDatesAreOptionalForIntestacy(people, selectedPerson.id);
   const testateHistoricalLawWarning =
-    inheritanceBasis === "will"
+    legalWorkspaceEnabled && inheritanceBasis === "will"
       ? [
           ...new Set(
             (vendorReport?.ownership?.transmissions || [])
@@ -1489,7 +1556,7 @@ export function PersonInspector({
           ),
         ].join(" ")
       : "";
-  const recordedWills = personWills(selectedPerson);
+  const recordedWills = legalWorkspaceEnabled ? personWills(selectedPerson) : [];
   const displayedWills = recordedWills.length
     ? recordedWills
     : [{ id: `${selectedPerson.id}:new-will`, date: "", notaryName: "", description: "" }];
@@ -1500,27 +1567,31 @@ export function PersonInspector({
       validateWillDateChronology(will.date, selectedPerson.dateOfDeath),
     ]),
   );
-  const willHeirs = selectedPerson.willHeirs || [];
-  const willPercentageDisplay = reconcileFractionPercentageDisplay(
-    willHeirs.map(fractionForShare),
-    { keys: willHeirs.map((heir) => heir.personId || heir.id) },
-  );
-  const willReadiness = willAllocationReadiness(
-    selectedPerson,
-    new Set([...people.map((person) => person.id), ...outsideParties.map((party) => party.id)]),
-  );
+  const willHeirs = legalWorkspaceEnabled ? selectedPerson.willHeirs || [] : [];
+  const willPercentageDisplay = legalWorkspaceEnabled
+    ? reconcileFractionPercentageDisplay(willHeirs.map(fractionForShare), {
+        keys: willHeirs.map((heir) => heir.personId || heir.id),
+      })
+    : { rows: [], totalDisplayPercentageLabel: "" };
+  const willReadiness = legalWorkspaceEnabled
+    ? willAllocationReadiness(
+        selectedPerson,
+        new Set([...people.map((person) => person.id), ...outsideParties.map((party) => party.id)]),
+      )
+    : { totalPercent: 0, valid: false, totalComplete: false, issues: [] };
   const willTotal = willReadiness.totalPercent;
-  const automaticIntestacy = isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
+  const automaticIntestacy =
+    legalWorkspaceEnabled && isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
   const protectedWill =
-    isDeceased && inheritanceBasis === "will"
+    legalWorkspaceEnabled && isDeceased && inheritanceBasis === "will"
       ? legacyProtectedWillForPerson(people, selectedPerson)
       : null;
   const editedIntestacy =
     inheritanceBasis === "intestacy" &&
     automaticIntestacy &&
     editedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy, outsideParties);
-  const successionHeirIds =
-    inheritanceBasis === "will"
+  const successionHeirIds = legalWorkspaceEnabled
+    ? inheritanceBasis === "will"
       ? protectedWill?.resolved
         ? [...protectedWill.shares.keys()]
         : willHeirs.map((heir) => heir.personId).filter(Boolean)
@@ -1529,7 +1600,8 @@ export function PersonInspector({
             ? editedIntestacy.shares
             : automaticIntestacy?.shares
           )?.keys() || []),
-        ];
+        ]
+    : [];
   const declarationCandidateIds = new Set(successionHeirIds);
   const declarationCandidates = [...people, ...outsideParties]
     .filter((party) => declarationCandidateIds.has(party.id))
@@ -1738,6 +1810,9 @@ export function PersonInspector({
       ? ["the person's property ownership"]
       : []),
     ...(!sharedAcrossFamilies ? caseDependencyLabels : []),
+    ...(!legalWorkspaceEnabled && hiddenPropertyTaxDataPresent
+      ? ["hidden Property, succession or tax records"]
+      : []),
   ];
   const deleteDisabled =
     currentFamilyPersonIds.length <= 1 ||
@@ -1748,13 +1823,15 @@ export function PersonInspector({
       ? "A tree must contain at least one person."
       : sharedAcrossFamilies && !onDeletePerson
         ? "Family-scoped removal is unavailable in this view."
-        : deleteBlockers.length
-          ? `Remove ${deleteBlockers.join(" and ")} first.`
-          : retainedIdentityLabels.length
-            ? "This removes the person from the family tree but retains their identity as an unconnected person because a Declaration Causa Mortis names them as a declarant."
-            : personFamilyGroupCount > 1
-              ? "This removes the person from this family only; the shared record remains elsewhere."
-              : "No partner or descendant dependencies. Confirmation is required.";
+        : !legalWorkspaceEnabled && hiddenPropertyTaxDataPresent
+          ? "Switch to Property, succession & tax to review the retained legal records before deleting people."
+          : deleteBlockers.length
+            ? `Remove ${deleteBlockers.join(" and ")} first.`
+            : retainedIdentityLabels.length
+              ? "This removes the person from the family tree but retains their identity as an unconnected person because a Declaration Causa Mortis names them as a declarant."
+              : personFamilyGroupCount > 1
+                ? "This removes the person from this family only; the shared record remains elsewhere."
+                : "No partner or descendant dependencies. Confirmation is required.";
 
   const displayedPropertyShare = isDeceased
     ? estateShareAtDeath
@@ -2364,6 +2441,16 @@ export function PersonInspector({
         </div>
       </section>
 
+      {!legalWorkspaceEnabled && (
+        <section className="family-tree-only-notice" aria-label="Family tree only">
+          <strong>Family tree only</strong>
+          <span>
+            Add people and relationships now. Dates are optional, legal and tax checks are off, and
+            the tree can be printed at any time.
+          </span>
+        </section>
+      )}
+
       <section className="inspector-section" data-person-section="relationships">
         <div className="inspector-section-heading">
           <div>
@@ -2378,14 +2465,19 @@ export function PersonInspector({
               key={key}
               disabled={
                 !identityComplete ||
+                (["child", "marriage", "partnership"].includes(key) &&
+                  !binaryRelationshipRoleAvailable) ||
                 ((key === "father" || key === "mother") && relationshipCounts[key] > 0)
               }
               title={
                 !identityComplete
                   ? identityMessage
-                  : (key === "father" || key === "mother") && relationshipCounts[key] > 0
-                    ? `${label} already added`
-                    : `Add ${label.toLowerCase()}`
+                  : ["child", "marriage", "partnership"].includes(key) &&
+                      !binaryRelationshipRoleAvailable
+                    ? "Choose Male or Female before adding this relationship so its family role is recorded correctly."
+                    : (key === "father" || key === "mother") && relationshipCounts[key] > 0
+                      ? `${label} already added`
+                      : `Add ${label.toLowerCase()}`
               }
               aria-expanded={
                 key === "marriage" || key === "partnership"
@@ -2454,7 +2546,7 @@ export function PersonInspector({
             </button>
             <span>or link an existing person</span>
             <p className="partner-eligibility-note">
-              Only an opposite-sex person may be linked as a wife, husband or unmarried partner.
+              Only an opposite-sex person may be linked as a wife, husband or unmarried partner.{" "}
               Direct relatives, siblings, uncles, aunts, nephews and nieces are excluded; cousins
               and more distant relatives remain available.
             </p>
@@ -2586,7 +2678,7 @@ export function PersonInspector({
             </label>
             <label
               className={
-                selectedPerson.surnameAtBirthReviewRequired
+                legalWorkspaceEnabled && selectedPerson.surnameAtBirthReviewRequired
                   ? "surname-at-birth-review-field"
                   : undefined
               }
@@ -2597,7 +2689,7 @@ export function PersonInspector({
                 onChange={(event) => updateSurnameAtBirth(event.target.value)}
                 placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
               />
-              {selectedPerson.surnameAtBirthReviewRequired && (
+              {legalWorkspaceEnabled && selectedPerson.surnameAtBirthReviewRequired && (
                 <small className="surname-at-birth-review-note">
                   The imported parents are recorded as unmarried. Confirm this surname.
                 </small>
@@ -2633,27 +2725,29 @@ export function PersonInspector({
               This person is deceased.
             </span>
           </label>
-          <label
-            className={`person-status-control inter-vivos-status-control${
-              fullyTransferredInterVivos ? " completed" : ""
-            }`}
-          >
-            <span>Transfer</span>
-            <span className="detail-checkbox">
-              <input
-                type="checkbox"
-                aria-label="Sold/Donated Property Share"
-                aria-controls={`inter-vivos-transfer-${selectedPerson.id}`}
-                aria-expanded={interVivosDisclosureOpen}
-                checked={interVivosDisclosureOpen}
-                onChange={(event) => setInterVivosDisclosure(event.target.checked)}
-              />
-              Sold/Donated Property Share
-            </span>
-          </label>
+          {legalWorkspaceEnabled && (
+            <label
+              className={`person-status-control inter-vivos-status-control${
+                fullyTransferredInterVivos ? " completed" : ""
+              }`}
+            >
+              <span>Transfer</span>
+              <span className="detail-checkbox">
+                <input
+                  type="checkbox"
+                  aria-label="Sold/Donated Property Share"
+                  aria-controls={`inter-vivos-transfer-${selectedPerson.id}`}
+                  aria-expanded={interVivosDisclosureOpen}
+                  checked={interVivosDisclosureOpen}
+                  onChange={(event) => setInterVivosDisclosure(event.target.checked)}
+                />
+                Sold/Donated Property Share
+              </span>
+            </label>
+          )}
         </div>
 
-        {missingIntestateParentRoles.length > 0 && (
+        {legalWorkspaceEnabled && missingIntestateParentRoles.length > 0 && (
           <section className="potential-parent-survival-alert" role="alert">
             <strong>Possible parent inheritance needs confirmation</strong>
             <p>
@@ -2671,7 +2765,7 @@ export function PersonInspector({
           </section>
         )}
 
-        {isPotentialParentSurvivalUnresolved(selectedPerson) && (
+        {legalWorkspaceEnabled && isPotentialParentSurvivalUnresolved(selectedPerson) && (
           <section className="potential-parent-survival-alert" role="alert">
             <strong>Establish whether this parent survived</strong>
             <p>
@@ -2716,7 +2810,27 @@ export function PersonInspector({
         )}
 
         <div className="person-edit-fields person-record-fields">
-          {isDeceased && (
+          {isDeceased && !legalWorkspaceEnabled && (
+            <div className="family-tree-life-details">
+              <h3>Life details</h3>
+              <label className="succession-detail-row succession-death-date">
+                <span>
+                  Date of death <small>(optional)</small>
+                </span>
+                <input
+                  type="text"
+                  aria-label="Date of death (optional)"
+                  autoComplete="off"
+                  maxLength={120}
+                  placeholder="e.g. 1858, about 1858, or 11 February 1858"
+                  value={genealogyDeathDateText(selectedPerson)}
+                  onChange={(event) => updateSelected({ deathDateText: event.target.value })}
+                />
+              </label>
+              <p>An exact date, a year, or an approximate date may be recorded here.</p>
+            </div>
+          )}
+          {isDeceased && legalWorkspaceEnabled && (
             <div
               className={`person-succession${fullyTransferredInterVivos ? " fully-transferred" : ""}`}
               data-person-section="succession"
@@ -2726,28 +2840,35 @@ export function PersonInspector({
                 <span>Date of death</span>
                 <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
               </label>
-              <label className="succession-detail-row marital-status-at-death">
-                <span>Marital status at death</span>
-                <span className="detail-checkbox">
-                  <input
-                    type="checkbox"
-                    aria-label="No spouse survived this person"
-                    checked={selectedPerson.unmarriedOrWidowedAtDeath === true}
-                    onChange={(event) =>
-                      updateSelected({
-                        unmarriedOrWidowedAtDeath: event.target.checked,
-                        unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.MANUAL,
-                      })
-                    }
-                  />
-                  No spouse survived
-                </span>
-              </label>
-              {selectedPerson.unmarriedOrWidowedAtDeath === true && excludedSpouseNames && (
-                <small className="succession-marital-status-note succession-warning" role="alert">
-                  {excludedSpouseNames} is excluded from this succession while this setting is
-                  selected. Clear it if the linked spouse survived.
-                </small>
+              {!spouseSurvivalNotMaterialToOwnership && (
+                <>
+                  <label className="succession-detail-row marital-status-at-death">
+                    <span>Marital status at death</span>
+                    <span className="detail-checkbox">
+                      <input
+                        type="checkbox"
+                        aria-label="No spouse survived the deceased"
+                        checked={selectedPerson.unmarriedOrWidowedAtDeath === true}
+                        onChange={(event) =>
+                          updateSelected({
+                            unmarriedOrWidowedAtDeath: event.target.checked,
+                            unmarriedOrWidowedAtDeathSource: MARITAL_STATUS_AT_DEATH_SOURCES.MANUAL,
+                          })
+                        }
+                      />
+                      No spouse survived the deceased
+                    </span>
+                  </label>
+                  {selectedPerson.unmarriedOrWidowedAtDeath === true && excludedSpouseNames && (
+                    <small
+                      className="succession-marital-status-note succession-warning"
+                      role="alert"
+                    >
+                      {excludedSpouseNames} is excluded from this succession while this setting is
+                      selected. Clear it if the linked spouse survived.
+                    </small>
+                  )}
+                </>
               )}
               {lifetimeTransferSection}
               {propertyShareSummary}
@@ -3116,8 +3237,8 @@ export function PersonInspector({
               )}
             </div>
           )}
-          {!isDeceased && propertyShareSummary}
-          {!isDeceased && lifetimeTransferSection}
+          {!isDeceased && legalWorkspaceEnabled && propertyShareSummary}
+          {!isDeceased && legalWorkspaceEnabled && lifetimeTransferSection}
           {linkedPartners.length > 0 && (
             <div className="person-partner-links">
               <span>Marriage / partner links</span>
@@ -3133,17 +3254,19 @@ export function PersonInspector({
                         : "marriage";
                   const relationshipLabel =
                     relationshipState === "partnership" ? "Partnership" : "Marriage";
-                  const relationshipErrors = validateRelationshipDateChronology({
-                    startDate:
-                      relationshipState === "partnership" ? relationship?.startDate || "" : "",
-                    endDate: relationship?.endDate || "",
-                    personDateOfDeath: selectedPerson.dateOfDeath || "",
-                    partnerDateOfDeath: partner.dateOfDeath || "",
-                    personLabel: displayName(selectedPerson),
-                    partnerLabel: displayName(partner),
-                    relationshipLabel,
-                    endDateRequired: relationshipState === "former-marriage",
-                  });
+                  const relationshipErrors = legalWorkspaceEnabled
+                    ? validateRelationshipDateChronology({
+                        startDate:
+                          relationshipState === "partnership" ? relationship?.startDate || "" : "",
+                        endDate: relationship?.endDate || "",
+                        personDateOfDeath: selectedPerson.dateOfDeath || "",
+                        partnerDateOfDeath: partner.dateOfDeath || "",
+                        personLabel: displayName(selectedPerson),
+                        partnerLabel: displayName(partner),
+                        relationshipLabel,
+                        endDateRequired: relationshipState === "former-marriage",
+                      })
+                    : [];
                   return (
                     <div
                       className={`person-partner-link-row ${

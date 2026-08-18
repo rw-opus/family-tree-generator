@@ -18,6 +18,7 @@ import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { observeStickyNavOffset } from "./components/stickyNavOffset.js";
+import { TreeWorkspaceModeControl } from "./components/TreeWorkspaceModeControl.jsx";
 import { WorkspaceSaveStatus } from "./components/WorkspaceSaveStatus.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
@@ -54,6 +55,13 @@ import {
   statusToggleSession,
 } from "./domain/statusToggleSessions.js";
 import { TREE_DATA_LIMITS, prepareTreeForPersistence } from "./domain/treeData.js";
+import {
+  DEFAULT_NEW_TREE_WORKSPACE_MODE,
+  TREE_WORKSPACE_MODES,
+  normaliseTreeWorkspaceMode,
+  propertyTaxWorkspaceEnabled,
+  treeHasRecordedPropertyTaxData,
+} from "./domain/treeWorkspaceMode.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
 import {
   createFamilyTree,
@@ -184,13 +192,20 @@ const normaliseTree = (value) => {
     shareDisplay: "both",
     showOwnershipOnTree: true,
     treeZoom: 100,
+    workspaceMode: TREE_WORKSPACE_MODES.PROPERTY_TAX,
   };
   const properties = migratedProperties(caseData);
   const requestedActivePropertyId = caseData.settings?.activePropertyId;
   const activePropertyId = properties.some((property) => property.id === requestedActivePropertyId)
     ? requestedActivePropertyId
     : properties[0]?.id || "";
-  const settings = { ...defaultSettings, ...(caseData.settings || {}), activePropertyId };
+  const workspaceMode = normaliseTreeWorkspaceMode(caseData.settings?.workspaceMode);
+  const settings = {
+    ...defaultSettings,
+    ...(caseData.settings || {}),
+    activePropertyId,
+    workspaceMode,
+  };
   return {
     ...caseData,
     createdAt: caseData.createdAt || caseData.created_at || caseData.updated_at || "",
@@ -212,6 +227,10 @@ const normaliseTree = (value) => {
 const initialTree = (seed = {}) => {
   const caseId = crypto.randomUUID();
   const title = String(seed.title || "").trim() || "New family";
+  const workspaceMode = normaliseTreeWorkspaceMode(
+    seed.workspaceMode,
+    DEFAULT_NEW_TREE_WORKSPACE_MODE,
+  );
   const rootPerson = {
     ...createPerson(),
     givenNames: String(seed.givenNames || "").trim(),
@@ -233,6 +252,7 @@ const initialTree = (seed = {}) => {
     ],
     activeFamilyGroupId: `${caseId}:family-group:1`,
     properties: [makePrimaryProperty()],
+    settings: { workspaceMode },
   });
 };
 
@@ -434,6 +454,7 @@ export function App({
   }, [authenticatedUserId, cloudMode]);
 
   const currentTree = useMemo(() => normaliseTree(tree), [tree]);
+  const legalWorkspaceEnabled = propertyTaxWorkspaceEnabled(currentTree.settings.workspaceMode);
   const requestedActiveFamilyGroup = currentTree.familyGroups.find(
     (group) => group.id === activeFamilyGroupId,
   );
@@ -454,49 +475,71 @@ export function App({
   const activeProperties = useMemo(() => [activeProperty], [activeProperty]);
   const propertyReport = useMemo(
     () =>
-      buildPropertyVendorTaxReport(activeProperty, currentTree.people, currentTree.outsideParties),
-    [activeProperty, currentTree.outsideParties, currentTree.people],
+      legalWorkspaceEnabled
+        ? buildPropertyVendorTaxReport(
+            activeProperty,
+            currentTree.people,
+            currentTree.outsideParties,
+          )
+        : null,
+    [activeProperty, currentTree.outsideParties, currentTree.people, legalWorkspaceEnabled],
   );
   const taxCalculationReport = useMemo(
     () =>
-      buildTaxCalculationReport(
-        activeProperty,
-        currentTree.people,
-        currentTree.outsideParties,
-        propertyReport,
-      ),
-    [activeProperty, currentTree.outsideParties, currentTree.people, propertyReport],
+      legalWorkspaceEnabled && propertyReport
+        ? buildTaxCalculationReport(
+            activeProperty,
+            currentTree.people,
+            currentTree.outsideParties,
+            propertyReport,
+          )
+        : null,
+    [
+      activeProperty,
+      currentTree.outsideParties,
+      currentTree.people,
+      legalWorkspaceEnabled,
+      propertyReport,
+    ],
   );
   const ownershipByPerson = useMemo(() => {
+    if (!propertyReport) return {};
     return buildTreeCardOwnershipByPerson(
       propertyReport.ledger.owners,
       propertyReport.ownership.transmissions,
     );
-  }, [propertyReport.ledger.owners, propertyReport.ownership.transmissions]);
+  }, [propertyReport]);
   const ownershipFractionsByPerson = useMemo(() => {
+    if (!propertyReport) return {};
     return buildTreeCardOwnershipFractionsByPerson(
       propertyReport.ledger.owners,
       propertyReport.ownership.transmissions,
     );
-  }, [propertyReport.ledger.owners, propertyReport.ownership.transmissions]);
+  }, [propertyReport]);
   const historicalLawWarningsByPerson = useMemo(
-    () => buildTreeCardHistoricalWarningsByPerson(propertyReport.ownership.transmissions),
-    [propertyReport.ownership.transmissions],
+    () =>
+      propertyReport
+        ? buildTreeCardHistoricalWarningsByPerson(propertyReport.ownership.transmissions)
+        : {},
+    [propertyReport],
   );
   const currentOwnerPresentationsByPerson = useMemo(() => {
+    if (!propertyReport) return {};
     const presentations = buildCurrentOwnerPresentations(
       propertyReport.ledger.owners,
       activeProperty.saleValue,
       taxCalculationReport,
     ).filter((owner) => owner.personId);
     return ownerPresentationsById(presentations.map((owner) => ({ ...owner, id: owner.personId })));
-  }, [activeProperty.saleValue, propertyReport.ledger.owners, taxCalculationReport]);
+  }, [activeProperty.saleValue, propertyReport, taxCalculationReport]);
   const completeProperties = useMemo(
     () =>
-      currentTree.properties.filter(
-        (property) => propertyStartingOwnershipStatus(property).isComplete,
-      ),
-    [currentTree.properties],
+      legalWorkspaceEnabled
+        ? currentTree.properties.filter(
+            (property) => propertyStartingOwnershipStatus(property).isComplete,
+          )
+        : [],
+    [currentTree.properties, legalWorkspaceEnabled],
   );
   // Ownership blocks person deletion per-property (not just the primary property) so a
   // second property's recorded owners can't be silently orphaned by deleting a person.
@@ -516,17 +559,24 @@ export function App({
   }, [completeProperties, currentTree.outsideParties, currentTree.people]);
   const causaMortisCoverage = useMemo(
     () =>
-      buildCausaMortisShareCoverage(
-        currentTree.people,
-        propertyReport.startingOwnership.isComplete ? activeProperties : [],
-        currentTree.outsideParties,
-      ),
+      legalWorkspaceEnabled && propertyReport
+        ? buildCausaMortisShareCoverage(
+            currentTree.people,
+            propertyReport.startingOwnership.isComplete ? activeProperties : [],
+            currentTree.outsideParties,
+          )
+        : { byPerson: {} },
     [
       activeProperties,
       currentTree.outsideParties,
       currentTree.people,
-      propertyReport.startingOwnership.isComplete,
+      legalWorkspaceEnabled,
+      propertyReport,
     ],
+  );
+  const hiddenPropertyTaxDataPresent = useMemo(
+    () => !legalWorkspaceEnabled && treeHasRecordedPropertyTaxData(currentTree),
+    [currentTree, legalWorkspaceEnabled],
   );
   const selectedCaseDependencies = useMemo(() => {
     const relationshipLabels = new Set([
@@ -914,7 +964,8 @@ export function App({
       const nextTree = prepareTreeForPersistence({
         ...importedTree,
         title: importedTitle,
-        importWarnings: result.warnings || [],
+        importWarnings: result.structuralWarnings || result.warnings || [],
+        legalImportWarnings: result.legalWarnings || [],
         familyGroups: importedTree.familyGroups.map((group) =>
           group.id === familyGroupId ? { ...group, title: importedTitle } : group,
         ),
@@ -930,10 +981,11 @@ export function App({
         if (localRecoveryBlocked) setLocalRecoveryBlocked(false);
         openCreatedTree(nextTree);
       }
+      const visibleImportWarnings = result.structuralWarnings || result.warnings || [];
       setStatus(
         `Imported ${result.individualCount} people and ${result.familyCount} families.${
-          result.warnings?.length
-            ? ` ${result.warnings.length} item${result.warnings.length === 1 ? "" : "s"} need manual review.`
+          visibleImportWarnings.length
+            ? ` ${visibleImportWarnings.length} item${visibleImportWarnings.length === 1 ? "" : "s"} need manual review.`
             : ""
         }`,
       );
@@ -1017,11 +1069,12 @@ export function App({
       }
     }
     setActiveTreeIsListed(true);
-    activateCase(selectedTree, { acknowledgeCloudSave: cloudMode });
+    const activatedTree = activateCase(selectedTree, { acknowledgeCloudSave: cloudMode });
+    const legalViewAvailable = propertyTaxWorkspaceEnabled(activatedTree.settings?.workspaceMode);
     setPropertyWorkspaceSection(
       view === "tax" ? "tax" : view === "ownership" ? "ownership" : "setup",
     );
-    setWorkspaceView(view === "tree" ? "tree" : "property");
+    setWorkspaceView(view === "tree" || !legalViewAvailable ? "tree" : "property");
     setShowLibrary(false);
   };
 
@@ -1269,6 +1322,27 @@ export function App({
         group.id === activeFamilyGroupId ? { ...group, title } : group,
       ),
     });
+  };
+
+  const updateWorkspaceMode = (workspaceMode) => {
+    const nextMode = normaliseTreeWorkspaceMode(workspaceMode);
+    setTree((current) => {
+      const next = normaliseTree(current);
+      return {
+        ...next,
+        settings: { ...next.settings, workspaceMode: nextMode },
+      };
+    });
+    if (nextMode === TREE_WORKSPACE_MODES.FAMILY_TREE) {
+      setSelectedOutsideOwnerId("");
+      setInitialOwnerPick(null);
+      setWorkspaceView("tree");
+      setStatus(
+        "Family-tree-only mode is on. Legal and tax records are retained but their checks are hidden.",
+      );
+    } else {
+      setStatus("Property, succession and tax tools are now available.");
+    }
   };
 
   // A donation or sale from the person card may create the acquirer and record the transfer
@@ -1559,7 +1633,7 @@ export function App({
     );
   }
 
-  if (workspaceView !== "tree") {
+  if (workspaceView !== "tree" && legalWorkspaceEnabled) {
     const workspaceSectionLinks = [
       { id: "setup", label: "Property & initial ownership", icon: Landmark },
       { id: "ownership", label: "Current ownership & history", icon: GitBranch },
@@ -1683,6 +1757,7 @@ export function App({
             <div className="dashboard-content dashboard-person">
               <PersonInspector
                 people={currentTree.people}
+                legalWorkspaceEnabled={legalWorkspaceEnabled}
                 outsideParties={currentTree.outsideParties}
                 familyPersonIds={activeFamilyGroup?.personIds || []}
                 properties={activeProperties}
@@ -1692,6 +1767,7 @@ export function App({
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
                 currentOwnerPresentationsByPerson={currentOwnerPresentationsByPerson}
                 hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
+                hiddenPropertyTaxDataPresent={hiddenPropertyTaxDataPresent}
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}
@@ -1715,8 +1791,10 @@ export function App({
                 onDeleteInterVivosTransfer={deleteInterVivosTransfer}
                 deceasedStatusSession={deceasedStatusSession}
                 interVivosStatusSession={interVivosStatusSession}
-                onDeceasedStatusChange={changeDeceasedStatus}
-                onInterVivosStatusChange={changeInterVivosStatus}
+                onDeceasedStatusChange={legalWorkspaceEnabled ? changeDeceasedStatus : undefined}
+                onInterVivosStatusChange={
+                  legalWorkspaceEnabled ? changeInterVivosStatus : undefined
+                }
                 onConfirmInitialAcquisition={confirmInitialOwnerAcquisition}
                 onConfirmDonationAcquisitionValue={confirmDonationAcquisitionValue}
                 onOutsidePartiesChange={(outsideParties) =>
@@ -1755,6 +1833,7 @@ export function App({
               <FamilyTreeCanvas
                 treeTitle={currentTree.title}
                 people={visiblePeople}
+                legalWorkspaceEnabled={legalWorkspaceEnabled}
                 ownershipByPerson={ownershipByPerson}
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
                 currentOwnerPresentationsByPerson={currentOwnerPresentationsByPerson}
@@ -1775,25 +1854,39 @@ export function App({
                 propertyId={activeProperty.id}
                 toolbar={
                   <>
-                    <button type="button" className="tree-home-button" onClick={returnHome}>
+                    <button
+                      type="button"
+                      className="tree-home-button"
+                      aria-label="Back to Home"
+                      title="Back to Home"
+                      onClick={returnHome}
+                    >
                       <House size={16} />
                       <span className="tree-home-label-full">Back to Home</span>
                       <span className="tree-home-label-short">Home</span>
                     </button>
-                    <button
-                      type="button"
-                      className="ownership-tax-button"
-                      onClick={() => {
-                        setPropertyWorkspaceSection("setup");
-                        setSelectedOutsideOwnerId("");
-                        setInitialOwnerPick(null);
-                        closePersonCard();
-                        setWorkspaceView("property");
-                      }}
-                    >
-                      <Landmark size={16} />
-                      <span>Property &amp; Tax</span>
-                    </button>
+                    <TreeWorkspaceModeControl
+                      mode={currentTree.settings.workspaceMode}
+                      onChange={updateWorkspaceMode}
+                    />
+                    {legalWorkspaceEnabled && (
+                      <button
+                        type="button"
+                        className="ownership-tax-button"
+                        aria-label="Property & Tax"
+                        title="Open Property and Tax workspace"
+                        onClick={() => {
+                          setPropertyWorkspaceSection("setup");
+                          setSelectedOutsideOwnerId("");
+                          setInitialOwnerPick(null);
+                          closePersonCard();
+                          setWorkspaceView("property");
+                        }}
+                      >
+                        <Landmark size={16} />
+                        <span>Property &amp; Tax</span>
+                      </button>
+                    )}
                     <EditableTreeTitle
                       value={currentTree.title}
                       onChange={updateTreeTitle}
@@ -1820,7 +1913,7 @@ export function App({
           )}
         </section>
       </div>
-      <FractionCalculator />
+      {legalWorkspaceEnabled && <FractionCalculator />}
     </main>
   );
 }

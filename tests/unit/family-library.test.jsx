@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FamilyLibrary } from "../../src/components/FamilyLibrary.jsx";
 import { TREE_DATA_LIMITS } from "../../src/domain/treeData.js";
+import { TREE_WORKSPACE_MODES } from "../../src/domain/treeWorkspaceMode.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -267,7 +268,39 @@ describe("FamilyLibrary", () => {
       givenNames: "Maria",
       surname: "Vella",
       sex: "Female",
+      workspaceMode: TREE_WORKSPACE_MODES.FAMILY_TREE,
     });
+  });
+
+  it("lets a new family opt into property, succession and tax from the start", async () => {
+    const handlers = renderLibrary(root);
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Create new family"))
+        .click(),
+    );
+    const dialog = container.querySelector('[role="dialog"]');
+    const setInput = (labelText, value) => {
+      const label = [...dialog.querySelectorAll("label")].find((item) =>
+        item.textContent.includes(labelText),
+      );
+      const input = label.querySelector("input");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    act(() => {
+      setInput("Family name", "Test family");
+      setInput("Given name", "Maria");
+      setInput("Surname", "Test");
+      dialog.querySelector('input[value="Female"]').click();
+      dialog.querySelector(`input[value="${TREE_WORKSPACE_MODES.PROPERTY_TAX}"]`).click();
+    });
+
+    await submitDialog(dialog);
+
+    expect(handlers.onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceMode: TREE_WORKSPACE_MODES.PROPERTY_TAX }),
+    );
   });
 
   it("closes creation and deletion dialogs with Escape", () => {
@@ -427,6 +460,41 @@ describe("FamilyLibrary", () => {
     );
     expect(row.classList.contains("is-renaming")).toBe(false);
     expect(row.querySelector('.family-name-button[aria-label*="currently open"]')).not.toBeNull();
+  });
+
+  it("does not count legal-only GEDCOM notices as family-tree-only review work", () => {
+    renderLibrary(root, {
+      trees: [
+        {
+          id: "family-only",
+          title: "Family only",
+          createdAt: "2026-08-17T00:00:00Z",
+          settings: { workspaceMode: TREE_WORKSPACE_MODES.FAMILY_TREE },
+          importWarnings: [
+            "A child appears as a child of more than one father.",
+            "A birth date was preserved as source text but not used as an exact legal date.",
+          ],
+          legalImportWarnings: ["An adoption record was found and needs manual legal review."],
+        },
+        {
+          id: "legal",
+          title: "Legal workspace",
+          createdAt: "2026-08-17T00:00:00Z",
+          settings: { workspaceMode: TREE_WORKSPACE_MODES.PROPERTY_TAX },
+          importWarnings: ["A child appears as a child of more than one father."],
+          legalImportWarnings: [
+            "A birth date was preserved as source text but not used as an exact legal date.",
+          ],
+        },
+      ],
+      activeTreeId: "family-only",
+    });
+
+    const rows = [...container.querySelectorAll(".family-library-row")].filter(
+      (row) => !row.classList.contains("family-library-table-head"),
+    );
+    expect(rows[0].querySelector(".family-name-badges").textContent).toContain("1 review");
+    expect(rows[1].querySelector(".family-name-badges").textContent).toContain("2 reviews");
   });
 
   it("shows the five-free pricing state and blocks creation until a paid credit exists", () => {

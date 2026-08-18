@@ -957,6 +957,45 @@ describe("automatic family ownership", () => {
     expect(allocation.warnings).toEqual([]);
   });
 
+  it("ignores a stale no-surviving-spouse setting when legacy descendants control ownership", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2005-02-28",
+        unmarriedOrWidowedAtDeath: true,
+        spouseIds: ["spouse"],
+      }),
+      person("spouse", { spouseIds: ["owner"] }),
+      person("child", { fatherId: "owner", motherId: "spouse" }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.destination).toBe("legacy-descendants");
+    expect(Object.fromEntries(allocation.shares)).toEqual({ child: 1 });
+    expect(allocation.warnings.join(" ")).not.toContain("was excluded because");
+    expect(allocation.warnings.join(" ")).not.toContain("Clear that setting");
+  });
+
+  it("ignores incomplete former-marriage details in a resolved legacy descendant estate", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2005-02-28",
+        spouseIds: ["former"],
+        partnerRelationships: [{ personId: "former", type: "marriage", endReason: "divorce" }],
+      }),
+      person("former", { spouseIds: ["owner"] }),
+      person("child", { fatherId: "owner" }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.destination).toBe("legacy-descendants");
+    expect(Object.fromEntries(allocation.shares)).toEqual({ child: 1 });
+    expect(allocation.warnings.join(" ")).not.toContain("marriage to former");
+  });
+
   it("does not require a spouse death date for a resolved pre-2005 descendant estate", () => {
     const people = [
       person("owner", {
