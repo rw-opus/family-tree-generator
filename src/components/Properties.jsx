@@ -12,6 +12,7 @@ import { fractionForShare } from "../domain/shares.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyOwnershipSummary } from "./PropertyOwnershipSummary.jsx";
 import { SuccessionTraceControl } from "./SuccessionTraceControl.jsx";
+import { TaxReadinessGuideLauncher } from "./TaxReadinessGuide.jsx";
 import { TaxCalculationPanel } from "./TaxCalculationPanel.jsx";
 
 const makeProperty = () => ({
@@ -34,6 +35,9 @@ export function Properties({
   selectedOutsideOwnerId,
   onSelectOutsideOwner,
   onPickInitialOwner,
+  onRegisterInitialOwnershipFlush,
+  taxReadinessGuideSummary = null,
+  onStartTaxReadinessGuide,
   onChange,
 }) {
   const updateProperties = (nextProperties) => onChange({ properties: nextProperties });
@@ -162,6 +166,7 @@ export function Properties({
                 onChange={(owners) => updateProperty(property.id, { owners })}
                 helperText="Choose the original owner or owners. Fractions must total 100%."
                 onPickFromTree={onPickInitialOwner}
+                onRegisterPendingFlush={onRegisterInitialOwnershipFlush}
                 onCreateOutsideParty={(party, owners) =>
                   onChange({
                     properties: properties.map((candidate) =>
@@ -171,6 +176,12 @@ export function Properties({
                   })
                 }
               />
+              {startingOwnership.isComplete && onStartTaxReadinessGuide && (
+                <TaxReadinessGuideLauncher
+                  summary={taxReadinessGuideSummary}
+                  onStart={onStartTaxReadinessGuide}
+                />
+              )}
             </section>
 
             <section

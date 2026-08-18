@@ -1,5 +1,5 @@
 import { Building2, Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
 import { reconcileFractionPercentageDisplay } from "../domain/ownershipPresentation.js";
 import {
@@ -30,11 +30,54 @@ export function InitialOwnershipEditor({
   helperText = "Select any person already on the family tree and enter the fraction originally owned.",
   onPickFromTree,
   onCreateOutsideParty,
+  onRegisterPendingFlush,
 }) {
   const [outsidePartyOpen, setOutsidePartyOpen] = useState(false);
+  const [draftOwners, setDraftOwners] = useState(() => property.owners || []);
   const percentageEditsRef = useRef(new Set());
-  const owners = property.owners || [];
-  const status = propertyStartingOwnershipStatus(property);
+  const latestDraftOwnersRef = useRef(draftOwners);
+  const dirtyRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  latestDraftOwnersRef.current = draftOwners;
+  onChangeRef.current = onChange;
+
+  const commitOwners = useCallback((nextOwners) => {
+    const result = onChangeRef.current(nextOwners);
+    if (result === null || result === false) return false;
+    dirtyRef.current = false;
+    latestDraftOwnersRef.current = nextOwners;
+    setDraftOwners(nextOwners);
+    return true;
+  }, []);
+
+  const flushDraftOwners = useCallback(() => {
+    if (!dirtyRef.current) return true;
+    return commitOwners(latestDraftOwnersRef.current);
+  }, [commitOwners]);
+
+  useEffect(() => {
+    if (!dirtyRef.current) {
+      const nextOwners = property.owners || [];
+      latestDraftOwnersRef.current = nextOwners;
+      setDraftOwners(nextOwners);
+    }
+  }, [property.owners]);
+
+  useEffect(() => {
+    if (!onRegisterPendingFlush) return undefined;
+    const controller = {
+      flush: flushDraftOwners,
+      hasPending: () => dirtyRef.current,
+    };
+    const unregister = onRegisterPendingFlush(controller);
+    return () => {
+      flushDraftOwners();
+      unregister?.();
+    };
+  }, [flushDraftOwners, onRegisterPendingFlush]);
+
+  const owners = draftOwners;
+  const status = propertyStartingOwnershipStatus({ ...property, owners });
   const percentageDisplay = reconcileFractionPercentageDisplay(owners.map(fractionForShare), {
     keys: owners.map((owner) => owner.personId || owner.id),
   });
@@ -51,18 +94,36 @@ export function InitialOwnershipEditor({
     : status.hasUnassignedOwners
       ? "an owner is still required"
       : "must equal 100%";
-  const updateOwners = (nextOwners) => onChange(nextOwners);
-  const updateOwner = (ownerId, patch) =>
-    updateOwners(owners.map((owner) => (owner.id === ownerId ? { ...owner, ...patch } : owner)));
-  const addOwner = () => updateOwners([...owners, makeOwner(owners)]);
+  const updateDraftOwner = (ownerId, patch) => {
+    const nextOwners = latestDraftOwnersRef.current.map((owner) => {
+      if (owner.id !== ownerId) return owner;
+      const updated = { ...owner, ...patch };
+      if (
+        !Object.prototype.hasOwnProperty.call(patch, "sharePercentInput") ||
+        patch.sharePercentInput === undefined
+      ) {
+        delete updated.sharePercentInput;
+      }
+      return updated;
+    });
+    dirtyRef.current = true;
+    latestDraftOwnersRef.current = nextOwners;
+    setDraftOwners(nextOwners);
+  };
+  const addOwner = () => {
+    if (!flushDraftOwners()) return;
+    commitOwners([...latestDraftOwnersRef.current, makeOwner(latestDraftOwnersRef.current)]);
+  };
   const pickNewOwnerFromTree = () => {
-    const availableOwner = owners.find((owner) => !owner.personId);
+    if (!flushDraftOwners()) return;
+    const currentOwners = latestDraftOwnersRef.current;
+    const availableOwner = currentOwners.find((owner) => !owner.personId);
     if (availableOwner) {
       onPickFromTree?.(availableOwner.id);
       return;
     }
-    const owner = makeOwner(owners);
-    updateOwners([...owners, owner]);
+    const owner = makeOwner(currentOwners);
+    if (!commitOwners([...currentOwners, owner])) return;
     onPickFromTree?.(owner.id);
   };
 
@@ -107,9 +168,16 @@ export function InitialOwnershipEditor({
                 <select
                   aria-label="Initial owner"
                   value={owner.personId}
-                  onChange={(event) =>
-                    updateOwners(assignInitialOwnerPerson(owners, owner.id, event.target.value))
-                  }
+                  onChange={(event) => {
+                    if (!flushDraftOwners()) return;
+                    commitOwners(
+                      assignInitialOwnerPerson(
+                        latestDraftOwnersRef.current,
+                        owner.id,
+                        event.target.value,
+                      ),
+                    );
+                  }}
                 >
                   <option value="">Choose person</option>
                   {sortPeopleForChoice(people).map((person) => (
@@ -141,7 +209,9 @@ export function InitialOwnershipEditor({
                     className="initial-owner-tree-pick-button"
                     title="Select this owner by clicking a person on the tree"
                     aria-label={`Select ${owner.personId ? "a replacement initial owner" : "initial owner"} from tree`}
-                    onClick={() => onPickFromTree(owner.id)}
+                    onClick={() => {
+                      if (flushDraftOwners()) onPickFromTree(owner.id);
+                    }}
                   >
                     Tree
                   </button>
@@ -156,11 +226,12 @@ export function InitialOwnershipEditor({
                   step="1"
                   value={ownerNumerator}
                   onChange={(event) =>
-                    updateOwner(
+                    updateDraftOwner(
                       owner.id,
                       shareFromFractionInput(owner, { numerator: event.target.value }),
                     )
                   }
+                  onBlur={flushDraftOwners}
                 />
                 <b>/</b>
                 <input
@@ -171,11 +242,12 @@ export function InitialOwnershipEditor({
                   step="1"
                   value={ownerDenominator}
                   onChange={(event) =>
-                    updateOwner(
+                    updateDraftOwner(
                       owner.id,
                       shareFromFractionInput(owner, { denominator: event.target.value }),
                     )
                   }
+                  onBlur={flushDraftOwners}
                 />
               </span>
               <span className="initial-owner-percentage">
@@ -193,12 +265,13 @@ export function InitialOwnershipEditor({
                   }
                   onChange={(event) => {
                     percentageEditsRef.current.add(owner.id);
-                    updateOwner(owner.id, shareFromPercentageInput(event.target.value));
+                    updateDraftOwner(owner.id, shareFromPercentageInput(event.target.value));
                   }}
                   onBlur={() => {
                     percentageEditsRef.current.delete(owner.id);
                     if (owner.sharePercentInput === undefined) return;
-                    updateOwner(owner.id, shareFromFractionInput(owner));
+                    updateDraftOwner(owner.id, shareFromFractionInput(owner));
+                    flushDraftOwners();
                   }}
                 />
                 <b>%</b>
@@ -208,7 +281,10 @@ export function InitialOwnershipEditor({
                 className="icon-button"
                 title="Remove owner"
                 aria-label="Remove initial owner"
-                onClick={() => updateOwners(owners.filter((item) => item.id !== owner.id))}
+                onClick={() => {
+                  if (!flushDraftOwners()) return;
+                  commitOwners(latestDraftOwnersRef.current.filter((item) => item.id !== owner.id));
+                }}
               >
                 <Trash2 size={15} />
               </button>
@@ -251,12 +327,16 @@ export function InitialOwnershipEditor({
           helperText="The individual or company remains outside the family tree but can hold a property share."
           ariaLabelPrefix="Outside owner"
           onCreate={(party) => {
-            const availableOwner = owners.find((owner) => !owner.personId);
+            if (!flushDraftOwners()) return false;
+            const currentOwners = latestDraftOwnersRef.current;
+            const availableOwner = currentOwners.find((owner) => !owner.personId);
             const nextOwners = availableOwner
-              ? assignInitialOwnerPerson(owners, availableOwner.id, party.id)
-              : [...owners, { ...makeOwner(owners), personId: party.id }];
-            onCreateOutsideParty(party, nextOwners);
+              ? assignInitialOwnerPerson(currentOwners, availableOwner.id, party.id)
+              : [...currentOwners, { ...makeOwner(currentOwners), personId: party.id }];
+            const result = onCreateOutsideParty(party, nextOwners);
+            if (result === null || result === false) return false;
             setOutsidePartyOpen(false);
+            return true;
           }}
           onCancel={() => setOutsidePartyOpen(false)}
         />

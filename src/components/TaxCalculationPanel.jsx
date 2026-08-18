@@ -109,6 +109,15 @@ export function TaxCalculationPanel({
         <p>{TAX_CALCULATION_DISCLAIMER}</p>
       </details>
 
+      {report.ignoredStoredTaxLotCount > 0 && (
+        <p className="tax-calculation-warning" role="alert">
+          Review required: {report.ignoredStoredTaxLotCount} saved legacy tax lot
+          {report.ignoredStoredTaxLotCount === 1 ? " was" : "s were"} not used because the
+          {report.ignoredStoredTaxLotCount === 1 ? " lot could" : " lots could"} not be matched
+          safely to one current ownership source. The figures below use the current title history.
+        </p>
+      )}
+
       <details className="tax-calculation-history">
         <summary>
           <span>Full succession and transfer history</span>
@@ -320,6 +329,14 @@ export function TaxCalculationPanel({
                   card.
                 </p>
               )}
+              {(vendor.ignoredStoredTaxLots || []).map((ignoredLot, index) => (
+                <p
+                  className="tax-calculation-warning"
+                  key={ignoredLot.id || `${vendor.id}-ignored-tax-lot-${index}`}
+                >
+                  Saved legacy tax lot not used: {ignoredLot.reason}
+                </p>
+              ))}
             </article>
           ))}
         </div>

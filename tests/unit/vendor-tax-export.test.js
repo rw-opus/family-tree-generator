@@ -142,6 +142,34 @@ describe("vendor tax Excel export", () => {
     expect(xml.match(/Property share sale/g) || []).toHaveLength(1);
   });
 
+  it("exports a prominent warning for each ignored legacy tax lot", () => {
+    const xml = vendorTaxSpreadsheetXml(
+      {
+        vendors: [
+          {
+            id: "vendor",
+            name: "Maria Borg",
+            share: 1,
+            rows: [],
+            ignoredStoredTaxLots: [
+              {
+                id: "legacy-lot",
+                reason: "It cannot be matched to one current ownership source.",
+              },
+            ],
+          },
+        ],
+      },
+      { address: "1 Republic Street", saleValue: 200000 },
+    );
+
+    expect(xml).toContain("Review warnings");
+    expect(xml).toContain("Maria Borg: saved legacy tax lot not used");
+    expect(xml).toContain("cannot be matched to one current ownership source");
+    const declaredRowCount = Number(xml.match(/ss:ExpandedRowCount="(\d+)"/)?.[1]);
+    expect(declaredRowCount).toBe((xml.match(/<Row(?:\s|>)/g) || []).length);
+  });
+
   it("escapes workbook text and strips invalid XML controls", () => {
     const xml = vendorTaxSpreadsheetXml(
       {

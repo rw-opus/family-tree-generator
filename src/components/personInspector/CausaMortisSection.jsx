@@ -69,7 +69,12 @@ function missingRecipientLabels(coverage) {
     );
 }
 
-function CausaMortisCoverage({ coverage = [], properties = [], onAddDeclaration }) {
+function CausaMortisCoverage({
+  coverage = [],
+  properties = [],
+  onAddDeclaration,
+  onReviewDeclaration,
+}) {
   const visibleCoverage = visibleCausaMortisCoverage(coverage);
   if (!visibleCoverage.length) return null;
 
@@ -80,15 +85,30 @@ function CausaMortisCoverage({ coverage = [], properties = [], onAddDeclaration 
         const sellingPrice = Number(property?.saleValue);
         const hasSellingPrice = Number.isFinite(sellingPrice) && sellingPrice > 0;
         const recipientIssues = missingRecipientLabels(row);
+        const unresolvedDeclarationId = row.unresolvedDeclarationIds?.[0] || "";
+        const reviewsExistingDeclaration =
+          row.status === "allocation-unresolved" && Boolean(unresolvedDeclarationId);
 
         return (
           <button
             type="button"
             className={`causa-mortis-coverage-row ${row.status}`}
             key={row.propertyId}
-            onClick={() => onAddDeclaration(row.propertyId)}
-            aria-label="Insert another causa mortis declaration"
-            title="Insert another Declaration Causa Mortis for this property."
+            onClick={() =>
+              reviewsExistingDeclaration
+                ? onReviewDeclaration(unresolvedDeclarationId)
+                : onAddDeclaration(row.propertyId)
+            }
+            aria-label={
+              reviewsExistingDeclaration
+                ? "Review the causa mortis declaration with unresolved declarants"
+                : "Insert another causa mortis declaration"
+            }
+            title={
+              reviewsExistingDeclaration
+                ? "Open the Declaration Causa Mortis whose declarants need review."
+                : "Insert another Declaration Causa Mortis for this property."
+            }
           >
             <span>
               <small>{coverageRequirementLabel(row)}</small>
@@ -125,13 +145,16 @@ function CausaMortisDeclaration({
   candidateLabel,
   dateOfDeath,
   error,
+  taxValueRequired = false,
+  openRequested = false,
+  onOpenRequestHandled,
   onRemove,
   onComplete,
 }) {
   const number = index + 1;
   const editorId = useId();
   const isComplete = isCompletedCausaMortisDeclaration(declaration);
-  const [editing, setEditing] = useState(!isComplete);
+  const [editing, setEditing] = useState(!isComplete || taxValueRequired);
   const [draft, setDraft] = useState(() => ({ ...declaration }));
   const [submitted, setSubmitted] = useState(false);
   const summaryRef = useRef(null);
@@ -158,6 +181,18 @@ function CausaMortisDeclaration({
       summaryRef.current?.focus();
     }
   }, [editing, isComplete]);
+
+  useEffect(() => {
+    if (taxValueRequired && isComplete) setEditing(true);
+  }, [isComplete, taxValueRequired]);
+
+  useEffect(() => {
+    if (!openRequested) return;
+    setDraft({ ...declaration });
+    setSubmitted(false);
+    setEditing(true);
+    onOpenRequestHandled?.();
+  }, [declaration, onOpenRequestHandled, openRequested]);
 
   const openEditor = () => {
     setDraft({ ...declaration });
@@ -199,6 +234,9 @@ function CausaMortisDeclaration({
           type="button"
           ref={summaryRef}
           className="causa-mortis-summary"
+          data-tax-readiness-field="causa-mortis-declarants"
+          data-tax-readiness-aliases={taxValueRequired ? "causa-mortis-value" : undefined}
+          data-tax-readiness-target-id={declaration.id}
           aria-label={`Edit Declaration Causa Mortis ${number}`}
           aria-expanded="false"
           aria-controls={editorId}
@@ -303,10 +341,12 @@ function CausaMortisDeclaration({
       </label>
 
       <label>
-        <span>Value declared (optional)</span>
+        <span>Value declared{taxValueRequired ? " (needed for tax)" : " (optional)"}</span>
         <span className="currency-input">
           <b>€</b>
           <input
+            data-tax-readiness-field={taxValueRequired ? "causa-mortis-value" : undefined}
+            data-tax-readiness-target-id={taxValueRequired ? declaration.id : undefined}
             aria-label={`Immovable property value declared causa mortis ${number}`}
             type="number"
             min="0"
@@ -317,7 +357,12 @@ function CausaMortisDeclaration({
         </span>
       </label>
 
-      <div className="causa-mortis-declarants">
+      <div
+        className="causa-mortis-declarants"
+        data-tax-readiness-field="causa-mortis-declarants"
+        data-tax-readiness-target-id={declaration.id}
+        tabIndex={-1}
+      >
         <strong>Declarants / heirs</strong>
         <small>Untick anyone who did not declare.</small>
         {candidates.length ? (
@@ -367,13 +412,18 @@ export function CausaMortisSection({
   dateOfDeath,
   hasUnknownDeathDate,
   errors = {},
+  taxValuePropertyId = "",
+  taxValueRequired = false,
+  taxRequiredDeclarationIds = new Set(),
   onAddDeclaration,
   onAddDeclarationForProperty,
   onRemoveDeclaration,
   onCompleteDeclaration,
 }) {
+  const [requestedDeclarationId, setRequestedDeclarationId] = useState("");
+
   return (
-    <div className="causa-mortis-records">
+    <div className="causa-mortis-records" data-person-section="causa-mortis">
       <div className="causa-mortis-heading">
         <div>
           <strong>Causa Mortis</strong>
@@ -382,6 +432,7 @@ export function CausaMortisSection({
         <button
           type="button"
           className="secondary-button"
+          data-tax-readiness-field="add-causa-mortis"
           onClick={onAddDeclaration}
           title={
             declarations.length
@@ -398,6 +449,7 @@ export function CausaMortisSection({
         coverage={coverage}
         properties={properties}
         onAddDeclaration={onAddDeclarationForProperty}
+        onReviewDeclaration={setRequestedDeclarationId}
       />
       <CausaMortisOverDeclarationAdvice coverage={coverage} />
 
@@ -414,6 +466,16 @@ export function CausaMortisSection({
           candidateLabel={candidateLabel}
           dateOfDeath={dateOfDeath}
           error={errors[declaration.id]}
+          taxValueRequired={
+            taxRequiredDeclarationIds.has(declaration.id) ||
+            (taxValueRequired &&
+              !isCompletedCausaMortisDeclaration(declaration) &&
+              (!declaration.propertyId || declaration.propertyId === taxValuePropertyId))
+          }
+          openRequested={requestedDeclarationId === declaration.id}
+          onOpenRequestHandled={() =>
+            setRequestedDeclarationId((current) => (current === declaration.id ? "" : current))
+          }
           onRemove={onRemoveDeclaration}
           onComplete={onCompleteDeclaration}
         />

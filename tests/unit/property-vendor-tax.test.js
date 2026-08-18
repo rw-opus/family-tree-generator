@@ -688,11 +688,42 @@ describe("property vendor tax reports", () => {
       provenancePersonId: "donor",
       provenancePersonName: "Joseph Borg",
       sourceKind: "donation",
+      originalOwnerRecordId: "original-title",
       acquisitionDate: "2024-01-01",
       donorAcquisitionDate: "",
+      requiresDonorAcquisitionDate: true,
       selectedMethod: null,
     });
     expect(pendingVendor.rows[0].warning).toMatch(/donor's preceding acquisition date/i);
+
+    const storedProperty = {
+      ...property,
+      saleLots: [
+        {
+          id: "stored-recent-gift",
+          ownerId: "donee",
+          acquisitionType: "donation",
+          acquisitionDate: "",
+          previousAcquisitionDate: "",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          transferValue: 200000,
+        },
+      ],
+    };
+    const storedPendingRow = buildTaxCalculationReport(storedProperty, people, []).vendors.find(
+      (candidate) => candidate.id === "donee",
+    ).rows[0];
+    expect(storedPendingRow).toMatchObject({
+      id: "stored-recent-gift",
+      sourceKind: "donation",
+      sourceTransferId: "gift",
+      originalOwnerRecordId: "original-title",
+      provenancePersonId: "donor",
+      requiresDonorAcquisitionDate: true,
+      selectedMethod: null,
+    });
 
     const updated = setLivingInitialOwnerAcquisitionDate(
       property,
@@ -712,10 +743,21 @@ describe("property vendor tax reports", () => {
       sourceKind: "donation",
       donorAcquisitionDate: "2000-01-01",
       donorAcquisitionDateDerived: true,
+      requiresDonorAcquisitionDate: false,
       selectedMethod: { key: "whole-10" },
     });
     expect(resolvedVendor.incompleteRowCount).toBe(0);
     expect(resolvedVendor.tax).toBeCloseTo(20000);
+    const storedResolvedRow = buildTaxCalculationReport(
+      { ...updated.property, saleLots: storedProperty.saleLots },
+      people,
+      [],
+    ).vendors.find((candidate) => candidate.id === "donee").rows[0];
+    expect(storedResolvedRow).toMatchObject({
+      requiresDonorAcquisitionDate: false,
+      donorAcquisitionDate: "2000-01-01",
+      selectedMethod: { key: "whole-10" },
+    });
   });
 
   it("requires and then applies a donation-date acquisition value after five years", () => {
@@ -755,9 +797,39 @@ describe("property vendor tax reports", () => {
       sourceKind: "donation",
       sourceTransferId: "gift",
       requiresDonationAcquisitionValue: true,
+      requiresDonorAcquisitionDate: false,
       selectedMethod: null,
     });
     expect(pending.rows[0].warning).toMatch(/Donation Value stated in the contract/i);
+
+    const storedProperty = {
+      ...property,
+      saleLots: [
+        {
+          id: "stored-old-gift",
+          ownerId: "donee",
+          acquisitionType: "donation",
+          acquisitionDate: "",
+          previousAcquisitionDate: "",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: "",
+          acquisitionValueBasis: "",
+          transferValue: 200000,
+        },
+      ],
+    };
+    const storedPendingRow = buildTaxCalculationReport(storedProperty, people, []).vendors[0]
+      .rows[0];
+    expect(storedPendingRow).toMatchObject({
+      id: "stored-old-gift",
+      sourceKind: "donation",
+      sourceTransferId: "gift",
+      requiresDonationAcquisitionValue: true,
+      requiresDonorAcquisitionDate: false,
+      selectedMethod: null,
+    });
 
     for (const blankValue of ["", null]) {
       const blankProperty = {
@@ -825,6 +897,18 @@ describe("property vendor tax reports", () => {
       selectedMethod: { key: "increase-12" },
     });
     expect(resolved.rows[0].tax).toBeCloseTo(12000);
+    const storedResolvedRow = buildTaxCalculationReport(
+      {
+        ...updated.property,
+        saleLots: storedProperty.saleLots,
+      },
+      people,
+      [],
+    ).vendors[0].rows[0];
+    expect(storedResolvedRow).toMatchObject({
+      requiresDonationAcquisitionValue: false,
+      selectedMethod: { key: "increase-12" },
+    });
   });
 
   it("does not require a donation acquisition value within five years", () => {
@@ -1204,7 +1288,13 @@ describe("property vendor tax reports", () => {
     };
 
     const pending = buildTaxCalculationReport(property, people, []).vendors[0];
-    expect(pending.rows[0]).toMatchObject({ selectedMethod: null });
+    expect(pending.rows[0]).toMatchObject({
+      sourceKind: "initial",
+      originalOwnerId: "owner",
+      originalOwnerRecordId: "title",
+      requiresOriginalAcquisitionDate: true,
+      selectedMethod: null,
+    });
     expect(pending.rows[0].warning).toBe("Enter the acquisition date.");
 
     const updated = setLivingInitialOwnerAcquisitionDate(
@@ -1221,6 +1311,7 @@ describe("property vendor tax reports", () => {
     expect(resolved.rows[0]).toMatchObject({
       shareFraction: { numerator: 1, denominator: 1 },
       acquisitionDate: "2010-01-01",
+      requiresOriginalAcquisitionDate: false,
       selectedMethod: { key: "whole-8" },
     });
     expect(resolved.incompleteRowCount).toBe(0);
@@ -1307,6 +1398,68 @@ describe("property vendor tax reports", () => {
       inheritanceDate: "2020-01-01",
     });
     expect(inheritedRow).not.toHaveProperty("requiresOriginalAcquisitionDate", true);
+  });
+
+  it("accepts a deceased original donor's historic acquisition date only for their recorded lifetime gift", () => {
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      owners: [{ id: "donor-title", personId: "donor", sharePercent: 100 }],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          date: "2018-01-01",
+          sharePercent: 100,
+        },
+      ],
+    };
+    const people = [
+      {
+        id: "donor",
+        fullName: "Joseph Borg",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+      },
+      { id: "donee", fullName: "Maria Borg" },
+    ];
+
+    const updated = setLivingInitialOwnerAcquisitionDate(
+      property,
+      people,
+      "donor",
+      "2010-01-01",
+      [],
+      "donor-title",
+      "gift",
+    );
+    expect(updated.error).toBe("");
+    expect(updated.property.owners[0].acquisitionDate).toBe("2010-01-01");
+
+    expect(
+      setLivingInitialOwnerAcquisitionDate(
+        property,
+        people,
+        "donor",
+        "2019-01-01",
+        [],
+        "donor-title",
+        "gift",
+      ),
+    ).toMatchObject({ error: expect.stringMatching(/after the donation date/i) });
+    expect(
+      setLivingInitialOwnerAcquisitionDate(
+        property,
+        people,
+        "donor",
+        "2010-01-01",
+        [],
+        "donor-title",
+        "missing-gift",
+      ),
+    ).toMatchObject({ error: expect.stringMatching(/date of death.*CM/i) });
   });
 
   it("defaults a selected initial owner to the exact unallocated title", () => {
@@ -2609,6 +2762,7 @@ describe("property vendor tax reports", () => {
     expect(row).toMatchObject({
       share: 1,
       declaredValue: "",
+      requiresCausaMortisAcquisitionValue: true,
       difference: null,
       selectedMethod: null,
       tax: null,
@@ -2622,6 +2776,1854 @@ describe("property vendor tax reports", () => {
     });
     expect(row.warning).toMatch(/causa mortis acquisition value/i);
     expect(report).toMatchObject({ totalTax: null, totalNet: null, totalsComplete: false });
+
+    const storedProperty = {
+      ...property,
+      saleLots: [
+        {
+          id: "stored-inherited-lot",
+          ownerId: "child",
+          acquisitionType: "inheritance",
+          inheritanceSourceDeceasedId: "deceased",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: "",
+          acquisitionValueBasis: "cm-declared",
+          cmValueEligibilityConfirmed: true,
+          transferValue: 120000,
+        },
+      ],
+    };
+    const storedRow = buildTaxCalculationReport(storedProperty, people, []).vendors[0].rows[0];
+    expect(storedRow).toMatchObject({
+      id: "stored-inherited-lot",
+      sourceKind: "inheritance",
+      provenancePersonId: "deceased",
+      requiresCausaMortisAcquisitionValue: true,
+      selectedMethod: null,
+    });
+
+    const noSellingValueRow = buildTaxCalculationReport({ ...property, saleValue: "" }, people, [])
+      .vendors[0].rows[0];
+    expect(noSellingValueRow.warning).toMatch(/consideration or market value/i);
+    expect(noSellingValueRow.requiresCausaMortisAcquisitionValue).toBe(true);
+
+    people[0].causaMortisDeclarations[0].immovablePropertyValue = "0";
+    const zeroValueRow = buildTaxCalculationReport(property, people, []).vendors[0].rows[0];
+    expect(zeroValueRow).toMatchObject({
+      declaredValue: 0,
+      requiresCausaMortisAcquisitionValue: false,
+    });
+    const storedZeroValueRow = buildTaxCalculationReport(storedProperty, people, []).vendors[0]
+      .rows[0];
+    expect(storedZeroValueRow).toMatchObject({
+      requiresCausaMortisAcquisitionValue: false,
+    });
+  });
+
+  it("keeps gift source requirements visible while the selling value is blank", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const oldGift = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "",
+      owners: [
+        {
+          id: "donor-title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "old-gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+          acquisitionValue: "",
+          acquisitionValueBasis: "",
+        },
+      ],
+      declarations: [],
+      saleLots: [],
+    };
+    const oldGiftRow = buildTaxCalculationReport(oldGift, people, []).vendors[0].rows[0];
+
+    expect(oldGiftRow.warning).toMatch(/consideration or market value/i);
+    expect(oldGiftRow).toMatchObject({
+      sourceKind: "donation",
+      requiresDonationAcquisitionValue: true,
+      requiresDonorAcquisitionDate: false,
+    });
+
+    const recentGift = {
+      ...oldGift,
+      owners: [{ ...oldGift.owners[0], acquisitionDate: "" }],
+      transfers: [{ ...oldGift.transfers[0], id: "recent-gift", date: "2024-01-01" }],
+    };
+    const recentGiftRow = buildTaxCalculationReport(recentGift, people, []).vendors[0].rows[0];
+
+    expect(recentGiftRow.warning).toMatch(/consideration or market value/i);
+    expect(recentGiftRow).toMatchObject({
+      sourceKind: "donation",
+      requiresDonationAcquisitionValue: false,
+      requiresDonorAcquisitionDate: true,
+    });
+  });
+
+  it("apportions one recorded Donation Value across split stored lots", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      saleLots: ["first", "second"].map((id) => ({
+        id,
+        ownerId: "donee",
+        acquisitionType: "donation",
+        acquisitionDate: "2020-01-01",
+        previousAcquisitionDate: "2000-01-01",
+        transferDate: "2026-08-13",
+        shareNumerator: 1,
+        shareDenominator: 2,
+      })),
+    };
+
+    const vendor = buildTaxCalculationReport(property, people, []).vendors[0];
+
+    expect(vendor.rows.map((row) => row.declaredValue)).toEqual([50000, 50000]);
+    expect(vendor.rows.map((row) => row.tax)).toEqual([6000, 6000]);
+    expect(vendor.tax).toBe(12000);
+  });
+
+  it("assesses different donor acquisition tranches separately from one aggregate legacy lot", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title-old",
+          personId: "donor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "title-new",
+          personId: "donor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2024-01-01",
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      saleLots: [
+        {
+          id: "legacy-aggregate",
+          ownerId: "donee",
+          acquisitionType: "donation",
+          acquisitionDate: "2024-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+          transferValue: 200000,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendor = report.vendors[0];
+
+    expect(report.ignoredStoredTaxLotCount).toBe(1);
+    expect(vendor.ignoredStoredTaxLots).toEqual([
+      expect.objectContaining({
+        id: "legacy-aggregate",
+        reason: expect.stringMatching(/preceding/),
+      }),
+    ]);
+    expect(vendor.rows).toHaveLength(2);
+    expect(vendor.rows.map((row) => row.donorAcquisitionDate)).toEqual([
+      "2000-01-01",
+      "2010-01-01",
+    ]);
+    expect(vendor.rows.map((row) => row.tax)).toEqual([10000, 8000]);
+    expect(vendor.tax).toBe(18000);
+  });
+
+  it("preserves confirmed treatment when an aggregate gift designates each donor tranche", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title-old",
+          personId: "donor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "title-new",
+          personId: "donor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2024-01-01",
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+          provenance: [
+            {
+              trancheId: "initial-title-old",
+              acquiredOn: "2000-01-01",
+              numerator: 1,
+              denominator: 2,
+            },
+            {
+              trancheId: "initial-title-new",
+              acquiredOn: "2010-01-01",
+              numerator: 1,
+              denominator: 2,
+            },
+          ],
+        },
+      ],
+      saleLots: [
+        {
+          id: "legacy-aggregate",
+          ownerId: "donee",
+          acquisitionType: "donation",
+          acquisitionDate: "2024-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+          transferValue: 200000,
+          article5ASpecialTreatment: "exempt-own-residence",
+          specialTreatmentConfirmed: true,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendor = report.vendors[0];
+
+    expect(report.ignoredStoredTaxLotCount).toBe(0);
+    expect(vendor.rows).toHaveLength(2);
+    expect(vendor.rows.map((row) => row.originalOwnerRecordId)).toEqual(["title-old", "title-new"]);
+    expect(vendor.rows.map((row) => row.donorAcquisitionDate)).toEqual([
+      "2000-01-01",
+      "2010-01-01",
+    ]);
+    expect(vendor.rows.map((row) => row.selectedMethod?.key)).toEqual([
+      "exempt-own-residence",
+      "exempt-own-residence",
+    ]);
+    expect(vendor.tax).toBe(0);
+    expect(report.totalsComplete).toBe(true);
+  });
+
+  it("never spreads an explicitly sourced donation lot across unrelated gifts", () => {
+    const people = [
+      { id: "donor-a", fullName: "Donor A" },
+      { id: "donor-b", fullName: "Donor B" },
+      { id: "vendor", fullName: "Vendor" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title-a",
+          personId: "donor-a",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "title-b",
+          personId: "donor-b",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2001-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift-a",
+          kind: "donation",
+          sellerId: "donor-a",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+          acquisitionValue: 50000,
+          acquisitionValueBasis: "deed-value",
+        },
+        {
+          id: "gift-b",
+          kind: "donation",
+          sellerId: "donor-b",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2021-01-01",
+          acquisitionValue: 50000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      saleLots: [
+        {
+          id: "gift-a-only",
+          ownerId: "vendor",
+          acquisitionType: "donation",
+          donationSourceKey: "gift-a:",
+          acquisitionDate: "2020-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+          article5ASpecialTreatment: "exempt-own-residence",
+          specialTreatmentConfirmed: true,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendor = report.vendors[0];
+    const explicitGift = vendor.rows.find((row) => row.id === "gift-a-only");
+    const otherGift = vendor.rows.find((row) => row.sourceTransferId === "gift-b");
+
+    expect(vendor.rows).toHaveLength(2);
+    expect(explicitGift).toMatchObject({
+      sourceTransferId: "gift-a",
+      selectedMethod: null,
+      tax: null,
+      warning: expect.stringMatching(/only 1\/2 is supported/i),
+    });
+    expect(otherGift).toMatchObject({
+      sourceTransferId: "gift-b",
+      tax: 6000,
+    });
+    expect(otherGift.selectedMethod?.key).not.toBe("exempt-own-residence");
+    expect(report.totalTax).toBeNull();
+  });
+
+  it("apportions every deed value when one legacy donation lot expands by source", () => {
+    const people = [
+      { id: "donor-a", fullName: "Donor A" },
+      { id: "donor-b", fullName: "Donor B" },
+      { id: "vendor", fullName: "Vendor" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "",
+      owners: [
+        {
+          id: "title-a",
+          personId: "donor-a",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "title-b",
+          personId: "donor-b",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2001-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift-a",
+          kind: "donation",
+          sellerId: "donor-a",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+          acquisitionValue: 50000,
+          acquisitionValueBasis: "deed-value",
+        },
+        {
+          id: "gift-b",
+          kind: "donation",
+          sellerId: "donor-b",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2021-01-01",
+          acquisitionValue: 50000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      saleLots: [
+        {
+          id: "legacy-combined",
+          ownerId: "vendor",
+          acquisitionType: "donation",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          consideration: 200000,
+          marketValue: 200000,
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+
+    expect(report.vendors[0].rows.map((row) => row.attributedSaleValue)).toEqual([100000, 100000]);
+    expect(report.totalSaleValue).toBe(200000);
+    expect(report.totalTax).toBe(12000);
+  });
+
+  it("keeps missing deed values blank when an aggregate donation lot expands by source", () => {
+    const people = [
+      { id: "donor-a", fullName: "Donor A" },
+      { id: "donor-b", fullName: "Donor B" },
+      { id: "vendor", fullName: "Vendor" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "",
+      owners: [
+        {
+          id: "title-a",
+          personId: "donor-a",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "title-b",
+          personId: "donor-b",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2001-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift-a",
+          kind: "donation",
+          sellerId: "donor-a",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+          acquisitionValue: 50000,
+          acquisitionValueBasis: "deed-value",
+        },
+        {
+          id: "gift-b",
+          kind: "donation",
+          sellerId: "donor-b",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2021-01-01",
+          acquisitionValue: 50000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      saleLots: [
+        {
+          id: "legacy-combined",
+          ownerId: "vendor",
+          acquisitionType: "donation",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          transferValue: "",
+          consideration: "",
+          marketValue: "",
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+
+    expect(report.vendors[0].rows.map((row) => row.attributedSaleValue)).toEqual([null, null]);
+    expect(report.vendors[0].rows.map((row) => row.tax)).toEqual([null, null]);
+    expect(report.totalSaleValue).toBeNull();
+    expect(report.totalTax).toBeNull();
+    expect(report.totalNet).toBeNull();
+  });
+
+  it("uses corrected transfer and donor dates instead of stale stored donation dates", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      saleLots: [
+        {
+          id: "stale-gift",
+          ownerId: "donee",
+          acquisitionType: "donation",
+          acquisitionDate: "2024-01-01",
+          previousAcquisitionDate: "2015-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+
+    const row = buildTaxCalculationReport(property, people, []).vendors[0].rows[0];
+
+    expect(row).toMatchObject({
+      acquisitionDate: "2020-01-01",
+      donorAcquisitionDate: "2000-01-01",
+      declaredValue: 100000,
+      selectedMethod: { key: "increase-12" },
+      tax: 12000,
+    });
+  });
+
+  it("treats a cleared current Donation Value as authoritative over a stale stored lot", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title",
+          personId: "donor",
+          sharePercent: 100,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+          acquisitionValue: "",
+          acquisitionValueBasis: "",
+        },
+      ],
+      saleLots: [
+        {
+          id: "stale-gift-value",
+          ownerId: "donee",
+          acquisitionType: "donation",
+          acquisitionDate: "2020-01-01",
+          previousAcquisitionDate: "2000-01-01",
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const row = report.vendors[0].rows[0];
+
+    expect(row).toMatchObject({
+      declaredValue: "",
+      requiresDonationAcquisitionValue: true,
+      selectedMethod: null,
+      tax: null,
+    });
+    expect(report).toMatchObject({ totalTax: null, totalsComplete: false });
+  });
+
+  it("uses the corrected initial-title date instead of a stale stored purchase date", () => {
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title",
+          personId: "owner",
+          sharePercent: 100,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "stale-purchase",
+          ownerId: "owner",
+          acquisitionType: "purchase",
+          acquisitionDate: "2020-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+
+    const row = buildTaxCalculationReport(property, [{ id: "owner", fullName: "Maria Borg" }], [])
+      .vendors[0].rows[0];
+
+    expect(row).toMatchObject({
+      sourceKind: "initial",
+      originalOwnerRecordId: "title",
+      acquisitionDate: "2010-01-01",
+      requiresOriginalAcquisitionDate: false,
+    });
+  });
+
+  it("treats a cleared current initial-title date as authoritative over a stale stored lot", () => {
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "title",
+          personId: "owner",
+          sharePercent: 100,
+          acquisitionDate: "",
+        },
+      ],
+      transfers: [],
+      saleLots: [
+        {
+          id: "stale-purchase-date",
+          ownerId: "owner",
+          acquisitionType: "purchase",
+          acquisitionDate: "2010-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(
+      property,
+      [{ id: "owner", fullName: "Maria Borg" }],
+      [],
+    );
+    const row = report.vendors[0].rows[0];
+
+    expect(row).toMatchObject({
+      sourceKind: "initial",
+      originalOwnerRecordId: "title",
+      acquisitionDate: "",
+      requiresOriginalAcquisitionDate: true,
+      selectedMethod: null,
+      tax: null,
+    });
+    expect(report).toMatchObject({ totalTax: null, totalsComplete: false });
+  });
+
+  it("ignores an ambiguous legacy tax lot and assesses the current title sources instead", () => {
+    const people = [
+      { id: "a", fullName: "Maria Borg" },
+      { id: "b", fullName: "Joseph Borg" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "a-title",
+          personId: "a",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "b-title",
+          personId: "b",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "b-to-a",
+          kind: "sale",
+          sellerId: "b",
+          buyerId: "a",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+        },
+      ],
+      declarations: [],
+      saleLots: [
+        {
+          id: "ambiguous-legacy-lot",
+          ownerId: "a",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          transferValue: 200000,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendor = report.vendors.find((candidate) => candidate.id === "a");
+
+    expect(vendor.ignoredStoredTaxLots).toEqual([
+      expect.objectContaining({ id: "ambiguous-legacy-lot" }),
+    ]);
+    expect(vendor.rows).toHaveLength(2);
+    expect(vendor.rows.map((row) => row.sourceKind).sort()).toEqual(["initial", "purchase"]);
+    expect(vendor.rows.map((row) => row.shareFraction)).toEqual([
+      { numerator: 1, denominator: 2 },
+      { numerator: 1, denominator: 2 },
+    ]);
+    expect(vendor.incompleteSourceCount).toBe(0);
+    expect(report.ignoredStoredTaxLotCount).toBe(1);
+    expect(report.totalsComplete).toBe(true);
+    expect(property.saleLots).toHaveLength(1);
+  });
+
+  it("matches a purchase-typed legacy lot to an exact initial-title date before later purchases", () => {
+    const people = [
+      { id: "a", fullName: "Maria Borg" },
+      { id: "b", fullName: "Joseph Borg" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "a-title",
+          personId: "a",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "b-title",
+          personId: "b",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "b-to-a",
+          kind: "sale",
+          sellerId: "b",
+          buyerId: "a",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+        },
+      ],
+      declarations: [],
+      saleLots: [
+        {
+          id: "legacy-initial-half",
+          ownerId: "a",
+          acquisitionType: "purchase",
+          acquisitionDate: "2000-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          transferValue: 100000,
+          article5ASpecialTreatment: "exempt-own-residence",
+          specialTreatmentConfirmed: true,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendor = report.vendors.find((candidate) => candidate.id === "a");
+    const initialRow = vendor.rows.find((row) => row.sourceKind === "initial");
+    const purchaseRow = vendor.rows.find((row) => row.sourceKind === "purchase");
+
+    expect(vendor.ignoredStoredTaxLots).toEqual([]);
+    expect(initialRow).toMatchObject({
+      id: "legacy-initial-half",
+      originalOwnerRecordId: "a-title",
+      provenance: "Initial ownership",
+      selectedMethod: { key: "exempt-own-residence" },
+    });
+    expect(purchaseRow).toMatchObject({
+      acquisitionDate: "2020-01-01",
+      provenance: "Acquired from Joseph Borg",
+    });
+  });
+
+  it("uses the matched purchase tranche for a stored lot's source label and transfer id", () => {
+    const people = [
+      { id: "alice", fullName: "Alice Borg" },
+      { id: "bob", fullName: "Bob Borg" },
+      { id: "vendor", fullName: "Vendor Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 400000,
+      owners: [
+        {
+          id: "alice-title",
+          personId: "alice",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "bob-title",
+          personId: "bob",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2001-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "sale-1",
+          kind: "sale",
+          sellerId: "alice",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2010-01-01",
+        },
+        {
+          id: "sale-2",
+          kind: "sale",
+          sellerId: "bob",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+        },
+      ],
+      declarations: [],
+      saleLots: [
+        {
+          id: "stored-first-purchase",
+          ownerId: "vendor",
+          acquisitionType: "purchase",
+          acquisitionDate: "2010-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          transferValue: 200000,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const vendor = report.vendors.find((candidate) => candidate.id === "vendor");
+    const stored = vendor.rows.find((row) => row.id === "stored-first-purchase");
+    const remaining = vendor.rows.find((row) => row.id !== "stored-first-purchase");
+
+    expect(vendor.ignoredStoredTaxLots).toEqual([]);
+    expect(stored).toMatchObject({
+      sourceKind: "purchase",
+      sourceTransferId: "sale-1",
+      provenance: "Acquired from Alice Borg",
+      provenancePersonId: "alice",
+    });
+    expect(remaining).toMatchObject({
+      sourceKind: "purchase",
+      sourceTransferId: "sale-2",
+      provenance: "Acquired from Bob Borg",
+      provenancePersonId: "bob",
+    });
+  });
+
+  it("assesses an untyped stored lot from its matched purchase provenance", () => {
+    const people = [
+      { id: "seller", fullName: "Seller One" },
+      { id: "vendor", fullName: "Vendor Vella" },
+    ];
+    const baseProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "seller-title",
+          personId: "seller",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "sale",
+          kind: "sale",
+          sellerId: "seller",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 1,
+          amountType: "whole-property",
+          date: "2010-01-01",
+        },
+      ],
+      declarations: [],
+    };
+    const control = buildTaxCalculationReport({ ...baseProperty, saleLots: [] }, people, []);
+    const report = buildTaxCalculationReport(
+      {
+        ...baseProperty,
+        saleLots: [
+          {
+            id: "legacy-no-type",
+            ownerId: "vendor",
+            acquisitionDate: "2010-01-01",
+            inheritanceDate: "2010-01-01",
+            transferDate: "2026-08-13",
+            shareNumerator: 1,
+            shareDenominator: 1,
+            acquisitionValue: 100000,
+            acquisitionValueBasis: "cm-declared",
+            cmValueEligibilityConfirmed: true,
+            transferValue: 200000,
+          },
+        ],
+      },
+      people,
+      [],
+    );
+    const row = report.vendors[0].rows[0];
+
+    expect(report.ignoredStoredTaxLotCount).toBe(0);
+    expect(report.totalTax).toBe(control.totalTax);
+    expect(row).toMatchObject({
+      id: "legacy-no-type",
+      sourceKind: "purchase",
+      sourceTransferId: "sale",
+      selectedMethod: { key: "whole-8", rule: "5A(5)(a)" },
+      tax: 16000,
+    });
+    expect(row.methods.some((method) => method.rule === "5A(5)(b)(i)")).toBe(false);
+  });
+
+  it("matches an untyped dated lot to a purchase instead of an unrelated sole inheritance", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Deceased Owner",
+        isDeceased: true,
+        dateOfDeath: "2020-06-01",
+        inheritanceBasis: "will",
+        willDate: "2019-01-01",
+        willHeirs: [{ id: "heir", personId: "vendor", sharePercent: 100 }],
+        spouseIds: [],
+        causaMortisDeclarations: [
+          {
+            id: "cm",
+            propertyId: "property",
+            status: "complete",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 2,
+            date: "2020-07-01",
+            notaryName: "N",
+            declarantPersonIds: ["vendor"],
+            immovablePropertyValue: 50000,
+          },
+        ],
+      },
+      { id: "seller", fullName: "Seller Borg" },
+      { id: "vendor", fullName: "Vendor Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "deceased-title",
+          personId: "deceased",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+        {
+          id: "seller-title",
+          personId: "seller",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "seller-to-vendor",
+          kind: "sale",
+          sellerId: "seller",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2010-01-01",
+        },
+      ],
+      declarations: [],
+      saleLots: [
+        {
+          id: "legacy-no-type",
+          ownerId: "vendor",
+          acquisitionDate: "2010-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          transferValue: 100000,
+          article5ASpecialTreatment: "exempt-own-residence",
+          specialTreatmentConfirmed: true,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const stored = report.vendors[0].rows.find((row) => row.id === "legacy-no-type");
+    const inherited = report.vendors[0].rows.find((row) => row.sourceKind === "inheritance");
+
+    expect(report.ignoredStoredTaxLotCount).toBe(0);
+    expect(stored).toMatchObject({
+      sourceKind: "purchase",
+      sourceTransferId: "seller-to-vendor",
+      provenance: "Acquired from Seller Borg",
+      acquisitionDate: "2010-01-01",
+      selectedMethod: { key: "exempt-own-residence" },
+    });
+    expect(inherited).toMatchObject({
+      sourceKind: "inheritance",
+      provenance: "Inherited from Deceased Owner",
+    });
+    expect(inherited.selectedMethod?.key).not.toBe("exempt-own-residence");
+
+    const inheritedLegacyReport = buildTaxCalculationReport(
+      {
+        ...property,
+        saleLots: [
+          {
+            id: "legacy-inheritance-no-type",
+            ownerId: "vendor",
+            acquisitionDate: "2020-06-01",
+            transferDate: "2026-08-13",
+            shareNumerator: 1,
+            shareDenominator: 2,
+            acquisitionValue: 1,
+            acquisitionValueBasis: "cm-declared",
+            cmValueEligibilityConfirmed: true,
+            transferValue: 100000,
+          },
+        ],
+      },
+      people,
+      [],
+    );
+    const canonicalInheritance = inheritedLegacyReport.vendors[0].rows.find(
+      (row) => row.id === "legacy-inheritance-no-type",
+    );
+    expect(inheritedLegacyReport.totalTax).toBe(14000);
+    expect(canonicalInheritance).toMatchObject({
+      sourceKind: "inheritance",
+      provenance: "Inherited from Deceased Owner",
+      declaredValue: 50000,
+      tax: 6000,
+    });
+  });
+
+  it("derives a uniquely dated untyped donation from its matched canonical tranche", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Deceased Owner",
+        isDeceased: true,
+        dateOfDeath: "2020-06-01",
+        inheritanceBasis: "will",
+        willDate: "2019-01-01",
+        willHeirs: [{ id: "heir", personId: "vendor", sharePercent: 100 }],
+        spouseIds: [],
+        causaMortisDeclarations: [
+          {
+            id: "cm",
+            propertyId: "property",
+            status: "complete",
+            declaredShareNumerator: 1,
+            declaredShareDenominator: 2,
+            date: "2020-07-01",
+            notaryName: "N",
+            declarantPersonIds: ["vendor"],
+            immovablePropertyValue: 50000,
+          },
+        ],
+      },
+      { id: "donor", fullName: "Donor Borg" },
+      { id: "vendor", fullName: "Vendor Vella" },
+    ];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "deceased-title",
+          personId: "deceased",
+          shareNumerator: 1,
+          shareDenominator: 2,
+        },
+        {
+          id: "donor-title",
+          personId: "donor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2010-01-01",
+          acquisitionValue: 40000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      declarations: [],
+      saleLots: [
+        {
+          id: "legacy-donation-no-type",
+          ownerId: "vendor",
+          acquisitionDate: "2010-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionValue: 1,
+          acquisitionValueBasis: "cm-declared",
+          transferValue: 100000,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+    const row = report.vendors[0].rows.find(
+      (candidate) => candidate.id === "legacy-donation-no-type",
+    );
+
+    expect(report.totalTax).toBe(13200);
+    expect(row).toMatchObject({
+      sourceKind: "donation",
+      sourceTransferId: "gift",
+      provenance: "Donated by Donor Borg",
+      declaredValue: 40000,
+      tax: 7200,
+    });
+  });
+
+  it("excludes ignored stored lots from the deed-wide Housing Authority band", () => {
+    const people = [{ id: "vendor", fullName: "Vendor" }];
+    const baseProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "",
+      owners: [
+        {
+          id: "vendor-title",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+    };
+    const validLot = {
+      id: "valid",
+      ownerId: "vendor",
+      acquisitionType: "purchase",
+      acquisitionDate: "2010-01-01",
+      transferDate: "2026-08-13",
+      shareNumerator: 1,
+      shareDenominator: 1,
+      transferValue: 100000,
+      qualifyingRate: "housing-other-10",
+      housingCertificateConfirmed: true,
+    };
+    const ignoredLot = {
+      id: "stale",
+      ownerId: "vendor",
+      acquisitionType: "inheritance",
+      inheritanceSourceDeceasedId: "removed",
+      acquisitionDate: "2020-01-01",
+      inheritanceDate: "2020-01-01",
+      transferDate: "2026-08-13",
+      shareNumerator: 1,
+      shareDenominator: 1,
+      transferValue: 1000000,
+      acquisitionValue: 1,
+      acquisitionValueBasis: "cm-declared",
+      cmValueEligibilityConfirmed: true,
+    };
+    const control = buildTaxCalculationReport(
+      { ...baseProperty, saleLots: [validLot] },
+      people,
+      [],
+    );
+    const report = buildTaxCalculationReport(
+      { ...baseProperty, saleLots: [validLot, ignoredLot] },
+      people,
+      [],
+    );
+
+    expect(report.ignoredStoredTaxLotCount).toBe(1);
+    expect(report.vendors[0].ignoredStoredTaxLots).toEqual([
+      expect.objectContaining({ id: "stale" }),
+    ]);
+    expect(report.totalTax).toBe(control.totalTax);
+    expect(report.vendors[0].rows).toEqual([
+      expect.objectContaining({
+        id: "valid",
+        attributedSaleValue: 100000,
+        selectedMethod: expect.objectContaining({ key: "housing-other-10", tax: 4000 }),
+        tax: 4000,
+      }),
+    ]);
+  });
+
+  it.each([
+    { label: "the property selling price", saleValue: 100000 },
+    { label: "the stored consideration", saleValue: "" },
+  ])(
+    "uses the higher recorded market value for the deed-wide Housing band when proceeds use $label",
+    ({ saleValue }) => {
+      const people = [{ id: "vendor", fullName: "Vendor" }];
+      const property = {
+        id: "property",
+        saleDate: "2026-08-13",
+        saleValue,
+        owners: [
+          {
+            id: "vendor-title",
+            personId: "vendor",
+            shareNumerator: 1,
+            shareDenominator: 1,
+            acquisitionDate: "2010-01-01",
+          },
+        ],
+        transfers: [],
+        declarations: [],
+        saleLots: [
+          {
+            id: "housing-sale",
+            ownerId: "vendor",
+            acquisitionType: "purchase",
+            acquisitionDate: "2010-01-01",
+            transferDate: "2026-08-13",
+            shareNumerator: 1,
+            shareDenominator: 1,
+            consideration: 100000,
+            marketValue: 300000,
+            qualifyingRate: "housing-other-10",
+            housingCertificateConfirmed: true,
+          },
+        ],
+      };
+
+      const report = buildTaxCalculationReport(property, people, []);
+
+      expect(report.vendors[0].rows).toEqual([
+        expect.objectContaining({
+          id: "housing-sale",
+          attributedSaleValue: 100000,
+          selectedMethod: expect.objectContaining({ key: "housing-other-10", tax: 16000 }),
+          tax: 16000,
+        }),
+      ]);
+      expect(report.totalSaleValue).toBe(100000);
+      expect(report.totalTax).toBe(16000);
+      expect(report.totalNet).toBe(84000);
+    },
+  );
+
+  it("never lets explicit zero stored values shrink the deed band below displayed sale bases", () => {
+    const people = [{ id: "vendor", fullName: "Vendor" }];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 300000,
+      owners: [
+        {
+          id: "title-one",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+        {
+          id: "title-two",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2011-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [
+        {
+          id: "housing-one",
+          ownerId: "vendor",
+          acquisitionType: "purchase",
+          acquisitionDate: "2010-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          consideration: 0,
+          transferValue: 0,
+          marketValue: "",
+          qualifyingRate: "housing-other-10",
+          housingCertificateConfirmed: true,
+        },
+        {
+          id: "housing-two",
+          ownerId: "vendor",
+          acquisitionType: "purchase",
+          acquisitionDate: "2011-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          consideration: "",
+          transferValue: "",
+          marketValue: "",
+          qualifyingRate: "housing-other-10",
+          housingCertificateConfirmed: true,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+
+    expect(report.vendors[0].rows.map((row) => row.attributedSaleValue)).toEqual([150000, 150000]);
+    expect(report.vendors[0].rows.map((row) => row.tax)).toEqual([8000, 8000]);
+    expect(report.totalSaleValue).toBe(300000);
+    expect(report.totalTax).toBe(16000);
+  });
+
+  it("does not let legacy transfer values inflate the deed band above displayed sale bases", () => {
+    const people = [{ id: "vendor", fullName: "Vendor" }];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 300000,
+      owners: [
+        {
+          id: "title-one",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+        {
+          id: "title-two",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2011-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: ["one", "two"].map((id, index) => ({
+        id: `housing-${id}`,
+        ownerId: "vendor",
+        acquisitionType: "purchase",
+        acquisitionDate: index === 0 ? "2010-01-01" : "2011-01-01",
+        transferDate: "2026-08-13",
+        shareNumerator: 1,
+        shareDenominator: 2,
+        transferValue: 200000,
+        qualifyingRate: "housing-other-10",
+        housingCertificateConfirmed: true,
+      })),
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+
+    expect(report.vendors[0].rows.map((row) => row.attributedSaleValue)).toEqual([150000, 150000]);
+    expect(report.vendors[0].rows.map((row) => row.selectedMethod?.basis)).toEqual([
+      150000, 150000,
+    ]);
+    expect(report.vendors[0].rows.map((row) => row.tax)).toEqual([8000, 8000]);
+    expect(report.totalSaleValue).toBe(300000);
+    expect(report.totalTax).toBe(16000);
+  });
+
+  it("ignores a non-positive stored fraction before calculating the Housing Authority band", () => {
+    const people = [{ id: "vendor", fullName: "Vendor" }];
+    const baseProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "",
+      owners: [
+        {
+          id: "vendor-title",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+    };
+    const validLot = {
+      id: "valid",
+      ownerId: "vendor",
+      acquisitionType: "purchase",
+      acquisitionDate: "2010-01-01",
+      transferDate: "2026-08-13",
+      shareNumerator: 1,
+      shareDenominator: 1,
+      transferValue: 100000,
+      qualifyingRate: "housing-other-10",
+      housingCertificateConfirmed: true,
+    };
+    const zeroShareLot = {
+      id: "zero-share",
+      ownerId: "vendor",
+      acquisitionType: "purchase",
+      acquisitionDate: "2010-01-01",
+      transferDate: "2026-08-13",
+      shareNumerator: 0,
+      shareDenominator: 1,
+      transferValue: 1000000,
+    };
+    const control = buildTaxCalculationReport(
+      { ...baseProperty, saleLots: [validLot] },
+      people,
+      [],
+    );
+    const report = buildTaxCalculationReport(
+      { ...baseProperty, saleLots: [zeroShareLot, validLot] },
+      people,
+      [],
+    );
+
+    expect(report.ignoredStoredTaxLotCount).toBe(1);
+    expect(report.vendors[0].ignoredStoredTaxLots).toEqual([
+      expect.objectContaining({ id: "zero-share", reason: expect.stringMatching(/fraction/i) }),
+    ]);
+    expect(report.totalTax).toBe(control.totalTax);
+    expect(report.vendors[0].rows).toEqual([
+      expect.objectContaining({
+        id: "valid",
+        selectedMethod: expect.objectContaining({ key: "housing-other-10", tax: 4000 }),
+        tax: 4000,
+      }),
+    ]);
+  });
+
+  it("does not replace a sole zero-share stored lot with the vendor's whole share", () => {
+    const people = [{ id: "vendor", fullName: "Vendor" }];
+    const property = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: "",
+      owners: [
+        {
+          id: "vendor-title",
+          personId: "vendor",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [],
+      declarations: [],
+      saleLots: [
+        {
+          id: "zero-share",
+          ownerId: "vendor",
+          acquisitionType: "purchase",
+          acquisitionDate: "2010-01-01",
+          transferDate: "2026-08-13",
+          shareNumerator: 0,
+          shareDenominator: 1,
+          transferValue: 1000000,
+          qualifyingRate: "housing-other-10",
+          housingCertificateConfirmed: true,
+        },
+      ],
+    };
+
+    const report = buildTaxCalculationReport(property, people, []);
+
+    expect(report.ignoredStoredTaxLotCount).toBe(1);
+    expect(report.vendors[0].ignoredStoredTaxLots).toEqual([
+      expect.objectContaining({ id: "zero-share", reason: expect.stringMatching(/fraction/i) }),
+    ]);
+    expect(report.vendors[0].rows).toEqual([
+      expect.objectContaining({
+        sourceKind: "initial",
+        originalOwnerRecordId: "vendor-title",
+        share: 1,
+      }),
+    ]);
+  });
+
+  it("ignores inheritance lots that do not resolve to their canonical deceased source", () => {
+    const deceased = (id, deathDate, declarationDate, value) => ({
+      id,
+      fullName: id,
+      isDeceased: true,
+      dateOfDeath: deathDate,
+      inheritanceBasis: "will",
+      willDate: "2019-01-01",
+      willHeirs: [{ id: `heir-${id}`, personId: "vendor", sharePercent: 100 }],
+      spouseIds: [],
+      causaMortisDeclarations: [
+        {
+          id: `cm-${id}`,
+          propertyId: "property",
+          status: "complete",
+          declaredShareNumerator: 1,
+          declaredShareDenominator: 2,
+          date: declarationDate,
+          notaryName: "N",
+          declarantPersonIds: ["vendor"],
+          immovablePropertyValue: value,
+        },
+      ],
+    });
+    const people = [
+      deceased("d1", "2020-06-01", "2020-07-01", 100000),
+      deceased("d2", "2021-06-01", "2021-07-01", 120000),
+      { id: "vendor", fullName: "Vendor" },
+    ];
+    const baseProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 400000,
+      owners: [
+        { id: "title-1", personId: "d1", shareNumerator: 1, shareDenominator: 2 },
+        { id: "title-2", personId: "d2", shareNumerator: 1, shareDenominator: 2 },
+      ],
+      transfers: [],
+      declarations: [],
+    };
+    const staleLot = {
+      id: "stale-inheritance",
+      ownerId: "vendor",
+      acquisitionType: "inheritance",
+      inheritanceSourceDeceasedId: "removed-source",
+      acquisitionDate: "2020-06-01",
+      transferDate: "2026-08-13",
+      shareNumerator: 1,
+      shareDenominator: 2,
+      acquisitionValue: 1,
+      acquisitionValueBasis: "cm-declared",
+      cmValueEligibilityConfirmed: true,
+      transferValue: 200000,
+    };
+    const control = buildTaxCalculationReport({ ...baseProperty, saleLots: [] }, people, []);
+
+    for (const lot of [staleLot, { ...staleLot, inheritanceSourceDeceasedId: "" }]) {
+      const report = buildTaxCalculationReport({ ...baseProperty, saleLots: [lot] }, people, []);
+      expect(report.totalTax).toBe(control.totalTax);
+      expect(report.ignoredStoredTaxLotCount).toBe(1);
+      expect(report.vendors[0].ignoredStoredTaxLots).toEqual([
+        expect.objectContaining({ id: "stale-inheritance" }),
+      ]);
+      expect(report.vendors[0].rows).toHaveLength(2);
+      expect(report.vendors[0].rows.every((row) => row.sourceKind === "inheritance")).toBe(true);
+      expect(report.vendors[0].rows.some((row) => row.id === "stale-inheritance")).toBe(false);
+    }
+  });
+
+  it("ignores donation lots that do not resolve to their canonical transfer source", () => {
+    const people = [
+      { id: "donor-1", fullName: "Donor One" },
+      { id: "donor-2", fullName: "Donor Two" },
+      { id: "vendor", fullName: "Vendor" },
+    ];
+    const baseProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 400000,
+      owners: [
+        {
+          id: "title-1",
+          personId: "donor-1",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "title-2",
+          personId: "donor-2",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2001-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift-1",
+          kind: "donation",
+          sellerId: "donor-1",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+          acquisitionValue: 100000,
+          acquisitionValueBasis: "deed-value",
+        },
+        {
+          id: "gift-2",
+          kind: "donation",
+          sellerId: "donor-2",
+          buyerId: "vendor",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2021-01-01",
+          acquisitionValue: 120000,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      declarations: [],
+    };
+    const staleLot = {
+      id: "stale-donation",
+      ownerId: "vendor",
+      acquisitionType: "donation",
+      donationSourceKey: "removed:source",
+      acquisitionDate: "2020-01-01",
+      previousAcquisitionDate: "2000-01-01",
+      transferDate: "2026-08-13",
+      shareNumerator: 1,
+      shareDenominator: 2,
+      acquisitionValue: 1,
+      acquisitionValueBasis: "deed-value",
+      transferValue: 200000,
+    };
+    const control = buildTaxCalculationReport({ ...baseProperty, saleLots: [] }, people, []);
+
+    for (const lot of [staleLot, { ...staleLot, donationSourceKey: "" }]) {
+      const report = buildTaxCalculationReport({ ...baseProperty, saleLots: [lot] }, people, []);
+      expect(report.totalTax).toBe(control.totalTax);
+      expect(report.ignoredStoredTaxLotCount).toBe(1);
+      expect(report.vendors[0].ignoredStoredTaxLots).toEqual([
+        expect.objectContaining({ id: "stale-donation" }),
+      ]);
+      expect(report.vendors[0].rows).toHaveLength(2);
+      expect(report.vendors[0].rows.every((row) => row.sourceKind === "donation")).toBe(true);
+      expect(report.vendors[0].rows.some((row) => row.id === "stale-donation")).toBe(false);
+    }
+  });
+
+  it("keeps invalid imported Donation Values pending instead of clamping them to zero", () => {
+    const people = [
+      { id: "donor", fullName: "Joseph Borg" },
+      { id: "donee", fullName: "Maria Borg" },
+    ];
+    const baseProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      owners: [
+        {
+          id: "donor-title",
+          personId: "donor",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          acquisitionDate: "2000-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "gift",
+          kind: "donation",
+          sellerId: "donor",
+          buyerId: "donee",
+          numerator: 1,
+          denominator: 1,
+          amountType: "seller-holding",
+          date: "2020-01-01",
+          acquisitionValue: -1,
+          acquisitionValueBasis: "deed-value",
+        },
+      ],
+      declarations: [],
+      saleLots: [],
+    };
+
+    ["", 200000].forEach((saleValue) => {
+      const report = buildTaxCalculationReport({ ...baseProperty, saleValue }, people, []);
+      const row = report.vendors[0].rows[0];
+      expect(row).toMatchObject({
+        sourceKind: "donation",
+        declaredValue: "",
+        requiresDonationAcquisitionValue: true,
+        selectedMethod: null,
+        tax: null,
+      });
+    });
+  });
+
+  it("marks a future initial-title date as an actionable source correction", () => {
+    const report = buildTaxCalculationReport(
+      {
+        id: "property",
+        saleDate: "2026-08-13",
+        saleValue: "",
+        owners: [
+          {
+            id: "title",
+            personId: "owner",
+            shareNumerator: 1,
+            shareDenominator: 1,
+            acquisitionDate: "2027-01-01",
+          },
+        ],
+        transfers: [],
+        declarations: [],
+        saleLots: [],
+      },
+      [{ id: "owner", fullName: "Maria Borg" }],
+      [],
+    );
+
+    expect(report.vendors[0].rows[0]).toMatchObject({
+      acquisitionDate: "2027-01-01",
+      requiresOriginalAcquisitionDate: true,
+      selectedMethod: null,
+    });
   });
 
   it("keeps ownership available when the selling value is omitted and leaves tax totals blank", () => {

@@ -135,6 +135,116 @@ describe("Income Tax Act Article 5A", () => {
     expect(traced.methods[0]).toMatchObject({ key: "whole-10", rule: "5A(5)(f)" });
   });
 
+  it("reports missing source facts even when the selling value is still blank", () => {
+    const oldGift = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: "",
+      marketValue: "",
+      acquisitionType: "donation",
+      acquisitionDate: "2010-01-01",
+      acquisitionValue: "",
+      acquisitionValueBasis: "",
+    });
+    const recentGift = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: "",
+      marketValue: "",
+      acquisitionType: "donation",
+      acquisitionDate: "2024-01-01",
+      previousAcquisitionDate: "",
+    });
+    const inheritance = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: "",
+      marketValue: "",
+      acquisitionType: "inheritance",
+      inheritanceDate: "2020-01-01",
+      acquisitionValue: "",
+    });
+
+    expect(oldGift.warning).toContain("consideration or market value");
+    expect(oldGift.sourceRequirements).toMatchObject({
+      donationAcquisitionValue: true,
+      donorAcquisitionDate: false,
+    });
+    expect(recentGift.warning).toContain("consideration or market value");
+    expect(recentGift.sourceRequirements).toMatchObject({
+      donationAcquisitionValue: false,
+      donorAcquisitionDate: true,
+    });
+    expect(inheritance.warning).toContain("consideration or market value");
+    expect(inheritance.sourceRequirements.causaMortisAcquisitionValue).toBe(true);
+  });
+
+  it("does not request Article 5A source facts for a non-inheritance judicial sale", () => {
+    const pendingValue = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: "",
+      marketValue: "",
+      acquisitionType: "donation",
+      acquisitionDate: "",
+      acquisitionValue: "",
+      isJudicialSale: true,
+    });
+    expect(pendingValue.sourceRequirements).toEqual({
+      acquisitionDate: false,
+      donorAcquisitionDate: false,
+      donationAcquisitionValue: false,
+      causaMortisAcquisitionValue: false,
+    });
+
+    const outOfScope = assessArticle5ATransfer({
+      ...baseLot,
+      acquisitionType: "donation",
+      acquisitionDate: "",
+      isJudicialSale: true,
+    });
+    expect(outOfScope).toMatchObject({ status: "out-of-scope", appliedRule: "5A(3)(f)" });
+  });
+
+  it("does not let an unknown saved special-treatment key hide required source facts", () => {
+    const result = assessArticle5ATransfer({
+      ...baseLot,
+      consideration: "",
+      marketValue: "",
+      acquisitionType: "donation",
+      acquisitionDate: "2010-01-01",
+      acquisitionValue: "",
+      acquisitionValueBasis: "",
+      article5ASpecialTreatment: "retired-unknown-treatment",
+    });
+
+    expect(result.sourceRequirements.donationAcquisitionValue).toBe(true);
+  });
+
+  it("treats negative Donation Values and future source dates as facts needing correction", () => {
+    const invalidValue = assessArticle5ATransfer({
+      ...baseLot,
+      acquisitionType: "donation",
+      acquisitionDate: "2010-01-01",
+      acquisitionValue: -1,
+      acquisitionValueBasis: "deed-value",
+    });
+    expect(invalidValue.sourceRequirements.donationAcquisitionValue).toBe(true);
+    expect(invalidValue.methods).toEqual([]);
+    expect(invalidValue.warning).toMatch(/valid non-negative acquisition value/i);
+
+    const futureSource = assessArticle5ATransfer({
+      ...baseLot,
+      acquisitionDate: "2027-01-01",
+    });
+    expect(futureSource.sourceRequirements.acquisitionDate).toBe(true);
+    expect(futureSource.warning).toMatch(/cannot be after the transfer date/i);
+
+    const impossibleDonorDate = assessArticle5ATransfer({
+      ...baseLot,
+      acquisitionType: "donation",
+      acquisitionDate: "2024-01-01",
+      previousAcquisitionDate: "2025-01-01",
+    });
+    expect(impossibleDonorDate.sourceRequirements.donorAcquisitionDate).toBe(true);
+  });
+
   it("prices the elected flat rate on the donor's acquisition date beyond five years", () => {
     const result = assessArticle5ATransfer({
       ...baseLot,

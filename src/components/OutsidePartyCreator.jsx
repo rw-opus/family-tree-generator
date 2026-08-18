@@ -20,12 +20,13 @@ export function OutsidePartyCreator({
     event.preventDefault();
     const name = draft.name.trim();
     if (!name) return;
-    onCreate({
+    const result = onCreate({
       id: crypto.randomUUID(),
       type: draft.type,
       name,
       registrationNumber: draft.registrationNumber.trim(),
     });
+    if (result === null || result === false) return;
     setDraft(blankParty());
   };
 

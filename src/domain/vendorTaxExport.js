@@ -141,7 +141,19 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
   const taxRows = taxChoiceRows(report, {
     sellingPriceAvailable: hasNumericValue(property.saleValue),
   });
-  const expandedRowCount = historyRows.length + taxRows.length + 8;
+  const ignoredLegacyWarnings = (report.vendors || []).flatMap((vendor) =>
+    (vendor.ignoredStoredTaxLots || []).map(
+      (ignoredLot) => `${vendor.name}: saved legacy tax lot not used. ${ignoredLot.reason}`,
+    ),
+  );
+  const ignoredLegacyRows = ignoredLegacyWarnings.length
+    ? [
+        rowXml([mergedCell("Review warnings", 17, "Title")]),
+        ...ignoredLegacyWarnings.map((warning) => rowXml([mergedCell(warning, 17)])),
+        rowXml([]),
+      ]
+    : [];
+  const expandedRowCount = historyRows.length + taxRows.length + ignoredLegacyRows.length + 8;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -178,6 +190,7 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
      numberCell(property.saleValue),
    ])}
    ${rowXml([])}
+   ${ignoredLegacyRows.join("\n   ")}
    ${rowXml([mergedCell("Full succession and ownership history", 17, "Title")])}
    ${rowXml([
      stringCell("Event", "Header"),

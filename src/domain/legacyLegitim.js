@@ -569,6 +569,7 @@ export function calculateLegacyArticle619Legitim({ people = [], deceased = {} } 
       }),
     ),
     nearestDegree: nearest.degree,
+    missingDeathDatePersonIds: nearest.missing.map((person) => person.id),
     diagnostics,
     warnings: diagnostics,
     unresolved: diagnostics.length > 0,

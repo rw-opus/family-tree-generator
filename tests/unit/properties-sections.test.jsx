@@ -116,6 +116,72 @@ describe("unified Property & Tax workspace", () => {
     expect(container.querySelector('button[aria-label="Remove transfer"]')).toBeNull();
   });
 
+  it("warns visibly when a saved legacy tax lot cannot be matched safely", () => {
+    const ambiguousProperty = {
+      id: "property",
+      saleDate: "2026-08-13",
+      saleValue: 200000,
+      owners: [
+        {
+          id: "a-title",
+          personId: "a",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2000-01-01",
+        },
+        {
+          id: "b-title",
+          personId: "b",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          acquisitionDate: "2010-01-01",
+        },
+      ],
+      transfers: [
+        {
+          id: "b-to-a",
+          kind: "sale",
+          sellerId: "b",
+          buyerId: "a",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2020-01-01",
+        },
+      ],
+      declarations: [],
+      saleLots: [
+        {
+          id: "ambiguous-lot",
+          ownerId: "a",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          transferDate: "2026-08-13",
+          transferValue: 200000,
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <Properties
+          properties={[ambiguousProperty]}
+          people={[
+            { id: "a", fullName: "Maria Borg" },
+            { id: "b", fullName: "Joseph Borg" },
+          ]}
+          outsideParties={[]}
+          singleProperty
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    const alert = container.querySelector('.tax-calculation-panel [role="alert"]');
+    expect(alert.textContent).toContain("saved legacy tax lot");
+    expect(alert.textContent).toContain("current title history");
+  });
+
   it("links both parties from the single transfer event in Tax history", () => {
     const onSelectPerson = vi.fn();
     const onSelectOutsideOwner = vi.fn();

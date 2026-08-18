@@ -137,6 +137,46 @@ describe("FinalWithholdingTaxSection", () => {
     expect(container.querySelector('input[aria-label="Original acquisition date"]')).toBeNull();
   });
 
+  it("lets a deceased donor complete the original acquisition date needed by a later donee", () => {
+    const onConfirmInitialAcquisition = vi.fn();
+    const row = {
+      id: "deceased-donor-original-date",
+      sourceKind: "initial",
+      provenance: "Original ownership",
+      originalOwnerRecordId: "donor-title",
+      sourceTransferId: "gift",
+      requiresOriginalAcquisitionDate: true,
+      warning: "Enter this original owner's acquisition date for the later donated share.",
+    };
+
+    act(() =>
+      root.render(
+        <FinalWithholdingTaxSection
+          additionalResolutionRows={[row]}
+          isPersonDeceased
+          onConfirmInitialAcquisition={onConfirmInitialAcquisition}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".fwt-status-row strong").textContent).toBe(
+      "Source details required",
+    );
+    changeInput(
+      container.querySelector('input[aria-label="Original acquisition date"]'),
+      "01012010",
+    );
+    const button = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent.trim() === "Confirm date",
+    );
+    act(() => button.click());
+
+    expect(onConfirmInitialAcquisition).toHaveBeenCalledWith({
+      row,
+      acquisitionDate: "2010-01-01",
+    });
+  });
+
   it("routes a donation source to the donor's original acquisition details, not CM details", () => {
     const onOpenSourcePerson = vi.fn();
     const vendorTax = {

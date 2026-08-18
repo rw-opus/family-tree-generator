@@ -10,6 +10,7 @@ import {
   removePersonFromFamilyGroup,
 } from "../../src/domain/caseModel.js";
 import {
+  buildPropertyOwnership,
   confirmedIntestacyAllocations,
   intestateAllocations,
   legacyIntestacyAllocationSignature,
@@ -102,6 +103,84 @@ describe("case model migration", () => {
     const first = normalizeCase(legacyCase());
     expect(normalizeCase(legacyCase())).toEqual(first);
     expect(normalizeCase(first)).toEqual(first);
+  });
+
+  it("binds an unscoped legacy causa mortis declaration to the sole property", () => {
+    const result = normalizeCase({
+      id: "legacy-cm-property",
+      properties: [{ id: "property-1", owners: [] }],
+      people: [
+        {
+          id: "deceased",
+          fullName: "Maria Borg",
+          causaMortisDeclarations: [{ id: "legacy-cm", propertyId: "", status: "complete" }],
+        },
+      ],
+    });
+
+    expect(result.people[0].causaMortisDeclarations[0].propertyId).toBe("property-1");
+    expect(normalizeCase(result)).toEqual(result);
+  });
+
+  it("leaves an unscoped legacy causa mortis declaration unresolved across properties", () => {
+    const result = normalizeCase({
+      id: "ambiguous-cm-property",
+      properties: [{ id: "property-1" }, { id: "property-2" }],
+      people: [
+        {
+          id: "deceased",
+          fullName: "Maria Borg",
+          causaMortisDeclarations: [{ id: "legacy-cm", propertyId: "", status: "complete" }],
+        },
+      ],
+    });
+
+    expect(result.people[0].causaMortisDeclarations[0].propertyId).toBe("");
+  });
+
+  it("reopens legacy owners, transfers and will beneficiaries with the same durable IDs", () => {
+    const legacy = {
+      id: "legacy-record-ids",
+      people: [
+        {
+          id: "owner",
+          fullName: "Joseph Borg",
+          willHeirs: [{ personId: "beneficiary", sharePercent: 100 }],
+        },
+        { id: "beneficiary", fullName: "Maria Borg" },
+      ],
+      properties: [
+        {
+          id: "property",
+          owners: [{ personId: "owner", sharePercent: 100 }],
+          transfers: [
+            {
+              kind: "donation",
+              sellerId: "owner",
+              buyerId: "beneficiary",
+              numerator: 1,
+              denominator: 2,
+              amountType: "whole-property",
+              date: "2020-01-01",
+            },
+          ],
+        },
+      ],
+    };
+
+    const restored = normalizeCase(legacy);
+    const reopened = normalizeCase(JSON.parse(JSON.stringify(restored)));
+
+    expect(restored.properties[0].owners[0].id).toBe("property:owner:1");
+    expect(restored.properties[0].transfers[0].id).toBe("property:transfer:1");
+    expect(restored.people[0].willHeirs[0].id).toBe("owner:will-heir:1");
+    expect(reopened.properties[0].owners[0].id).toBe(restored.properties[0].owners[0].id);
+    expect(reopened.properties[0].transfers[0].id).toBe(restored.properties[0].transfers[0].id);
+    expect(reopened.people[0].willHeirs[0].id).toBe(restored.people[0].willHeirs[0].id);
+    const ownership = buildPropertyOwnership(restored.people, restored.properties[0]);
+    expect(ownership.tranchesByOwner.get("beneficiary")?.[0]?.sourceTransferId).toBe(
+      "property:transfer:1",
+    );
   });
 
   it("recovers safely from malformed JSON collection fields", () => {

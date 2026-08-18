@@ -44,6 +44,71 @@ describe("cloud save queue", () => {
     expect(save.mock.calls.map(([snapshot]) => snapshot.title)).toEqual(["First", "Second"]);
   });
 
+  it("coalesces every not-yet-started write into one latest snapshot", async () => {
+    const releases = [];
+    const save = vi.fn(
+      (snapshot) => new Promise((resolve) => releases.push(() => resolve(snapshot))),
+    );
+    const starts = [];
+    const queue = createCloudSaveQueue(save, {
+      setTimer: () => 1,
+      clearTimer: () => {},
+      onSaveStart: (snapshot) => starts.push(snapshot.title),
+    });
+
+    queue.schedule({ title: "A" });
+    const first = queue.flush();
+    queue.schedule({ title: "B" });
+    const second = queue.flush();
+    queue.schedule({ title: "C" });
+    const third = queue.flush();
+
+    expect(second).toBe(third);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(save.mock.calls.map(([snapshot]) => snapshot.title)).toEqual(["A"]);
+    releases.shift()();
+    await first;
+    await Promise.resolve();
+    expect(save.mock.calls.map(([snapshot]) => snapshot.title)).toEqual(["A", "C"]);
+    expect(starts).toEqual(["A", "C"]);
+    releases.shift()();
+    await expect(Promise.all([second, third])).resolves.toEqual([{ title: "C" }, { title: "C" }]);
+    expect(queue.hasUnsavedChanges()).toBe(false);
+  });
+
+  it("keeps a bounded single unsent slot during a long active request", async () => {
+    const releases = [];
+    const save = vi.fn(
+      (snapshot) => new Promise((resolve) => releases.push(() => resolve(snapshot))),
+    );
+    const starts = [];
+    const queue = createCloudSaveQueue(save, {
+      setTimer: () => 1,
+      clearTimer: () => {},
+      onSaveStart: (snapshot) => starts.push(snapshot.sequence),
+    });
+
+    queue.schedule({ sequence: 0 });
+    const active = queue.flush();
+    const queued = [];
+    for (let sequence = 1; sequence <= 20; sequence += 1) {
+      queue.schedule({ sequence });
+      queued.push(queue.flush());
+    }
+
+    expect(new Set(queued).size).toBe(1);
+    await Promise.resolve();
+    expect(save.mock.calls.map(([snapshot]) => snapshot.sequence)).toEqual([0]);
+    releases.shift()();
+    await active;
+    await Promise.resolve();
+    expect(save.mock.calls.map(([snapshot]) => snapshot.sequence)).toEqual([0, 20]);
+    expect(starts).toEqual([0, 20]);
+    releases.shift()();
+    await Promise.all(queued);
+  });
+
   it("coalesces repeated flushes of the same revision", async () => {
     let release;
     const save = vi.fn(
@@ -90,6 +155,7 @@ describe("cloud save queue", () => {
 
   it("rebases a queued newer edit onto the revision returned by the earlier save", async () => {
     const releases = [];
+    const onSaveSuccess = vi.fn();
     const save = vi.fn(
       (snapshot) => new Promise((resolve) => releases.push(() => resolve(snapshot))),
     );
@@ -101,6 +167,7 @@ describe("cloud save queue", () => {
         ...snapshot,
         storageRevision: saved.storageRevision + 1,
       }),
+      onSaveSuccess,
     });
 
     queue.schedule({ id: "tree", title: "First", storageRevision: 1 });
@@ -121,6 +188,10 @@ describe("cloud save queue", () => {
     });
     releases.shift()();
     await second;
+    expect(onSaveSuccess.mock.calls[1][1]).toMatchObject({
+      title: "Newer local edit",
+      storageRevision: 2,
+    });
   });
 
   it("reports a conflict distinctly and retains later local changes as unsaved", async () => {
@@ -179,6 +250,8 @@ describe("cloud save queue", () => {
     const loaded = { id: "tree", title: "Loaded", storageRevision: 4 };
 
     queue.acknowledge(loaded);
+    expect(queue.isSnapshotSaved({ ...loaded })).toBe(true);
+    expect(queue.isSnapshotSaved({ ...loaded, title: "Changed" })).toBe(false);
     queue.schedule({ ...loaded });
 
     expect(queue.getState()).toMatchObject({ phase: "saved", dirty: false });

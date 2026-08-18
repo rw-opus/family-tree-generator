@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InitialOwnershipEditor } from "../../src/components/InitialOwnershipEditor.jsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -136,5 +136,95 @@ describe("InitialOwnershipEditor percentage display", () => {
     expect(container.querySelector(".share-status").textContent).toContain(
       "Fractions entered: 99.99% — must equal 100%",
     );
+  });
+
+  it("keeps rapid numeric typing local and commits the exact owners once on blur", () => {
+    const onChange = vi.fn(() => ({}));
+    const owners = [
+      {
+        id: "title",
+        personId: "owner",
+        shareNumerator: 1,
+        shareDenominator: 1,
+        sharePercent: 100,
+      },
+    ];
+    act(() =>
+      root.render(
+        <InitialOwnershipEditor
+          property={{ owners }}
+          people={[{ id: "owner", fullName: "Owner" }]}
+          onChange={onChange}
+        />,
+      ),
+    );
+
+    const numerator = container.querySelector('input[aria-label="Initial ownership numerator"]');
+    act(() => {
+      for (const value of ["", "2", "25"]) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+          numerator,
+          value,
+        );
+        numerator.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    expect(numerator.value).toBe("25");
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => {
+      numerator.focus();
+      numerator.blur();
+    });
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      id: "title",
+      shareNumerator: "25",
+      shareDenominator: 1,
+    });
+  });
+
+  it("exposes one synchronous page-leave flush and retains the draft when it fails", () => {
+    let controller;
+    const onChange = vi.fn().mockReturnValueOnce(null).mockReturnValueOnce({});
+    act(() =>
+      root.render(
+        <InitialOwnershipEditor
+          property={{
+            owners: [
+              {
+                id: "title",
+                personId: "owner",
+                shareNumerator: 1,
+                shareDenominator: 1,
+              },
+            ],
+          }}
+          people={[{ id: "owner", fullName: "Owner" }]}
+          onChange={onChange}
+          onRegisterPendingFlush={(nextController) => {
+            controller = nextController;
+          }}
+        />,
+      ),
+    );
+    const denominator = container.querySelector(
+      'input[aria-label="Initial ownership denominator"]',
+    );
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        denominator,
+        "3",
+      );
+      denominator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(controller.hasPending()).toBe(true);
+
+    expect(controller.flush()).toBe(false);
+    expect(controller.hasPending()).toBe(true);
+    expect(controller.flush()).toBe(true);
+    expect(controller.hasPending()).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.calls[1][0][0].shareDenominator).toBe("3");
   });
 });

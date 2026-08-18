@@ -40,6 +40,10 @@ function InitialAcquisitionResolution({ row, onConfirm }) {
       <label className="fwt-acquisition-field" htmlFor={`fwt-acquisition-${row.id}`}>
         <span>Original acquisition date</span>
         <DateInput
+          data-tax-readiness-field="original-acquisition-date"
+          data-tax-readiness-target-id={
+            row.originalOwnerRecordId || row.sourceTransferId || row.id || ""
+          }
           id={`fwt-acquisition-${row.id}`}
           value={acquisitionDate}
           onChange={setAcquisitionDate}
@@ -78,6 +82,8 @@ function DonationValueResolution({ row, onConfirm }) {
         <span className="fwt-money-input">
           <span aria-hidden="true">€</span>
           <input
+            data-tax-readiness-field="donation-value"
+            data-tax-readiness-target-id={row.sourceTransferId || row.id || ""}
             id={`fwt-donation-value-${row.id}`}
             type="number"
             inputMode="decimal"
@@ -98,16 +104,13 @@ function DonationValueResolution({ row, onConfirm }) {
 
 function PendingSource({
   row,
-  isPersonDeceased,
   onOpenSourcePerson,
   onConfirmInitialAcquisition,
   onConfirmDonationAcquisitionValue,
 }) {
   const inherited = row.sourceKind === "inheritance" && Boolean(row.provenancePersonId);
   const initialOwnership =
-    !isPersonDeceased &&
-    row.sourceKind === "initial" &&
-    row.requiresOriginalAcquisitionDate === true;
+    row.sourceKind === "initial" && row.requiresOriginalAcquisitionDate === true;
   // Every row reaching this list is one the calculation could not complete, so
   // it must not be described as optional.
   const warning = row.warning || "This source is not complete, so no tax is calculated for it yet.";
@@ -187,7 +190,9 @@ export function FinalWithholdingTaxSection({
   });
   const isPending = Boolean(vendorTax) && (vendorTax.tax == null || pendingRows.length > 0);
   const status = !vendorTax
-    ? "Not a current vendor"
+    ? isPersonDeceased
+      ? "Source details required"
+      : "Not a current vendor"
     : isPending
       ? "Not calculated"
       : money.format(Number(vendorTax.tax) || 0);
@@ -211,7 +216,6 @@ export function FinalWithholdingTaxSection({
               <PendingSource
                 key={row.id || `${row.provenance || "source"}-${index}`}
                 row={row}
-                isPersonDeceased={isPersonDeceased}
                 onOpenSourcePerson={onOpenSourcePerson}
                 onConfirmInitialAcquisition={onConfirmInitialAcquisition}
                 onConfirmDonationAcquisitionValue={onConfirmDonationAcquisitionValue}

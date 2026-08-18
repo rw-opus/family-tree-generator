@@ -1,4 +1,12 @@
-import { test, expect, openEstate, openPropertyWorkspace, estate } from "./fixtures.js";
+import {
+  test,
+  expect,
+  openEstate,
+  openPropertyWorkspace,
+  estate,
+  WORKSPACE_KEY,
+  PEOPLE,
+} from "./fixtures.js";
 
 test.describe("Property & Tax workspace", () => {
   test.beforeEach(async ({ seeded, page }) => {
@@ -57,6 +65,45 @@ test.describe("Property & Tax workspace", () => {
     await expect(ownership.locator(".ledger-total")).toContainText("100%");
   });
 
+  test("retains exact initial ownership when the page reloads during an active edit", async ({
+    page,
+  }) => {
+    await openPropertyWorkspace(page);
+    const percentages = page.locator('input[aria-label="Initial ownership percentage"]');
+    await percentages.nth(0).fill("60");
+    await percentages.nth(1).fill("40");
+
+    // Reload without blurring or waiting for the normal cloud-style debounce.
+    await page.reload();
+    await page.locator("button.family-name-button").first().click();
+    await openPropertyWorkspace(page);
+
+    await expect(
+      page.locator('input[aria-label="Initial ownership percentage"]').nth(0),
+    ).toHaveValue("60");
+    await expect(
+      page.locator('input[aria-label="Initial ownership percentage"]').nth(1),
+    ).toHaveValue("40");
+    const owners = await page.evaluate((key) => {
+      const workspace = JSON.parse(localStorage.getItem(key));
+      return workspace.trees[0].properties[0].owners;
+    }, WORKSPACE_KEY);
+    expect(owners).toEqual([
+      expect.objectContaining({
+        personId: expect.any(String),
+        shareNumerator: 3,
+        shareDenominator: 5,
+        acquisitionDate: "1990-05-01",
+      }),
+      expect.objectContaining({
+        personId: expect.any(String),
+        shareNumerator: 2,
+        shareDenominator: 5,
+        acquisitionDate: "2010-05-01",
+      }),
+    ]);
+  });
+
   test("traces succession and opens the printable history from ownership", async ({ page }) => {
     await openPropertyWorkspace(page);
 
@@ -68,6 +115,65 @@ test.describe("Property & Tax workspace", () => {
 
     await trace.getByRole("button", { name: "View full history" }).click();
     await expect(page.locator(".succession-history-dialog")).toBeVisible();
+  });
+
+  test("guides person-card tax setup and preserves Skip for now across reload", async ({
+    page,
+  }) => {
+    await page.locator(`[data-person-id="${PEOPLE.pawlu}"]`).click();
+    await page.getByRole("button", { name: "Edit identity" }).click();
+    await page.getByLabel("Surname", { exact: true }).fill("");
+    await page.getByLabel("Surname", { exact: true }).press("Tab");
+    await page.getByRole("button", { name: "Back to Tree" }).click();
+    await openPropertyWorkspace(page);
+    const launcher = page.locator(".tax-readiness-launcher");
+    await expect(launcher).toContainText("2 people need information");
+
+    await launcher.getByRole("button", { name: "Start guided tax setup" }).click();
+    const guide = page.locator(".tax-readiness-guide-bar");
+    await expect(guide).toContainText("Marija Borg");
+    await expect(guide).toContainText("Enter this woman's surname at birth");
+    await guide.getByRole("button", { name: "Skip for now" }).click();
+    await expect(guide).toContainText("Pawlu");
+    await guide.getByRole("button", { name: "Skip for now" }).click();
+
+    await expect(page.locator(".property-workspace-page")).toBeVisible();
+    await expect(page.locator(".tax-readiness-launcher")).toContainText("2 skipped for now");
+    await page.reload();
+    await page.locator("button.family-name-button").first().click();
+    await openPropertyWorkspace(page);
+    await expect(page.locator(".tax-readiness-launcher")).toContainText("2 skipped for now");
+
+    await page.getByRole("button", { name: "Resume guided tax setup" }).click();
+    await expect(guide).toContainText("Marija Borg");
+    await expect(guide).toContainText("Person 1 of 2");
+    await expect(guide.getByRole("button", { name: "Previous" })).toBeDisabled();
+    await guide.getByRole("button", { name: "Go to section" }).click();
+    const surnameAtBirth = page.getByLabel("Surname at birth");
+    await expect(surnameAtBirth).toBeEnabled();
+    await expect(surnameAtBirth).toBeFocused();
+    const visibleClearance = await page.evaluate(() => {
+      const guideBottom = document
+        .querySelector(".tax-readiness-guide-bar")
+        .getBoundingClientRect().bottom;
+      const fieldTop = document
+        .querySelector('[data-person-field="surname-at-birth"]')
+        .getBoundingClientRect().top;
+      return fieldTop - guideBottom;
+    });
+    expect(visibleClearance).toBeGreaterThanOrEqual(0);
+    await surnameAtBirth.fill("Borg");
+    await surnameAtBirth.press("Tab");
+    await expect(guide.getByRole("button", { name: /Next card/ })).toBeVisible();
+    await guide.getByRole("button", { name: /Next card/ }).click();
+    await expect(guide).toContainText("Pawlu");
+    await expect(guide).toContainText("Person 2 of 2");
+    await guide.getByRole("button", { name: "Go to section" }).click();
+    const surname = page.getByLabel("Surname", { exact: true });
+    await expect(surname).toBeFocused();
+    await surname.fill("Camilleri");
+    await expect(surname).toHaveValue("Camilleri");
+    await expect(surname).toBeFocused();
   });
 
   test("scrolls a chosen section clear of the sticky menu", async ({ page }) => {
