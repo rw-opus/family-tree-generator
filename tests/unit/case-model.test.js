@@ -1271,7 +1271,7 @@ describe("family-scoped person removal", () => {
     });
   });
 
-  it("does not regenerate a deleted parent when another person is added", () => {
+  it("does not regenerate a deleted parent from a stale update when another person is added", () => {
     const input = removableCase({
       people: [
         { id: "person", fullName: "Maria Borg" },
@@ -1281,12 +1281,16 @@ describe("family-scoped person removal", () => {
 
     const removed = removePersonFromFamilyGroup(input, "family-a", "person");
     const result = reconcilePeopleUpdate(removed, "family-a", [
-      ...removed.people,
+      // The editor update was prepared before deletion and still contains Maria.
+      ...input.people,
       { id: "new-person", fullName: "New Person" },
     ]);
 
     expect(result.people.some((person) => person.id === "person")).toBe(false);
-    expect(result.familyGroups[0].personIds).toEqual(["keeper", "new-person"]);
+    expect(result.familyGroups[0]).toMatchObject({
+      personIds: ["keeper", "new-person"],
+      excludedPersonIds: ["person"],
+    });
     expect(result.people.find((person) => person.id === "keeper").motherId).toBe("");
   });
 

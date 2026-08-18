@@ -292,6 +292,15 @@ function validateReferenceArray(value, path, validIds, issues) {
   return value.length;
 }
 
+function validateIdentifierArray(value, path, issues) {
+  if (value === undefined) return 0;
+  if (!requireArray(value, path, issues)) return 0;
+  value.forEach((candidate, index) =>
+    validateIdentifier(candidate, `${path}[${index}]`, issues, { required: true }),
+  );
+  return value.length;
+}
+
 function validateRecordPartyReferences(records, path, fields, partyIds, issues) {
   records.forEach((record, index) => {
     if (!isRecord(record)) return;
@@ -608,12 +617,7 @@ function validateCurrentTree(tree) {
       requireArray(group.personIds, `${groupPath}.personIds`, issues);
     }
     if (group.excludedPersonIds !== undefined) {
-      relationshipReferences += validateReferenceArray(
-        group.excludedPersonIds,
-        `${groupPath}.excludedPersonIds`,
-        peopleIds,
-        issues,
-      );
+      validateIdentifierArray(group.excludedPersonIds, `${groupPath}.excludedPersonIds`, issues);
     }
     if (typeof group.rootPersonId !== "string") {
       issues.push(

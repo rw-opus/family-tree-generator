@@ -153,7 +153,7 @@ describe("persisted family-tree schema", () => {
     }
   });
 
-  it("persists hidden retained identities as validated family-group exclusions", () => {
+  it("persists family-group deletion tombstones after the identity is removed", () => {
     const retained = currentTree({
       people: [{ id: "person-1" }, { id: "retained-person" }],
       familyGroups: [
@@ -165,11 +165,14 @@ describe("persisted family-tree schema", () => {
         },
       ],
     });
-    const missing = structuredClone(retained);
-    missing.familyGroups[0].excludedPersonIds = ["missing-person"];
+    const deleted = structuredClone(retained);
+    deleted.people = deleted.people.filter((person) => person.id !== "retained-person");
+    const malformed = structuredClone(deleted);
+    malformed.familyGroups[0].excludedPersonIds = [""];
 
     expect(prepareTreeForPersistence(retained)).toEqual(retained);
-    expect(() => prepareTreeForPersistence(missing)).toThrowError(
+    expect(prepareTreeForPersistence(deleted)).toEqual(deleted);
+    expect(() => prepareTreeForPersistence(malformed)).toThrowError(
       expect.objectContaining({ code: TREE_DATA_ERROR_CODES.INVALID }),
     );
   });
