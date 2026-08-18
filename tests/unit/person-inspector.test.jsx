@@ -119,6 +119,202 @@ describe("PersonInspector", () => {
     expect(container.textContent).not.toContain("Back to Tree");
   });
 
+  it("keeps pure family-tree editing free of legal and tax requirements", () => {
+    let latestPeople;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          fullName: "Maria Borg",
+          givenNames: "Maria",
+          surname: "Borg",
+          sex: "Female",
+          spouseIds: [],
+          isPotentialIntestateParent: true,
+          survivalStatusRequired: false,
+          survivalStatusConfirmed: "alive",
+          causaMortisDeclarations: [{ id: "hidden-cm", status: "draft" }],
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          legalWorkspaceEnabled={false}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+          causaMortisCoverage={[{ status: "missing" }]}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    expect(container.textContent).toContain("Family tree only");
+    expect(container.textContent).toContain("the tree can be printed at any time");
+    expect(container.querySelector('button[title="Add father"]')?.disabled).toBe(false);
+    expect(container.querySelector('button[title="Add child"]')?.disabled).toBe(false);
+    act(() => container.querySelector('button[title="Add father"]').click());
+    expect(latestPeople).toHaveLength(2);
+    expect(latestPeople[0].fatherId).toBe(latestPeople[1].id);
+    expect(container.textContent).not.toContain("Sold/Donated Property Share");
+    expect(container.textContent).not.toContain("Possible parent inheritance");
+    expect(container.textContent).not.toContain("Succession");
+    expect(container.textContent).not.toContain("Causa Mortis");
+    expect(container.textContent).not.toContain("Final Withholding Tax");
+
+    const deceased = container.querySelector('.deceased-status-control input[type="checkbox"]');
+    act(() => deceased.click());
+
+    expect(latestPeople[0]).toMatchObject({ isDeceased: true, dateOfDeath: "" });
+    expect(latestPeople[0]).not.toHaveProperty("inheritanceBasis");
+    expect(latestPeople[0]).not.toHaveProperty("unmarriedOrWidowedAtDeath");
+    expect(latestPeople[0].causaMortisDeclarations).toEqual([{ id: "hidden-cm", status: "draft" }]);
+    expect(latestPeople[0]).toMatchObject({
+      survivalStatusRequired: false,
+      survivalStatusConfirmed: "alive",
+    });
+    expect(container.textContent).toContain("Date of death");
+    expect(container.textContent).toContain("optional");
+    expect(container.textContent).toContain("a year, or an approximate date");
+    const deathDate = container.querySelector('input[aria-label="Date of death (optional)"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        deathDate,
+        "about 1858",
+      );
+      deathDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(latestPeople[0]).toMatchObject({
+      dateOfDeath: "",
+      deathDateText: "about 1858",
+      survivalStatusRequired: false,
+      survivalStatusConfirmed: "alive",
+    });
+    expect(container.querySelector(".date-input-warning")).toBeNull();
+    expect(container.textContent).not.toContain("Inheritance basis");
+    expect(container.textContent).not.toContain("Marital status at death");
+  });
+
+  it("does not guess a father or mother role for an Other-sex parent's child", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              fullName: "Alex Borg",
+              givenNames: "Alex",
+              surname: "Borg",
+              sex: "Other",
+              spouseIds: [],
+            },
+          ]}
+          legalWorkspaceEnabled={false}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    ["Wife / husband", "Partner", "Child"].forEach((label) => {
+      const action = [...container.querySelectorAll(".relationship-actions button")].find(
+        (button) => button.textContent.trim() === label,
+      );
+      expect(action.disabled).toBe(true);
+      expect(action.title).toContain("Choose Male or Female");
+    });
+    expect(container.querySelector('button[title="Add father"]')?.disabled).toBe(false);
+  });
+
+  it("uses a later exact legal death date when returning to pure-tree display", () => {
+    let latestPeople;
+    function Harness({ legalWorkspaceEnabled }) {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          fullName: "Maria Borg",
+          givenNames: "Maria",
+          surname: "Borg",
+          surnameAtBirth: "Borg",
+          sex: "Female",
+          spouseIds: [],
+          isDeceased: true,
+          designations: ["Deceased"],
+          dateOfDeath: "",
+          deathDateText: "about 1858",
+          inheritanceBasis: "intestacy",
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          legalWorkspaceEnabled={legalWorkspaceEnabled}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness legalWorkspaceEnabled />));
+    setInputValue(".succession-death-date input", "11/02/1859");
+    expect(latestPeople[0]).toMatchObject({
+      dateOfDeath: "1859-02-11",
+      deathDateText: "11/02/1859",
+    });
+
+    act(() => root.render(<Harness legalWorkspaceEnabled={false} />));
+    expect(container.querySelector('input[aria-label="Date of death (optional)"]').value).toBe(
+      "11/02/1859",
+    );
+  });
+
+  it("protects retained legal records while pure mode hides their editors", () => {
+    const people = [
+      {
+        id: "person",
+        fullName: "Maria Borg",
+        givenNames: "Maria",
+        surname: "Borg",
+        surnameAtBirth: "Borg",
+        sex: "Female",
+        spouseIds: [],
+      },
+      {
+        id: "other",
+        fullName: "Joseph Vella",
+        givenNames: "Joseph",
+        surname: "Vella",
+        surnameAtBirth: "Vella",
+        sex: "Male",
+        spouseIds: [],
+      },
+    ];
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          familyPersonIds={people.map((person) => person.id)}
+          legalWorkspaceEnabled={false}
+          hiddenPropertyTaxDataPresent
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onDeletePerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector("button.danger-button").disabled).toBe(true);
+    expect(container.textContent).toContain(
+      "Switch to Property, succession & tax to review the retained legal records",
+    );
+  });
+
   it("creates an editable missing mother only after explicit confirmation", () => {
     let latestPeople = [];
     const initialPeople = [
@@ -1695,7 +1891,7 @@ describe("PersonInspector", () => {
     );
 
     const maritalStatus = container.querySelector(
-      'input[aria-label="No spouse survived this person"]',
+      'input[aria-label="No spouse survived the deceased"]',
     );
     expect(maritalStatus).not.toBeNull();
     expect(maritalStatus.checked).toBe(false);
@@ -1720,6 +1916,63 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain(
       "Maria Borg is excluded from this succession while this setting is selected",
     );
+  });
+
+  it("hides spouse-survival controls only for a pre-2005 intestacy with descendants", () => {
+    const spouse = {
+      id: "spouse",
+      fullName: "Maria Borg",
+      sex: "Female",
+      spouseIds: ["deceased"],
+    };
+    const child = {
+      id: "child",
+      fullName: "Paul Borg",
+      sex: "Male",
+      fatherId: "deceased",
+      motherId: "spouse",
+      spouseIds: [],
+    };
+    const renderFor = (dateOfDeath, children = [child]) => {
+      const deceased = {
+        id: "deceased",
+        fullName: "Joseph Borg",
+        givenNames: "Joseph",
+        surname: "Borg",
+        sex: "Male",
+        isDeceased: true,
+        dateOfDeath,
+        inheritanceBasis: "intestacy",
+        spouseIds: ["spouse"],
+        designations: ["Deceased"],
+      };
+      act(() =>
+        root.render(
+          <PersonInspector
+            people={[deceased, spouse, ...children]}
+            selectedPersonId="deceased"
+            onChange={vi.fn()}
+            onSelectPerson={vi.fn()}
+          />,
+        ),
+      );
+    };
+
+    renderFor("2005-02-28");
+    expect(
+      container.querySelector('input[aria-label="No spouse survived the deceased"]'),
+    ).toBeNull();
+    expect(container.textContent).not.toContain("Marital status at death");
+
+    renderFor("2005-03-01");
+    expect(
+      container.querySelector('input[aria-label="No spouse survived the deceased"]'),
+    ).not.toBeNull();
+
+    renderFor("2005-02-28", []);
+    expect(
+      container.querySelector('input[aria-label="No spouse survived the deceased"]'),
+    ).not.toBeNull();
   });
 
   it("shows recorded co-parents as married without asking for confirmation or a date", () => {
@@ -2689,9 +2942,8 @@ describe("PersonInspector", () => {
       ),
     );
 
-    expect(
-      container.querySelector('input[aria-label="Date of death for Maria Borg"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Date of death for Maria Borg"]')).toBeNull();
+    expect(container.textContent).not.toContain("Spouses at the date of death");
     expect(container.textContent).not.toContain("Enter missing spouse death dates");
   });
 

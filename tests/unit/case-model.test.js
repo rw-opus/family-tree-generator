@@ -698,6 +698,26 @@ describe("family-scoped person removal", () => {
     ]);
   });
 
+  it("retains a person referenced by a pending legal-status change", () => {
+    const input = removableCase({
+      statusToggleSessions: [
+        {
+          id: "status-session",
+          type: "deceased",
+          personId: "person",
+          activeFamilyGroupId: "family-a",
+          personFields: {},
+          createdRecordIds: [],
+        },
+      ],
+    });
+
+    expect(casePersonDependencyLabels(input, "person")).toContain("a pending legal-status change");
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+    expect(result.people.some((person) => person.id === "person")).toBe(true);
+    expect(result.statusToggleSessions[0].personId).toBe("person");
+  });
+
   it("deduplicates legal, declaration, transfer and tax-lot dependencies case-wide", () => {
     const input = removableCase({
       succession: { heirs: [{ id: "case-heir", personId: "person" }] },

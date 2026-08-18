@@ -98,6 +98,7 @@ describe("status toggle sessions", () => {
                 isDeceased: true,
                 designations: ["Deceased", "Owner"],
                 dateOfDeath: "2020-01-01",
+                deathDateText: "01/01/2020",
                 unmarriedOrWidowedAtDeath: true,
                 inheritanceBasis: "will",
                 willNotes: "Created after the click",
@@ -133,12 +134,38 @@ describe("status toggle sessions", () => {
       wills: [],
     });
     expect(Object.hasOwn(owner, "willNotes")).toBe(false);
+    expect(Object.hasOwn(owner, "deathDateText")).toBe(false);
     expect(Object.hasOwn(owner, "willHeirs")).toBe(false);
     expect(Object.hasOwn(owner, "causaMortisDeclarations")).toBe(false);
     expect(ended.outsideParties).toEqual([]);
     expect(ended.people.some((person) => person.id === "created-person")).toBe(false);
     expect(ended.familyGroups[0].personIds).toEqual(["owner", "relative"]);
     expect(statusToggleSession(ended, "deceased", "owner")).toBeNull();
+  });
+
+  it("restores an existing genealogical death-date wording exactly", () => {
+    const initial = caseFixture();
+    initial.people[0].deathDateText = "about 1900";
+    let current = beginStatusToggleSession(initial, {
+      type: "deceased",
+      personId: "owner",
+      propertyId: "property",
+    });
+    current = {
+      ...current,
+      people: current.people.map((person) =>
+        person.id === "owner" ? { ...person, deathDateText: "01/01/2020" } : person,
+      ),
+    };
+
+    const ended = endStatusToggleSession(current, {
+      type: "deceased",
+      personId: "owner",
+      propertyId: "property",
+      activeFamilyGroupId: "family",
+    });
+
+    expect(ended.people.find((person) => person.id === "owner").deathDateText).toBe("about 1900");
   });
 
   it("deletes session-created identities and every later reference on exact rollback", () => {

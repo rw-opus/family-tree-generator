@@ -56,8 +56,14 @@ function TreePanel({
     <section className="tree-panel" ref={gestureSurfaceRef}>
       <header className="tree-stage-toolbar tree-stage-toolbar-unified tree-panel-fixed-controls">
         {toolbar}
-        <button type="button" className="secondary-button" onClick={() => onPrint(treeRef.current)}>
-          <Printer size={16} /> Print preview
+        <button
+          type="button"
+          className="secondary-button"
+          aria-label="Print preview"
+          title="Print the family tree at any stage"
+          onClick={() => onPrint(treeRef.current)}
+        >
+          <Printer size={16} /> <span>Print preview</span>
         </button>
         {showActionRequiredKey && (
           <p className="tree-required-data-key">
@@ -82,6 +88,7 @@ function TreePanel({
 export function FamilyTreeCanvas({
   treeTitle = "",
   people = [],
+  legalWorkspaceEnabled = true,
   ownershipByPerson = {},
   ownershipFractionsByPerson = {},
   currentOwnershipByPerson = {},
@@ -151,7 +158,8 @@ export function FamilyTreeCanvas({
   ]);
   const relationalPeople = people.filter(hasRelationalData);
   const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
-  const usesStackedLegalCards = personCardFields?.stackLegalDetails === true;
+  const usesStackedLegalCards =
+    legalWorkspaceEnabled && personCardFields?.stackLegalDetails === true;
   const generationByPerson = useMemo(
     () => familyGenerationById(relationalPeople),
     [relationalPeople],
@@ -161,16 +169,18 @@ export function FamilyTreeCanvas({
     [generationByPerson],
   );
   const requiredSpouseDeathDateIds = useMemo(
-    () => requiredSpouseDeathDatePersonIds(cleanPeople),
-    [cleanPeople],
+    () => (legalWorkspaceEnabled ? requiredSpouseDeathDatePersonIds(cleanPeople) : new Set()),
+    [cleanPeople, legalWorkspaceEnabled],
   );
   const showActionRequiredKey = useMemo(
     () =>
+      legalWorkspaceEnabled &&
       cleanPeople.some(
         (person) =>
           familyPersonCardState({
             person,
             people: cleanPeople,
+            legalWorkspaceEnabled,
             deathDateMissing: requiredSpouseDeathDateIds.has(person.id),
             historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
             causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
@@ -180,6 +190,7 @@ export function FamilyTreeCanvas({
       causaMortisCoverageByPerson,
       cleanPeople,
       historicalLawWarningsByPerson,
+      legalWorkspaceEnabled,
       requiredSpouseDeathDateIds,
     ],
   );
@@ -531,6 +542,7 @@ export function FamilyTreeCanvas({
     <FamilyPersonCard
       key={person.id}
       person={person}
+      legalWorkspaceEnabled={legalWorkspaceEnabled}
       variant={variant}
       people={cleanPeople}
       deathDateMissing={requiredSpouseDeathDateIds.has(person.id)}
@@ -556,7 +568,11 @@ export function FamilyTreeCanvas({
   const navigation = (
     <div className="tree-navigation-tools" aria-label="Tree view controls">
       {onPersonCardFieldsChange && (
-        <PersonCardDisplayControl fields={personCardFields} onChange={onPersonCardFieldsChange} />
+        <PersonCardDisplayControl
+          fields={personCardFields}
+          onChange={onPersonCardFieldsChange}
+          legalWorkspaceEnabled={legalWorkspaceEnabled}
+        />
       )}
       <button type="button" onClick={fitWholeTree} title="Fit the whole tree in view">
         <Maximize2 size={15} /> <span>Fit tree</span>

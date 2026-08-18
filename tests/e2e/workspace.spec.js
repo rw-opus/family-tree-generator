@@ -42,6 +42,46 @@ test.describe("workspace and persistence", () => {
     await expect(page.getByLabel("Edit tree name: Testa Fictional")).toBeVisible();
   });
 
+  test("starts as a printable pure family tree without completeness warnings", async ({ page }) => {
+    await page.addInitScript((terms) => window.localStorage.setItem(terms, "yes"), TERMS_KEY);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: /Create new family/ }).click();
+    const dialog = page.locator('[role="dialog"]');
+    await dialog.getByLabel("Family name").fill("Incomplete Fictional Family");
+    await dialog.getByLabel("Given name(s)").fill("Anna");
+    await dialog.getByLabel("Surname").fill("Testa");
+    await dialog.locator("label").filter({ hasText: "Female" }).first().click();
+    await dialog.getByRole("button", { name: "Create family" }).click();
+
+    await expect(page.getByLabel("Workspace mode: Family tree only")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Property & Tax" })).toHaveCount(0);
+    await expect(page.locator(".fraction-launcher")).toHaveCount(0);
+
+    await page.locator("[data-person-id]").first().click();
+    await page.getByRole("checkbox", { name: "Deceased" }).check();
+    await expect(page.getByText("Date of death (optional)")).toBeVisible();
+    await page.getByLabel("Date of death (optional)").fill("about 1858");
+    await expect(page.getByLabel("Inheritance basis")).toHaveCount(0);
+    await expect(page.getByRole("checkbox", { name: "Sold/Donated Property Share" })).toHaveCount(
+      0,
+    );
+    await expect(page.getByText("Date of death missing")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Back to Tree" }).click();
+    await page.locator(".person-card-display-control > summary").click();
+    await page.getByRole("checkbox", { name: "Dates of death" }).check();
+    await expect(page.locator("[data-person-id]").first()).toContainText("d. about 1858");
+    await page.locator(".person-card-display-control > summary").click();
+    await page.getByRole("button", { name: "Print preview" }).click();
+    const preview = page.locator("iframe.a3-preview-frame").contentFrame();
+    await expect(preview.locator(".a3-page-header strong")).toHaveText(
+      "Incomplete Fictional Family",
+    );
+    await expect(preview.locator(".a3-print-tree")).toContainText("d. about 1858");
+    await expect(preview.getByText("Date of death missing")).toHaveCount(0);
+  });
+
   test("renames a family from the library", async ({ seeded, page }) => {
     await seeded();
     await page.goto("/");

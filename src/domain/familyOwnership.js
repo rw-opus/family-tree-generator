@@ -550,7 +550,19 @@ function calculateIntestateAllocations(people = [], deceasedId) {
   }
 
   const atDate = deceased.dateOfDeath;
-  if (deceased.unmarriedOrWidowedAtDeath === true) {
+  const children = index.childrenByParent.get(deceased.id) || [];
+  const descendantsWithUnknownSurvival = descendantsMissingDeathDates(people, deceased.id);
+  const descendantProbe = descendantsWithUnknownSurvival.length
+    ? new Map()
+    : allocateBranches(children, atDate, 1, index);
+  const legacyDescendantsControlOwnership = legacyDescendantsControlIntestacyOwnership({
+    deceased,
+    ruleset,
+    descendantProbe,
+    descendantSurvivalResolved: descendantsWithUnknownSurvival.length === 0,
+  });
+
+  if (!legacyDescendantsControlOwnership && deceased.unmarriedOrWidowedAtDeath === true) {
     const excludedLinkedSpouses = partnerIdsForPerson(people, deceased.id)
       .map((partnerId) => ({
         partner: index.peopleById.get(partnerId),
@@ -574,31 +586,30 @@ function calculateIntestateAllocations(people = [], deceasedId) {
       );
     }
   }
-  const invalidRelationshipDates = deceased.unmarriedOrWidowedAtDeath
-    ? []
-    : partnerIdsForPerson(people, deceased.id).flatMap((partnerId) => {
-        const partner = index.peopleById.get(partnerId);
-        const relationship = findPartnerRelationship(people, deceased.id, partnerId);
-        if (!partner || !relationship) return [];
-        if (relationship.type === "partnership") return [];
-        return validateRelationshipDateChronology({
-          // Marriage start dates are not relevant to succession. A linked
-          // marriage is assumed to exist unless it is recorded as having ended.
-          startDate: "",
-          endDate: relationship.endDate || "",
-          personDateOfDeath: deceased.dateOfDeath || "",
-          partnerDateOfDeath: partner.dateOfDeath || "",
-          personLabel: personName(deceased),
-          partnerLabel: personName(partner),
-          relationshipLabel: relationship.type === "partnership" ? "Partnership" : "Marriage",
+  const invalidRelationshipDates =
+    legacyDescendantsControlOwnership || deceased.unmarriedOrWidowedAtDeath
+      ? []
+      : partnerIdsForPerson(people, deceased.id).flatMap((partnerId) => {
+          const partner = index.peopleById.get(partnerId);
+          const relationship = findPartnerRelationship(people, deceased.id, partnerId);
+          if (!partner || !relationship) return [];
+          if (relationship.type === "partnership") return [];
+          return validateRelationshipDateChronology({
+            // Marriage start dates are not relevant to succession. A linked
+            // marriage is assumed to exist unless it is recorded as having ended.
+            startDate: "",
+            endDate: relationship.endDate || "",
+            personDateOfDeath: deceased.dateOfDeath || "",
+            partnerDateOfDeath: partner.dateOfDeath || "",
+            personLabel: personName(deceased),
+            partnerLabel: personName(partner),
+            relationshipLabel: relationship.type === "partnership" ? "Partnership" : "Marriage",
+          });
         });
-      });
   if (invalidRelationshipDates.length) {
     warnings.push(...new Set(invalidRelationshipDates));
     return { shares, warnings, destination: "spouse-status-unresolved" };
   }
-  const children = index.childrenByParent.get(deceased.id) || [];
-  const descendantsWithUnknownSurvival = descendantsMissingDeathDates(people, deceased.id);
   if (descendantsWithUnknownSurvival.length) {
     warnings.push(
       `Enter the date of death for ${descendantsWithUnknownSurvival
@@ -607,26 +618,28 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     );
     return { shares, warnings, destination: "survival-date-unresolved" };
   }
-  const descendantProbe = allocateBranches(children, atDate, 1, index);
-  const legacyDescendantsControlOwnership = legacyDescendantsControlIntestacyOwnership({
-    deceased,
-    ruleset,
-    descendantProbe,
-  });
   const marriagesMissingEndDates = linkedMarriagesMissingEndDates(people, deceased.id, atDate);
-  if (marriagesMissingEndDates.length) {
+  if (marriagesMissingEndDates.length && !legacyDescendantsControlOwnership) {
     warnings.push(
       `Enter the date on which the marriage to ${marriagesMissingEndDates
         .map(personName)
         .join(", ")} ended before calculating the intestate succession.`,
     );
-    if (!legacyDescendantsControlOwnership) {
-      return { shares, warnings, destination: "spouse-status-unresolved" };
-    }
+    return { shares, warnings, destination: "spouse-status-unresolved" };
   }
 
-  const spouses = linkedLegalSpousesFor(people, deceased.id, atDate);
-  const spousesWithUnknownSurvival = linkedSpousesMissingDeathDates(people, deceased.id, atDate);
+  // A stale manual spouse-exclusion flag and incomplete marriage details are
+  // immaterial to the full-ownership calculation in this narrow old-law case.
+  // Ignore those controls here while still observing actual legal spouse links
+  // for the separate historical-law review notice.
+  const spouses = legacyDescendantsControlOwnership
+    ? legalSpouseIdsForPerson(people, deceased.id, atDate)
+        .map((spouseId) => index.peopleById.get(spouseId))
+        .filter(Boolean)
+    : linkedLegalSpousesFor(people, deceased.id, atDate);
+  const spousesWithUnknownSurvival = legacyDescendantsControlOwnership
+    ? spouses.filter((person) => isPersonDeceased(person) && !person.dateOfDeath)
+    : linkedSpousesMissingDeathDates(people, deceased.id, atDate);
   if (spousesWithUnknownSurvival.length && !legacyDescendantsControlOwnership) {
     const names = spousesWithUnknownSurvival.map((person) => person.fullName || "Unnamed partner");
     warnings.push(
@@ -637,13 +650,11 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     return { shares, warnings, destination: "spouse-survival-unresolved" };
   }
   const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
-  if (livingSpouses.length > 1) {
+  if (livingSpouses.length > 1 && !legacyDescendantsControlOwnership) {
     warnings.push(
       `More than one marriage appears active on ${atDate}. Record the end date of every former marriage before calculating the intestate succession.`,
     );
-    if (!legacyDescendantsControlOwnership) {
-      return { shares, warnings, destination: "spouse-status-unresolved" };
-    }
+    return { shares, warnings, destination: "spouse-status-unresolved" };
   }
   if (descendantProbe.size) {
     const isLegacy = ruleset.key === "pre2005";

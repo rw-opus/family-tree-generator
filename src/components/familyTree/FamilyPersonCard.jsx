@@ -5,7 +5,10 @@ import {
   ownershipFraction,
   recordedNonNegativeMoney,
 } from "../../domain/ownershipPresentation.js";
-import { isPersonDeceased } from "../../domain/familyOwnership.js";
+import {
+  isPersonDeceased,
+  spouseDeathDatesAreOptionalForIntestacy,
+} from "../../domain/familyOwnership.js";
 import {
   findPartnerRelationship,
   partnerIdsForPerson,
@@ -13,6 +16,7 @@ import {
 } from "../../domain/partnerRelationships.js";
 import { INHERITANCE_CAUSA_MORTIS_CUTOFF } from "../../domain/article5A.js";
 import { displayNotaryName } from "../../domain/notary.js";
+import { genealogyDeathDateLabel } from "../../domain/genealogyDates.js";
 import { isCausaMortisCoverageActionRequired } from "../../domain/causaMortisPresentation.js";
 import { isPotentialParentSurvivalUnresolved } from "../../domain/potentialParentSurvival.js";
 import { validateWillDateChronology } from "../../domain/chronology.js";
@@ -67,11 +71,29 @@ export function familyPersonCardState({
   person,
   people = [],
   variant = "",
+  legalWorkspaceEnabled = true,
   deathDateMissing = false,
   historicalLawWarnings = [],
   causaMortisCoverage = [],
 }) {
   const isDeceased = isDeceasedPerson(person, variant);
+  if (!legalWorkspaceEnabled) {
+    return {
+      causaMortisActionRequired: false,
+      historicalLawWarning: "",
+      isDeceased,
+      isTestate: false,
+      latestWill: null,
+      validRecordedWills: [],
+      deathDateMissing: false,
+      excludedLinkedSpouses: [],
+      spouseAtDeathConflict: false,
+      survivalStatusRequired: false,
+      surnameAtBirthReviewRequired: false,
+      willDetailsActionRequired: false,
+      redActionRequired: false,
+    };
+  }
   const ownDeathDateMissing =
     deathDateMissing === true && isDeceased && !String(person.dateOfDeath || "").trim();
   const causaMortisActionRequired = causaMortisCoverage.some(isCausaMortisCoverageActionRequired);
@@ -85,8 +107,12 @@ export function familyPersonCardState({
   const isTestate = person.inheritanceBasis === "will";
   const willDetailsActionRequired =
     isDeceased && isTestate && (validRecordedWills.length !== recordedWills.length || !latestWill);
+  const spouseSurvivalNotMaterialToOwnership =
+    isDeceased &&
+    person.unmarriedOrWidowedAtDeath === true &&
+    spouseDeathDatesAreOptionalForIntestacy(people, person.id);
   const excludedLinkedSpouses =
-    isDeceased && person.unmarriedOrWidowedAtDeath === true
+    isDeceased && !spouseSurvivalNotMaterialToOwnership && person.unmarriedOrWidowedAtDeath === true
       ? partnerIdsForPerson(people, person.id)
           .map((partnerId) => ({
             partner: people.find((candidate) => candidate.id === partnerId),
@@ -136,6 +162,7 @@ export function FamilyPersonCard({
   person,
   variant = "",
   people,
+  legalWorkspaceEnabled = true,
   deathDateMissing = false,
   cardName,
   ownershipByPerson,
@@ -158,6 +185,7 @@ export function FamilyPersonCard({
     person,
     people,
     variant,
+    legalWorkspaceEnabled,
     deathDateMissing,
     historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
     causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
@@ -176,9 +204,12 @@ export function FamilyPersonCard({
     surnameAtBirthReviewRequired,
     willDetailsActionRequired,
   } = cardState;
-  const hasOwnership = Object.prototype.hasOwnProperty.call(ownershipByPerson, person.id);
+  const hasOwnership =
+    legalWorkspaceEnabled && Object.prototype.hasOwnProperty.call(ownershipByPerson, person.id);
   const ownership = hasOwnership ? ownershipByPerson[person.id] : 0;
-  const currentOwnerPresentation = currentOwnerPresentationsByPerson[person.id] || null;
+  const currentOwnerPresentation = legalWorkspaceEnabled
+    ? currentOwnerPresentationsByPerson[person.id] || null
+    : null;
   const currentOwnershipValue = recordedNonNegativeMoney(currentOwnerPresentation?.value);
   const hasCurrentOwnership = Boolean(currentOwnerPresentation);
   const useCurrentPresentation = !ownershipSnapshotActive && !isDeceased && hasCurrentOwnership;
@@ -199,11 +230,16 @@ export function FamilyPersonCard({
   const displayedShareIsCurrent =
     currentOwnerPresentation &&
     compareFractions(displayedOwnershipFraction, currentOwnerPresentation.shareFraction) === 0;
-  const causaMortisDetails = availableCausaMortisDetails(person, propertyId);
+  const causaMortisDetails = legalWorkspaceEnabled
+    ? availableCausaMortisDetails(person, propertyId)
+    : [];
   const excludedSpouseNames = excludedLinkedSpouses.map((spouse) =>
     capitalisedName(personDisplayName(spouse, people)),
   );
   const name = cardName(person);
+  const displayedDeathDate = legalWorkspaceEnabled
+    ? person.dateOfDeath && formattedDate(person.dateOfDeath)
+    : genealogyDeathDateLabel(person);
   const givenNames = capitalisedName(personGivenNames(person));
   const surname = capitalisedName(personSurname(person));
   const surnameAtBirth = capitalisedName(person.surnameAtBirth);
@@ -216,7 +252,7 @@ export function FamilyPersonCard({
       : name;
   const accessibleName = `${personName}${ownDeathDateMissing ? ". Date of death missing" : ""}${
     spouseAtDeathConflict
-      ? `. No spouse survived is selected, so ${excludedSpouseNames.join(", ")} is excluded from the succession`
+      ? `. The “No spouse survived the deceased” setting is selected, so ${excludedSpouseNames.join(", ")} is excluded from the succession`
       : ""
   }`;
   const missingDataActionRequired =
@@ -314,13 +350,14 @@ export function FamilyPersonCard({
             {formattedCurrency(currentOwnershipValue)}
           </div>
         )}
-      {!person.isPlaceholder && fields.dateOfDeath && isDeceased && person.dateOfDeath && (
-        <div className="family-node-detail">d. {formattedDate(person.dateOfDeath)}</div>
+      {!person.isPlaceholder && fields.dateOfDeath && isDeceased && displayedDeathDate && (
+        <div className="family-node-detail">d. {displayedDeathDate}</div>
       )}
-      {!person.isPlaceholder && fields.successionBasis && isDeceased && (
+      {!person.isPlaceholder && legalWorkspaceEnabled && fields.successionBasis && isDeceased && (
         <div className="family-node-detail">{isTestate ? "Testate" : "Intestate"}</div>
       )}
       {!person.isPlaceholder &&
+        legalWorkspaceEnabled &&
         fields.willDetails &&
         isDeceased &&
         isTestate &&
@@ -355,6 +392,7 @@ export function FamilyPersonCard({
           </>
         ))}
       {!person.isPlaceholder &&
+        legalWorkspaceEnabled &&
         isDeceased &&
         stackedLegalDetails &&
         fields.causaMortisDetails &&
@@ -373,6 +411,7 @@ export function FamilyPersonCard({
           </div>
         ))}
       {!person.isPlaceholder &&
+        legalWorkspaceEnabled &&
         isDeceased &&
         !stackedLegalDetails &&
         fields.causaMortisDetails &&

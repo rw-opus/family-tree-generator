@@ -46,7 +46,7 @@ export function PersonFinder({ people = [], onSelectPerson }) {
 
   return (
     <details className="person-finder" ref={detailsRef}>
-      <summary>
+      <summary aria-label="Find person" title="Find person">
         <Search size={15} />
         <span className="person-finder-label-full">Find person</span>
         <span className="person-finder-label-short">Find</span>

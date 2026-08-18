@@ -314,6 +314,8 @@ describe("GEDCOM import", () => {
       surnameAtBirth: "",
       surnameAtBirthReviewRequired: true,
     });
+    expect(result.legalWarnings.join(" ")).toMatch(/confirm the surname at birth/i);
+    expect(result.structuralWarnings.join(" ")).not.toMatch(/confirm the surname at birth/i);
   });
 
   it("does not treat a missing marriage event as proof that parents were unmarried", () => {
@@ -345,6 +347,20 @@ describe("GEDCOM import", () => {
     expect(maria).toMatchObject({ surname: "Vella", fullName: "Maria Vella" });
   });
 
+  it("keeps adoption review in the legal warning bucket", () => {
+    const result = parseGedcom(
+      `0 HEAD
+0 @I1@ INDI
+1 NAME Anna /Borg/
+1 ADOP Y
+0 TRLR`,
+      () => "person-1",
+    );
+
+    expect(result.legalWarnings.join(" ")).toMatch(/adoption record/i);
+    expect(result.structuralWarnings.join(" ")).not.toMatch(/adoption record/i);
+  });
+
   it("retains the first parent relationship and reports conflicting families and approximate dates", () => {
     const gedcom = `0 HEAD
 0 @I1@ INDI
@@ -372,5 +388,9 @@ describe("GEDCOM import", () => {
     expect(child.gedcomBirthDate).toBe("ABT 2000");
     expect(result.warnings.join(" ")).toMatch(/more than one father/i);
     expect(result.warnings.join(" ")).toMatch(/not used as an exact legal date/i);
+    expect(result.structuralWarnings.join(" ")).toMatch(/more than one father/i);
+    expect(result.structuralWarnings.join(" ")).not.toMatch(/not used as an exact legal date/i);
+    expect(result.legalWarnings.join(" ")).toMatch(/not used as an exact legal date/i);
+    expect(result.legalWarnings.join(" ")).not.toMatch(/more than one father/i);
   });
 });
