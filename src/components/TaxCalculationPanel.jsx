@@ -36,6 +36,24 @@ const rowHasDeclaredValue = (row = {}) =>
     Number(row.declaredValue) === 0) ||
   Number(row.declaredValue) > 0;
 
+const declarationProvenanceSummary = (declaration = {}) =>
+  [
+    `CM ${isoDateToDisplay(declaration.date) || "undated"}`,
+    declaration.notaryName ? displayNotaryName(declaration.notaryName) : "",
+    `CM fraction ${fractionLabel(declaration.declaredShare, declaration.declaredShareFraction)}`,
+    declarationHasValue(declaration) ? money.format(declaration.declaredValue) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+const provenanceDetails = (row = {}) => [
+  ...(row.inheritanceDate ? [`d. ${isoDateToDisplay(row.inheritanceDate)}`] : []),
+  ...(row.declarations || []).map(declarationProvenanceSummary),
+];
+
+const provenanceSummaryText = (row = {}) =>
+  [row.provenance, ...provenanceDetails(row)].filter(Boolean).join(" · ");
+
 export function TaxCalculationPanel({
   property,
   people,
@@ -228,39 +246,30 @@ export function TaxCalculationPanel({
                     {vendor.rows.map((row) => (
                       <tr key={row.id}>
                         <td data-label="Provenance">
-                          {row.provenancePersonId &&
-                          ((peopleById.has(row.provenancePersonId) && onSelectPerson) ||
-                            (outsidePartyIds.has(row.provenancePersonId) &&
-                              onSelectOutsideOwner)) ? (
-                            <button
-                              type="button"
-                              className="tax-provenance-link"
-                              onClick={() => openParty(row.provenancePersonId)}
-                            >
-                              {row.provenance}
-                            </button>
-                          ) : (
-                            <strong>{row.provenance}</strong>
-                          )}
-                          {row.inheritanceDate && (
-                            <small>d. {isoDateToDisplay(row.inheritanceDate)}</small>
-                          )}
-                          {row.declarations.map((declaration) => (
-                            <small key={declaration.id}>
-                              <abbr title="Declaration Causa Mortis">CM</abbr>{" "}
-                              {isoDateToDisplay(declaration.date) || "undated"}
-                              {declaration.notaryName
-                                ? ` · ${displayNotaryName(declaration.notaryName)}`
-                                : ""}
-                              {` · CM fraction ${fractionLabel(
-                                declaration.declaredShare,
-                                declaration.declaredShareFraction,
-                              )}`}
-                              {declarationHasValue(declaration)
-                                ? ` · ${money.format(declaration.declaredValue)}`
-                                : ""}
-                            </small>
-                          ))}
+                          <div
+                            className="tax-provenance-summary"
+                            title={provenanceSummaryText(row)}
+                          >
+                            {row.provenancePersonId &&
+                            ((peopleById.has(row.provenancePersonId) && onSelectPerson) ||
+                              (outsidePartyIds.has(row.provenancePersonId) &&
+                                onSelectOutsideOwner)) ? (
+                              <button
+                                type="button"
+                                className="tax-provenance-link"
+                                onClick={() => openParty(row.provenancePersonId)}
+                              >
+                                {row.provenance}
+                              </button>
+                            ) : (
+                              <strong>{row.provenance}</strong>
+                            )}
+                            {provenanceDetails(row).map((detail, index) => (
+                              <span className="tax-provenance-detail" key={`${row.id}-${index}`}>
+                                {` · ${detail}`}
+                              </span>
+                            ))}
+                          </div>
                         </td>
                         <td data-label="Fraction">{fractionLabel(row.share, row.shareFraction)}</td>
                         <td data-label="CM value">

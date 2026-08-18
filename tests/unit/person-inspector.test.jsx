@@ -97,6 +97,35 @@ describe("PersonInspector", () => {
     expect(container.querySelector('input[type="file"]')).toBeNull();
   });
 
+  it("places Done immediately after Delete person at the bottom", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            { id: "person", fullName: "Maria Borg", spouseIds: [] },
+            { id: "other", fullName: "Paul Borg", spouseIds: [] },
+          ]}
+          selectedPersonId="person"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    beginEditing();
+    const actionButtons = [...container.querySelectorAll(".person-delete-control > button")];
+    expect(actionButtons.map((button) => button.textContent.trim())).toEqual([
+      "Delete person",
+      "Done",
+    ]);
+    expect(container.querySelector(".inspector-profile").textContent).not.toContain("Done");
+
+    act(() => actionButtons[1].click());
+
+    expect(container.querySelector(".person-edit-fields").disabled).toBe(true);
+    expect(container.querySelector(".inspector-profile").textContent).toContain("Edit identity");
+  });
+
   it("does not duplicate the surrounding drawer's Back to Tree navigation", () => {
     act(() =>
       root.render(
@@ -273,7 +302,7 @@ describe("PersonInspector", () => {
     );
   });
 
-  it("protects retained legal records while pure mode hides their editors", () => {
+  it("allows tree removal while pure mode hides retained legal editors", () => {
     const people = [
       {
         id: "person",
@@ -300,8 +329,8 @@ describe("PersonInspector", () => {
           people={people}
           familyPersonIds={people.map((person) => person.id)}
           legalWorkspaceEnabled={false}
-          hiddenPropertyTaxDataPresent
           selectedPersonId="person"
+          retainedIdentityLabels={["an initial property ownership record"]}
           onChange={vi.fn()}
           onSelectPerson={vi.fn()}
           onDeletePerson={vi.fn()}
@@ -309,9 +338,34 @@ describe("PersonInspector", () => {
       ),
     );
 
-    expect(container.querySelector("button.danger-button").disabled).toBe(true);
+    expect(container.querySelector("button.danger-button").disabled).toBe(false);
+    expect(container.textContent).not.toContain("Switch to Property, succession & tax");
     expect(container.textContent).toContain(
-      "Switch to Property, succession & tax to review the retained legal records",
+      "existing succession, legal and tax records will be retained outside the family tree",
+    );
+  });
+
+  it("does not offer a second tree deletion for an already hidden retained identity", () => {
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            { id: "retained", fullName: "Retained Owner", spouseIds: [] },
+            { id: "visible", fullName: "Visible Person", spouseIds: [] },
+          ]}
+          familyPersonIds={["visible"]}
+          selectedPersonId="retained"
+          retainedIdentityLabels={["an initial property ownership record"]}
+          onChange={vi.fn()}
+          onDeletePerson={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector('[data-person-action="delete"]').disabled).toBe(true);
+    expect(container.textContent).toContain(
+      "This retained identity is already outside the current family tree.",
     );
   });
 
@@ -1165,7 +1219,7 @@ describe("PersonInspector", () => {
     expect(deleteButton.disabled).toBe(true);
     // Joseph stands between his own father and his child, so removing him would
     // leave those two with no way back to each other.
-    expect(container.textContent).toContain("the only link holding this family together");
+    expect(container.textContent).toContain("a family branch still depends on this person");
   });
 
   it("shows existing parents as one read-only italic relationship", () => {
@@ -1426,7 +1480,7 @@ describe("PersonInspector", () => {
     expect(onSelectPerson).toHaveBeenCalledWith("parent");
   });
 
-  it("blocks deletion for ownership held in a second property, not just the primary one", () => {
+  it("allows tree deletion while ownership in another property is retained", () => {
     const people = [
       { id: "parent", fullName: "Joseph Borg", spouseIds: [] },
       { id: "person", fullName: "Maria Borg", fatherId: "parent", spouseIds: [] },
@@ -1438,8 +1492,8 @@ describe("PersonInspector", () => {
           people={people}
           properties={[{ id: "property-1" }, { id: "property-2" }]}
           selectedPersonId="person"
-          ownershipByPerson={{}}
-          hasAnyPropertyOwnership
+          ownershipByPerson={{ person: 0.5 }}
+          retainedIdentityLabels={["an initial property ownership record"]}
           onChange={vi.fn()}
           onSelectPerson={vi.fn()}
         />,
@@ -1450,8 +1504,10 @@ describe("PersonInspector", () => {
     const deleteButton = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Delete person"),
     );
-    expect(deleteButton.disabled).toBe(true);
-    expect(container.textContent).toContain("Remove the person's property ownership first.");
+    expect(deleteButton.disabled).toBe(false);
+    expect(container.textContent).toContain(
+      "existing succession, legal and tax records will be retained outside the family tree",
+    );
   });
 
   it("removes a shared canonical person from only the current family", () => {
@@ -1470,7 +1526,7 @@ describe("PersonInspector", () => {
           personFamilyGroupCount={2}
           selectedPersonId="person"
           ownershipByPerson={{ person: 0.5 }}
-          caseDependencyLabels={["an initial property ownership record"]}
+          retainedIdentityLabels={["an initial property ownership record"]}
           onChange={onChange}
           onDeletePerson={onDeletePerson}
           onSelectPerson={vi.fn()}
@@ -1519,18 +1575,18 @@ describe("PersonInspector", () => {
     );
     beginEditing();
 
-    const removeButton = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Remove from this family"),
+    const deleteButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Delete person"),
     );
-    expect(removeButton.disabled).toBe(false);
+    expect(deleteButton.disabled).toBe(false);
     expect(container.textContent).toContain(
-      "retains their identity as an unconnected person because a Declaration Causa Mortis names them as a declarant",
+      "existing succession, legal and tax records will be retained outside the family tree",
     );
 
-    act(() => removeButton.click());
+    act(() => deleteButton.click());
 
     expect(confirm).toHaveBeenCalledWith(
-      "Remove Maria Borg from this family tree? The person will remain as an unconnected person because a Declaration Causa Mortis names them as a declarant.",
+      "Delete Maria Borg from the family tree? Their identity and existing succession, legal and tax records will be retained outside the tree.",
     );
     expect(onDeletePerson).toHaveBeenCalledWith("person");
   });
@@ -1572,7 +1628,6 @@ describe("PersonInspector", () => {
           familyPersonIds={["person", "local"]}
           personFamilyGroupCount={2}
           selectedPersonId="person"
-          caseDependencyLabels={["a child relationship"]}
           onChange={vi.fn()}
           onDeletePerson={vi.fn()}
           onSelectPerson={vi.fn()}

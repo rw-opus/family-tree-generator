@@ -506,6 +506,12 @@ textarea:focus-visible {
   padding: 0.75rem clamp(0.8rem, 3vw, 2rem);
 }
 
+.property-workspace-header-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
 .property-workspace-title {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3918,9 +3924,10 @@ textarea {
 
 .person-delete-control {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.55rem;
+  grid-template-columns: auto auto;
+  align-items: stretch;
+  justify-content: start;
+  gap: 0.35rem 0.5rem;
   margin-top: 0.55rem;
   border-top: 1px solid #e3e8e5;
   padding-top: 0.55rem;
@@ -4046,6 +4053,7 @@ textarea {
 }
 
 .person-delete-control small {
+  grid-column: 1 / -1;
   color: var(--muted);
   font-size: var(--type-micro);
   line-height: 1.35;
@@ -4369,8 +4377,9 @@ textarea {
 }
 
 .initial-owner-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  align-items: stretch;
+  flex-wrap: nowrap;
   gap: 0.35rem;
   margin-top: 0.45rem;
 }
@@ -4388,6 +4397,7 @@ textarea {
 }
 
 .initial-owner-actions > button {
+  flex: 1 1 0;
   justify-content: center;
   width: 100%;
   min-width: 0;
@@ -6731,6 +6741,15 @@ body.a3-print-preview-open {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
+  .property-workspace-header-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .property-workspace-header-actions > button {
+    flex: 1 1 0;
+  }
+
   .property-tree-button {
     grid-column: 1 / -1;
   }
@@ -6788,6 +6807,14 @@ body.a3-print-preview-open {
   .context-dashboard select,
   .context-dashboard textarea {
     min-width: 0;
+  }
+
+  .person-delete-control {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .person-delete-control > button {
+    min-height: 2.75rem;
   }
 
   .inspector-fields > label {
@@ -7418,6 +7445,34 @@ body.a3-print-preview-open {
     overflow: visible;
   }
 
+  .property-workspace-page {
+    display: block;
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .property-workspace-page > .announcement-banner,
+  .property-workspace-header > .property-back-button,
+  .property-workspace-header-actions,
+  .property-workspace-menu,
+  .property-workspace-property-selector {
+    display: none !important;
+  }
+
+  .property-workspace-nav-shell {
+    position: static;
+  }
+
+  .property-workspace-header {
+    display: block;
+    padding: 0 0 0.75rem;
+  }
+
+  .property-workspace-content {
+    padding: 0;
+  }
+
   .tree-stage .family-chart-print-title {
     display: block;
     margin: 0 0 1.2rem;
@@ -7667,6 +7722,43 @@ body.a3-print-preview-open {
   white-space: nowrap;
 }
 
+.tax-calculation-table th:first-child,
+.tax-calculation-table td:first-child {
+  width: 38%;
+  min-width: 22rem;
+}
+
+.tax-provenance-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  max-height: 2.7em;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tax-provenance-summary strong,
+.tax-provenance-summary .tax-provenance-link,
+.tax-provenance-summary .tax-provenance-detail {
+  display: inline;
+  min-height: 0;
+  font: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+.tax-provenance-summary strong,
+.tax-provenance-summary .tax-provenance-link {
+  font-weight: 750;
+}
+
+.tax-provenance-summary .tax-provenance-detail {
+  color: var(--muted);
+}
+
 .tax-calculation-table small.selected {
   color: var(--forest);
   font-weight: 800;
@@ -7807,6 +7899,11 @@ body.a3-print-preview-open {
     padding: 8px 10px;
     white-space: normal;
     text-align: left;
+  }
+
+  .tax-calculation-table td:first-child {
+    width: auto;
+    min-width: 0;
   }
 
   .tax-calculation-table td::before {

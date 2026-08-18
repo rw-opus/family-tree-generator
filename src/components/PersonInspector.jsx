@@ -209,13 +209,10 @@ export function PersonInspector({
   ownershipByPerson = {},
   ownershipFractionsByPerson = {},
   currentOwnerPresentationsByPerson = null,
-  hasAnyPropertyOwnership = false,
-  hiddenPropertyTaxDataPresent = false,
   causaMortisCoverage = [],
   selectedPersonId,
   shareDisplay = "both",
   onShareDisplayChange,
-  caseDependencyLabels = [],
   retainedIdentityLabels = [],
   familyPersonIds = null,
   personFamilyGroupCount = 1,
@@ -1398,7 +1395,7 @@ export function PersonInspector({
             personFamilyGroupCount === 2 ? "" : "s"
           }.`
         : retainedIdentityLabels.length
-          ? `Remove ${displayName(selectedPerson)} from this family tree? The person will remain as an unconnected person because a Declaration Causa Mortis names them as a declarant.`
+          ? `Delete ${displayName(selectedPerson)} from the family tree? Their identity and existing succession, legal and tax records will be retained outside the tree.`
           : `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
     );
     if (!confirmed) return;
@@ -1831,42 +1828,32 @@ export function PersonInspector({
   // top of a tree can go as long as nobody is severed by it. What blocks a
   // removal is being the only thing holding two parts of the family together —
   // the person a spouse reaches the rest of the tree through.
-  const seversFamily = removalWouldSeverFamily(
-    sharedAcrossFamilies
-      ? people.filter((entry) => currentFamilyPersonIdSet.has(entry.id))
-      : people,
-    selectedPersonId,
-  );
-  const deleteBlockers = [
-    ...(seversFamily
-      ? ["the only link holding this family together — remove the people either side"]
-      : []),
-    ...(!sharedAcrossFamilies && (hasAnyPropertyOwnership || (hasOwnership && ownership > 0))
-      ? ["the person's property ownership"]
-      : []),
-    ...(!sharedAcrossFamilies ? caseDependencyLabels : []),
-    ...(!legalWorkspaceEnabled && hiddenPropertyTaxDataPresent
-      ? ["hidden Property, succession or tax records"]
-      : []),
-  ];
+  const familyGraphPeople = Array.isArray(familyPersonIds)
+    ? people.filter((entry) => currentFamilyPersonIdSet.has(entry.id))
+    : people;
+  const selectedPersonInCurrentFamily = currentFamilyPersonIdSet.has(selectedPersonId);
+  const seversFamily = removalWouldSeverFamily(familyGraphPeople, selectedPersonId);
+  const deleteBlockers = seversFamily
+    ? ["a family branch still depends on this person — delete that branch first"]
+    : [];
   const deleteDisabled =
+    !selectedPersonInCurrentFamily ||
     currentFamilyPersonIds.length <= 1 ||
     deleteBlockers.length > 0 ||
     (sharedAcrossFamilies && !onDeletePerson);
-  const deleteMessage =
-    currentFamilyPersonIds.length <= 1
+  const deleteMessage = !selectedPersonInCurrentFamily
+    ? "This retained identity is already outside the current family tree."
+    : currentFamilyPersonIds.length <= 1
       ? "A tree must contain at least one person."
       : sharedAcrossFamilies && !onDeletePerson
         ? "Family-scoped removal is unavailable in this view."
-        : !legalWorkspaceEnabled && hiddenPropertyTaxDataPresent
-          ? "Switch to Property, succession & tax to review the retained legal records before deleting people."
-          : deleteBlockers.length
-            ? `Remove ${deleteBlockers.join(" and ")} first.`
+        : deleteBlockers.length
+          ? `Cannot delete: ${deleteBlockers.join(" and ")}.`
+          : personFamilyGroupCount > 1
+            ? "This removes the person from this family only; the shared record remains elsewhere."
             : retainedIdentityLabels.length
-              ? "This removes the person from the family tree but retains their identity as an unconnected person because a Declaration Causa Mortis names them as a declarant."
-              : personFamilyGroupCount > 1
-                ? "This removes the person from this family only; the shared record remains elsewhere."
-                : "No partner or descendant dependencies. Confirmation is required.";
+              ? "Their identity and existing succession, legal and tax records will be retained outside the family tree."
+              : "No family branch depends on this person. Confirmation is required.";
 
   const displayedPropertyShare = isDeceased
     ? estateShareAtDeath
@@ -2486,17 +2473,14 @@ export function PersonInspector({
         <div>
           <h2>{selectedDisplayName}</h2>
         </div>
-        <div className="person-profile-actions">
-          <button
-            type="button"
-            className={`person-edit-button ${isEditing ? "active" : ""}`}
-            aria-pressed={isEditing}
-            onClick={() => setIsEditing((editing) => !editing)}
-          >
-            {isEditing ? <Check size={15} /> : <Pencil size={15} />}
-            {isEditing ? "Done" : "Edit identity"}
-          </button>
-        </div>
+        {!isEditing && (
+          <div className="person-profile-actions">
+            <button type="button" className="person-edit-button" onClick={() => setIsEditing(true)}>
+              <Pencil size={15} aria-hidden="true" />
+              Edit identity
+            </button>
+          </div>
+        )}
       </section>
 
       {!legalWorkspaceEnabled && (
@@ -3486,14 +3470,24 @@ export function PersonInspector({
             <button
               type="button"
               className="danger-button"
+              data-person-action="delete"
               disabled={deleteDisabled}
               onClick={removeSelected}
             >
-              <Trash2 size={15} />
-              {personFamilyGroupCount > 1 || retainedIdentityLabels.length
-                ? "Remove from this family"
-                : "Delete person"}
+              <Trash2 size={15} aria-hidden="true" />
+              {personFamilyGroupCount > 1 ? "Remove from this family" : "Delete person"}
             </button>
+            {isEditing && (
+              <button
+                type="button"
+                className="person-edit-button active"
+                data-person-action="done-editing"
+                onClick={() => setIsEditing(false)}
+              >
+                <Check size={15} aria-hidden="true" />
+                Done
+              </button>
+            )}
             <small>{deleteMessage}</small>
           </div>
         </div>

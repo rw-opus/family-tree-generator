@@ -6,6 +6,7 @@ import {
   House,
   Landmark,
   MousePointerClick,
+  Printer,
   X,
 } from "lucide-react";
 import { AdminConsole } from "./components/AdminConsole.jsx";
@@ -46,7 +47,6 @@ import {
   assignInitialOwnerPerson,
   buildPropertyVendorTaxReport,
   buildTaxCalculationReport,
-  propertyStartingOwnershipStatus,
   setDonationAcquisitionValue,
   setLivingInitialOwnerAcquisitionDate,
 } from "./domain/propertyVendorTax.js";
@@ -61,7 +61,6 @@ import {
   TREE_WORKSPACE_MODES,
   normaliseTreeWorkspaceMode,
   propertyTaxWorkspaceEnabled,
-  treeHasRecordedPropertyTaxData,
 } from "./domain/treeWorkspaceMode.js";
 import {
   buildTaxReadinessPlan,
@@ -754,31 +753,6 @@ export function App({
     ).filter((owner) => owner.personId);
     return ownerPresentationsById(presentations.map((owner) => ({ ...owner, id: owner.personId })));
   }, [activeProperty.saleValue, propertyReport, taxCalculationReport]);
-  const completeProperties = useMemo(
-    () =>
-      legalWorkspaceEnabled
-        ? currentTree.properties.filter(
-            (property) => propertyStartingOwnershipStatus(property).isComplete,
-          )
-        : [],
-    [currentTree.properties, legalWorkspaceEnabled],
-  );
-  // Ownership blocks person deletion per-property (not just the primary property) so a
-  // second property's recorded owners can't be silently orphaned by deleting a person.
-  const anyPropertyOwnershipPersonIds = useMemo(() => {
-    const ids = new Set();
-    completeProperties.forEach((property) => {
-      const report = buildPropertyVendorTaxReport(
-        property,
-        currentTree.people,
-        currentTree.outsideParties,
-      );
-      report.ledger.owners.forEach((owner) => {
-        if (owner.personId && Number(owner.share) > 0) ids.add(owner.personId);
-      });
-    });
-    return ids;
-  }, [completeProperties, currentTree.outsideParties, currentTree.people]);
   const causaMortisCoverage = useMemo(
     () =>
       legalWorkspaceEnabled && propertyReport
@@ -861,26 +835,15 @@ export function App({
         personId !== activeTaxReadinessPersonId &&
         !taxReadinessSession.historyPersonIds.includes(personId),
     ).length;
-  const hiddenPropertyTaxDataPresent = useMemo(
-    () => !legalWorkspaceEnabled && treeHasRecordedPropertyTaxData(currentTree),
-    [currentTree, legalWorkspaceEnabled],
-  );
-  const selectedCaseDependencies = useMemo(() => {
+  const selectedRetainedIdentityLabels = useMemo(() => {
     const relationshipLabels = new Set([
       "a child relationship",
       "a partner relationship",
       "a sibling relationship",
     ]);
-    const legalLabels = casePersonDependencyLabels(currentTree, selectedPersonId).filter(
+    return casePersonDependencyLabels(currentTree, selectedPersonId).filter(
       (label) => !relationshipLabels.has(label),
     );
-    const retainedIdentityLabels = legalLabels.filter(
-      (label) => label === "a causa mortis declarant record",
-    );
-    return {
-      blockingLabels: legalLabels.filter((label) => label !== "a causa mortis declarant record"),
-      retainedIdentityLabels,
-    };
   }, [currentTree, selectedPersonId]);
 
   useEffect(() => {
@@ -2765,9 +2728,20 @@ export function App({
               <h1>{currentTree.title}</h1>
               <WorkspaceSaveStatus state={saveState} />
             </div>
-            <button type="button" className="tree-home-button" onClick={returnHome}>
-              <House size={16} /> Home
-            </button>
+            <div className="property-workspace-header-actions">
+              <button
+                type="button"
+                className="property-tree-button property-print-button"
+                aria-label="Print current generator screen"
+                title="Print the current Property and Tax screen"
+                onClick={() => window.print()}
+              >
+                <Printer size={16} /> Print
+              </button>
+              <button type="button" className="tree-home-button" onClick={returnHome}>
+                <House size={16} /> Home
+              </button>
+            </div>
           </header>
           <nav className="property-workspace-menu" aria-label="Property and Tax sections">
             {workspaceSectionLinks.map(({ id, label, icon: Icon }) => (
@@ -2888,8 +2862,6 @@ export function App({
                 ownershipByPerson={ownershipByPerson}
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
                 currentOwnerPresentationsByPerson={currentOwnerPresentationsByPerson}
-                hasAnyPropertyOwnership={anyPropertyOwnershipPersonIds.has(selectedPersonId)}
-                hiddenPropertyTaxDataPresent={hiddenPropertyTaxDataPresent}
                 causaMortisCoverage={causaMortisCoverage.byPerson[selectedPersonId] || []}
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}
@@ -2899,8 +2871,7 @@ export function App({
                     settings: { ...currentTree.settings, shareDisplay },
                   })
                 }
-                caseDependencyLabels={selectedCaseDependencies.blockingLabels}
-                retainedIdentityLabels={selectedCaseDependencies.retainedIdentityLabels}
+                retainedIdentityLabels={selectedRetainedIdentityLabels}
                 personFamilyGroupCount={
                   findFamilyGroupsForPerson(currentTree, selectedPersonId).length
                 }
@@ -3014,7 +2985,7 @@ export function App({
                       onChange={updateTreeTitle}
                       trailing={<WorkspaceSaveStatus state={saveState} />}
                     />
-                    <PersonFinder people={currentTree.people} onSelectPerson={focusPersonOnTree} />
+                    <PersonFinder people={visiblePeople} onSelectPerson={focusPersonOnTree} />
                     <label className="tree-zoom-slider">
                       <span>Zoom</span>
                       <input

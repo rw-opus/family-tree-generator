@@ -300,9 +300,9 @@ function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {
  */
 function removeLegacyPotentialParents(caseData) {
   const protectedPersonIds = new Set(
-    collectCasePersonReferences(caseData, { includeRelationships: false }).map(
-      (reference) => reference.personId,
-    ),
+    collectCasePersonReferences(caseData, { includeRelationships: false })
+      .filter((reference) => reference.kind !== "workflow")
+      .map((reference) => reference.personId),
   );
   const removedIds = new Set(
     caseData.people
@@ -351,9 +351,14 @@ function migrateIntestacyConfirmationSignatures(people = []) {
 }
 
 function normalizeFamilyGroup(group, index, caseData, validPersonIds, warnings) {
+  const normalizedSource = cloneValue(isRecord(group) ? group : {});
+  delete normalizedSource.excludedPersonIds;
   const requestedRootId = text(group?.rootPersonId);
   const requestedPersonIds = uniqueIds(group?.personIds);
   const personIds = requestedPersonIds.filter((personId) => validPersonIds.has(personId));
+  const excludedPersonIds = uniqueIds(group?.excludedPersonIds).filter(
+    (personId) => validPersonIds.has(personId) && !personIds.includes(personId),
+  );
   requestedPersonIds
     .filter((personId) => !validPersonIds.has(personId))
     .forEach((personId) =>
@@ -365,12 +370,13 @@ function normalizeFamilyGroup(group, index, caseData, validPersonIds, warnings) 
   if (rootPersonId && !personIds.includes(rootPersonId)) personIds.unshift(rootPersonId);
 
   return {
-    ...cloneValue(isRecord(group) ? group : {}),
+    ...normalizedSource,
     id: text(group?.id) || familyGroupId(caseData.id, index + 1),
     title:
       text(group?.title) || (index === 0 ? text(caseData.title) : "") || `Family tree ${index + 1}`,
     rootPersonId,
     personIds,
+    ...(excludedPersonIds.length ? { excludedPersonIds } : {}),
   };
 }
 
@@ -549,11 +555,17 @@ export function addPersonIdsToFamilyGroup(caseValue, groupId, personIds = []) {
     familyGroups: caseData.familyGroups.map((group) => {
       if (group.id !== groupId) return group;
       const nextPersonIds = uniqueIds([...group.personIds, ...additions]);
-      return {
+      const nextGroup = {
         ...group,
         rootPersonId: group.rootPersonId || nextPersonIds[0] || "",
         personIds: nextPersonIds,
       };
+      const excludedPersonIds = uniqueIds(group.excludedPersonIds).filter(
+        (personId) => !additions.includes(personId),
+      );
+      if (excludedPersonIds.length) nextGroup.excludedPersonIds = excludedPersonIds;
+      else delete nextGroup.excludedPersonIds;
+      return nextGroup;
     }),
   };
 }
@@ -567,6 +579,54 @@ function records(value) {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
+function hasRecordedPersonLegalData(person = {}) {
+  const hasRecordRows = [
+    person.wills,
+    person.willHeirs,
+    person.intestateHeirs,
+    person.causaMortisDeclarations,
+    person.legacyArticle616Statuses,
+  ].some((value) => records(value).length > 0);
+  const hasLegacyWill = [
+    person.willDate,
+    person.willNotaryName,
+    person.willDescription,
+    person.willNotes,
+  ].some((value) => text(value));
+  const hasRecordedConfirmation =
+    person.willHeirsConfirmed === true ||
+    text(person.willHeirsConfirmationSource) ||
+    isRecord(person.willHeirsConfirmationSnapshot) ||
+    person.intestateHeirsConfirmed === true ||
+    text(person.intestateConfirmationBasis) ||
+    person.intestateConfirmationMigratedFromV1 === true;
+  const hasRecordedLegalStatus =
+    text(person.survivalStatusConfirmed) ||
+    text(person.unmarriedOrWidowedAtDeathSource) === "manual" ||
+    (text(person.inheritanceBasis) && text(person.inheritanceBasis) !== "intestacy");
+  const hasLegacyEstate =
+    isRecord(person.legacyArticle616Estate) &&
+    Object.values(person.legacyArticle616Estate).some(
+      (value) => value !== "" && value !== null && value !== undefined,
+    );
+
+  return (
+    hasRecordRows ||
+    hasLegacyWill ||
+    hasRecordedConfirmation ||
+    hasRecordedLegalStatus ||
+    hasLegacyEstate
+  );
+}
+
+function hasRecordedLegacyOwnership(person = {}) {
+  return (
+    person.ownershipSharePercent !== undefined &&
+    person.ownershipSharePercent !== null &&
+    person.ownershipSharePercent !== ""
+  );
+}
+
 function collectCasePersonReferences(caseData, options = {}) {
   const references = [];
   const includeRelationships = options.includeRelationships !== false;
@@ -574,19 +634,52 @@ function collectCasePersonReferences(caseData, options = {}) {
     const personId = text(value);
     if (personId) references.push({ personId, label, kind });
   };
-  const addDeclarations = (declarations = [], resolvePersonId = (value) => value) =>
+  const addDeclarations = (
+    declarations = [],
+    resolvePersonId = (value) => value,
+    label = "a declaration of succession",
+  ) =>
     records(declarations).forEach((declaration) => {
       records(declaration.participants).forEach((participant) => {
-        add(resolvePersonId(participant.heirId), "a declaration of succession");
-        add(resolvePersonId(participant.personId), "a declaration of succession");
+        add(resolvePersonId(participant.heirId), label);
+        add(resolvePersonId(participant.personId), label);
       });
-      uniqueIds(declaration.heirIds).forEach((personId) =>
-        add(resolvePersonId(personId), "a declaration of succession"),
-      );
+      uniqueIds(declaration.heirIds).forEach((personId) => add(resolvePersonId(personId), label));
       uniqueIds(declaration.declarantPersonIds).forEach((personId) =>
-        add(resolvePersonId(personId), "a declaration of succession"),
+        add(resolvePersonId(personId), label),
       );
     });
+  const addPersonLegalReferences = (person = {}, resolvePersonId = (value) => value) => {
+    records(person.willHeirs).forEach((heir) =>
+      add(resolvePersonId(heir.personId), "a will beneficiary record"),
+    );
+    records(person.intestateHeirs).forEach((heir) =>
+      add(resolvePersonId(heir.personId), "a confirmed intestate-heir record"),
+    );
+    records(person.legacyArticle616Statuses).forEach((status) =>
+      add(resolvePersonId(status.personId), "an Article 616 status record"),
+    );
+    records(person.willHeirsConfirmationSnapshot?.willHeirs).forEach((heir) =>
+      add(resolvePersonId(heir.personId), "a saved will-beneficiary review"),
+    );
+    addDeclarations(
+      person.causaMortisDeclarations,
+      resolvePersonId,
+      "a causa mortis declarant record",
+    );
+  };
+  const addTaxReadinessGuideReferences = (guide = {}) => {
+    const source = isRecord(guide) ? guide : {};
+    const addGuidePerson = (personId) => add(personId, "a guided tax-review record", "workflow");
+    addGuidePerson(source.currentPersonId);
+    [
+      source.historyPersonIds,
+      source.reviewedPersonIds,
+      source.skippedPersonIds,
+      source.skippedReviewVisitedPersonIds,
+      Object.keys(isRecord(source.skippedIssueKeys) ? source.skippedIssueKeys : {}),
+    ].forEach((personIds) => uniqueIds(personIds).forEach(addGuidePerson));
+  };
   const addPropertyReferences = (property = {}, resolvePersonId = (value) => value) => {
     records(property.owners).forEach((owner) =>
       add(owner.personId, "an initial property ownership record"),
@@ -594,11 +687,22 @@ function collectCasePersonReferences(caseData, options = {}) {
     records(property.transfers).forEach((transfer) => {
       add(resolvePersonId(transfer.sellerId), "an ownership transfer");
       add(resolvePersonId(transfer.buyerId), "an ownership transfer");
+      records(transfer.provenance).forEach((portion) => {
+        const trancheId = text(portion.trancheId);
+        if (trancheId.startsWith("inheritance-")) {
+          add(
+            resolvePersonId(trancheId.slice("inheritance-".length)),
+            "an inheritance provenance record",
+          );
+        }
+      });
     });
-    records(property.saleLots).forEach((lot) =>
-      add(resolvePersonId(lot.ownerId), "a vendor tax lot"),
-    );
+    records(property.saleLots).forEach((lot) => {
+      add(resolvePersonId(lot.ownerId), "a vendor tax lot");
+      add(resolvePersonId(lot.inheritanceSourceDeceasedId), "an inheritance tax source record");
+    });
     addDeclarations(property.declarations, resolvePersonId);
+    addTaxReadinessGuideReferences(property.taxReadinessGuide);
   };
 
   const legacyHeirs = [...records(caseData.succession?.heirs), ...records(caseData.heirs)];
@@ -624,6 +728,12 @@ function collectCasePersonReferences(caseData, options = {}) {
   );
 
   records(caseData.people).forEach((person) => {
+    if (hasRecordedPersonLegalData(person)) {
+      add(person.id, "recorded succession or legal details");
+    }
+    if (hasRecordedLegacyOwnership(person)) {
+      add(person.id, "a legacy property ownership record");
+    }
     if (includeRelationships) {
       if (text(person.fatherId)) add(person.fatherId, "a child relationship", "relationship");
       if (text(person.motherId)) add(person.motherId, "a child relationship", "relationship");
@@ -634,20 +744,20 @@ function collectCasePersonReferences(caseData, options = {}) {
         add(personId, "a sibling relationship", "relationship"),
       );
     }
-    records(person.willHeirs).forEach((heir) => add(heir.personId, "a will beneficiary record"));
-    records(person.intestateHeirs).forEach((heir) =>
-      add(heir.personId, "a confirmed intestate-heir record"),
-    );
-    records(person.causaMortisDeclarations).forEach((declaration) =>
-      uniqueIds(declaration.declarantPersonIds).forEach((personId) =>
-        add(personId, "a causa mortis declarant record"),
+    addPersonLegalReferences(person);
+  });
+
+  records(caseData.statusToggleSessions).forEach((session) => {
+    add(session.personId, "a pending legal-status change");
+    addPersonLegalReferences(
+      Object.fromEntries(
+        Object.entries(session.personFields || {}).map(([field, state]) => [
+          field,
+          state?.present === true ? state.value : undefined,
+        ]),
       ),
     );
   });
-
-  records(caseData.statusToggleSessions).forEach((session) =>
-    add(session.personId, "a pending legal-status change"),
-  );
 
   return references;
 }
@@ -681,19 +791,36 @@ function referencedPartyIds(caseData) {
 function scrubPersonFromRelationships(people, personId) {
   return people
     .filter((person) => person.id !== personId)
-    .map((person) => ({
-      ...person,
-      fatherId: person.fatherId === personId ? "" : person.fatherId,
-      motherId: person.motherId === personId ? "" : person.motherId,
-      spouseIds: uniqueIds(person.spouseIds).filter((id) => id !== personId),
-      siblingIds: uniqueIds(person.siblingIds).filter((id) => id !== personId),
-    }));
+    .map((person) => {
+      const nextPerson = { ...person };
+
+      if (person.fatherId === personId) nextPerson.fatherId = "";
+      if (person.motherId === personId) nextPerson.motherId = "";
+      if (person.survivalStatusReferencePersonId === personId) {
+        nextPerson.survivalStatusReferencePersonId = "";
+      }
+      if (Array.isArray(person.spouseIds)) {
+        nextPerson.spouseIds = uniqueIds(person.spouseIds).filter((id) => id !== personId);
+      }
+      if (Array.isArray(person.siblingIds)) {
+        nextPerson.siblingIds = uniqueIds(person.siblingIds).filter((id) => id !== personId);
+      }
+      if (Array.isArray(person.partnerRelationships)) {
+        nextPerson.partnerRelationships = person.partnerRelationships.filter(
+          (relationship) => text(relationship?.personId) !== personId,
+        );
+      }
+
+      return nextPerson;
+    });
 }
 
 /**
  * Removes a Person from one family-tree tab. The canonical Person survives
- * while another family group or any case-wide relationship/legal/property
- * record still references it.
+ * while another family group or any case-wide legal/property record still
+ * references it. Family relationships are scrubbed only when the canonical
+ * identity is genuinely deleted; retained legal identities keep their recorded
+ * relationship metadata without remaining members of the visible tree.
  */
 export function removePersonFromFamilyGroup(caseValue, groupId, personId) {
   const caseData = normalizeCase(caseValue);
@@ -720,17 +847,20 @@ export function removePersonFromFamilyGroup(caseValue, groupId, personId) {
           rootPersonId:
             group.rootPersonId === requestedPersonId ? nextPersonIds[0] || "" : group.rootPersonId,
           personIds: nextPersonIds,
+          excludedPersonIds: uniqueIds([...(group.excludedPersonIds || []), requestedPersonId]),
         }
       : group,
   );
   const neededByAnotherGroup = familyGroups.some((group) =>
     group.personIds.includes(requestedPersonId),
   );
-  const neededByCaseReference = casePersonDependencyLabels(caseData, requestedPersonId).some(
-    (label) => label !== "a sibling relationship",
-  );
+  const neededByCaseReference = referencedPartyIds(caseData).has(requestedPersonId);
 
-  if (neededByAnotherGroup || neededByCaseReference) {
+  if (neededByAnotherGroup) {
+    return normalizeCase({ ...caseData, familyGroups });
+  }
+
+  if (neededByCaseReference) {
     return normalizeCase({ ...caseData, familyGroups });
   }
 
@@ -817,15 +947,23 @@ export function reconcilePeopleUpdate(caseValue, activeGroupId, incomingPeople, 
   const nextCase = normalizeCase({ ...caseData, people });
   const nextActiveGroup = nextCase.familyGroups.find((group) => group.id === activeGroupId);
   const membershipSeeds = new Set([...(nextActiveGroup?.personIds || []), ...addedIds]);
+  const excludedPersonIds = new Set(nextActiveGroup?.excludedPersonIds || []);
   const knownIds = new Set(nextCase.people.map((person) => person.id));
-  const referencedRelationshipIds = nextCase.people
+  const addedIdSet = new Set(addedIds);
+  const previousPeopleById = new Map(caseData.people.map((person) => [person.id, person]));
+  const newlyReferencedRelationshipIds = nextCase.people
     .filter((person) => membershipSeeds.has(person.id))
-    .flatMap(relationshipIds)
-    .filter((personId) => knownIds.has(personId));
+    .flatMap((person) => {
+      const nextRelationshipIds = relationshipIds(person);
+      if (addedIdSet.has(person.id)) return nextRelationshipIds;
+      const previousRelationshipIds = new Set(relationshipIds(previousPeopleById.get(person.id)));
+      return nextRelationshipIds.filter((personId) => !previousRelationshipIds.has(personId));
+    })
+    .filter((personId) => knownIds.has(personId) && !excludedPersonIds.has(personId));
 
   return addPersonIdsToFamilyGroup(nextCase, activeGroupId, [
     ...addedIds,
-    ...referencedRelationshipIds,
+    ...newlyReferencedRelationshipIds,
   ]);
 }
 

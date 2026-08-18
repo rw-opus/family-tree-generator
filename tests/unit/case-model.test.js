@@ -7,6 +7,7 @@ import {
   findFamilyGroupsForPerson,
   normalizeCase,
   promoteOutsideIndividual,
+  reconcilePeopleUpdate,
   removePersonFromFamilyGroup,
 } from "../../src/domain/caseModel.js";
 import {
@@ -407,6 +408,40 @@ describe("case model migration", () => {
     ]);
   });
 
+  it("does not preserve a silent legacy parent solely because tax-guide progress names it", () => {
+    const result = normalizeCase({
+      id: "guided-legacy-parent",
+      people: [
+        { id: "edgar", fullName: "Edgar Wadge", fatherId: "generated-father" },
+        {
+          id: "generated-father",
+          givenNames: "Father of Edgar",
+          fullName: "Father of Edgar",
+          sex: "Male",
+          designations: ["Parent"],
+          isPotentialIntestateParent: true,
+          survivalStatusRequired: true,
+          survivalStatusReferencePersonId: "edgar",
+        },
+      ],
+      properties: [
+        {
+          id: "property",
+          owners: [],
+          taxReadinessGuide: {
+            status: "paused",
+            currentPersonId: "generated-father",
+            historyPersonIds: ["generated-father"],
+          },
+        },
+      ],
+    });
+
+    expect(result.people).toEqual([
+      expect.objectContaining({ id: "edgar", fatherId: "", fullName: "Edgar Wadge" }),
+    ]);
+  });
+
   it("preserves a potential parent that the user added explicitly", () => {
     const result = normalizeCase({
       id: "explicit-parent",
@@ -749,6 +784,297 @@ describe("family-scoped person removal", () => {
     expect(input).toEqual(snapshot);
   });
 
+  it("retains a person's legacy starting-ownership field", () => {
+    const input = removableCase({
+      people: [
+        {
+          id: "person",
+          fullName: "Maria Borg",
+          spouseIds: [],
+          siblingIds: [],
+          ownershipSharePercent: 100,
+        },
+        { id: "keeper", fullName: "Paul Borg", spouseIds: [], siblingIds: [] },
+      ],
+    });
+
+    expect(casePersonDependencyLabels(input, "person")).toContain(
+      "a legacy property ownership record",
+    );
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+
+    expect(result.familyGroups[0].personIds).toEqual(["keeper"]);
+    expect(result.people.find((person) => person.id === "person")).toMatchObject({
+      ownershipSharePercent: 100,
+    });
+  });
+
+  it("retains a person's own succession records after removing them from the tree", () => {
+    const input = removableCase({
+      people: [
+        {
+          id: "person",
+          fullName: "Maria Borg",
+          inheritanceBasis: "will",
+          wills: [
+            {
+              id: "will",
+              date: "2019-03-04",
+              notaryName: "Dr Example",
+              description: "Recorded will",
+            },
+          ],
+          willHeirs: [{ id: "heir", personId: "keeper", sharePercent: 100 }],
+          causaMortisDeclarations: [
+            {
+              id: "cm",
+              status: "draft",
+              declarantPersonIds: ["keeper"],
+            },
+          ],
+          spouseIds: [],
+        },
+        { id: "keeper", fullName: "Paul Borg", spouseIds: [] },
+      ],
+    });
+    const normalizedPerson = normalizeCase(input).people.find((person) => person.id === "person");
+
+    expect(casePersonDependencyLabels(input, "person")).toContain(
+      "recorded succession or legal details",
+    );
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+    const retainedPerson = result.people.find((person) => person.id === "person");
+
+    expect(result.familyGroups[0].personIds).toEqual(["keeper"]);
+    expect(retainedPerson).toBeDefined();
+    expect(retainedPerson.wills).toEqual(normalizedPerson.wills);
+    expect(retainedPerson.willHeirs).toEqual(normalizedPerson.willHeirs);
+    expect(retainedPerson.causaMortisDeclarations).toEqual(
+      normalizedPerson.causaMortisDeclarations,
+    );
+  });
+
+  it("retains a deceased identity selected as a stored inheritance tax source", () => {
+    const input = removableCase({
+      properties: [
+        {
+          id: "property",
+          owners: [],
+          transfers: [],
+          saleLots: [
+            {
+              id: "tax-lot",
+              ownerId: "keeper",
+              inheritanceSourceDeceasedId: "person",
+            },
+          ],
+          declarations: [],
+        },
+      ],
+    });
+
+    expect(casePersonDependencyLabels(input, "person")).toContain(
+      "an inheritance tax source record",
+    );
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+
+    expect(result.familyGroups[0].personIds).toEqual(["keeper"]);
+    expect(result.people.some((person) => person.id === "person")).toBe(true);
+    expect(result.properties[0].saleLots).toEqual(input.properties[0].saleLots);
+  });
+
+  it("retains a deceased identity referenced by saved transfer provenance", () => {
+    const input = removableCase({
+      properties: [
+        {
+          id: "property",
+          owners: [],
+          transfers: [
+            {
+              id: "transfer",
+              sellerId: "keeper",
+              buyerId: "outside-buyer",
+              provenance: [
+                {
+                  trancheId: "inheritance-person",
+                  numerator: 1,
+                  denominator: 2,
+                },
+              ],
+            },
+          ],
+          saleLots: [],
+          declarations: [],
+        },
+      ],
+      outsideParties: [{ id: "outside-buyer", name: "Outside Buyer" }],
+    });
+
+    expect(casePersonDependencyLabels(input, "person")).toContain(
+      "an inheritance provenance record",
+    );
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+
+    expect(result.familyGroups[0].personIds).toEqual(["keeper"]);
+    expect(result.people.some((person) => person.id === "person")).toBe(true);
+    expect(result.properties[0].transfers[0].provenance).toEqual(
+      input.properties[0].transfers[0].provenance,
+    );
+  });
+
+  it.each([
+    {
+      name: "Article 616 status rows",
+      personPatch: {
+        legacyArticle616Statuses: [{ personId: "person", participation: "renounced" }],
+      },
+      label: "an Article 616 status record",
+    },
+    {
+      name: "saved will-beneficiary review rows",
+      personPatch: {
+        willHeirsConfirmationSnapshot: {
+          willHeirs: [{ id: "saved-heir", personId: "person", sharePercent: 100 }],
+          willHeirsConfirmed: false,
+        },
+      },
+      label: "a saved will-beneficiary review",
+    },
+    {
+      name: "pending-session will beneficiaries",
+      sessionField: "willHeirs",
+      sessionValue: [{ id: "saved-heir", personId: "person", sharePercent: 100 }],
+      label: "a will beneficiary record",
+    },
+    {
+      name: "pending-session intestate heirs",
+      sessionField: "intestateHeirs",
+      sessionValue: [{ id: "saved-heir", personId: "person", sharePercent: 100 }],
+      label: "a confirmed intestate-heir record",
+    },
+    {
+      name: "pending-session saved will review",
+      sessionField: "willHeirsConfirmationSnapshot",
+      sessionValue: {
+        willHeirs: [{ id: "saved-heir", personId: "person", sharePercent: 100 }],
+      },
+      label: "a saved will-beneficiary review",
+    },
+    {
+      name: "pending-session Article 616 statuses",
+      sessionField: "legacyArticle616Statuses",
+      sessionValue: [{ personId: "person", participation: "renounced" }],
+      label: "an Article 616 status record",
+    },
+    {
+      name: "pending-session causa mortis declarations",
+      sessionField: "causaMortisDeclarations",
+      sessionValue: [{ id: "saved-cm", declarantPersonIds: ["person"] }],
+      label: "a causa mortis declarant record",
+    },
+  ])("retains identities used by $name", ({ personPatch, sessionField, sessionValue, label }) => {
+    const statusToggleSessions = sessionField
+      ? [
+          {
+            id: "status-session",
+            type: "deceased",
+            personId: "keeper",
+            activeFamilyGroupId: "family-a",
+            personFields: {
+              [sessionField]: { present: true, value: sessionValue },
+            },
+          },
+        ]
+      : [];
+    const input = removableCase({
+      people: [
+        { id: "person", fullName: "Maria Borg", spouseIds: [], siblingIds: [] },
+        {
+          id: "keeper",
+          fullName: "Paul Borg",
+          spouseIds: [],
+          siblingIds: [],
+          ...personPatch,
+        },
+      ],
+      statusToggleSessions,
+    });
+    const normalizedInput = normalizeCase(input);
+
+    expect(casePersonDependencyLabels(input, "person")).toContain(label);
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+
+    expect(result.familyGroups[0].personIds).toEqual(["keeper"]);
+    expect(result.people.some((person) => person.id === "person")).toBe(true);
+    expect(result.people.find((person) => person.id === "keeper")).toEqual(
+      normalizedInput.people.find((person) => person.id === "keeper"),
+    );
+    expect(result.statusToggleSessions).toEqual(normalizedInput.statusToggleSessions);
+  });
+
+  it("retains a person referenced by persisted guided tax progress", () => {
+    const taxReadinessGuide = {
+      version: 1,
+      status: "paused",
+      currentPersonId: "person",
+      historyPersonIds: ["person"],
+      reviewedPersonIds: ["person"],
+      skippedPersonIds: ["person"],
+      skippedIssueKeys: { person: ["identity-name"] },
+      skippedReviewVisitedPersonIds: ["person"],
+    };
+    const input = removableCase({
+      properties: [
+        {
+          id: "property",
+          owners: [],
+          transfers: [],
+          saleLots: [],
+          declarations: [],
+          taxReadinessGuide,
+        },
+      ],
+    });
+
+    expect(casePersonDependencyLabels(input, "person")).toContain("a guided tax-review record");
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+
+    expect(result.familyGroups[0].personIds).toEqual(["keeper"]);
+    expect(result.people.some((person) => person.id === "person")).toBe(true);
+    expect(result.properties[0].taxReadinessGuide).toEqual(taxReadinessGuide);
+  });
+
+  it.each([null, "malformed", []])(
+    "ignores a malformed guided tax record without breaking person removal (%j)",
+    (taxReadinessGuide) => {
+      const input = removableCase({
+        properties: [
+          {
+            id: "property",
+            owners: [],
+            transfers: [],
+            saleLots: [],
+            declarations: [],
+            taxReadinessGuide,
+          },
+        ],
+      });
+
+      expect(() => casePersonDependencyLabels(input, "person")).not.toThrow();
+      expect(
+        removePersonFromFamilyGroup(input, "family-a", "person").people.some(
+          (person) => person.id === "person",
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("removes a CM declarant from the family group but retains their canonical identity", () => {
     const input = removableCase({
       people: [
@@ -909,10 +1235,15 @@ describe("family-scoped person removal", () => {
     expect(result.people.filter((person) => person.id === "person")).toHaveLength(1);
   });
 
-  it("retains a person needed by another person's family relationships", () => {
+  it("deletes a person referenced only by family relationships and scrubs every link", () => {
     const input = removableCase({
       people: [
-        { id: "person", fullName: "Maria Borg" },
+        {
+          id: "person",
+          fullName: "Maria Borg",
+          spouseIds: ["keeper"],
+          partnerRelationships: [{ personId: "keeper", type: "marriage" }],
+        },
         {
           id: "keeper",
           fullName: "Paul Borg",
@@ -931,7 +1262,114 @@ describe("family-scoped person removal", () => {
 
     const result = removePersonFromFamilyGroup(input, "family-a", "person");
     expect(result.familyGroups[0].personIds).toEqual(["keeper"]);
-    expect(result.people.some((person) => person.id === "person")).toBe(true);
+    expect(result.people.some((person) => person.id === "person")).toBe(false);
+    expect(result.people.find((person) => person.id === "keeper")).toMatchObject({
+      fatherId: "",
+      spouseIds: [],
+      siblingIds: [],
+      partnerRelationships: [],
+    });
+  });
+
+  it("does not regenerate a deleted parent when another person is added", () => {
+    const input = removableCase({
+      people: [
+        { id: "person", fullName: "Maria Borg" },
+        { id: "keeper", fullName: "Paul Borg", motherId: "person" },
+      ],
+    });
+
+    const removed = removePersonFromFamilyGroup(input, "family-a", "person");
+    const result = reconcilePeopleUpdate(removed, "family-a", [
+      ...removed.people,
+      { id: "new-person", fullName: "New Person" },
+    ]);
+
+    expect(result.people.some((person) => person.id === "person")).toBe(false);
+    expect(result.familyGroups[0].personIds).toEqual(["keeper", "new-person"]);
+    expect(result.people.find((person) => person.id === "keeper").motherId).toBe("");
+  });
+
+  it("keeps a retained marriage record without restoring the hidden parent for a new child", () => {
+    const input = removableCase({
+      people: [
+        {
+          id: "person",
+          fullName: "Maria Borg",
+          spouseIds: ["keeper"],
+          partnerRelationships: [
+            {
+              personId: "keeper",
+              type: "marriage",
+              startDate: "1990-04-12",
+              endDate: "2020-05-16",
+              endReason: "divorce",
+            },
+          ],
+        },
+        {
+          id: "keeper",
+          fullName: "Paul Borg",
+          spouseIds: ["person"],
+          causaMortisDeclarations: [{ id: "cm-declaration", declarantPersonIds: ["person"] }],
+        },
+      ],
+    });
+
+    const removed = removePersonFromFamilyGroup(input, "family-a", "person");
+    const result = reconcilePeopleUpdate(removed, "family-a", [
+      ...removed.people,
+      {
+        id: "new-child",
+        fullName: "New Child",
+        fatherId: "keeper",
+        motherId: "person",
+      },
+    ]);
+
+    expect(result.people.find((person) => person.id === "person")).toMatchObject({
+      spouseIds: ["keeper"],
+    });
+    expect(result.people.find((person) => person.id === "keeper")).toMatchObject({
+      spouseIds: ["person"],
+      partnerRelationships: [
+        {
+          personId: "person",
+          type: "marriage",
+          startDate: "1990-04-12",
+          endDate: "2020-05-16",
+          endReason: "divorce",
+        },
+      ],
+    });
+    expect(result.familyGroups[0]).toMatchObject({
+      personIds: ["keeper", "new-child"],
+      excludedPersonIds: ["person"],
+    });
+
+    const restored = addPersonIdsToFamilyGroup(result, "family-a", ["person"]);
+    expect(restored.familyGroups[0].personIds).toEqual(["keeper", "new-child", "person"]);
+    expect(restored.familyGroups[0].excludedPersonIds).toBeUndefined();
+  });
+
+  it("clears survival references when their subject is permanently deleted", () => {
+    const input = removableCase({
+      people: [
+        { id: "person", fullName: "Maria Borg" },
+        {
+          id: "keeper",
+          fullName: "Paul Borg",
+          survivalStatusReferencePersonId: "person",
+        },
+      ],
+    });
+
+    const result = removePersonFromFamilyGroup(input, "family-a", "person");
+
+    expect(result.people.some((person) => person.id === "person")).toBe(false);
+    expect(result.people.find((person) => person.id === "keeper")).toMatchObject({
+      survivalStatusReferencePersonId: "",
+    });
   });
 
   it("treats a sibling link as scrub-safe when deleting the final canonical person", () => {
