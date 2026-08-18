@@ -7840,3 +7840,165 @@ body.a3-print-preview-open {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
+/* Guided legal/tax completion remains separate from the printable tree. */
+.tax-readiness-launcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--gold, #a9782d) 35%, transparent);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--cream, #f7f1e6) 78%, white);
+}
+
+.tax-readiness-launcher h3,
+.tax-readiness-launcher p {
+  margin: 0;
+}
+
+.tax-readiness-launcher p {
+  margin-top: 0.25rem;
+  max-width: 48rem;
+}
+
+.tax-readiness-launcher small {
+  display: block;
+  margin-top: 0.45rem;
+}
+
+.tax-readiness-start {
+  flex: 0 0 auto;
+}
+
+.tax-readiness-guide-bar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.8rem 1rem;
+  padding: 0.9rem 1rem;
+  border-block: 1px solid color-mix(in srgb, var(--gold, #a9782d) 40%, transparent);
+  background: color-mix(in srgb, var(--cream, #f7f1e6) 94%, white);
+  box-shadow: 0 0.35rem 1rem rgb(45 35 20 / 8%);
+}
+
+.tax-readiness-guide-copy h2,
+.tax-readiness-guide-copy p {
+  margin: 0;
+}
+
+.tax-readiness-progress {
+  margin-top: 0.2rem !important;
+  font-size: 0.85rem;
+}
+
+.tax-readiness-issues {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 9rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tax-readiness-issues li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.tax-readiness-issues button {
+  flex: 0 0 auto;
+  min-height: 2rem;
+  border: 0;
+  background: transparent;
+  color: var(--burgundy, #6c243d);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tax-readiness-complete-card {
+  margin-top: 0.5rem !important;
+}
+
+.tax-readiness-guide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  max-width: none;
+}
+
+.library-cloud-recovery {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--burgundy, #6c243d) 35%, transparent);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, #fff5e6 86%, white);
+}
+
+.library-cloud-recovery h3,
+.library-cloud-recovery p {
+  margin: 0;
+}
+
+.library-cloud-recovery ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-cloud-recovery li {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgb(108 36 61 / 16%);
+}
+
+.library-cloud-recovery li > span,
+.library-cloud-recovery li small {
+  display: block;
+}
+
+.library-cloud-recovery li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+@media (max-width: 760px) {
+  .tax-readiness-launcher,
+  .tax-readiness-guide-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .tax-readiness-launcher {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tax-readiness-guide-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .tax-readiness-guide-actions button,
+  .tax-readiness-start {
+    min-height: 2.75rem;
+  }
+
+  .tax-readiness-issues li {
+    display: grid;
+  }
+}

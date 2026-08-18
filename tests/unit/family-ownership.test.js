@@ -436,6 +436,10 @@ describe("automatic family ownership", () => {
 
     expect(missingEndResult.destination).toBe("spouse-status-unresolved");
     expect(missingEndResult.warnings.join(" ")).toContain("marriage to former ended");
+    expect(missingEndResult).toMatchObject({
+      relationshipPersonIds: ["former"],
+      relationshipIssueField: "partner-marriage-end-date",
+    });
 
     const overlapping = missingEndDate.map((candidate) =>
       candidate.id === "deceased"
@@ -451,6 +455,10 @@ describe("automatic family ownership", () => {
     const overlappingResult = intestateAllocations(overlapping, "deceased");
     expect(overlappingResult.destination).toBe("spouse-status-unresolved");
     expect(overlappingResult.warnings.join(" ")).toContain("More than one marriage appears active");
+    expect(overlappingResult).toMatchObject({
+      relationshipPersonIds: ["former", "current"],
+      relationshipIssueField: "partner-relationship",
+    });
   });
 
   it("uses edited intestate heirs and user-directed shares when they total 100%", () => {
@@ -1826,6 +1834,57 @@ describe("per-property ownership", () => {
     expect(result.ownershipFractionsByPerson.child).toEqual({ numerator: 1, denominator: 1 });
     expect(result.transmissions[0].amountFraction).toEqual({ numerator: 1, denominator: 1 });
     expect(result.lifetimeTransferFractionsById["late-sale"]).toBeUndefined();
+  });
+
+  it.each([
+    {
+      label: "date",
+      patch: { date: "" },
+      targetField: "donation-date",
+    },
+    {
+      label: "acquirer",
+      patch: { buyerId: "" },
+      targetField: "donation-acquirer",
+    },
+    {
+      label: "share",
+      patch: { denominator: 0 },
+      targetField: "donation-share",
+    },
+    {
+      label: "provenance",
+      patch: {
+        provenance: [{ trancheId: "initial-initial", numerator: "invalid", denominator: 2 }],
+      },
+      targetField: "donation-provenance",
+    },
+  ])("routes an invalid lifetime transfer's $label error to its exact editor field", (scenario) => {
+    const people = [person("owner"), person("buyer")];
+    const transfer = {
+      id: `invalid-${scenario.label}`,
+      kind: "donation",
+      sellerId: "owner",
+      buyerId: "buyer",
+      numerator: 1,
+      denominator: 2,
+      amountType: "whole-property",
+      date: "2021-01-01",
+      ...scenario.patch,
+    };
+    const result = buildPropertyOwnership(people, {
+      id: "flat-1",
+      owners: [{ id: "initial", personId: "owner", sharePercent: 100 }],
+      transfers: [transfer],
+    });
+
+    expect(result.unresolved).toContainEqual(
+      expect.objectContaining({
+        personId: "owner",
+        transferId: transfer.id,
+        targetField: scenario.targetField,
+      }),
+    );
   });
 
   it("tags a will-based transmission distinctly from intestacy", () => {

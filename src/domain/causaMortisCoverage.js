@@ -160,9 +160,19 @@ export function validateCausaMortisDeclaration(declaration = {}, { dateOfDeath =
   return "";
 }
 
-export function buildCausaMortisShareCoverage(people = [], properties = [], outsideParties = []) {
+export function buildCausaMortisShareCoverage(
+  people = [],
+  properties = [],
+  outsideParties = [],
+  { casePropertyIds = properties.map((property) => property?.id) } = {},
+) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
+  const scopedCasePropertyIds = [
+    ...new Set(
+      casePropertyIds.map((propertyId) => String(propertyId || "").trim()).filter(Boolean),
+    ),
+  ];
   const rows = [];
 
   properties.forEach((property) => {
@@ -216,7 +226,9 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
           isCompletedCausaMortisDeclaration(declaration) &&
           validateCausaMortisDateChronology(declaration.date, person.dateOfDeath) === "" &&
           (declaration.propertyId === property.id ||
-            (!declaration.propertyId && properties.length === 1)),
+            (!declaration.propertyId &&
+              scopedCasePropertyIds.length === 1 &&
+              scopedCasePropertyIds[0] === property.id)),
       );
       const totalDeclaredFraction = declarations.reduce(
         (total, declaration) => addFractions(total, causaMortisDeclaredFraction(declaration)),
@@ -226,11 +238,15 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
       const declaredValuesByDeclarant = new Map();
       const declarantsMissingValues = new Set();
       const unresolvedDeclarantIds = new Set();
+      const unresolvedDeclarationIds = new Set();
       declarations.forEach((declaration) => {
         const allocation = allocateCausaMortisDeclaration(
           declaration,
           requiredFractionsByDeclarant,
         );
+        if (allocation.unresolvedDeclarantIds.length) {
+          unresolvedDeclarationIds.add(declaration.id);
+        }
         allocation.unresolvedDeclarantIds.forEach((personId) =>
           unresolvedDeclarantIds.add(personId),
         );
@@ -334,6 +350,7 @@ export function buildCausaMortisShareCoverage(people = [], properties = [], outs
           .filter((recipient) => recipient.status === "over")
           .map((recipient) => recipient.personId),
         unresolvedDeclarantIds: [...unresolvedDeclarantIds],
+        unresolvedDeclarationIds: [...unresolvedDeclarationIds],
         status,
         deathDateText: deathDateUnknown
           ? String(person.gedcomDeathDate || "").trim()

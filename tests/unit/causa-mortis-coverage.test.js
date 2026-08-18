@@ -279,6 +279,28 @@ describe("buildCausaMortisShareCoverage", () => {
     });
   });
 
+  it("does not reuse an unscoped legacy declaration across a multi-property case", () => {
+    const people = peopleWithDeclarations([
+      {
+        id: "legacy-cm",
+        status: "complete",
+        propertyId: "",
+        declaredShareNumerator: 1,
+        declaredShareDenominator: 2,
+      },
+    ]);
+
+    const result = buildCausaMortisShareCoverage(people, [property], [], {
+      casePropertyIds: ["property-1", "property-2"],
+    });
+
+    expect(result.rows[0]).toMatchObject({
+      propertyId: "property-1",
+      declaredShare: 0,
+      status: "under",
+    });
+  });
+
   it("does not count a completed declaration dated on or before death", () => {
     const result = buildCausaMortisShareCoverage(
       peopleWithDeclarations([
@@ -295,6 +317,35 @@ describe("buildCausaMortisShareCoverage", () => {
     );
 
     expect(result.rows[0]).toMatchObject({ declaredShare: 0, status: "under" });
+  });
+
+  it("identifies the exact declaration whose declarants do not inherit", () => {
+    const people = peopleWithDeclarations([
+      {
+        id: "valid-cm",
+        status: "complete",
+        propertyId: "property-1",
+        declaredShareNumerator: 1,
+        declaredShareDenominator: 2,
+      },
+      {
+        id: "wrong-declarant-cm",
+        status: "complete",
+        propertyId: "property-1",
+        declaredShareNumerator: 1,
+        declaredShareDenominator: 4,
+        declarantPersonIds: ["outsider"],
+      },
+    ]);
+    people.push({ id: "outsider", fullName: "Unrelated person" });
+
+    const row = buildCausaMortisShareCoverage(people, [property]).rows[0];
+
+    expect(row).toMatchObject({
+      status: "allocation-unresolved",
+      unresolvedDeclarantIds: ["outsider"],
+      unresolvedDeclarationIds: ["wrong-declarant-cm"],
+    });
   });
 });
 

@@ -13,6 +13,8 @@ const cloudHarness = vi.hoisted(() => ({
   loadTreeEntitlement: vi.fn(),
   queueAcknowledge: vi.fn(),
   queueFlush: vi.fn(),
+  queueSchedule: vi.fn(),
+  flushQueue: null,
   permanentlyDeleteFamilyTree: vi.fn(),
   restoreFamilyTree: vi.fn(),
   saveFamilyTree: vi.fn(async (tree) => tree),
@@ -61,8 +63,9 @@ vi.mock("../../src/services/cloudSaveQueue.js", () => ({
     let latestSnapshot;
     let savedFingerprint = "";
     let dirty = false;
-    return {
+    const queue = {
       schedule: (snapshot) => {
+        cloudHarness.queueSchedule(snapshot);
         latestSnapshot = snapshot;
         const fingerprint = JSON.stringify(snapshot);
         dirty = fingerprint !== savedFingerprint;
@@ -70,11 +73,13 @@ vi.mock("../../src/services/cloudSaveQueue.js", () => ({
       flush: async () => {
         cloudHarness.queueFlush(latestSnapshot);
         if (!dirty) return latestSnapshot;
-        const saved = await cloudHarness.saveFamilyTree(latestSnapshot);
+        const submittedSnapshot = latestSnapshot;
+        options.onSaveStart?.(submittedSnapshot);
+        const saved = await cloudHarness.saveFamilyTree(submittedSnapshot);
         latestSnapshot = saved;
         savedFingerprint = JSON.stringify(saved);
         dirty = false;
-        options.onSaveSuccess?.(saved, latestSnapshot);
+        options.onSaveSuccess?.(saved, submittedSnapshot);
         return saved;
       },
       acknowledge: (snapshot) => {
@@ -84,8 +89,11 @@ vi.mock("../../src/services/cloudSaveQueue.js", () => ({
         cloudHarness.queueAcknowledge(snapshot);
       },
       dispose: vi.fn(),
-      hasUnsavedChanges: () => false,
+      hasUnsavedChanges: () => dirty,
+      isSnapshotSaved: (snapshot) => JSON.stringify(snapshot) === savedFingerprint,
     };
+    cloudHarness.flushQueue = queue.flush;
+    return queue;
   },
 }));
 
@@ -106,6 +114,9 @@ vi.mock("../../src/components/FamilyLibrary.jsx", () => ({
     entitlement,
     isPlatformAdmin,
     onOpenAdminConsole,
+    pendingCloudRecoveries = [],
+    onApplyCloudRecovery,
+    onDiscardCloudRecovery,
   }) => (
     <div data-testid="family-library" data-active-tree-id={activeTreeId}>
       <span role="status">{saveState?.phase}</span>
@@ -119,6 +130,19 @@ vi.mock("../../src/components/FamilyLibrary.jsx", () => ({
       <button type="button" onClick={onDownloadBackup} disabled={backupDisabled}>
         Download backup
       </button>
+      {pendingCloudRecoveries.map((recovery) => (
+        <div key={`recovery-${recovery.id}`} data-testid="pending-cloud-recovery">
+          Pending {recovery.title} ({recovery.state})
+          {recovery.state === "safe" && (
+            <button type="button" onClick={() => onApplyCloudRecovery(recovery.id)}>
+              Use {recovery.title}
+            </button>
+          )}
+          <button type="button" onClick={() => onDiscardCloudRecovery(recovery.id)}>
+            Dismiss {recovery.title}
+          </button>
+        </div>
+      ))}
       {trees.map((tree) => (
         <div key={tree.id}>
           <button type="button" onClick={() => onOpen(tree.id)}>
@@ -162,10 +186,35 @@ vi.mock("../../src/components/AnnouncementBanner.jsx", () => ({
 }));
 
 vi.mock("../../src/components/FamilyTreeCanvas.jsx", () => ({
-  FamilyTreeCanvas: ({ treeTitle }) => <div data-testid="tree-canvas">{treeTitle}</div>,
+  FamilyTreeCanvas: ({ treeTitle, toolbar }) => (
+    <>
+      <div data-testid="tree-canvas">{treeTitle}</div>
+      <div>{toolbar}</div>
+    </>
+  ),
 }));
 
-import { App } from "../../src/App.jsx";
+import { App, caseActivationState } from "../../src/App.jsx";
+import {
+  listInitialOwnershipDrafts,
+  readInitialOwnershipDraft,
+  writeInitialOwnershipDraft,
+} from "../../src/services/initialOwnershipDraftJournal.js";
+
+const pendingInitialOwnership = (serverTree, owners, { writerId = "default-writer", now } = {}) =>
+  writeInitialOwnershipDraft(
+    "user-1",
+    {
+      treeId: serverTree.id,
+      propertyId: serverTree.properties[0].id,
+      baseStorageRevision: serverTree.storageRevision,
+      baseOwners: serverTree.properties[0].owners || [],
+      owners,
+      baseOutsideParties: serverTree.outsideParties || [],
+      outsideParties: serverTree.outsideParties || [],
+    },
+    { writerId, now },
+  );
 
 const tree = (id, title) => ({
   id,
@@ -198,6 +247,8 @@ describe("App cloud session identity", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    cloudHarness.flushQueue = null;
+    localStorage.clear();
     cloudHarness.isPlatformAdmin.mockResolvedValue(true);
     cloudHarness.listFamilyTrees.mockResolvedValue([
       tree("first", "First family"),
@@ -233,9 +284,327 @@ describe("App cloud session identity", () => {
     root = createRoot(container);
   });
 
+  it("recovers exact pending initial-owner rows before reopening the family", async () => {
+    const serverTree = {
+      ...caseActivationState(tree("first", "First family")).caseData,
+      storageRevision: 1,
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+    pendingInitialOwnership(serverTree, [
+      {
+        id: "initial-owner",
+        personId: "first-person",
+        shareNumerator: 1,
+        shareDenominator: 1,
+      },
+    ]);
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Open First family");
+    expect(cloudHarness.queueAcknowledge).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "first", title: "First family" }),
+    );
+    expect(cloudHarness.queueSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "first",
+        properties: [
+          expect.objectContaining({
+            owners: [expect.objectContaining({ personId: "first-person" })],
+          }),
+        ],
+      }),
+    );
+
+    await act(async () => {
+      await cloudHarness.flushQueue();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(listInitialOwnershipDrafts("user-1").drafts).toEqual([]);
+  });
+
+  it("hydrates every safe family and saves each recovered ownership when opened", async () => {
+    const firstServer = {
+      ...caseActivationState(tree("first", "First family")).caseData,
+      storageRevision: 1,
+    };
+    const secondServer = {
+      ...caseActivationState(tree("second", "Second family")).caseData,
+      storageRevision: 1,
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([firstServer, secondServer]);
+    pendingInitialOwnership(
+      firstServer,
+      [
+        {
+          id: "first-owner-row",
+          personId: "first-person",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      { writerId: "writer-first", now: new Date("2026-08-18T08:00:00.000Z") },
+    );
+    pendingInitialOwnership(
+      secondServer,
+      [
+        {
+          id: "second-owner-row",
+          personId: "second-person",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      { writerId: "writer-second", now: new Date("2026-08-18T09:00:00.000Z") },
+    );
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cloudHarness.queueSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "first",
+        properties: [
+          expect.objectContaining({ owners: [expect.objectContaining({ id: "first-owner-row" })] }),
+        ],
+      }),
+    );
+    expect(container.textContent).not.toContain("Pending First family");
+    expect(container.textContent).not.toContain("Pending Second family");
+
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open Second family")
+        .click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(cloudHarness.queueSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "second",
+        properties: [
+          expect.objectContaining({
+            owners: [expect.objectContaining({ id: "second-owner-row" })],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("saves another tab's pending ownership version without cloning or deleting its source", async () => {
+    const serverTree = {
+      ...caseActivationState(tree("first", "First family")).caseData,
+      storageRevision: 1,
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+    pendingInitialOwnership(
+      serverTree,
+      [
+        {
+          id: "other-tab-owner-row",
+          personId: "first-person",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      { writerId: "other-open-tab" },
+    );
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(cloudHarness.queueSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: [
+          expect.objectContaining({
+            owners: [expect.objectContaining({ id: "other-tab-owner-row" })],
+          }),
+        ],
+      }),
+    );
+    expect(listInitialOwnershipDrafts("user-1").drafts).toHaveLength(1);
+
+    await act(async () => {
+      await cloudHarness.flushQueue();
+      await Promise.resolve();
+    });
+    expect(listInitialOwnershipDrafts("user-1").drafts).toEqual([]);
+    expect(
+      readInitialOwnershipDraft("user-1", "first", "first-property", {
+        writerId: "other-open-tab",
+      }),
+    ).not.toBeNull();
+  });
+
   afterEach(() => {
-    act(() => root.unmount());
+    if (root) act(() => root.unmount());
     container.remove();
+  });
+
+  it("flushes a focused initial-owner field before disposing the App save queue", async () => {
+    const serverTree = {
+      ...caseActivationState({
+        ...tree("first", "First family"),
+        settings: { workspaceMode: "property-tax", activePropertyId: "first-property" },
+      }).caseData,
+      storageRevision: 1,
+    };
+    serverTree.settings = {
+      ...serverTree.settings,
+      workspaceMode: "property-tax",
+      activePropertyId: "first-property",
+    };
+    serverTree.properties[0] = {
+      ...serverTree.properties[0],
+      owners: [
+        {
+          id: "focused-owner",
+          personId: "first-person",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open First family")
+        .click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      container.querySelector('button[aria-label="Property & Tax"]').click();
+      await Promise.resolve();
+    });
+
+    const numerator = container.querySelector('input[aria-label="Initial ownership numerator"]');
+    expect(numerator).not.toBeNull();
+    act(() => {
+      numerator.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "2");
+      numerator.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(listInitialOwnershipDrafts("user-1").drafts).toEqual([]);
+
+    act(() => root.unmount());
+    root = null;
+
+    const drafts = listInitialOwnershipDrafts("user-1").drafts;
+    expect(drafts).toHaveLength(1);
+    expect(String(drafts[0].owners[0].shareNumerator)).toBe("2");
+    expect(cloudHarness.queueSchedule).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        properties: [
+          expect.objectContaining({
+            owners: [expect.objectContaining({ shareNumerator: "2" })],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("stops a cloud save when its ownership lineage cannot be stored", async () => {
+    const serverTree = {
+      ...caseActivationState({
+        ...tree("first", "First family"),
+        settings: { workspaceMode: "property-tax", activePropertyId: "first-property" },
+      }).caseData,
+      storageRevision: 1,
+    };
+    serverTree.settings = {
+      ...serverTree.settings,
+      workspaceMode: "property-tax",
+      activePropertyId: "first-property",
+    };
+    serverTree.properties[0] = {
+      ...serverTree.properties[0],
+      owners: [
+        {
+          id: "lineage-owner",
+          personId: "first-person",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open First family")
+        .click();
+      await Promise.resolve();
+      container.querySelector('button[aria-label="Property & Tax"]').click();
+      await Promise.resolve();
+    });
+
+    const numerator = container.querySelector('input[aria-label="Initial ownership numerator"]');
+    act(() => {
+      numerator.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "2");
+      numerator.dispatchEvent(new Event("input", { bubbles: true }));
+      numerator.blur();
+    });
+    expect(listInitialOwnershipDrafts("user-1").drafts).toHaveLength(1);
+
+    const originalSetItem = Storage.prototype.setItem;
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function failLineageWrite(key, value) {
+        if (String(key).includes("initial-ownership-draft")) {
+          throw new DOMException("Quota exceeded", "QuotaExceededError");
+        }
+        return originalSetItem.call(this, key, value);
+      });
+    cloudHarness.saveFamilyTree.mockClear();
+    let saveError;
+    await act(async () => {
+      try {
+        await cloudHarness.flushQueue();
+      } catch (error) {
+        saveError = error;
+      }
+    });
+    setItem.mockRestore();
+
+    expect(saveError).toMatchObject({ code: "INITIAL_OWNERSHIP_DRAFT_STORAGE_FAILURE" });
+    expect(cloudHarness.saveFamilyTree).not.toHaveBeenCalled();
+    expect(listInitialOwnershipDrafts("user-1").drafts).toHaveLength(1);
   });
 
   it("refreshes the signed-in allowance after closing admin and when a target session regains focus", async () => {
@@ -755,6 +1124,90 @@ describe("App cloud session identity", () => {
       expect.objectContaining({ title: "First family renamed", storageRevision: 3 }),
     );
     expect(container.textContent).toContain("Rename First family renamed");
+  });
+
+  it("keeps divergent restored owner drafts in explicit multiple-version review", async () => {
+    const trashed = {
+      ...caseActivationState(tree("trashed", "Trashed family")).caseData,
+      deletedAt: "2026-08-18T08:00:00.000Z",
+      storageRevision: 1,
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([tree("first", "First family")]);
+    cloudHarness.listTrashedFamilyTrees.mockResolvedValue([trashed]);
+    cloudHarness.restoreFamilyTree.mockResolvedValue({
+      ...trashed,
+      deletedAt: "",
+      storageRevision: 2,
+    });
+    pendingInitialOwnership(
+      trashed,
+      [
+        {
+          id: "owner-x",
+          personId: "trashed-person",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      { writerId: "writer-x", now: new Date("2026-08-18T08:10:00.000Z") },
+    );
+    pendingInitialOwnership(
+      trashed,
+      [
+        {
+          id: "owner-y",
+          personId: "trashed-person",
+          shareNumerator: 3,
+          shareDenominator: 4,
+        },
+      ],
+      { writerId: "writer-y", now: new Date("2026-08-18T08:20:00.000Z") },
+    );
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Restore Trashed family")
+        .click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const recoveries = [
+      ...container.querySelectorAll('[data-testid="pending-cloud-recovery"]'),
+    ].filter((item) => item.textContent.includes("Trashed family"));
+    expect(recoveries).toHaveLength(2);
+    recoveries.forEach((item) => expect(item.textContent).toContain("(multiple)"));
+    expect(
+      [...container.querySelectorAll("button")].some(
+        (button) => button.textContent === "Use Trashed family",
+      ),
+    ).toBe(false);
+
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Dismiss Trashed family")
+        .click();
+      await Promise.resolve();
+    });
+
+    const remaining = [
+      ...container.querySelectorAll('[data-testid="pending-cloud-recovery"]'),
+    ].filter((item) => item.textContent.includes("Trashed family"));
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].textContent).toContain("(safe)");
+    expect(
+      [...container.querySelectorAll("button")].some(
+        (button) => button.textContent === "Use Trashed family",
+      ),
+    ).toBe(true);
   });
 
   it("leaves an active family open when moving it to Trash fails", async () => {

@@ -1973,6 +1973,55 @@ describe("PersonInspector", () => {
     expect(
       container.querySelector('input[aria-label="No spouse survived the deceased"]'),
     ).not.toBeNull();
+
+    const undatedOwner = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      givenNames: "Joseph",
+      surname: "Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2005-02-28",
+      inheritanceBasis: "intestacy",
+      spouseIds: ["spouse"],
+      designations: ["Deceased"],
+    };
+    const undatedSpouse = { ...spouse, isDeceased: true };
+    const undatedChild = { ...child, isDeceased: true };
+    const grandchild = {
+      id: "grandchild",
+      fullName: "Anna Borg",
+      sex: "Female",
+      fatherId: "child",
+      spouseIds: [],
+    };
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[undatedOwner, undatedSpouse, undatedChild, grandchild]}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    expect(
+      container.querySelector('input[aria-label="No spouse survived the deceased"]'),
+    ).toBeNull();
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[undatedOwner, undatedSpouse, undatedChild]}
+          selectedPersonId="deceased"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    expect(
+      container.querySelector('input[aria-label="No spouse survived the deceased"]'),
+    ).not.toBeNull();
   });
 
   it("shows recorded co-parents as married without asking for confirmation or a date", () => {
@@ -5423,6 +5472,65 @@ describe("PersonInspector provenance designation", () => {
       "Joseph Borg is marked as having attempted to sell or donate a larger share than the calculator shows he owned on that date.",
     );
     expect(container.querySelector(".person-donation-form")).toBeNull();
+
+    act(() => invalidRecord.querySelector(".lifetime-transfer-summary").click());
+    [
+      ["Sale date", "donation-date"],
+      ["Existing acquirer", "donation-acquirer"],
+      ["Transfer measurement", "donation-share"],
+      ["Transfer numerator", "donation-share"],
+      ["Transfer denominator", "donation-share"],
+    ].forEach(([label, field]) => {
+      const control = container.querySelector(`[aria-label="${label}"]`);
+      expect(control?.dataset.taxReadinessField).toBe(field);
+      expect(control?.dataset.taxReadinessTargetId).toBe("invalid-sale");
+    });
+  });
+
+  it("marks the exact saved transfer on every editable provenance control", () => {
+    const designatedProperty = {
+      ...property,
+      transfers: [
+        ...property.transfers,
+        {
+          id: "invalid-provenance",
+          kind: "donation",
+          sellerId: "seller",
+          buyerId: "other",
+          numerator: 1,
+          denominator: 2,
+          amountType: "whole-property",
+          date: "2021-01-01",
+          provenance: [{ trancheId: "initial-o1", numerator: 1, denominator: 2 }],
+        },
+      ],
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          properties={[designatedProperty]}
+          vendorReport={buildPropertyVendorTaxReport(designatedProperty, people, [])}
+          selectedPersonId="seller"
+          onChange={vi.fn()}
+          onSelectPerson={vi.fn()}
+          onRecordDonation={vi.fn()}
+          onUpdateInterVivosTransfer={vi.fn()}
+        />,
+      ),
+    );
+
+    const record = container.querySelector('[data-tax-readiness-transfer-id="invalid-provenance"]');
+    expect(record).not.toBeNull();
+    act(() => record.querySelector(".lifetime-transfer-summary").click());
+    const controls = [
+      ...container.querySelectorAll('[data-tax-readiness-field="donation-provenance"]'),
+    ];
+    expect(controls.length).toBeGreaterThan(0);
+    expect(
+      controls.every((control) => control.dataset.taxReadinessTargetId === "invalid-provenance"),
+    ).toBe(true);
   });
 
   it("moves a deceased owner's full lifetime transfer to the acquirer before succession", () => {

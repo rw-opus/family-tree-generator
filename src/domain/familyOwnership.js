@@ -244,23 +244,17 @@ export function descendantsMissingDeathDates(people = [], deceasedId) {
   );
 }
 
-function legacyDescendantsControlIntestacyOwnership({
-  deceased,
-  ruleset,
-  descendantProbe,
-  descendantSurvivalResolved = true,
-}) {
+function legacyDescendantsControlIntestacyOwnership({ deceased, ruleset, descendantProbe }) {
   return (
-    deceased?.inheritanceBasis !== "will" &&
-    ruleset.key === "pre2005" &&
-    descendantSurvivalResolved &&
-    descendantProbe.size > 0
+    deceased?.inheritanceBasis !== "will" && ruleset.key === "pre2005" && descendantProbe.size > 0
   );
 }
 
 /**
  * A spouse's survival does not alter this app's full-ownership allocation when
- * a pre-reform intestate estate passes to a resolved descendant class.
+ * a pre-reform intestate estate inevitably passes to a descendant class.
+ * An undated intermediate child does not make the spouse material when a
+ * living lower descendant proves that the branch survives either way.
  */
 export function spouseDeathDatesAreOptionalForIntestacy(people = [], deceasedId) {
   const index = familyIndex(people);
@@ -268,17 +262,12 @@ export function spouseDeathDatesAreOptionalForIntestacy(people = [], deceasedId)
   if (!deceased || !isPersonDeceased(deceased) || !deceased.dateOfDeath) return false;
 
   const children = index.childrenByParent.get(deceased.id) || [];
-  const descendantSurvivalResolved =
-    branchesMissingSurvivalDates(children, deceased.dateOfDeath, index).length === 0;
-  const descendantProbe = descendantSurvivalResolved
-    ? allocateBranches(children, deceased.dateOfDeath, 1, index)
-    : new Map();
+  const descendantProbe = allocateBranches(children, deceased.dateOfDeath, 1, index);
 
   return legacyDescendantsControlIntestacyOwnership({
     deceased,
     ruleset: successionRuleset(deceased.dateOfDeath),
     descendantProbe,
-    descendantSurvivalResolved,
   });
 }
 
@@ -287,8 +276,14 @@ export function spouseDeathDatesAreOptionalForIntestacy(people = [], deceasedId)
  * linked spouse's intestate succession. A date needed by any linked
  * succession remains marked even if another old-law succession can omit it.
  */
-export function requiredSpouseDeathDatePersonIds(people = []) {
+export function requiredSpouseDeathDatePersonIds(people = [], relevantDeceasedIds = null) {
   const requiredIds = new Set();
+  const scopedDeceasedIds =
+    relevantDeceasedIds instanceof Set
+      ? relevantDeceasedIds
+      : Array.isArray(relevantDeceasedIds)
+        ? new Set(relevantDeceasedIds)
+        : null;
   const normalizedPeople = normalizePartnerRelationships(people);
   const index = familyIndex(normalizedPeople);
   const relationshipsByKey = new Map();
@@ -302,6 +297,7 @@ export function requiredSpouseDeathDatePersonIds(people = []) {
 
   normalizedPeople.forEach((deceased) => {
     if (
+      (scopedDeceasedIds && !scopedDeceasedIds.has(deceased.id)) ||
       !isPersonDeceased(deceased) ||
       !deceased.dateOfDeath ||
       deceased.inheritanceBasis === "will" ||
@@ -312,16 +308,11 @@ export function requiredSpouseDeathDatePersonIds(people = []) {
     }
 
     const children = index.childrenByParent.get(deceased.id) || [];
-    const descendantSurvivalResolved =
-      branchesMissingSurvivalDates(children, deceased.dateOfDeath, index).length === 0;
-    const descendantProbe = descendantSurvivalResolved
-      ? allocateBranches(children, deceased.dateOfDeath, 1, index)
-      : new Map();
+    const descendantProbe = allocateBranches(children, deceased.dateOfDeath, 1, index);
     const spouseDateOptional = legacyDescendantsControlIntestacyOwnership({
       deceased,
       ruleset: successionRuleset(deceased.dateOfDeath),
       descendantProbe,
-      descendantSurvivalResolved,
     });
     if (spouseDateOptional) return;
 
@@ -539,27 +530,34 @@ function calculateIntestateAllocations(people = [], deceasedId) {
     warnings.push(
       `Enter the date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
     );
-    return { shares, warnings, destination: "death-date-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "death-date-unresolved",
+      missingDeathDatePersonIds: [deceased.id],
+    };
   }
   const ruleset = successionRuleset(deceased.dateOfDeath);
   if (ruleset.key === "invalid-date") {
     warnings.push(
       `Enter a valid date of death for ${deceased.fullName || "the deceased"} before calculating the intestate succession.`,
     );
-    return { shares, warnings, destination: "death-date-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "death-date-unresolved",
+      missingDeathDatePersonIds: [deceased.id],
+    };
   }
 
   const atDate = deceased.dateOfDeath;
   const children = index.childrenByParent.get(deceased.id) || [];
   const descendantsWithUnknownSurvival = descendantsMissingDeathDates(people, deceased.id);
-  const descendantProbe = descendantsWithUnknownSurvival.length
-    ? new Map()
-    : allocateBranches(children, atDate, 1, index);
+  const descendantProbe = allocateBranches(children, atDate, 1, index);
   const legacyDescendantsControlOwnership = legacyDescendantsControlIntestacyOwnership({
     deceased,
     ruleset,
     descendantProbe,
-    descendantSurvivalResolved: descendantsWithUnknownSurvival.length === 0,
   });
 
   if (!legacyDescendantsControlOwnership && deceased.unmarriedOrWidowedAtDeath === true) {
@@ -586,7 +584,7 @@ function calculateIntestateAllocations(people = [], deceasedId) {
       );
     }
   }
-  const invalidRelationshipDates =
+  const invalidRelationshipDetails =
     legacyDescendantsControlOwnership || deceased.unmarriedOrWidowedAtDeath
       ? []
       : partnerIdsForPerson(people, deceased.id).flatMap((partnerId) => {
@@ -594,7 +592,7 @@ function calculateIntestateAllocations(people = [], deceasedId) {
           const relationship = findPartnerRelationship(people, deceased.id, partnerId);
           if (!partner || !relationship) return [];
           if (relationship.type === "partnership") return [];
-          return validateRelationshipDateChronology({
+          const errors = validateRelationshipDateChronology({
             // Marriage start dates are not relevant to succession. A linked
             // marriage is assumed to exist unless it is recorded as having ended.
             startDate: "",
@@ -605,10 +603,18 @@ function calculateIntestateAllocations(people = [], deceasedId) {
             partnerLabel: personName(partner),
             relationshipLabel: relationship.type === "partnership" ? "Partnership" : "Marriage",
           });
+          return errors.length ? [{ partnerId, errors }] : [];
         });
+  const invalidRelationshipDates = invalidRelationshipDetails.flatMap((item) => item.errors);
   if (invalidRelationshipDates.length) {
     warnings.push(...new Set(invalidRelationshipDates));
-    return { shares, warnings, destination: "spouse-status-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "spouse-status-unresolved",
+      relationshipPersonIds: invalidRelationshipDetails.map((item) => item.partnerId),
+      relationshipIssueField: "partner-marriage-end-date",
+    };
   }
   if (descendantsWithUnknownSurvival.length) {
     warnings.push(
@@ -616,7 +622,12 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         .map(personName)
         .join(", ")} before deciding which descendant branches survived the deceased.`,
     );
-    return { shares, warnings, destination: "survival-date-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "survival-date-unresolved",
+      missingDeathDatePersonIds: descendantsWithUnknownSurvival.map((person) => person.id),
+    };
   }
   const marriagesMissingEndDates = linkedMarriagesMissingEndDates(people, deceased.id, atDate);
   if (marriagesMissingEndDates.length && !legacyDescendantsControlOwnership) {
@@ -625,7 +636,13 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         .map(personName)
         .join(", ")} ended before calculating the intestate succession.`,
     );
-    return { shares, warnings, destination: "spouse-status-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "spouse-status-unresolved",
+      relationshipPersonIds: marriagesMissingEndDates.map((person) => person.id),
+      relationshipIssueField: "partner-marriage-end-date",
+    };
   }
 
   // A stale manual spouse-exclusion flag and incomplete marriage details are
@@ -647,14 +664,25 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         ", ",
       )} before deciding whether the linked spouse survived the deceased.`,
     );
-    return { shares, warnings, destination: "spouse-survival-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "spouse-survival-unresolved",
+      missingDeathDatePersonIds: spousesWithUnknownSurvival.map((person) => person.id),
+    };
   }
   const livingSpouses = spouses.filter((person) => wasAliveAt(person, atDate));
   if (livingSpouses.length > 1 && !legacyDescendantsControlOwnership) {
     warnings.push(
       `More than one marriage appears active on ${atDate}. Record the end date of every former marriage before calculating the intestate succession.`,
     );
-    return { shares, warnings, destination: "spouse-status-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "spouse-status-unresolved",
+      relationshipPersonIds: livingSpouses.map((person) => person.id),
+      relationshipIssueField: "partner-relationship",
+    };
   }
   if (descendantProbe.size) {
     const isLegacy = ruleset.key === "pre2005";
@@ -693,7 +721,12 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         .map(personName)
         .join(", ")} before deciding which ascendants survived the deceased.`,
     );
-    return { shares, warnings, destination: "survival-date-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "survival-date-unresolved",
+      missingDeathDatePersonIds: ascendantStatus.missing.map((person) => person.id),
+    };
   }
   const ascendants = ascendantStatus.living;
   if (ascendantStatus.provisional?.length) {
@@ -711,7 +744,12 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         .map(personName)
         .join(", ")} before deciding which sibling branches survived the deceased.`,
     );
-    return { shares, warnings, destination: "survival-date-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "survival-date-unresolved",
+      missingDeathDatePersonIds: siblingBranchesWithUnknownSurvival.map((person) => person.id),
+    };
   }
   const siblingProbe = allocateSiblingBranches(siblings, atDate, 1, index);
   if (ruleset.key === "pre2005") {
@@ -816,7 +854,12 @@ function calculateIntestateAllocations(people = [], deceasedId) {
         .map(({ person }) => personName(person))
         .join(", ")} before deciding which collateral relatives survived the deceased.`,
     );
-    return { shares, warnings, destination: "survival-date-unresolved" };
+    return {
+      shares,
+      warnings,
+      destination: "survival-date-unresolved",
+      missingDeathDatePersonIds: collateralsWithUnknownSurvival.map(({ person }) => person.id),
+    };
   }
   const nearestCollaterals = otherCollaterals.filter(({ degree }) => degree === nearestDegree);
   if (nearestCollaterals.length) {
@@ -1265,6 +1308,11 @@ function buildFamilyOwnershipCore(
               : exactShareMapFromRecords(person.willHeirs || [])
             : new Map(),
           warnings: protectedWill.warnings,
+          missingDeathDatePersonIds: spouseSurvivalUnresolved
+            ? legalSpouses
+                .filter((spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath)
+                .map((spouse) => spouse.id)
+            : protectedWill.calculation?.missingDeathDatePersonIds || [],
           destination: protectedWill.applies
             ? protectedWill.calculation?.article === "619"
               ? "will-with-legacy-article-619"
@@ -1316,11 +1364,23 @@ function buildFamilyOwnershipCore(
         allocations: numericShareMap(allocations),
         exactAllocations: allocations,
         warnings: result.warnings,
+        missingDeathDatePersonIds: result.missingDeathDatePersonIds || [],
+        relationshipPersonIds: result.relationshipPersonIds || [],
+        relationshipIssueField: result.relationshipIssueField || "",
         destination: "unresolved",
         sourceTrancheId: source?.trancheId || "",
       });
       record(personId, amountFraction, "unresolved", source);
-      unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
+      unresolved.push({
+        personId,
+        amount,
+        fraction: amountFraction,
+        warnings: result.warnings,
+        missingDeathDatePersonIds: result.missingDeathDatePersonIds || [],
+        relationshipPersonIds: result.relationshipPersonIds || [],
+        relationshipIssueField: result.relationshipIssueField || "",
+        destination: result.destination,
+      });
       return;
     }
     transmissions.push({
@@ -1331,12 +1391,24 @@ function buildFamilyOwnershipCore(
       allocations: numericShareMap(allocations),
       exactAllocations: allocations,
       warnings: result.warnings,
+      missingDeathDatePersonIds: result.missingDeathDatePersonIds || [],
+      relationshipPersonIds: result.relationshipPersonIds || [],
+      relationshipIssueField: result.relationshipIssueField || "",
       destination: result.destination,
       sourceTrancheId: source?.trancheId || "",
     });
     if (!allocations.size || compareFractions(allocatedFraction, ZERO_FRACTION) <= 0) {
       record(personId, amountFraction, "unresolved", source);
-      unresolved.push({ personId, amount, fraction: amountFraction, warnings: result.warnings });
+      unresolved.push({
+        personId,
+        amount,
+        fraction: amountFraction,
+        warnings: result.warnings,
+        missingDeathDatePersonIds: result.missingDeathDatePersonIds || [],
+        relationshipPersonIds: result.relationshipPersonIds || [],
+        relationshipIssueField: result.relationshipIssueField || "",
+        destination: result.destination,
+      });
       return;
     }
 
@@ -1509,6 +1581,21 @@ function errorTransferEntry(transfer, error) {
   return { ...clean, error, amount: 0 };
 }
 
+function lifetimeTransferIssueField(error = "") {
+  const message = String(error);
+  if (/\bdesignat(?:ed|ion)|\bprovenance|\btranche\b/i.test(message)) {
+    return "donation-provenance";
+  }
+  if (/\bbuyer\b|\bacquirer\b|\brecipient\b/i.test(message)) {
+    return "donation-acquirer";
+  }
+  if (/\bdate\b/i.test(message)) return "donation-date";
+  if (/\bfraction\b|\bshare\b|\bnumerator\b|\bdenominator\b/i.test(message)) {
+    return "donation-share";
+  }
+  return "";
+}
+
 function transferBuyerDeathError(peopleById, transfer) {
   const buyer = peopleById.get(transfer.buyerId);
   if (
@@ -1577,6 +1664,7 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
       startingOwnership,
     );
     let entry = attemptedLedger.entries[0] || errorTransferEntry(transfer, "Invalid transfer.");
+    let issueFieldOverride = "";
     const buyerDeathError = transferBuyerDeathError(peopleById, transfer);
     if (!entry.error && buyerDeathError) entry = errorTransferEntry(transfer, buyerDeathError);
 
@@ -1595,6 +1683,7 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
         : applyPortions(sellerTranches, selection.portions);
       if (applied.error) {
         entry = errorTransferEntry(transfer, applied.error);
+        if (designation.length) issueFieldOverride = "donation-provenance";
       } else {
         const retainedOthers = tranches.filter((tranche) => tranche.personId !== transfer.sellerId);
         const acquired = selection.portions.map((portion) => ({
@@ -1611,6 +1700,8 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
           previousOwnerId: transfer.sellerId || "",
           previousOwnerName: partyName(transfer.sellerId),
           previousOwnerDeceased: isPersonDeceased(peopleById.get(transfer.sellerId)),
+          previousOwnerRecordId:
+            portion.tranche.ownerRecordId || portion.tranche.previousOwnerRecordId || "",
           previousCause: portion.tranche.cause || "",
           previousProvenance: portion.tranche.provenance || "",
           acquisitionValue:
@@ -1618,8 +1709,9 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
             transfer.acquisitionValue !== "" &&
             transfer.acquisitionValue !== null &&
             transfer.acquisitionValue !== undefined &&
-            Number.isFinite(Number(transfer.acquisitionValue))
-              ? Math.max(0, Number(transfer.acquisitionValue))
+            Number.isFinite(Number(transfer.acquisitionValue)) &&
+            Number(transfer.acquisitionValue) >= 0
+              ? Number(transfer.acquisitionValue)
               : "",
           acquisitionValueBasis:
             transfer.kind === "donation" ? transfer.acquisitionValueBasis || "" : "",
@@ -1644,6 +1736,7 @@ function buildChronologicalPropertyOwnership(people = [], property = {}, outside
         fraction: ZERO_FRACTION,
         warnings: [entry.error],
         transferId: transfer.id || "",
+        targetField: issueFieldOverride || lifetimeTransferIssueField(entry.error),
       });
     }
   });

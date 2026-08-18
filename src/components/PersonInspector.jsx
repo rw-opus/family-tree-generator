@@ -1497,36 +1497,49 @@ export function PersonInspector({
       .map((row) => row.originalOwnerRecordId)
       .filter(Boolean),
   );
-  const hasUnresolvedDownstreamDonation = (resolvedTaxCalculationReport?.vendors || []).some(
+  const unresolvedDownstreamDonationRows = (resolvedTaxCalculationReport?.vendors || []).flatMap(
     (vendor) =>
-      (vendor.rows || []).some(
+      (vendor.rows || []).filter(
         (row) =>
           row.sourceKind === "donation" &&
           row.provenancePersonId === selectedPerson.id &&
-          !row.donorAcquisitionDate,
+          row.requiresDonorAcquisitionDate === true,
       ),
   );
+  const hasUnresolvedDownstreamDonation = unresolvedDownstreamDonationRows.length > 0;
   const needsOriginalAcquisitionResolution =
     Boolean(selectedVendorTax && selectedVendorTax.tax == null) || hasUnresolvedDownstreamDonation;
-  const originalAcquisitionResolutionRows = isDeceased
-    ? []
-    : (properties[0]?.owners || [])
-        .filter(
-          (owner) =>
-            needsOriginalAcquisitionResolution &&
-            owner.personId === selectedPerson.id &&
-            !owner.acquisitionDate &&
-            !currentInitialTaxRecordIds.has(owner.id),
-        )
-        .map((owner) => ({
-          id: `original-acquisition-${owner.id || selectedPerson.id}`,
-          sourceKind: "initial",
-          provenance: "Original ownership",
-          originalOwnerId: selectedPerson.id,
-          originalOwnerRecordId: owner.id || "",
-          requiresOriginalAcquisitionDate: true,
-          warning: "Enter this living original owner's acquisition date for the donated share.",
-        }));
+  const selectedPersonInitialOwners = (properties[0]?.owners || []).filter(
+    (owner) => owner.personId === selectedPerson.id,
+  );
+  const originalAcquisitionResolutionRows = selectedPersonInitialOwners
+    .filter(
+      (owner) =>
+        needsOriginalAcquisitionResolution &&
+        owner.personId === selectedPerson.id &&
+        !owner.acquisitionDate &&
+        !currentInitialTaxRecordIds.has(owner.id),
+    )
+    .flatMap((owner) => {
+      const matchingDonationRows = unresolvedDownstreamDonationRows.filter(
+        (row) =>
+          row.originalOwnerRecordId === owner.id ||
+          (!row.originalOwnerRecordId && selectedPersonInitialOwners.length === 1),
+      );
+      const sourceRows = matchingDonationRows.length ? matchingDonationRows : [null];
+      return sourceRows.map((sourceRow) => ({
+        id: `original-acquisition-${owner.id || selectedPerson.id}${
+          sourceRow?.sourceTransferId ? `-${sourceRow.sourceTransferId}` : ""
+        }`,
+        sourceKind: "initial",
+        provenance: "Original ownership",
+        originalOwnerId: selectedPerson.id,
+        originalOwnerRecordId: owner.id || "",
+        sourceTransferId: sourceRow?.sourceTransferId || "",
+        requiresOriginalAcquisitionDate: true,
+        warning: "Enter this original owner's acquisition date for the later donated share.",
+      }));
+    });
   const survivalReferencePerson = peopleById.get(selectedPerson.survivalStatusReferencePersonId);
   const identityIssues = selectedPersonIdentityIssues;
   const identityComplete = identityIssues.length === 0;
@@ -1612,6 +1625,28 @@ export function PersonInspector({
       }),
     );
   const causaMortisDeclarations = selectedPerson.causaMortisDeclarations || [];
+  const taxRequiredCausaMortisDeclarationIds = new Set(
+    (resolvedTaxCalculationReport?.vendors || [])
+      .flatMap((vendor) => vendor.rows || [])
+      .filter(
+        (row) =>
+          row.requiresCausaMortisAcquisitionValue === true &&
+          row.provenancePersonId === selectedPerson.id,
+      )
+      .flatMap((row) =>
+        (row.declarations || [])
+          .filter((declaration) => declaration.hasDeclaredValue !== true)
+          .map((declaration) => declaration.id),
+      )
+      .filter(Boolean),
+  );
+  const taxCausaMortisValueRequiredForPerson = (resolvedTaxCalculationReport?.vendors || [])
+    .flatMap((vendor) => vendor.rows || [])
+    .some(
+      (row) =>
+        row.requiresCausaMortisAcquisitionValue === true &&
+        row.provenancePersonId === selectedPerson.id,
+    );
   const suggestedWillHeirsConfirmed =
     selectedPerson.willHeirsConfirmed === true &&
     selectedPerson.willHeirsConfirmationSource === "suggested";
@@ -1906,10 +1941,11 @@ export function PersonInspector({
             : unavailablePropertyValueMessage}
         </small>
       </div>
-      {!isDeceased && (
+      {(!isDeceased || originalAcquisitionResolutionRows.length > 0) && (
         <FinalWithholdingTaxSection
           vendorTax={selectedVendorTax}
           additionalResolutionRows={originalAcquisitionResolutionRows}
+          isPersonDeceased={isDeceased}
           onOpenSourcePerson={
             onSelectPerson || onSelectOutsideOwner
               ? (sourceId) => {
@@ -1967,6 +2003,8 @@ export function PersonInspector({
             {isDonation ? "Donation date" : "Sale date"}
             <DateInput
               aria-label={isDonation ? "Donation date" : "Sale date"}
+              data-tax-readiness-field="donation-date"
+              data-tax-readiness-target-id={editingTransferId || undefined}
               value={donationDraft.date}
               onChange={(value) => setDonationField({ date: value })}
             />
@@ -1989,6 +2027,8 @@ export function PersonInspector({
               {isDonation ? "Donee" : "Buyer"}
               <select
                 aria-label="Existing acquirer"
+                data-tax-readiness-field="donation-acquirer"
+                data-tax-readiness-target-id={editingTransferId || undefined}
                 value={donationDraft.doneeId}
                 onChange={(event) => setDonationField({ doneeId: event.target.value })}
               >
@@ -2081,6 +2121,8 @@ export function PersonInspector({
             Transfer measurement
             <select
               aria-label="Transfer measurement"
+              data-tax-readiness-field="donation-share"
+              data-tax-readiness-target-id={editingTransferId || undefined}
               value={donationDraft.amountType}
               onChange={(event) =>
                 setDonationField({
@@ -2099,6 +2141,8 @@ export function PersonInspector({
                 Enter share as
                 <select
                   aria-label="Transfer share format"
+                  data-tax-readiness-field="donation-share"
+                  data-tax-readiness-target-id={editingTransferId || undefined}
                   value={donationDraft.shareInputMode}
                   onChange={(event) =>
                     setDonationField({
@@ -2117,6 +2161,8 @@ export function PersonInspector({
                   <span className="transfer-percentage">
                     <input
                       aria-label="Transfer percentage"
+                      data-tax-readiness-field="donation-share"
+                      data-tax-readiness-target-id={editingTransferId || undefined}
                       type="number"
                       min="0"
                       max={Math.min(100, fractionToNumber(donorLedgerHolding) * 100)}
@@ -2142,6 +2188,8 @@ export function PersonInspector({
                     Numerator
                     <input
                       aria-label="Transfer numerator"
+                      data-tax-readiness-field="donation-share"
+                      data-tax-readiness-target-id={editingTransferId || undefined}
                       type="number"
                       min="0"
                       max={MAX_FRACTION_INTEGER}
@@ -2158,6 +2206,8 @@ export function PersonInspector({
                     Denominator
                     <input
                       aria-label="Transfer denominator"
+                      data-tax-readiness-field="donation-share"
+                      data-tax-readiness-target-id={editingTransferId || undefined}
                       type="number"
                       min="1"
                       max={MAX_FRACTION_INTEGER}
@@ -2200,6 +2250,8 @@ export function PersonInspector({
                     <label className="provenance-pick">
                       <input
                         type="checkbox"
+                        data-tax-readiness-field="donation-provenance"
+                        data-tax-readiness-target-id={editingTransferId || undefined}
                         checked={Boolean(entry.checked)}
                         onChange={(event) =>
                           setDonationField({
@@ -2225,6 +2277,8 @@ export function PersonInspector({
                       <span className="provenance-fraction">
                         <input
                           type="number"
+                          data-tax-readiness-field="donation-provenance"
+                          data-tax-readiness-target-id={editingTransferId || undefined}
                           min="0"
                           max={MAX_FRACTION_INTEGER}
                           step="1"
@@ -2245,6 +2299,8 @@ export function PersonInspector({
                         <span>/</span>
                         <input
                           type="number"
+                          data-tax-readiness-field="donation-provenance"
+                          data-tax-readiness-target-id={editingTransferId || undefined}
                           min="1"
                           max={MAX_FRACTION_INTEGER}
                           step="1"
@@ -2320,6 +2376,7 @@ export function PersonInspector({
     <section
       id={`inter-vivos-transfer-${selectedPerson.id}`}
       className="estate-flow-step lifetime-transfer-step"
+      data-person-section="donation"
     >
       <h3 className="estate-flow-heading">Lifetime transfer</h3>
       {recordedOutgoingInterVivosTransfers.length > 0 && (
@@ -2336,6 +2393,7 @@ export function PersonInspector({
               <div
                 className={`lifetime-transfer-record${entry.error ? " invalid" : ""}`}
                 key={entry.id}
+                data-tax-readiness-transfer-id={entry.id}
               >
                 <button
                   type="button"
@@ -2662,6 +2720,7 @@ export function PersonInspector({
             <label>
               <span>Name</span>
               <input
+                data-person-field="given-names"
                 autoFocus={!displayedGivenNames}
                 value={displayedGivenNames}
                 onChange={(event) => updateGivenNames(event.target.value)}
@@ -2671,6 +2730,7 @@ export function PersonInspector({
             <label>
               <span>Surname</span>
               <input
+                data-person-field="surname"
                 value={displayedSurname}
                 onChange={(event) => updateSurname(event.target.value)}
                 placeholder="Current surname"
@@ -2685,6 +2745,7 @@ export function PersonInspector({
             >
               <span>Surname at birth</span>
               <input
+                data-person-field="surname-at-birth"
                 value={displayedSurnameAtBirth}
                 onChange={(event) => updateSurnameAtBirth(event.target.value)}
                 placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
@@ -2704,6 +2765,7 @@ export function PersonInspector({
               {["Female", "Male", "Other"].map((sex) => (
                 <label className="detail-checkbox" key={sex}>
                   <input
+                    data-person-field="sex"
                     type="radio"
                     name={`sex-${selectedPerson.id}`}
                     checked={selectedPerson.sex === sex}
@@ -2766,7 +2828,11 @@ export function PersonInspector({
         )}
 
         {legalWorkspaceEnabled && isPotentialParentSurvivalUnresolved(selectedPerson) && (
-          <section className="potential-parent-survival-alert" role="alert">
+          <section
+            className="potential-parent-survival-alert"
+            role="alert"
+            data-person-section="survival"
+          >
             <strong>Establish whether this parent survived</strong>
             <p>
               Confirm whether {selectedDisplayName} was alive or had already died when{" "}
@@ -2838,7 +2904,11 @@ export function PersonInspector({
               <h3 className="estate-flow-heading">Death details</h3>
               <label className="succession-detail-row succession-death-date">
                 <span>Date of death</span>
-                <DateInput value={selectedPerson.dateOfDeath || ""} onChange={updateDateOfDeath} />
+                <DateInput
+                  data-person-field="date-of-death"
+                  value={selectedPerson.dateOfDeath || ""}
+                  onChange={updateDateOfDeath}
+                />
               </label>
               {!spouseSurvivalNotMaterialToOwnership && (
                 <>
@@ -2911,7 +2981,12 @@ export function PersonInspector({
                           <strong>Wills</strong>
                           <small>The latest dated will applies.</small>
                         </div>
-                        <button type="button" className="secondary-button" onClick={addWill}>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          data-tax-readiness-field="add-will"
+                          onClick={addWill}
+                        >
                           <FilePlus2 size={14} /> Add will
                         </button>
                       </div>
@@ -2947,6 +3022,8 @@ export function PersonInspector({
                               <label>
                                 <span>Will date</span>
                                 <DateInput
+                                  data-tax-readiness-field="will-date"
+                                  data-tax-readiness-target-id={will.id}
                                   aria-label={`Will date ${index + 1}`}
                                   value={will.date || ""}
                                   onChange={(value) => updateWill(will.id, { date: value })}
@@ -2997,7 +3074,12 @@ export function PersonInspector({
                         <div className="will-beneficiaries-heading">
                           <strong>Beneficiaries under the latest will</strong>
                           <span>
-                            <button type="button" className="text-button" onClick={addWillHeir}>
+                            <button
+                              type="button"
+                              className="text-button"
+                              data-tax-readiness-field="add-will-beneficiary"
+                              onClick={addWillHeir}
+                            >
                               Add beneficiary
                             </button>
                             {onOutsidePartiesChange && (
@@ -3026,6 +3108,8 @@ export function PersonInspector({
                           return (
                             <div className={`will-heir-row ${ownershipDisplay}`} key={heir.id}>
                               <select
+                                data-tax-readiness-field="will-beneficiary"
+                                data-tax-readiness-target-id={heir.id}
                                 aria-label="Will beneficiary"
                                 value={heir.personId || ""}
                                 onChange={(event) =>
@@ -3067,6 +3151,8 @@ export function PersonInspector({
                               {ownershipDisplay !== "percentage" && (
                                 <span className="will-heir-fraction">
                                   <input
+                                    data-tax-readiness-field="will-beneficiary-share"
+                                    data-tax-readiness-target-id={heir.id}
                                     aria-label="Will share numerator"
                                     type="number"
                                     min="0"
@@ -3081,6 +3167,8 @@ export function PersonInspector({
                                   />
                                   <b>/</b>
                                   <input
+                                    data-tax-readiness-field="will-beneficiary-share"
+                                    data-tax-readiness-target-id={heir.id}
                                     aria-label="Will share denominator"
                                     type="number"
                                     min="1"
@@ -3098,6 +3186,8 @@ export function PersonInspector({
                               {ownershipDisplay !== "fraction" && (
                                 <span className="will-heir-percent">
                                   <input
+                                    data-tax-readiness-field="will-beneficiary-share"
+                                    data-tax-readiness-target-id={heir.id}
                                     aria-label="Will share percentage"
                                     type="number"
                                     min="0"
@@ -3227,6 +3317,9 @@ export function PersonInspector({
                       dateOfDeath={selectedPerson.dateOfDeath || ""}
                       hasUnknownDeathDate={hasUnknownCausaMortisDeathDate}
                       errors={causaMortisErrors}
+                      taxValuePropertyId={properties[0]?.id || ""}
+                      taxValueRequired={taxCausaMortisValueRequiredForPerson}
+                      taxRequiredDeclarationIds={taxRequiredCausaMortisDeclarationIds}
                       onAddDeclaration={handleCausaMortisDeclarationAction}
                       onAddDeclarationForProperty={handleCausaMortisCoverageAction}
                       onRemoveDeclaration={removeCausaMortisDeclaration}
@@ -3240,7 +3333,7 @@ export function PersonInspector({
           {!isDeceased && legalWorkspaceEnabled && propertyShareSummary}
           {!isDeceased && legalWorkspaceEnabled && lifetimeTransferSection}
           {linkedPartners.length > 0 && (
-            <div className="person-partner-links">
+            <div className="person-partner-links" data-person-section="partner-details">
               <span>Marriage / partner links</span>
               <div>
                 {linkedPartners.map((partner) => {
@@ -3284,6 +3377,8 @@ export function PersonInspector({
                         )}
                       </span>
                       <select
+                        data-tax-readiness-field="partner-relationship"
+                        data-tax-readiness-target-id={partner.id}
                         aria-label={`Relationship type with ${displayName(partner)}`}
                         value={relationshipState}
                         onChange={(event) => {
@@ -3328,6 +3423,8 @@ export function PersonInspector({
                           <label>
                             <span>Marriage ended</span>
                             <DateInput
+                              data-tax-readiness-field="partner-marriage-end-date"
+                              data-tax-readiness-target-id={partner.id}
                               aria-label={`Marriage end date with ${displayName(partner)}`}
                               value={relationship?.endDate || ""}
                               onChange={(value) =>

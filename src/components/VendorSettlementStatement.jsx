@@ -90,6 +90,10 @@ function VendorSettlementDialog({ report, property, people, onSelectPerson, onCl
   const completeVendors = vendors.filter(vendorIsComplete);
   const pendingVendorCount = vendors.length - completeVendors.length;
   const totalsComplete = report?.totalsComplete ?? (pendingVendorCount === 0 && vendors.length > 0);
+  const ignoredStoredTaxLotCount = vendors.reduce(
+    (total, vendor) => total + (vendor.ignoredStoredTaxLots?.length || 0),
+    0,
+  );
 
   useEffect(() => {
     document.body.classList.add("vendor-settlement-open");
@@ -147,9 +151,33 @@ function VendorSettlementDialog({ report, property, people, onSelectPerson, onCl
           </div>
           <div>
             <span>Calculation status</span>
-            <strong>{totalsComplete ? "Complete" : "Tax details pending"}</strong>
+            <strong>
+              {ignoredStoredTaxLotCount
+                ? "Calculated — legacy rows need review"
+                : totalsComplete
+                  ? "Complete"
+                  : "Tax details pending"}
+            </strong>
           </div>
         </section>
+
+        {ignoredStoredTaxLotCount > 0 && (
+          <div className="vendor-settlement-warning" role="alert">
+            <strong>
+              {ignoredStoredTaxLotCount} saved legacy tax lot
+              {ignoredStoredTaxLotCount === 1 ? " was" : "s were"} not used.
+            </strong>
+            <ul>
+              {vendors.flatMap((vendor) =>
+                (vendor.ignoredStoredTaxLots || []).map((ignoredLot, index) => (
+                  <li key={`${vendor.id}:${ignoredLot.id || index}`}>
+                    {vendor.name}: {ignoredLot.reason}
+                  </li>
+                )),
+              )}
+            </ul>
+          </div>
+        )}
 
         {vendors.length ? (
           <div className="vendor-settlement-table-wrap">

@@ -43,6 +43,66 @@ function uniqueIds(values = []) {
   });
 }
 
+function normalizeNestedRecordIds(value, scopeId, recordType) {
+  if (!Array.isArray(value)) return value;
+  const reservedIds = new Set(value.map((record) => text(record?.id)).filter(Boolean));
+  const usedIds = new Set();
+  return value.map((record, index) => {
+    if (!isRecord(record)) return cloneValue(record);
+    const requestedId = text(record.id);
+    if (requestedId && !usedIds.has(requestedId)) {
+      usedIds.add(requestedId);
+      return { ...cloneValue(record), id: requestedId };
+    }
+
+    const baseId = `${text(scopeId) || "record"}:${recordType}:${index + 1}`;
+    let id = baseId;
+    let recoveryOrdinal = 2;
+    while (reservedIds.has(id) || usedIds.has(id)) {
+      id = `${baseId}:recovered:${recoveryOrdinal}`;
+      recoveryOrdinal += 1;
+    }
+    usedIds.add(id);
+    return { ...cloneValue(record), id };
+  });
+}
+
+function normalizePersonNestedRecordIds(person) {
+  if (!Array.isArray(person.willHeirs)) return person;
+  return {
+    ...person,
+    willHeirs: normalizeNestedRecordIds(person.willHeirs, person.id, "will-heir"),
+  };
+}
+
+function normalizePropertyNestedRecordIds(property, scopeId) {
+  if (!isRecord(property)) return cloneValue(property);
+  const normalized = cloneValue(property);
+  if (Array.isArray(normalized.owners)) {
+    normalized.owners = normalizeNestedRecordIds(normalized.owners, scopeId, "owner");
+  }
+  if (Array.isArray(normalized.transfers)) {
+    normalized.transfers = normalizeNestedRecordIds(normalized.transfers, scopeId, "transfer");
+  }
+  return normalized;
+}
+
+function bindLegacyCausaMortisDeclarationsToProperty(people = [], propertyId = "") {
+  const solePropertyId = text(propertyId);
+  if (!solePropertyId) return people;
+
+  return people.map((person) => {
+    if (!Array.isArray(person.causaMortisDeclarations)) return person;
+    let changed = false;
+    const causaMortisDeclarations = person.causaMortisDeclarations.map((declaration) => {
+      if (!isRecord(declaration) || text(declaration.propertyId)) return declaration;
+      changed = true;
+      return { ...declaration, propertyId: solePropertyId };
+    });
+    return changed ? { ...person, causaMortisDeclarations } : person;
+  });
+}
+
 function familyGroupId(caseId, ordinal) {
   return `${caseId}:family-group:${ordinal}`;
 }
@@ -109,7 +169,9 @@ function normalizePeople(
     }
     seen.add(id);
     result.push(
-      personWithWills(normalisePersonNameFields({ ...normalizeLegacyPersonNulls(person), id })),
+      normalizePersonNestedRecordIds(
+        personWithWills(normalisePersonNameFields({ ...normalizeLegacyPersonNulls(person), id })),
+      ),
     );
     return result;
   }, []);
@@ -331,6 +393,7 @@ function legacyFamilyGroup(caseData) {
  */
 export function normalizeCase(value = {}) {
   const source = isRecord(value) ? cloneValue(value) : {};
+  const caseId = text(source.id) || DEFAULT_CASE_ID;
   const applyLegalNormalisation = propertyTaxWorkspaceEnabled(source.settings?.workspaceMode);
   const peopleResult = normalizePeople(source.people, {
     applyLegalNormalisation,
@@ -343,10 +406,43 @@ export function normalizeCase(value = {}) {
   dataWarnings.push(...peopleResult.warnings);
   const normalizedCaseData = {
     ...source,
-    id: text(source.id) || DEFAULT_CASE_ID,
+    id: caseId,
     people,
     schemaVersion: CASE_SCHEMA_VERSION,
   };
+  if (Array.isArray(source.properties)) {
+    normalizedCaseData.properties = source.properties.map((property, index) => {
+      const propertyId = text(property?.id) || `${caseId}:property:${index + 1}`;
+      const normalized = normalizePropertyNestedRecordIds(property, propertyId);
+      return isRecord(normalized) ? { ...normalized, id: propertyId } : normalized;
+    });
+  }
+  const legacyPropertyId = text(source.property?.id) || "legacy-property";
+  if (isRecord(source.property)) {
+    normalizedCaseData.property = normalizePropertyNestedRecordIds(
+      source.property,
+      legacyPropertyId,
+    );
+  }
+  if (Array.isArray(source.owners)) {
+    normalizedCaseData.owners = normalizeNestedRecordIds(source.owners, legacyPropertyId, "owner");
+  }
+  if (Array.isArray(source.transfers)) {
+    normalizedCaseData.transfers = normalizeNestedRecordIds(
+      source.transfers,
+      legacyPropertyId,
+      "transfer",
+    );
+  }
+  const currentPropertyIds = Array.isArray(normalizedCaseData.properties)
+    ? normalizedCaseData.properties.map((property) => text(property?.id)).filter(Boolean)
+    : [];
+  if (currentPropertyIds.length === 1) {
+    normalizedCaseData.people = bindLegacyCausaMortisDeclarationsToProperty(
+      normalizedCaseData.people,
+      currentPropertyIds[0],
+    );
+  }
   const caseData = applyLegalNormalisation
     ? removeLegacyPotentialParents(normalizedCaseData)
     : normalizedCaseData;

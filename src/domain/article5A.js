@@ -10,6 +10,8 @@ const PRE_2004_CUTOFF = "2004-01-01";
 const number = (value) => Math.max(0, Number(value) || 0);
 const isMissingMoney = (value) =>
   value === undefined || value === null || String(value).trim() === "";
+const isRecordedNonNegativeMoney = (value) =>
+  !isMissingMoney(value) && Number.isFinite(Number(value)) && Number(value) >= 0;
 const validDate = (value) => {
   const text = String(value || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
@@ -31,6 +33,66 @@ const noLaterThanYears = (start, end, years) => {
   deadline.setUTCFullYear(deadline.getUTCFullYear() + years);
   return endDate <= deadline;
 };
+
+const DONATION_VALUE_BASES = new Set(["market-at-donation", "deed-value", "final-assessment"]);
+
+function hasRecognisedSpecialTreatment(value) {
+  if (!value) return false;
+  return ARTICLE_5A_SPECIAL_TREATMENTS.some((treatment) => treatment.key === value);
+}
+
+/**
+ * Missing source facts are reported independently of the first calculation
+ * warning. This lets guided setup keep asking for person-card facts even while
+ * a property-wide input such as the intended selling value is still blank.
+ */
+export function article5ASourceRequirements(lot = {}) {
+  const acquisitionType = lot.acquisitionType || "inheritance";
+  const acquisitionDate =
+    acquisitionType === "inheritance"
+      ? String(lot.inheritanceDate || lot.acquisitionDate || "")
+      : String(lot.acquisitionDate || lot.inheritanceDate || "");
+  const transferDate = String(lot.transferDate || "");
+  const withinArticle5A = validDate(transferDate) && transferDate >= ARTICLE_5A_START;
+  const sourceDateUsable =
+    validDate(acquisitionDate) && (!validDate(transferDate) || acquisitionDate <= transferDate);
+  const standardTreatment =
+    !hasRecognisedSpecialTreatment(lot.article5ASpecialTreatment) &&
+    lot.taxTreatment !== "manual" &&
+    !(lot.isJudicialSale && acquisitionType !== "inheritance");
+  const donationWithinFiveYears =
+    acquisitionType === "donation" &&
+    sourceDateUsable &&
+    withinArticle5A &&
+    noLaterThanYears(acquisitionDate, transferDate, 5);
+  const usesIncreaseMethod =
+    standardTreatment &&
+    sourceDateUsable &&
+    withinArticle5A &&
+    ((acquisitionType === "inheritance" &&
+      acquisitionDate >= INHERITANCE_CAUSA_MORTIS_CUTOFF &&
+      !lot.isJudicialSale) ||
+      (acquisitionType === "donation" && !donationWithinFiveYears && !lot.isProject));
+  const donationValueOrBasisMissing =
+    acquisitionType === "donation" &&
+    usesIncreaseMethod &&
+    (!isRecordedNonNegativeMoney(lot.acquisitionValue) ||
+      !DONATION_VALUE_BASES.has(lot.acquisitionValueBasis || ""));
+  const donorDateUsable =
+    validDate(lot.previousAcquisitionDate) &&
+    sourceDateUsable &&
+    lot.previousAcquisitionDate <= acquisitionDate;
+
+  return {
+    acquisitionDate: standardTreatment && withinArticle5A && !sourceDateUsable,
+    donorAcquisitionDate: standardTreatment && donationWithinFiveYears && !donorDateUsable,
+    donationAcquisitionValue: donationValueOrBasisMissing,
+    causaMortisAcquisitionValue:
+      acquisitionType === "inheritance" &&
+      usesIncreaseMethod &&
+      !isRecordedNonNegativeMoney(lot.acquisitionValue),
+  };
+}
 
 const method = ({
   key,
@@ -597,6 +659,7 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
     transferDate,
     share,
     increase: Math.max(0, values.transferValue - declaredValue),
+    sourceRequirements: article5ASourceRequirements(lot),
   };
 
   if (!(numerator > 0) || !(denominator > 0)) {
@@ -652,6 +715,22 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
   const special = specialTreatmentResult(lot, base);
   if (special) return special;
 
+  if (lot.isJudicialSale && acquisitionType !== "inheritance") {
+    return {
+      ...base,
+      methods: [],
+      selected: "",
+      recommended: "",
+      lowest: "",
+      status: "out-of-scope",
+      requiresManualReview: true,
+      warnings: [],
+      appliedRule: "5A(3)(f)",
+      warning:
+        "This judicial sale is outside Article 5A; calculate any tax due under the applicable ordinary regime.",
+    };
+  }
+
   if (!validDate(acquisitionDate)) {
     return {
       ...base,
@@ -677,22 +756,6 @@ export function assessArticle5ATransfer(lot = {}, { deedTransferValue = 0 } = {}
       status: "incomplete",
       warnings: [],
       warning: "The acquisition date cannot be after the transfer date.",
-    };
-  }
-
-  if (lot.isJudicialSale && acquisitionType !== "inheritance") {
-    return {
-      ...base,
-      methods: [],
-      selected: "",
-      recommended: "",
-      lowest: "",
-      status: "out-of-scope",
-      requiresManualReview: true,
-      warnings: [],
-      appliedRule: "5A(3)(f)",
-      warning:
-        "This judicial sale is outside Article 5A; calculate any tax due under the applicable ordinary regime.",
     };
   }
 

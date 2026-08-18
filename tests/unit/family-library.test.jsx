@@ -21,6 +21,9 @@ const renderLibrary = (root, props = {}) => {
     onSignIn: vi.fn(),
     onSignOut: vi.fn(),
     onDownloadBackup: vi.fn(),
+    onDownloadCloudRecovery: vi.fn(),
+    onApplyCloudRecovery: vi.fn(async () => true),
+    onDiscardCloudRecovery: vi.fn(),
     ...props,
   };
   act(() =>
@@ -201,6 +204,98 @@ describe("FamilyLibrary", () => {
     expect(container.querySelector('button[aria-label="Download workspace backup"]').disabled).toBe(
       true,
     );
+  });
+
+  it("offers download, use and non-destructive dismiss actions for pending owner rows", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const handlers = renderLibrary(root, {
+      pendingCloudRecoveries: [
+        {
+          id: "pending-borg",
+          title: "Borg family",
+          state: "safe",
+          propertyLabel: "12 Market Street",
+          savedAt: "2026-08-18T08:00:00.000Z",
+        },
+      ],
+    });
+
+    const section = container.querySelector('[aria-labelledby="cloud-recovery-title"]');
+    expect(section).not.toBeNull();
+    expect(section.textContent).toContain("Cloud initial ownership has not changed");
+    expect(section.textContent).toContain("12 Market Street");
+    const buttons = [...section.querySelectorAll("button")];
+    act(() => buttons.find((button) => button.textContent.includes("Download")).click());
+    expect(handlers.onDownloadCloudRecovery).toHaveBeenCalledWith("pending-borg");
+
+    await act(async () => {
+      buttons.find((button) => button.textContent.includes("Use owner rows")).click();
+      await Promise.resolve();
+    });
+    expect(handlers.onApplyCloudRecovery).toHaveBeenCalledWith("pending-borg");
+
+    act(() => buttons.find((button) => button.textContent.includes("Hide copy")).click());
+    expect(handlers.onDiscardCloudRecovery).toHaveBeenCalledWith("pending-borg");
+    expect(confirm).toHaveBeenCalledTimes(2);
+    confirm.mockRestore();
+  });
+
+  it("never offers to apply an unreadable recovery record", () => {
+    renderLibrary(root, {
+      pendingCloudRecoveries: [
+        {
+          id: "invalid-record",
+          title: "Unreadable browser recovery record",
+          state: "invalid",
+        },
+      ],
+    });
+    const section = container.querySelector('[aria-labelledby="cloud-recovery-title"]');
+    expect(section.textContent).toContain("unreadable");
+    expect(
+      [...section.querySelectorAll("button")].some((button) =>
+        button.textContent.includes("Use owner rows"),
+      ),
+    ).toBe(false);
+  });
+
+  it("can apply another tab's owner rows without deleting its source record", () => {
+    renderLibrary(root, {
+      pendingCloudRecoveries: [
+        {
+          id: "active-record",
+          title: "Open elsewhere",
+          state: "safe",
+          sourceActive: true,
+        },
+      ],
+    });
+    const section = container.querySelector('[aria-labelledby="cloud-recovery-title"]');
+    expect(section.textContent).toContain("Open these owner rows");
+    expect(
+      [...section.querySelectorAll("button")].some((button) =>
+        button.textContent.includes("Use owner rows"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not offer to apply conflicting owner rows", () => {
+    renderLibrary(root, {
+      pendingCloudRecoveries: [
+        {
+          id: "conflicting-record",
+          title: "Borg family",
+          state: "conflict",
+        },
+      ],
+    });
+    const section = container.querySelector('[aria-labelledby="cloud-recovery-title"]');
+    expect(section.textContent).toContain("changed after this browser record");
+    expect(
+      [...section.querySelectorAll("button")].some((button) =>
+        button.textContent.includes("Use owner rows"),
+      ),
+    ).toBe(false);
   });
 
   it("filters and renames families inline", () => {

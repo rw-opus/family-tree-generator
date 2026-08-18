@@ -19,6 +19,7 @@ import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
 import { observeStickyNavOffset } from "./components/stickyNavOffset.js";
 import { TreeWorkspaceModeControl } from "./components/TreeWorkspaceModeControl.jsx";
+import { TaxReadinessGuideBar, taxReadinessIssueControl } from "./components/TaxReadinessGuide.jsx";
 import { WorkspaceSaveStatus } from "./components/WorkspaceSaveStatus.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
@@ -62,6 +63,11 @@ import {
   propertyTaxWorkspaceEnabled,
   treeHasRecordedPropertyTaxData,
 } from "./domain/treeWorkspaceMode.js";
+import {
+  buildTaxReadinessPlan,
+  nextTaxReadinessPerson,
+  normaliseTaxReadinessSession,
+} from "./domain/taxReadinessGuide.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
 import {
   createFamilyTree,
@@ -78,6 +84,19 @@ import {
   trashFamilyTree,
 } from "./services/familyTrees.js";
 import { createCloudSaveQueue } from "./services/cloudSaveQueue.js";
+import {
+  INITIAL_OWNERSHIP_DRAFT_RECOVERY_STATES,
+  acknowledgeInitialOwnershipDraftSave,
+  compareInitialOwnershipDraftToTree,
+  dismissInitialOwnershipDraft,
+  initialOwnershipDraftWriterId,
+  initialOwnershipOwnersFingerprint,
+  listInitialOwnershipDrafts,
+  markInitialOwnershipDraftSubmitted,
+  markInitialOwnershipTreeDeleted,
+  recoverInitialOwnershipDraftTree,
+  writeInitialOwnershipDraft,
+} from "./services/initialOwnershipDraftJournal.js";
 import {
   isLocalTrashExpired,
   loadLocalWorkspace,
@@ -116,6 +135,28 @@ const activeTreeSnapshot = (value) => {
   delete active.deletedAt;
   delete active.deleted_at;
   return active;
+};
+
+const cloudQueueSnapshotIsSaved = (queue, snapshot) =>
+  typeof queue?.isSnapshotSaved === "function"
+    ? queue.isSnapshotSaved(snapshot)
+    : !queue?.hasUnsavedChanges?.();
+
+const reclassifyCloudOwnershipRecoveryChoices = (items = []) => {
+  const replayableStates = new Set(["safe", "multiple"]);
+  const fingerprintsByProperty = new Map();
+  items.forEach((item) => {
+    if (!replayableStates.has(item.state) || !item.draft) return;
+    const key = `${item.treeId}:${item.propertyId}`;
+    const fingerprints = fingerprintsByProperty.get(key) || new Set();
+    fingerprints.add(item.draft.ownersFingerprint);
+    fingerprintsByProperty.set(key, fingerprints);
+  });
+  return items.map((item) => {
+    if (!replayableStates.has(item.state) || !item.draft) return item;
+    const fingerprints = fingerprintsByProperty.get(`${item.treeId}:${item.propertyId}`);
+    return { ...item, state: fingerprints?.size > 1 ? "multiple" : "safe" };
+  });
 };
 
 const migratedProperties = (value) => {
@@ -332,13 +373,26 @@ export function App({
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
+  const initialOwnershipDraftWriterIdRef = useRef("");
+  if (!initialOwnershipDraftWriterIdRef.current) {
+    initialOwnershipDraftWriterIdRef.current = initialOwnershipDraftWriterId();
+  }
+  const initialOwnershipDraftCacheRef = useRef(new Map());
+  const skipNextCloudPersistenceEffectRef = useRef("");
+  const recoveredInitialOwnershipDraftsRef = useRef(new Map());
+  const latestTreeRef = useRef(tree);
+  const latestTreesRef = useRef(trees);
+  const latestTrashedTreesRef = useRef(trashedTrees);
+  const activeTreeIsListedRef = useRef(activeTreeIsListed);
   const failedDirectSaveIdsRef = useRef(new Set());
   const directSavePromisesRef = useRef(new Map());
   const propertyWorkspaceRef = useRef(null);
   const propertyWorkspaceNavRef = useRef(null);
+  const initialOwnershipFlushRef = useRef(null);
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
     () => normaliseTree(tree).activeFamilyGroupId,
   );
+  const [cloudPendingRecoveries, setCloudPendingRecoveries] = useState([]);
   const activateCase = useCallback((value, options = {}) => {
     const activation = caseActivationState(value);
     if (options.acknowledgeCloudSave) {
@@ -362,6 +416,71 @@ export function App({
     [workspaceView],
   );
 
+  const initialOwnershipDraftCacheKey = (treeId, propertyId) => `${treeId}:${propertyId}`;
+  const journalInitialOwnershipChanges = useCallback(
+    (baseTree, nextTree) => {
+      const changedProperties = (nextTree.properties || []).filter((property) => {
+        const baseProperty = (baseTree.properties || []).find(
+          (candidate) => candidate.id === property.id,
+        );
+        if (!baseProperty) return false;
+        return (
+          initialOwnershipOwnersFingerprint(baseProperty.owners || []) !==
+          initialOwnershipOwnersFingerprint(property.owners || [])
+        );
+      });
+      const drafts = [];
+      changedProperties.forEach((property) => {
+        const cacheKey = initialOwnershipDraftCacheKey(nextTree.id, property.id);
+        const hasCurrentWriterDraft = initialOwnershipDraftCacheRef.current.has(cacheKey);
+        const recovered = recoveredInitialOwnershipDraftsRef.current.get(nextTree.id);
+        const recoveryBaseTree =
+          recovered && !hasCurrentWriterDraft ? normaliseTree(recovered.serverTree) : baseTree;
+        const baseProperty = recoveryBaseTree.properties.find(
+          (candidate) => candidate.id === property.id,
+        );
+        if (!baseProperty) {
+          throw new Error("The property being edited is not present in the saved cloud family.");
+        }
+        const draft = writeInitialOwnershipDraft(
+          authenticatedUserId,
+          {
+            treeId: nextTree.id,
+            propertyId: property.id,
+            baseStorageRevision: recoveryBaseTree.storageRevision,
+            baseOwners: baseProperty.owners || [],
+            owners: property.owners || [],
+            baseOutsideParties: recoveryBaseTree.outsideParties || [],
+            outsideParties: nextTree.outsideParties || [],
+            knownAncestorOwnerFingerprints:
+              recovered && !hasCurrentWriterDraft
+                ? [
+                    initialOwnershipOwnersFingerprint(
+                      baseTree.properties.find((candidate) => candidate.id === property.id)
+                        ?.owners || [],
+                    ),
+                  ]
+                : [],
+          },
+          { writerId: initialOwnershipDraftWriterIdRef.current },
+        );
+        initialOwnershipDraftCacheRef.current.set(cacheKey, draft);
+        drafts.push(draft);
+      });
+      return drafts;
+    },
+    [authenticatedUserId],
+  );
+
+  const registerInitialOwnershipFlush = useCallback((controller) => {
+    initialOwnershipFlushRef.current = controller;
+    return () => {
+      if (initialOwnershipFlushRef.current === controller) {
+        initialOwnershipFlushRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!cloudMode) return undefined;
     const queue = createCloudSaveQueue(
@@ -381,7 +500,96 @@ export function App({
                   : "All changes are saved securely.";
           setSaveState({ phase: queueState.phase, detail });
         },
-        onSaveSuccess: (savedTree) => {
+        onSaveStart: (submittedSnapshot) => {
+          (submittedSnapshot.properties || []).forEach((property) => {
+            const cacheKey = initialOwnershipDraftCacheKey(submittedSnapshot.id, property.id);
+            const cached = initialOwnershipDraftCacheRef.current.get(cacheKey);
+            if (!cached) return;
+            const submittedFingerprint = initialOwnershipOwnersFingerprint(property.owners || []);
+            if (
+              cached.ownersFingerprint !== submittedFingerprint &&
+              !cached.submittedOwnerFingerprints.includes(submittedFingerprint)
+            ) {
+              return;
+            }
+            try {
+              const marked = markInitialOwnershipDraftSubmitted(
+                authenticatedUserId,
+                submittedSnapshot.id,
+                property.id,
+                submittedFingerprint,
+                { writerId: initialOwnershipDraftWriterIdRef.current },
+              );
+              if (marked) initialOwnershipDraftCacheRef.current.set(cacheKey, marked);
+            } catch (error) {
+              setStatus(
+                `The cloud save was stopped because its initial-ownership recovery lineage could not be recorded: ${error.message}`,
+              );
+              throw error;
+            }
+          });
+        },
+        onSaveSuccess: (savedTree, savedSnapshot) => {
+          const recovered = recoveredInitialOwnershipDraftsRef.current.get(savedSnapshot.id);
+          const recoveryCleanupWarnings = [];
+          try {
+            (savedSnapshot.properties || []).forEach((property) => {
+              const cacheKey = initialOwnershipDraftCacheKey(savedSnapshot.id, property.id);
+              const cached = initialOwnershipDraftCacheRef.current.get(cacheKey);
+              if (!cached) return;
+              const savedOwnersFingerprint = initialOwnershipOwnersFingerprint(
+                property.owners || [],
+              );
+              if (
+                cached.ownersFingerprint !== savedOwnersFingerprint &&
+                !cached.submittedOwnerFingerprints.includes(savedOwnersFingerprint)
+              ) {
+                return;
+              }
+              const acknowledgement = acknowledgeInitialOwnershipDraftSave(
+                authenticatedUserId,
+                savedSnapshot.id,
+                property.id,
+                savedOwnersFingerprint,
+                savedSnapshot.storageRevision,
+                savedTree.storageRevision,
+                { writerId: initialOwnershipDraftWriterIdRef.current },
+              );
+              if (acknowledgement.draft) {
+                initialOwnershipDraftCacheRef.current.set(cacheKey, acknowledgement.draft);
+              } else {
+                initialOwnershipDraftCacheRef.current.delete(cacheKey);
+              }
+            });
+          } catch (error) {
+            recoveryCleanupWarnings.push(error.message);
+          }
+          (recovered?.sources || []).forEach((source) => {
+            try {
+              const dismissed = dismissInitialOwnershipDraft(
+                authenticatedUserId,
+                source.treeId,
+                source.propertyId,
+                source.recordFingerprint,
+                { writerId: source.writerId },
+              );
+              if (!dismissed) {
+                recoveryCleanupWarnings.push(
+                  "A source browser record changed while this save completed and will need review on the next reload.",
+                );
+              }
+            } catch (error) {
+              recoveryCleanupWarnings.push(error.message);
+            }
+          });
+          if (recovered) recoveredInitialOwnershipDraftsRef.current.delete(savedSnapshot.id);
+          if (recoveryCleanupWarnings.length) {
+            setStatus(
+              `Saved securely, but initial-ownership recovery still needs review: ${[
+                ...new Set(recoveryCleanupWarnings),
+              ].join(" ")}`,
+            );
+          }
           setTree((current) => rebaseFamilyTreeStorageRevision(current, savedTree));
           setTrees((items) => rebaseFamilyTreeListStorageRevision(items, savedTree));
         },
@@ -395,15 +603,25 @@ export function App({
     );
     cloudSaveQueueRef.current = queue;
     return () => {
-      if (cloudSaveQueueRef.current === queue) cloudSaveQueueRef.current = null;
+      if (cloudSaveQueueRef.current === queue) {
+        // Parent effect cleanups run before InitialOwnershipEditor's cleanup.
+        // Capture its still-focused field while this queue can both journal and
+        // schedule the final snapshot, then make the queue unavailable.
+        initialOwnershipFlushRef.current?.flush?.();
+        cloudSaveQueueRef.current = null;
+      }
       queue.dispose();
     };
   }, [authenticatedUserId, cloudMode]);
 
   useEffect(() => {
-    if (!cloudMode) return undefined;
     const warnAboutUnsavedCloudChanges = (event) => {
-      if (!cloudSaveQueueRef.current?.hasUnsavedChanges()) return;
+      const ownershipFlushSucceeded = initialOwnershipFlushRef.current?.flush?.() !== false;
+      const ownershipStillPending = Boolean(initialOwnershipFlushRef.current?.hasPending?.());
+      const cloudChangesPending = Boolean(
+        cloudMode && cloudSaveQueueRef.current?.hasUnsavedChanges(),
+      );
+      if (ownershipFlushSucceeded && !ownershipStillPending && !cloudChangesPending) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -454,6 +672,10 @@ export function App({
   }, [authenticatedUserId, cloudMode]);
 
   const currentTree = useMemo(() => normaliseTree(tree), [tree]);
+  latestTreeRef.current = currentTree;
+  latestTreesRef.current = trees;
+  latestTrashedTreesRef.current = trashedTrees;
+  activeTreeIsListedRef.current = activeTreeIsListed;
   const legalWorkspaceEnabled = propertyTaxWorkspaceEnabled(currentTree.settings.workspaceMode);
   const requestedActiveFamilyGroup = currentTree.familyGroups.find(
     (group) => group.id === activeFamilyGroupId,
@@ -564,16 +786,81 @@ export function App({
             currentTree.people,
             propertyReport.startingOwnership.isComplete ? activeProperties : [],
             currentTree.outsideParties,
+            { casePropertyIds: currentTree.properties.map((property) => property.id) },
           )
         : { byPerson: {} },
     [
       activeProperties,
       currentTree.outsideParties,
       currentTree.people,
+      currentTree.properties,
       legalWorkspaceEnabled,
       propertyReport,
     ],
   );
+  const taxReadinessPlan = useMemo(
+    () =>
+      legalWorkspaceEnabled && propertyReport?.startingOwnership?.isComplete
+        ? buildTaxReadinessPlan({
+            property: activeProperty,
+            people: currentTree.people,
+            outsideParties: currentTree.outsideParties,
+            propertyReport,
+            taxCalculationReport,
+            causaMortisCoverage,
+          })
+        : { order: [], issuesByPerson: {}, pendingPersonIds: [] },
+    [
+      activeProperty,
+      causaMortisCoverage,
+      currentTree.people,
+      currentTree.outsideParties,
+      legalWorkspaceEnabled,
+      propertyReport,
+      taxCalculationReport,
+    ],
+  );
+  const hasSavedTaxReadinessSession = Boolean(activeProperty.taxReadinessGuide);
+  const taxReadinessSession = useMemo(
+    () =>
+      normaliseTaxReadinessSession(
+        activeProperty.taxReadinessGuide,
+        taxReadinessPlan,
+        activeProperty.id,
+      ),
+    [activeProperty.id, activeProperty.taxReadinessGuide, taxReadinessPlan],
+  );
+  const taxReadinessOutstandingPersonIds = taxReadinessPlan.pendingPersonIds.filter(
+    (personId) => !taxReadinessSession.reviewedPersonIds.includes(personId),
+  );
+  const taxReadinessSkippedPersonIds = taxReadinessSession.skippedPersonIds.filter((personId) =>
+    taxReadinessOutstandingPersonIds.includes(personId),
+  );
+  const taxReadinessGuideSummary = {
+    status: hasSavedTaxReadinessSession ? taxReadinessSession.status : "not-started",
+    pendingCount: taxReadinessOutstandingPersonIds.length,
+    skippedCount: taxReadinessSkippedPersonIds.length,
+    canContinue: Boolean(
+      ["active", "paused"].includes(taxReadinessSession.status) &&
+      taxReadinessSession.currentPersonId,
+    ),
+  };
+  const activeTaxReadinessPersonId =
+    taxReadinessSession.status === "active" ? taxReadinessSession.currentPersonId : "";
+  const activeTaxReadinessIssues = activeTaxReadinessPersonId
+    ? taxReadinessPlan.issuesByPerson[activeTaxReadinessPersonId] || []
+    : [];
+  const activeTaxReadinessPerson = currentTree.people.find(
+    (person) => person.id === activeTaxReadinessPersonId,
+  );
+  const taxReadinessGuidePosition = taxReadinessSession.historyPersonIds.length + 1;
+  const taxReadinessGuideTotal =
+    taxReadinessGuidePosition +
+    taxReadinessOutstandingPersonIds.filter(
+      (personId) =>
+        personId !== activeTaxReadinessPersonId &&
+        !taxReadinessSession.historyPersonIds.includes(personId),
+    ).length;
   const hiddenPropertyTaxDataPresent = useMemo(
     () => !legalWorkspaceEnabled && treeHasRecordedPropertyTaxData(currentTree),
     [currentTree, legalWorkspaceEnabled],
@@ -625,7 +912,10 @@ export function App({
     if (!pendingTrashActivationId) return undefined;
     let cancelled = false;
     const remainingTrees = trees.filter((item) => item.id !== pendingTrashActivationId);
-    const nextTree = remainingTrees[0];
+    const nextTree = remainingTrees.find(
+      (item) => !cloudPendingRecoveries.some((recovery) => recovery.treeId === item.id),
+    );
+    const pendingRecoveryOnly = !nextTree && remainingTrees.length > 0;
     const pendingDirectSave = nextTree ? directSavePromisesRef.current.get(nextTree.id) : undefined;
 
     const finishActivation = async () => {
@@ -645,17 +935,27 @@ export function App({
       setPendingTrashActivationId("");
       if (activationTree) {
         setActiveTreeIsListed(true);
-        activateCase(activationTree, { acknowledgeCloudSave });
+        const recovered = cloudMode
+          ? recoveredInitialOwnershipDraftsRef.current.get(activationTree.id)
+          : null;
+        if (recovered) cloudSaveQueueRef.current?.acknowledge?.(recovered.serverTree);
+        activateCase(activationTree, { acknowledgeCloudSave: acknowledgeCloudSave && !recovered });
       } else {
         setActiveTreeIsListed(false);
         activateCase(initialTree(), { acknowledgeCloudSave: cloudMode });
+        if (pendingRecoveryOnly) {
+          setShowLibrary(true);
+          setStatus(
+            "Review the pending browser version before opening the remaining cloud family.",
+          );
+        }
       }
     };
     void finishActivation();
     return () => {
       cancelled = true;
     };
-  }, [activateCase, cloudMode, pendingTrashActivationId, trees]);
+  }, [activateCase, cloudMode, cloudPendingRecoveries, pendingTrashActivationId, trees]);
 
   useEffect(() => {
     if (cloudMode) return;
@@ -711,17 +1011,193 @@ export function App({
     ])
       .then(([activeResult, trashResult, entitlementResult]) => {
         if (cancelled) return;
-        setTrees(activeResult.items);
+        let activationTree = activeResult.items[0] || null;
+        let activationServerTree = activationTree;
+        let recoveredPendingDraft = false;
+        const recoveryWarnings = [];
+        const recoveryItems = [];
+        const recoveredByTree = new Map();
+        try {
+          const safeDraftsByProperty = new Map();
+          const pendingInventory = listInitialOwnershipDrafts(authenticatedUserId);
+          pendingInventory.invalidRecords.forEach((record, index) => {
+            recoveryItems.push({
+              id: `invalid:${index}:${record.key}`,
+              treeId: "",
+              propertyId: "",
+              writerId: "",
+              title: "Unreadable initial-ownership recovery record",
+              savedAt: "",
+              state: "invalid",
+              draft: null,
+              serverTree: null,
+              storageKey: record.key,
+              raw: record.raw,
+              error: record.error,
+            });
+          });
+          pendingInventory.drafts.forEach((draft) => {
+            const serverTree = activeResult.items.find(
+              (candidate) => candidate.id === draft.treeId,
+            );
+            if (!serverTree) {
+              const trashedTree = trashResult.items.find(
+                (candidate) => candidate.id === draft.treeId,
+              );
+              recoveryItems.push({
+                id: `${draft.treeId}:${draft.propertyId}:${draft.writerId}:${draft.recordFingerprint}`,
+                treeId: draft.treeId,
+                propertyId: draft.propertyId,
+                writerId: draft.writerId,
+                title: trashedTree?.title || "Deleted or unavailable family",
+                savedAt: draft.savedAt,
+                state: trashedTree ? "trashed" : "orphan",
+                draft,
+                serverTree: trashedTree || null,
+              });
+              return;
+            }
+            const comparison = compareInitialOwnershipDraftToTree(draft, serverTree);
+            if (comparison.state === INITIAL_OWNERSHIP_DRAFT_RECOVERY_STATES.IDENTICAL) {
+              dismissInitialOwnershipDraft(
+                authenticatedUserId,
+                draft.treeId,
+                draft.propertyId,
+                draft.recordFingerprint,
+                { writerId: draft.writerId },
+              );
+              return;
+            }
+            if (comparison.state === INITIAL_OWNERSHIP_DRAFT_RECOVERY_STATES.SAFE_TO_REPLAY) {
+              const propertyKey = `${draft.treeId}:${draft.propertyId}`;
+              const entries = safeDraftsByProperty.get(propertyKey) || [];
+              entries.push({ draft, serverTree, comparison });
+              safeDraftsByProperty.set(propertyKey, entries);
+              return;
+            }
+            recoveryItems.push({
+              id: `${draft.treeId}:${draft.propertyId}:${draft.writerId}:${draft.recordFingerprint}`,
+              treeId: draft.treeId,
+              propertyId: draft.propertyId,
+              writerId: draft.writerId,
+              title: serverTree.title || "Family",
+              savedAt: draft.savedAt,
+              state: "conflict",
+              draft,
+              serverTree,
+            });
+          });
+
+          const replayCandidatesByTree = new Map();
+          safeDraftsByProperty.forEach((entries) => {
+            const fingerprintGroups = new Map();
+            entries.forEach((entry) => {
+              const group = fingerprintGroups.get(entry.draft.ownersFingerprint) || [];
+              group.push(entry);
+              fingerprintGroups.set(entry.draft.ownersFingerprint, group);
+            });
+            if (fingerprintGroups.size > 1) {
+              entries.forEach((entry) =>
+                recoveryItems.push({
+                  id: `${entry.draft.treeId}:${entry.draft.propertyId}:${entry.draft.writerId}:${entry.draft.recordFingerprint}`,
+                  treeId: entry.draft.treeId,
+                  propertyId: entry.draft.propertyId,
+                  writerId: entry.draft.writerId,
+                  title: entry.serverTree.title || "Family",
+                  savedAt: entry.draft.savedAt,
+                  state: "multiple",
+                  draft: entry.draft,
+                  serverTree: entry.serverTree,
+                }),
+              );
+              return;
+            }
+            const candidates = [...entries].sort((first, second) =>
+              second.draft.savedAt.localeCompare(first.draft.savedAt),
+            );
+            const representative = {
+              ...candidates[0],
+              sources: candidates.map((item) => item.draft),
+            };
+            const treeEntries = replayCandidatesByTree.get(representative.draft.treeId) || [];
+            treeEntries.push(representative);
+            replayCandidatesByTree.set(representative.draft.treeId, treeEntries);
+          });
+
+          replayCandidatesByTree.forEach((entries, treeId) => {
+            const serverTree = entries[0].serverTree;
+            try {
+              const recoveredTree = prepareTreeForPersistence(
+                normaliseTree(
+                  entries.reduce(
+                    (candidate, entry) => recoverInitialOwnershipDraftTree(entry.draft, candidate),
+                    serverTree,
+                  ),
+                ),
+              );
+              const recovered = {
+                serverTree,
+                sources: entries.flatMap((entry) => entry.sources),
+                tree: recoveredTree,
+              };
+              recoveredByTree.set(treeId, recovered);
+              if (activationTree?.id === treeId) {
+                activationServerTree = serverTree;
+                activationTree = recoveredTree;
+                recoveredPendingDraft = true;
+              }
+            } catch (error) {
+              entries.forEach((entry) =>
+                recoveryItems.push({
+                  id: `${entry.draft.treeId}:${entry.draft.propertyId}:${entry.draft.writerId}:${entry.draft.recordFingerprint}`,
+                  treeId: entry.draft.treeId,
+                  propertyId: entry.draft.propertyId,
+                  writerId: entry.draft.writerId,
+                  title: entry.serverTree.title || "Family",
+                  savedAt: entry.draft.savedAt,
+                  state: "safe",
+                  draft: entry.draft,
+                  serverTree: entry.serverTree,
+                }),
+              );
+              recoveryWarnings.push(
+                `Pending initial ownership could not be prepared automatically: ${error.message}`,
+              );
+            }
+          });
+        } catch (error) {
+          recoveryWarnings.push(`Pending initial ownership needs attention: ${error.message}`);
+        }
+
+        recoveredInitialOwnershipDraftsRef.current = recoveredByTree;
+        setCloudPendingRecoveries(recoveryItems);
+        if (recoveryItems.length) {
+          recoveryWarnings.push(
+            `${recoveryItems.length} pending local version${recoveryItems.length === 1 ? " needs" : "s need"} review in the family library.`,
+          );
+        }
+
+        setTrees(
+          activeResult.items.map(
+            (candidate) => recoveredByTree.get(candidate.id)?.tree || candidate,
+          ),
+        );
         setTrashedTrees(trashResult.items);
-        if (activeResult.items[0]) {
+        if (activationTree) {
           setActiveTreeIsListed(true);
-          activateCase(activeResult.items[0], { acknowledgeCloudSave: true });
+          if (recoveredPendingDraft) {
+            cloudSaveQueueRef.current?.acknowledge?.(activationServerTree);
+            activateCase(activationTree);
+          } else {
+            activateCase(activationTree, { acknowledgeCloudSave: true });
+          }
         } else {
           setActiveTreeIsListed(false);
         }
         const collectionWarnings = [
           activeResult.error ? `Saved families need attention: ${activeResult.error.message}` : "",
           trashResult.error ? `Trash needs attention: ${trashResult.error.message}` : "",
+          ...recoveryWarnings,
         ].filter(Boolean);
         const collectionWarning = collectionWarnings.join(" ");
         setCloudListState({
@@ -737,6 +1213,9 @@ export function App({
         if (warnings.length) {
           setStatus(warnings.join(" "));
           setSaveState({ phase: "error", detail: warnings.join(" ") });
+        } else if (recoveredPendingDraft) {
+          setStatus("Recovered pending changes from this device. Saving them securely now...");
+          setSaveState({ phase: "saving", detail: "Recovered changes are being secured." });
         } else {
           setStatus("Saved securely to your workspace.");
           setSaveState({ phase: "saved", detail: "All changes are saved securely." });
@@ -756,9 +1235,41 @@ export function App({
 
   useEffect(() => {
     if (!cloudMode || !activeTreeIsListed) return undefined;
+    if (skipNextCloudPersistenceEffectRef.current === currentTree.id) {
+      skipNextCloudPersistenceEffectRef.current = "";
+      return undefined;
+    }
     cloudSaveQueueRef.current?.schedule(currentTree);
     return undefined;
   }, [activeTreeIsListed, cloudMode, currentTree]);
+
+  useEffect(() => {
+    const persistLatestBeforeLeaving = () => {
+      initialOwnershipFlushRef.current?.flush?.();
+      if (!activeTreeIsListedRef.current) return;
+      const latestTree = normaliseTree(latestTreeRef.current);
+      if (cloudMode) {
+        const queue = cloudSaveQueueRef.current;
+        if (!cloudQueueSnapshotIsSaved(queue, latestTree)) {
+          queue?.schedule(latestTree);
+          void queue?.flush().catch(() => undefined);
+        }
+        return;
+      }
+      if (localRecoveryBlocked) return;
+      const latestTrees = upsertWorkspaceTree(latestTreesRef.current, latestTree);
+      saveLocalWorkspace(latestTrees, latestTree.id, undefined, latestTrashedTreesRef.current);
+    };
+    const persistWhenHidden = () => {
+      if (document.visibilityState === "hidden") persistLatestBeforeLeaving();
+    };
+    window.addEventListener("pagehide", persistLatestBeforeLeaving);
+    document.addEventListener("visibilitychange", persistWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", persistLatestBeforeLeaving);
+      document.removeEventListener("visibilitychange", persistWhenHidden);
+    };
+  }, [cloudMode, localRecoveryBlocked]);
 
   useEffect(() => {
     if (!cloudMode) return undefined;
@@ -817,18 +1328,302 @@ export function App({
     [activeTreeIsListed, currentTree, trees],
   );
 
+  const commitDurableTreeChange = (updater, { flushCloud = false } = {}) => {
+    const base = normaliseTree(latestTreeRef.current);
+    const proposed = typeof updater === "function" ? updater(base) : updater;
+    const nextTree = normaliseTree(proposed);
+    if (nextTree.id !== base.id) {
+      setStatus("The family update was stopped because it targeted a different record.");
+      return null;
+    }
+
+    if (cloudMode) {
+      try {
+        const queue = cloudSaveQueueRef.current;
+        if (!queue) throw new Error("The secure save queue is unavailable.");
+        journalInitialOwnershipChanges(base, nextTree);
+        queue.schedule(nextTree);
+        skipNextCloudPersistenceEffectRef.current = nextTree.id;
+        if (flushCloud) void queue.flush().catch(() => undefined);
+      } catch (error) {
+        setStatus(
+          `The change was not applied because initial-ownership recovery could not be secured: ${error.message}`,
+        );
+        setSaveState({ phase: "error", detail: error.message });
+        return null;
+      }
+    } else if (activeTreeIsListedRef.current && !localRecoveryBlocked) {
+      const nextTrees = upsertWorkspaceTree(latestTreesRef.current, nextTree);
+      const saved = saveLocalWorkspace(
+        nextTrees,
+        nextTree.id,
+        undefined,
+        latestTrashedTreesRef.current,
+      );
+      if (!saved) {
+        setStatus("The change was not applied because this browser could not save it safely.");
+        setSaveState({
+          phase: "error",
+          detail: "The latest change could not be saved on this device.",
+        });
+        return null;
+      }
+      latestTreesRef.current = nextTrees;
+      setTrees(nextTrees);
+    }
+
+    latestTreeRef.current = nextTree;
+    setTree(nextTree);
+    return nextTree;
+  };
+
   const selectPerson = (personId) => {
     setSelectedOutsideOwnerId("");
+    const base = normaliseTree(latestTreeRef.current);
     const targetGroup =
-      findFamilyGroupsForPerson(currentTree, personId).find(
-        (group) => group.id === activeFamilyGroupId,
-      ) || findFamilyGroupsForPerson(currentTree, personId)[0];
+      findFamilyGroupsForPerson(base, personId).find((group) => group.id === activeFamilyGroupId) ||
+      findFamilyGroupsForPerson(base, personId)[0];
     if (targetGroup && !activePersonIds.has(personId)) {
+      const nextTree = { ...base, activeFamilyGroupId: targetGroup.id };
       setActiveFamilyGroupId(targetGroup.id);
-      setTree({ ...currentTree, activeFamilyGroupId: targetGroup.id });
+      latestTreeRef.current = nextTree;
+      setTree(nextTree);
     }
     setSelectedPersonId(personId);
     setDashboardOpen(true);
+  };
+
+  const persistTaxReadinessSession = (nextSession) =>
+    commitDurableTreeChange(
+      (base) => ({
+        ...base,
+        properties: base.properties.map((property) =>
+          property.id === activeProperty.id
+            ? { ...property, taxReadinessGuide: nextSession }
+            : property,
+        ),
+      }),
+      { flushCloud: true },
+    );
+
+  const openTaxReadinessPerson = (personId) => {
+    if (!personId) return;
+    setWorkspaceView("tree");
+    setPropertyWorkspaceSection("ownership");
+    selectPerson(personId);
+  };
+
+  const startTaxReadinessGuide = () => {
+    const now = new Date().toISOString();
+    const baseSession = normaliseTaxReadinessSession(
+      activeProperty.taxReadinessGuide,
+      taxReadinessPlan,
+      activeProperty.id,
+    );
+    const resumableCurrent =
+      ["active", "paused"].includes(baseSession.status) &&
+      taxReadinessPlan.order.includes(baseSession.currentPersonId)
+        ? baseSession.currentPersonId
+        : "";
+    const unskippedNext = resumableCurrent || nextTaxReadinessPerson(taxReadinessPlan, baseSession);
+    const nextPersonId =
+      unskippedNext ||
+      nextTaxReadinessPerson(taxReadinessPlan, baseSession, { includeSkipped: true });
+    if (!nextPersonId) {
+      setStatus("No missing person-card information is currently detected for this property.");
+      return;
+    }
+    const nextSession = {
+      ...baseSession,
+      status: "active",
+      currentPersonId: nextPersonId,
+      historyPersonIds: resumableCurrent ? baseSession.historyPersonIds : [],
+      skippedPersonIds: baseSession.skippedPersonIds.filter(
+        (personId) => personId !== nextPersonId,
+      ),
+      skippedIssueKeys: Object.fromEntries(
+        Object.entries(baseSession.skippedIssueKeys || {}).filter(
+          ([personId]) => personId !== nextPersonId,
+        ),
+      ),
+      reviewingSkipped: resumableCurrent
+        ? baseSession.reviewingSkipped
+        : !nextTaxReadinessPerson(taxReadinessPlan, baseSession),
+      skippedReviewVisitedPersonIds: resumableCurrent
+        ? baseSession.skippedReviewVisitedPersonIds
+        : [],
+      startedAt: baseSession.startedAt || now,
+      updatedAt: now,
+    };
+    if (!persistTaxReadinessSession(nextSession)) return;
+    openTaxReadinessPerson(nextPersonId);
+    setStatus("Guided tax setup started. Complete this card or choose Skip for now.");
+  };
+
+  const advanceTaxReadinessGuide = ({ skip = false } = {}) => {
+    const currentPersonId = taxReadinessSession.currentPersonId;
+    if (!currentPersonId) return;
+    const historyPersonIds = [
+      ...taxReadinessSession.historyPersonIds.filter((personId) => personId !== currentPersonId),
+      currentPersonId,
+    ];
+    const reviewedPersonIds = skip
+      ? taxReadinessSession.reviewedPersonIds.filter((personId) => personId !== currentPersonId)
+      : [
+          ...taxReadinessSession.reviewedPersonIds.filter(
+            (personId) => personId !== currentPersonId,
+          ),
+          currentPersonId,
+        ];
+    const skippedPersonIds = skip
+      ? [
+          ...taxReadinessSession.skippedPersonIds.filter(
+            (personId) => personId !== currentPersonId,
+          ),
+          currentPersonId,
+        ]
+      : taxReadinessSession.skippedPersonIds.filter((personId) => personId !== currentPersonId);
+    const skippedIssueKeys = { ...(taxReadinessSession.skippedIssueKeys || {}) };
+    if (skip) {
+      skippedIssueKeys[currentPersonId] = activeTaxReadinessIssues.map((issue) => issue.key).sort();
+    } else {
+      delete skippedIssueKeys[currentPersonId];
+    }
+    const provisional = {
+      ...taxReadinessSession,
+      historyPersonIds,
+      reviewedPersonIds,
+      skippedPersonIds,
+      skippedIssueKeys,
+    };
+    const nextUnskippedPersonId = nextTaxReadinessPerson(taxReadinessPlan, provisional);
+    const skippedReviewVisitedPersonIds = taxReadinessSession.reviewingSkipped
+      ? [
+          ...new Set([
+            ...(taxReadinessSession.skippedReviewVisitedPersonIds || []),
+            currentPersonId,
+          ]),
+        ]
+      : [];
+    const nextSkippedPersonId = taxReadinessSession.reviewingSkipped
+      ? taxReadinessPlan.pendingPersonIds.find(
+          (personId) =>
+            personId !== currentPersonId &&
+            provisional.skippedPersonIds.includes(personId) &&
+            !skippedReviewVisitedPersonIds.includes(personId),
+        ) || ""
+      : "";
+    const nextPersonId = nextUnskippedPersonId || nextSkippedPersonId;
+    const now = new Date().toISOString();
+    const nextSession = {
+      ...provisional,
+      status: nextPersonId ? "active" : skippedPersonIds.length ? "paused" : "complete",
+      currentPersonId: nextPersonId,
+      reviewingSkipped: Boolean(nextPersonId && taxReadinessSession.reviewingSkipped),
+      skippedReviewVisitedPersonIds: nextPersonId ? skippedReviewVisitedPersonIds : [],
+      updatedAt: now,
+    };
+    if (!persistTaxReadinessSession(nextSession)) return;
+    if (nextPersonId) {
+      openTaxReadinessPerson(nextPersonId);
+      setStatus(skip ? "Skipped for now. The next card is open." : "The next card is open.");
+      return;
+    }
+    setDashboardOpen(false);
+    setSelectedPersonId("");
+    setWorkspaceView("property");
+    setPropertyWorkspaceSection("ownership");
+    setStatus(
+      skippedPersonIds.length
+        ? "First pass complete. Resume the guide when you are ready to review skipped cards."
+        : "Guided tax setup complete for the currently detected person-card requirements.",
+    );
+  };
+
+  const previousTaxReadinessPerson = () => {
+    const history = [...taxReadinessSession.historyPersonIds];
+    const previousPersonId = history.pop();
+    if (!previousPersonId) return;
+    const nextSession = {
+      ...taxReadinessSession,
+      status: "active",
+      currentPersonId: previousPersonId,
+      historyPersonIds: history,
+      reviewedPersonIds: taxReadinessSession.reviewedPersonIds.filter(
+        (personId) => personId !== previousPersonId,
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+    if (!persistTaxReadinessSession(nextSession)) return;
+    openTaxReadinessPerson(previousPersonId);
+  };
+
+  const pauseTaxReadinessGuide = () => {
+    const nextSession = {
+      ...taxReadinessSession,
+      status: "paused",
+      updatedAt: new Date().toISOString(),
+    };
+    if (!persistTaxReadinessSession(nextSession)) return;
+    setStatus("Guided tax setup paused. Resume it from Property & initial ownership.");
+  };
+
+  const goToTaxReadinessSection = (issueOrSection) => {
+    const issue =
+      issueOrSection && typeof issueOrSection === "object"
+        ? issueOrSection
+        : { section: issueOrSection };
+    const section = issue.section;
+    if (section === "identity") {
+      const editButton = document.querySelector(
+        '.person-inspector .person-edit-button[aria-pressed="false"]',
+      );
+      editButton?.click();
+    }
+    const focusIssueControl = () => {
+      const target = document.querySelector(`.person-inspector [data-person-section="${section}"]`);
+      const preferredControl =
+        taxReadinessIssueControl(target, issue) ||
+        (String(issue.code || "").startsWith("causa-mortis-")
+          ? target?.querySelector(
+              ".causa-mortis-card input:not([disabled]), .causa-mortis-card select:not([disabled]), .causa-mortis-card button:not([disabled])",
+            )
+          : null);
+      const transferEditor =
+        section === "donation" && issue.targetId
+          ? target?.querySelector(".person-donation-form")
+          : null;
+      const fallbackTarget = transferEditor || target;
+      const control =
+        preferredControl ||
+        fallbackTarget?.querySelector(
+          "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])",
+        );
+      if (control?.classList?.contains("causa-mortis-summary")) {
+        control.click();
+        window.requestAnimationFrame(focusIssueControl);
+        return;
+      }
+      (control || fallbackTarget)?.scrollIntoView({ behavior: "auto", block: "center" });
+      control?.focus({ preventScroll: true });
+    };
+    window.requestAnimationFrame(() => {
+      if (section === "donation" && issue.targetId) {
+        const records = document.querySelectorAll(
+          ".person-inspector [data-tax-readiness-transfer-id]",
+        );
+        const record = [...records].find(
+          (candidate) => candidate.dataset.taxReadinessTransferId === issue.targetId,
+        );
+        const summary = record?.querySelector(".lifetime-transfer-summary");
+        if (summary?.getAttribute("aria-expanded") !== "true") {
+          summary?.click();
+          window.requestAnimationFrame(focusIssueControl);
+          return;
+        }
+      }
+      focusIssueControl();
+    });
   };
 
   const selectOutsideOwner = (ownerId) => {
@@ -848,13 +1643,15 @@ export function App({
   };
 
   const focusPersonOnTree = (personId) => {
+    const base = normaliseTree(latestTreeRef.current);
     const targetGroup =
-      findFamilyGroupsForPerson(currentTree, personId).find(
-        (group) => group.id === activeFamilyGroupId,
-      ) || findFamilyGroupsForPerson(currentTree, personId)[0];
+      findFamilyGroupsForPerson(base, personId).find((group) => group.id === activeFamilyGroupId) ||
+      findFamilyGroupsForPerson(base, personId)[0];
     if (targetGroup && !activePersonIds.has(personId)) {
+      const nextTree = { ...base, activeFamilyGroupId: targetGroup.id };
       setActiveFamilyGroupId(targetGroup.id);
-      setTree({ ...currentTree, activeFamilyGroupId: targetGroup.id });
+      latestTreeRef.current = nextTree;
+      setTree(nextTree);
     }
     setSelectedPersonId(personId);
     setDashboardOpen(false);
@@ -1029,6 +1826,126 @@ export function App({
     URL.revokeObjectURL(url);
   };
 
+  const downloadCloudPendingRecovery = (recoveryId) => {
+    const recovery = cloudPendingRecoveries.find((item) => item.id === recoveryId);
+    if (!recovery) return;
+    const payload =
+      recovery.state === "invalid"
+        ? recovery.raw
+        : JSON.stringify(
+            {
+              exportedAt: new Date().toISOString(),
+              reason: recovery.state,
+              savedAt: recovery.savedAt,
+              treeId: recovery.treeId,
+              propertyId: recovery.propertyId,
+              owners: recovery.draft.owners,
+              outsideParties: recovery.draft.outsideParties,
+            },
+            null,
+            2,
+          );
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `pending-initial-ownership-${recovery.treeId || "unreadable"}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setStatus("Downloaded the selected pending initial-ownership record. Keep it secure.");
+  };
+
+  const removeCloudRecoveryItem = (recoveryId) => {
+    setCloudPendingRecoveries((items) => {
+      const next = reclassifyCloudOwnershipRecoveryChoices(
+        items.filter((item) => item.id !== recoveryId),
+      );
+      if (!next.length) {
+        setCloudListState((state) => ({
+          complete: !/Saved families|Trash needs attention/i.test(state.warning || ""),
+          warning: /Saved families|Trash needs attention/i.test(state.warning || "")
+            ? state.warning
+            : "",
+        }));
+      }
+      return next;
+    });
+  };
+
+  const discardCloudPendingRecovery = (recoveryId) => {
+    const recovery = cloudPendingRecoveries.find((item) => item.id === recoveryId);
+    if (!recovery) return false;
+    try {
+      if (recovery.state === "invalid") {
+        const storage = globalThis.localStorage;
+        if (!storage || storage.getItem(recovery.storageKey) !== recovery.raw) return false;
+        storage.removeItem(recovery.storageKey);
+        if (storage.getItem(recovery.storageKey) !== null) return false;
+      } else {
+        const dismissed = dismissInitialOwnershipDraft(
+          authenticatedUserId,
+          recovery.treeId,
+          recovery.propertyId,
+          recovery.draft.recordFingerprint,
+          { writerId: recovery.writerId },
+        );
+        if (!dismissed) {
+          setStatus(
+            "That browser copy changed before it could be dismissed. Reload the family library to review the newer version.",
+          );
+          return false;
+        }
+      }
+    } catch (error) {
+      setStatus(`The browser copy could not be dismissed safely: ${error.message}`);
+      return false;
+    }
+    removeCloudRecoveryItem(recoveryId);
+    setStatus(
+      "The selected initial-ownership record was hidden without changing the cloud family. It will reappear if its source records newer changes.",
+    );
+    return true;
+  };
+
+  const applyCloudPendingRecovery = async (recoveryId) => {
+    const recovery = cloudPendingRecoveries.find((item) => item.id === recoveryId);
+    if (!recovery?.serverTree || recovery.state !== "safe") return false;
+    if (recovery.treeId !== currentTree.id) {
+      try {
+        await cloudSaveQueueRef.current?.flush();
+      } catch (error) {
+        setStatus(`Could not switch family before saving: ${error.message}`);
+        return false;
+      }
+    }
+    try {
+      const recoveredTree = prepareTreeForPersistence(
+        normaliseTree(recoverInitialOwnershipDraftTree(recovery.draft, recovery.serverTree)),
+      );
+      recoveredInitialOwnershipDraftsRef.current.set(recovery.treeId, {
+        sources: [recovery.draft],
+        serverTree: recovery.serverTree,
+        tree: recoveredTree,
+      });
+      setTrees((items) =>
+        items.map((item) => (item.id === recovery.treeId ? recoveredTree : item)),
+      );
+      cloudSaveQueueRef.current?.acknowledge?.(recovery.serverTree);
+      activateCase(recoveredTree);
+      setActiveTreeIsListed(true);
+      setShowLibrary(false);
+      removeCloudRecoveryItem(recoveryId);
+      setStatus(
+        "Opened the recovered initial ownership. Its small browser safety record remains intact until the cloud save is acknowledged.",
+      );
+      return true;
+    } catch (error) {
+      setStatus(`The pending initial ownership could not be opened safely: ${error.message}`);
+      return false;
+    }
+  };
+
   const downloadWorkspaceBackup = () => {
     if (cloudMode && !cloudListState.complete) {
       setStatus(
@@ -1060,6 +1977,13 @@ export function App({
   const openTree = async (treeId, view = "tree") => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return;
+    if (cloudMode && cloudPendingRecoveries.some((item) => item.treeId === treeId)) {
+      setShowLibrary(true);
+      setStatus(
+        "Review the pending initial ownership for this family before opening or changing the cloud copy.",
+      );
+      return;
+    }
     if (cloudMode && treeId !== currentTree.id) {
       try {
         await cloudSaveQueueRef.current?.flush();
@@ -1069,7 +1993,11 @@ export function App({
       }
     }
     setActiveTreeIsListed(true);
-    const activatedTree = activateCase(selectedTree, { acknowledgeCloudSave: cloudMode });
+    const recovered = cloudMode ? recoveredInitialOwnershipDraftsRef.current.get(treeId) : null;
+    if (recovered) cloudSaveQueueRef.current?.acknowledge?.(recovered.serverTree);
+    const activatedTree = activateCase(selectedTree, {
+      acknowledgeCloudSave: cloudMode && !recovered,
+    });
     const legalViewAvailable = propertyTaxWorkspaceEnabled(activatedTree.settings?.workspaceMode);
     setPropertyWorkspaceSection(
       view === "tax" ? "tax" : view === "ownership" ? "ownership" : "setup",
@@ -1082,6 +2010,22 @@ export function App({
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     const nextTitle = String(title || "").trim();
     const retryingFailedSave = failedDirectSaveIdsRef.current.has(treeId);
+    if (cloudMode && cloudPendingRecoveries.some((item) => item.treeId === treeId)) {
+      setStatus(
+        "Review the pending initial ownership for this family before renaming the cloud copy.",
+      );
+      return false;
+    }
+    if (
+      cloudMode &&
+      treeId !== currentTree.id &&
+      recoveredInitialOwnershipDraftsRef.current.has(treeId)
+    ) {
+      setStatus(
+        "Open this recovered family before renaming it so its pending ownership is saved first.",
+      );
+      return false;
+    }
     if ([...nextTitle].length > TREE_DATA_LIMITS.maxTitleCharacters) {
       setStatus(`Family names are limited to ${TREE_DATA_LIMITS.maxTitleCharacters} characters.`);
       return false;
@@ -1112,7 +2056,9 @@ export function App({
     try {
       let saved;
       if (usesActiveSaveQueue) {
-        cloudSaveQueueRef.current.schedule(normaliseTree(renamed));
+        const normalizedRenamed = normaliseTree(renamed);
+        cloudSaveQueueRef.current.schedule(normalizedRenamed);
+        skipNextCloudPersistenceEffectRef.current = normalizedRenamed.id;
         saved = await cloudSaveQueueRef.current.flush();
       } else {
         directSavePromise = saveFamilyTree(renamed, authenticatedUserId);
@@ -1142,6 +2088,22 @@ export function App({
   const removeTree = async (treeId) => {
     const selectedTree = treeOptions.find((item) => item.id === treeId);
     if (!selectedTree) return false;
+    if (cloudMode && cloudPendingRecoveries.some((item) => item.treeId === treeId)) {
+      setStatus(
+        "Review or dismiss the pending initial ownership before moving this family to Trash.",
+      );
+      return false;
+    }
+    if (
+      cloudMode &&
+      treeId !== currentTree.id &&
+      recoveredInitialOwnershipDraftsRef.current.has(treeId)
+    ) {
+      setStatus(
+        "Open this recovered family first so its initial ownership can be saved before moving it to Trash.",
+      );
+      return false;
+    }
 
     let treeToTrash = selectedTree;
     if (cloudMode) {
@@ -1216,6 +2178,48 @@ export function App({
       const active = activeTreeSnapshot(restored);
       setTrashedTrees((items) => items.filter((item) => item.id !== treeId));
       setTrees((items) => upsertWorkspaceTree(items, active));
+      if (cloudMode) {
+        setCloudPendingRecoveries((items) => {
+          const reclassified = items.flatMap((item) => {
+            if (item.treeId !== treeId || !item.draft) return [item];
+            try {
+              const comparison = compareInitialOwnershipDraftToTree(item.draft, active);
+              if (comparison.state === INITIAL_OWNERSHIP_DRAFT_RECOVERY_STATES.IDENTICAL) {
+                dismissInitialOwnershipDraft(
+                  authenticatedUserId,
+                  item.treeId,
+                  item.propertyId,
+                  item.draft.recordFingerprint,
+                  { writerId: item.writerId },
+                );
+                return [];
+              }
+              return [
+                {
+                  ...item,
+                  state:
+                    comparison.state === INITIAL_OWNERSHIP_DRAFT_RECOVERY_STATES.SAFE_TO_REPLAY
+                      ? "safe"
+                      : "conflict",
+                  serverTree: active,
+                },
+              ];
+            } catch (error) {
+              return [{ ...item, state: "conflict", serverTree: active, error }];
+            }
+          });
+          const next = reclassifyCloudOwnershipRecoveryChoices(reclassified);
+          if (!next.length) {
+            setCloudListState((state) => ({
+              complete: !/Saved families|Trash needs attention/i.test(state.warning || ""),
+              warning: /Saved families|Trash needs attention/i.test(state.warning || "")
+                ? state.warning
+                : "",
+            }));
+          }
+          return next;
+        });
+      }
       setStatus(cloudMode ? "Family restored securely." : "Family restored on this device.");
       return true;
     } catch (error) {
@@ -1231,8 +2235,42 @@ export function App({
     setStatus("Permanently deleting family...");
     try {
       if (cloudMode) await permanentlyDeleteFamilyTree(selectedTree);
+      let browserCleanupError = null;
+      if (cloudMode) {
+        try {
+          markInitialOwnershipTreeDeleted(authenticatedUserId, treeId);
+        } catch (error) {
+          browserCleanupError = error;
+        }
+        recoveredInitialOwnershipDraftsRef.current.delete(treeId);
+        for (const cacheKey of initialOwnershipDraftCacheRef.current.keys()) {
+          if (cacheKey.startsWith(`${treeId}:`)) {
+            initialOwnershipDraftCacheRef.current.delete(cacheKey);
+          }
+        }
+        setCloudPendingRecoveries((items) => {
+          const next = browserCleanupError
+            ? items.map((item) =>
+                item.treeId === treeId ? { ...item, state: "orphan", serverTree: null } : item,
+              )
+            : items.filter((item) => item.treeId !== treeId);
+          if (!next.length) {
+            setCloudListState((state) => ({
+              complete: !/Saved families|Trash needs attention/i.test(state.warning || ""),
+              warning: /Saved families|Trash needs attention/i.test(state.warning || "")
+                ? state.warning
+                : "",
+            }));
+          }
+          return next;
+        });
+      }
       setTrashedTrees((items) => items.filter((item) => item.id !== treeId));
-      setStatus("Family permanently deleted.");
+      setStatus(
+        browserCleanupError
+          ? `Family permanently deleted from secure storage, but this browser could not clear its initial-ownership recovery data: ${browserCleanupError.message}`
+          : "Family permanently deleted. Its initial-ownership recovery data was removed from this browser.",
+      );
       return true;
     } catch (error) {
       setStatus(`Could not permanently delete family: ${error.message}`);
@@ -1326,13 +2364,26 @@ export function App({
 
   const updateWorkspaceMode = (workspaceMode) => {
     const nextMode = normaliseTreeWorkspaceMode(workspaceMode);
-    setTree((current) => {
-      const next = normaliseTree(current);
-      return {
-        ...next,
-        settings: { ...next.settings, workspaceMode: nextMode },
-      };
-    });
+    const changed = commitDurableTreeChange((base) => ({
+      ...base,
+      settings: { ...base.settings, workspaceMode: nextMode },
+      properties:
+        nextMode === TREE_WORKSPACE_MODES.FAMILY_TREE
+          ? base.properties.map((property) =>
+              property.taxReadinessGuide?.status === "active"
+                ? {
+                    ...property,
+                    taxReadinessGuide: {
+                      ...property.taxReadinessGuide,
+                      status: "paused",
+                      updatedAt: new Date().toISOString(),
+                    },
+                  }
+                : property,
+            )
+          : base.properties,
+    }));
+    if (!changed) return;
     if (nextMode === TREE_WORKSPACE_MODES.FAMILY_TREE) {
       setSelectedOutsideOwnerId("");
       setInitialOwnerPick(null);
@@ -1411,10 +2462,12 @@ export function App({
   };
 
   const updatePropertyWorkspace = (patch) => {
-    setTree({
-      ...currentTree,
-      properties: patch.properties || currentTree.properties,
-      outsideParties: patch.outsideParties || currentTree.outsideParties,
+    const base = normaliseTree(latestTreeRef.current);
+    const nextProperties = patch.properties || base.properties;
+    return commitDurableTreeChange({
+      ...base,
+      properties: nextProperties,
+      outsideParties: patch.outsideParties || base.outsideParties,
     });
   };
 
@@ -1431,6 +2484,7 @@ export function App({
       acquisitionDate,
       currentTree.outsideParties,
       row?.originalOwnerRecordId || "",
+      row?.sourceTransferId || "",
     );
     if (result.error) {
       setStatus(result.error);
@@ -1510,21 +2564,25 @@ export function App({
       return;
     }
 
-    setTree({
-      ...currentTree,
-      properties: currentTree.properties.map((property) =>
-        property.id === initialOwnerPick.propertyId
-          ? {
-              ...property,
-              owners: assignInitialOwnerPerson(
-                property.owners || [],
-                initialOwnerPick.ownerId,
-                personId,
-              ),
-            }
-          : property,
-      ),
-    });
+    const savedTree = commitDurableTreeChange(
+      (base) => ({
+        ...base,
+        properties: base.properties.map((property) =>
+          property.id === initialOwnerPick.propertyId
+            ? {
+                ...property,
+                owners: assignInitialOwnerPerson(
+                  property.owners || [],
+                  initialOwnerPick.ownerId,
+                  personId,
+                ),
+              }
+            : property,
+        ),
+      }),
+      { flushCloud: true },
+    );
+    if (!savedTree) return;
     setInitialOwnerPick(null);
     setSelectedPersonId("");
     setDashboardOpen(false);
@@ -1533,17 +2591,31 @@ export function App({
     setStatus(`${targetPerson.fullName || "Selected person"} assigned as an initial owner.`);
   };
 
-  const updatePrimaryPropertyWorkspace = (patch) =>
-    updatePropertyWorkspace({
+  const updatePrimaryPropertyWorkspace = (patch, propertyId = "") => {
+    const base = normaliseTree(latestTreeRef.current);
+    const requestedActivePropertyId = propertyId || base.settings.activePropertyId;
+    return updatePropertyWorkspace({
       ...patch,
       properties: patch.properties
-        ? currentTree.properties.map((property) =>
-            property.id === activeProperty.id ? patch.properties[0] || property : property,
+        ? base.properties.map((property) =>
+            property.id === requestedActivePropertyId ? patch.properties[0] || property : property,
           )
-        : currentTree.properties,
+        : base.properties,
     });
+  };
+
+  const flushPendingInitialOwnership = (
+    message = "Finish or correct the pending initial-ownership share before leaving this page.",
+  ) => {
+    const controller = initialOwnershipFlushRef.current;
+    const flushed = controller?.flush?.() !== false;
+    if (flushed && !controller?.hasPending?.()) return true;
+    setStatus(message);
+    return false;
+  };
 
   const returnHome = async () => {
+    if (!flushPendingInitialOwnership()) return;
     setInitialOwnerPick(null);
     setSelectedOutsideOwnerId("");
     if (!cloudMode) {
@@ -1555,7 +2627,7 @@ export function App({
     }
     setStatus("Saving before returning Home...");
     try {
-      cloudSaveQueueRef.current?.schedule(normaliseTree(currentTree));
+      cloudSaveQueueRef.current?.schedule(normaliseTree(latestTreeRef.current));
       const saved = await cloudSaveQueueRef.current?.flush();
       if (!saved) throw new Error("The secure save queue is unavailable.");
       // Do not replace the live editor with the response snapshot: the user may
@@ -1615,10 +2687,28 @@ export function App({
         saveState={saveState}
         backupDisabled={cloudMode && !cloudListState.complete}
         recoveryAvailable={Boolean(startupWorkspace.recoveryKey)}
+        pendingCloudRecoveries={cloudPendingRecoveries.map((item) => ({
+          id: item.id,
+          treeId: item.treeId,
+          title: item.title,
+          savedAt: item.savedAt,
+          state: item.state,
+          propertyLabel: (() => {
+            if (!item.propertyId || !item.serverTree?.properties) return "";
+            const propertyIndex = item.serverTree.properties.findIndex(
+              (property) => property.id === item.propertyId,
+            );
+            const property = item.serverTree.properties[propertyIndex];
+            return property?.address || property?.description || `Property ${propertyIndex + 1}`;
+          })(),
+        }))}
         isPlatformAdmin={platformAdmin}
         onOpenAdminConsole={() => setAdminConsoleOpen(true)}
         onDownloadRecovery={downloadLocalRecovery}
         onDownloadBackup={downloadWorkspaceBackup}
+        onApplyCloudRecovery={applyCloudPendingRecovery}
+        onDiscardCloudRecovery={discardCloudPendingRecovery}
+        onDownloadCloudRecovery={downloadCloudPendingRecovery}
         onCreate={createNewTree}
         onImport={importNewTree}
         onOpen={openTree}
@@ -1661,6 +2751,7 @@ export function App({
               type="button"
               className="property-tree-button property-back-button"
               onClick={() => {
+                if (!flushPendingInitialOwnership()) return;
                 setSelectedOutsideOwnerId("");
                 setInitialOwnerPick(null);
                 closePersonCard();
@@ -1697,14 +2788,20 @@ export function App({
               <select
                 value={activeProperty.id}
                 onChange={(event) => {
+                  if (
+                    !flushPendingInitialOwnership(
+                      "Finish or correct the pending initial-ownership share before switching property.",
+                    )
+                  )
+                    return;
                   setSelectedOutsideOwnerId("");
-                  setTree({
-                    ...currentTree,
+                  commitDurableTreeChange((base) => ({
+                    ...base,
                     settings: {
-                      ...currentTree.settings,
+                      ...base.settings,
                       activePropertyId: event.target.value,
                     },
-                  });
+                  }));
                 }}
               >
                 {currentTree.properties.map((property, index) => (
@@ -1725,6 +2822,7 @@ export function App({
             selectedOutsideOwnerId={selectedOutsideOwnerId}
             onSelectOutsideOwner={selectOutsideOwner}
             onSelectPerson={(personId) => {
+              if (!flushPendingInitialOwnership()) return;
               setSelectedOutsideOwnerId("");
               setWorkspaceView("tree");
               selectPerson(personId);
@@ -1733,7 +2831,10 @@ export function App({
               beginInitialOwnerTreePick(ownerId);
               setWorkspaceView("tree");
             }}
-            onChange={updatePrimaryPropertyWorkspace}
+            onRegisterInitialOwnershipFlush={registerInitialOwnershipFlush}
+            taxReadinessGuideSummary={taxReadinessGuideSummary}
+            onStartTaxReadinessGuide={startTaxReadinessGuide}
+            onChange={(patch) => updatePrimaryPropertyWorkspace(patch, activeProperty.id)}
           />
         </section>
       </main>
@@ -1755,6 +2856,27 @@ export function App({
               </button>
             </div>
             <div className="dashboard-content dashboard-person">
+              {activeTaxReadinessPersonId === selectedPersonId && activeTaxReadinessPerson && (
+                <TaxReadinessGuideBar
+                  personId={activeTaxReadinessPerson.id}
+                  personName={
+                    activeTaxReadinessPerson.fullName ||
+                    [activeTaxReadinessPerson.givenNames, activeTaxReadinessPerson.surname]
+                      .filter(Boolean)
+                      .join(" ") ||
+                    "Unnamed person"
+                  }
+                  position={taxReadinessGuidePosition}
+                  total={Math.max(taxReadinessGuidePosition, taxReadinessGuideTotal)}
+                  issues={activeTaxReadinessIssues}
+                  canGoBack={taxReadinessSession.historyPersonIds.length > 0}
+                  onGoToSection={goToTaxReadinessSection}
+                  onBack={previousTaxReadinessPerson}
+                  onNext={() => advanceTaxReadinessGuide()}
+                  onSkip={() => advanceTaxReadinessGuide({ skip: true })}
+                  onPause={pauseTaxReadinessGuide}
+                />
+              )}
               <PersonInspector
                 people={currentTree.people}
                 legalWorkspaceEnabled={legalWorkspaceEnabled}

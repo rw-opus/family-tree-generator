@@ -173,6 +173,31 @@ describe("VendorSettlementStatement", () => {
     );
   });
 
+  it("prominently carries ignored legacy tax-lot warnings into the printable statement", () => {
+    const warnedReport = {
+      ...report,
+      ignoredStoredTaxLotCount: 1,
+      vendors: report.vendors.map((vendor, index) =>
+        index
+          ? vendor
+          : {
+              ...vendor,
+              ignoredStoredTaxLots: [
+                {
+                  id: "legacy-lot",
+                  reason: "It cannot be matched to one current ownership source.",
+                },
+              ],
+            },
+      ),
+    };
+    const dialog = renderAndOpen({ report: warnedReport });
+
+    expect(dialog.textContent).toContain("legacy rows need review");
+    expect(dialog.textContent).toContain("1 saved legacy tax lot was not used");
+    expect(dialog.textContent).toContain("Alice Borg: It cannot be matched");
+  });
+
   it("prints the open statement and closes it with Escape", () => {
     const print = vi.spyOn(window, "print").mockImplementation(() => {});
     const dialog = renderAndOpen();

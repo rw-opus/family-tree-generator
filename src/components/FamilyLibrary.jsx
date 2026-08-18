@@ -74,6 +74,7 @@ export function FamilyLibrary({
   saveState,
   backupDisabled = false,
   recoveryAvailable = false,
+  pendingCloudRecoveries = [],
   isPlatformAdmin = false,
   onOpenAdminConsole,
   onCreate,
@@ -88,6 +89,9 @@ export function FamilyLibrary({
   onSignOut,
   onDownloadRecovery,
   onDownloadBackup,
+  onApplyCloudRecovery,
+  onDiscardCloudRecovery,
+  onDownloadCloudRecovery,
 }) {
   const [query, setQuery] = useState("");
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -108,6 +112,7 @@ export function FamilyLibrary({
   const [renamingId, setRenamingId] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
   const [importStatus, setImportStatus] = useState("");
+  const [recoveryActionId, setRecoveryActionId] = useState("");
   const filteredTrees = trees.filter((tree) =>
     String(tree.title || "Untitled family")
       .toLocaleLowerCase()
@@ -378,6 +383,87 @@ export function FamilyLibrary({
             <p className="library-storage-message" aria-live="polite">
               {visibleStorageStatus}
             </p>
+          )}
+          {pendingCloudRecoveries.length > 0 && (
+            <section className="library-cloud-recovery" aria-labelledby="cloud-recovery-title">
+              <h3 id="cloud-recovery-title">Pending initial ownership needs review</h3>
+              <p>
+                The browser kept only the affected initial-owner rows because a cloud save may not
+                have finished. Review or download them before hiding a copy.
+              </p>
+              <ul>
+                {pendingCloudRecoveries.map((recovery) => (
+                  <li key={recovery.id}>
+                    <span>
+                      <strong>{recovery.title}</strong>
+                      <small>
+                        {recovery.propertyLabel ? `${recovery.propertyLabel}: ` : ""}
+                        {recovery.state === "invalid"
+                          ? "This browser record is unreadable. Download it before dismissing it."
+                          : recovery.state === "safe"
+                            ? "Cloud initial ownership has not changed. Open these owner rows so they can be saved."
+                            : recovery.state === "trashed"
+                              ? "Restore the family from Trash before reviewing these owner rows."
+                              : recovery.state === "orphan"
+                                ? "The cloud family is unavailable."
+                                : recovery.state === "multiple"
+                                  ? "Different pending owner rows exist for this property. Download them before choosing what to enter."
+                                  : "Cloud initial ownership changed after this browser record was made. Download it for comparison."}
+                      </small>
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        className="library-account-action"
+                        onClick={() => onDownloadCloudRecovery?.(recovery.id)}
+                      >
+                        <Download size={15} /> Download
+                      </button>
+                      {recovery.state === "safe" && (
+                        <button
+                          type="button"
+                          className="library-account-action"
+                          disabled={Boolean(recoveryActionId)}
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Open the pending initial ownership for ${recovery.title}? The owner rows will be checked against the current cloud family before they are saved.`,
+                              )
+                            ) {
+                              return;
+                            }
+                            setRecoveryActionId(recovery.id);
+                            try {
+                              await onApplyCloudRecovery?.(recovery.id);
+                            } finally {
+                              setRecoveryActionId("");
+                            }
+                          }}
+                        >
+                          <ArchiveRestore size={15} /> Use owner rows
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="library-account-action danger"
+                        disabled={Boolean(recoveryActionId)}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Hide this pending browser copy of ${recovery.title}? Neither the browser copy nor the cloud version will be deleted or changed. It will reappear if its source records newer changes.`,
+                            )
+                          ) {
+                            onDiscardCloudRecovery?.(recovery.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={15} /> Hide copy
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
           {recoveryAvailable && (
             <button type="button" className="library-account-action" onClick={onDownloadRecovery}>
