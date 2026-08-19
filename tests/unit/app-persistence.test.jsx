@@ -625,10 +625,11 @@ describe("App local recovery", () => {
     expect(container.querySelector(".context-dashboard")).not.toBeNull();
     act(() => container.querySelector(".ownership-tax-button").click());
     expect(container.querySelector(".property-workspace-page")).not.toBeNull();
-    const setupLink = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent.trim() === "Property & initial ownership",
+    const setupLink = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Property & initial ownership"),
     );
     expect(setupLink.className).toContain("active");
+    expect(setupLink.textContent).toContain("Required");
     expect(container.textContent).toContain("Current ownership & history");
     expect(container.textContent).toContain("Tax Calculation");
     expect(container.textContent).not.toContain("Record a sale or transfer");

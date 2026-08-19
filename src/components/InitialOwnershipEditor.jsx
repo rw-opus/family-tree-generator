@@ -13,6 +13,7 @@ import {
   shareFromFractionInput,
   shareFromPercentageInput,
 } from "../domain/shares.js";
+import { HoverHelpLabel } from "./HoverHelpLabel.jsx";
 import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 
 const makeOwner = (owners = []) => ({
@@ -128,11 +129,15 @@ export function InitialOwnershipEditor({
   };
 
   return (
-    <div className="initial-ownership-editor">
+    <div
+      className={`initial-ownership-editor ${status.isComplete ? "is-complete" : "needs-setup"}`}
+    >
       <div className="section-heading initial-ownership-heading">
         <div>
-          <p className="eyebrow">Initial title</p>
-          <h3>{heading}</h3>
+          <p className="eyebrow">{status.isComplete ? "Initial title" : "Required first step"}</p>
+          <h3 title="Record who owned the property before the successions and transfers tracked in this workspace.">
+            {heading}
+          </h3>
         </div>
         <span className={`initial-title-badge ${status.isComplete ? "valid" : "invalid"}`}>
           {totalPercentageLabel}
@@ -145,9 +150,18 @@ export function InitialOwnershipEditor({
       <div className="initial-owner-list">
         {owners.length > 0 && (
           <div className="initial-owner-columns" aria-hidden="true">
-            <span>Person</span>
-            <span>Fraction</span>
-            <span>Percentage</span>
+            <HoverHelpLabel
+              label="Person"
+              help="Choose the person or outside party who originally held this share."
+            />
+            <HoverHelpLabel
+              label="Fraction"
+              help="Enter the exact share as a numerator and denominator, for example 1/2."
+            />
+            <HoverHelpLabel
+              label="Percentage"
+              help="You may enter the share as a percentage instead; the fraction is updated automatically."
+            />
             <span />
           </div>
         )}
@@ -167,6 +181,7 @@ export function InitialOwnershipEditor({
               <span className="initial-owner-person-control">
                 <select
                   aria-label="Initial owner"
+                  title="Choose the person or outside party who originally held this share."
                   value={owner.personId}
                   onChange={(event) => {
                     if (!flushDraftOwners()) return;
@@ -220,6 +235,7 @@ export function InitialOwnershipEditor({
               <span className="initial-owner-fraction">
                 <input
                   aria-label="Initial ownership numerator"
+                  title="The top number of the owner's exact fraction."
                   type="number"
                   min="0"
                   max={MAX_FRACTION_INTEGER}
@@ -236,6 +252,7 @@ export function InitialOwnershipEditor({
                 <b>/</b>
                 <input
                   aria-label="Initial ownership denominator"
+                  title="The bottom number of the owner's exact fraction."
                   type="number"
                   min="1"
                   max={MAX_FRACTION_INTEGER}
@@ -253,6 +270,7 @@ export function InitialOwnershipEditor({
               <span className="initial-owner-percentage">
                 <input
                   aria-label="Initial ownership percentage"
+                  title="The owner's initial share as a percentage. All owners together must total 100%."
                   type="number"
                   min="0"
                   max="100"
@@ -298,13 +316,19 @@ export function InitialOwnershipEditor({
         </p>
       )}
       <div className="initial-owner-actions">
-        <button type="button" className="add-button" onClick={addOwner}>
+        <button
+          type="button"
+          className="add-button"
+          title="Add another original owner and assign the remaining unallocated share."
+          onClick={addOwner}
+        >
           <Plus size={16} /> Add initial owner
         </button>
         {onPickFromTree && (
           <button
             type="button"
             className="secondary-button initial-owner-tree-add-button"
+            title="Return to the family tree and click the person who was an original owner."
             onClick={pickNewOwnerFromTree}
           >
             Select from tree
@@ -314,6 +338,7 @@ export function InitialOwnershipEditor({
           <button
             type="button"
             className="secondary-button"
+            title="Add an original owner who is not represented by a person on this family tree."
             aria-expanded={outsidePartyOpen}
             onClick={() => setOutsidePartyOpen((open) => !open)}
           >

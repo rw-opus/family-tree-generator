@@ -9,6 +9,7 @@ import {
   reconcileFractionPercentageDisplay,
 } from "../domain/ownershipPresentation.js";
 import { fractionForShare } from "../domain/shares.js";
+import { HoverHelpLabel } from "./HoverHelpLabel.jsx";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyOwnershipSummary } from "./PropertyOwnershipSummary.jsx";
 import { SuccessionTraceControl } from "./SuccessionTraceControl.jsx";
@@ -116,7 +117,10 @@ export function Properties({
 
               <div className="form-grid">
                 <label className="full-width">
-                  Address
+                  <HoverHelpLabel
+                    label="Address"
+                    help="Enter the full address of the property whose ownership is being traced."
+                  />
                   <input
                     value={property.address || ""}
                     onChange={(event) =>
@@ -127,7 +131,10 @@ export function Properties({
                 </label>
                 {!singleProperty && (
                   <label className="full-width">
-                    Description
+                    <HoverHelpLabel
+                      label="Description"
+                      help="Add an optional registry, title or internal reference that distinguishes this property."
+                    />
                     <input
                       value={property.description || ""}
                       onChange={(event) =>
@@ -138,7 +145,10 @@ export function Properties({
                   </label>
                 )}
                 <label className="full-width">
-                  Value of the property being sold today (€) (optional)
+                  <HoverHelpLabel
+                    label="Value of the property being sold today (€) (optional)"
+                    help="Enter the present sale value when tax calculations are required. Leave it blank to trace ownership only."
+                  />
                   <input
                     aria-label="Value of the property being sold today"
                     type="number"

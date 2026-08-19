@@ -248,4 +248,49 @@ describe("InitialOwnershipEditor percentage display", () => {
       "Add outside owner",
     ]);
   });
+
+  it("makes incomplete setup prominent and explains the ownership labels on hover", () => {
+    act(() =>
+      root.render(
+        <InitialOwnershipEditor
+          property={{ owners: [] }}
+          people={[]}
+          onChange={() => ({})}
+          onPickFromTree={() => {}}
+          onCreateOutsideParty={() => ({})}
+        />,
+      ),
+    );
+
+    const editor = container.querySelector(".initial-ownership-editor");
+    expect(editor.classList.contains("needs-setup")).toBe(true);
+    expect(editor.textContent).toContain("Required first step");
+
+    act(() =>
+      root.render(
+        <InitialOwnershipEditor
+          property={{
+            owners: [
+              {
+                id: "title",
+                personId: "owner",
+                shareNumerator: 1,
+                shareDenominator: 1,
+              },
+            ],
+          }}
+          people={[{ id: "owner", fullName: "Owner" }]}
+          onChange={() => ({})}
+        />,
+      ),
+    );
+
+    const helpLabels = [...container.querySelectorAll(".hover-help-label")];
+    expect(helpLabels.map((label) => label.textContent.trim())).toEqual([
+      "Person",
+      "Fraction",
+      "Percentage",
+    ]);
+    helpLabels.forEach((label) => expect(label.title.length).toBeGreaterThan(20));
+  });
 });

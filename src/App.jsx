@@ -2696,9 +2696,25 @@ export function App({
 
   if (workspaceView !== "tree" && legalWorkspaceEnabled) {
     const workspaceSectionLinks = [
-      { id: "setup", label: "Property & initial ownership", icon: Landmark },
-      { id: "ownership", label: "Current ownership & history", icon: GitBranch },
-      { id: "tax", label: "Tax Calculation", icon: Calculator },
+      {
+        id: "setup",
+        label: "Property & initial ownership",
+        icon: Landmark,
+        help: "Enter the property and identify every original owner. Their shares must total 100% before ownership and tax can be calculated.",
+        required: !propertyReport?.startingOwnership?.isComplete,
+      },
+      {
+        id: "ownership",
+        label: "Current ownership & history",
+        icon: GitBranch,
+        help: "Review the current owners and the successions or transfers that produced their shares.",
+      },
+      {
+        id: "tax",
+        label: "Tax Calculation",
+        icon: Calculator,
+        help: "Review acquisition details and calculate the indicative tax position for each seller.",
+      },
     ];
     const showPropertySection = (sectionId) => {
       setPropertyWorkspaceSection(sectionId);
@@ -2752,21 +2768,25 @@ export function App({
             </div>
           </header>
           <nav className="property-workspace-menu" aria-label="Property and Tax sections">
-            {workspaceSectionLinks.map(({ id, label, icon: Icon }) => (
+            {workspaceSectionLinks.map(({ id, label, icon: Icon, help, required }) => (
               <button
                 type="button"
-                className={propertyWorkspaceSection === id ? "active" : ""}
+                className={`${propertyWorkspaceSection === id ? "active" : ""}${required ? " needs-attention" : ""}`}
                 aria-current={propertyWorkspaceSection === id ? "location" : undefined}
                 key={id}
+                title={help}
                 onClick={() => showPropertySection(id)}
               >
-                <Icon size={16} /> {label}
+                <Icon size={16} /> <span>{label}</span>
+                {required && <span className="property-workspace-required-badge">Required</span>}
               </button>
             ))}
           </nav>
           {currentTree.properties.length > 1 && (
             <label className="property-workspace-property-selector">
-              <span>Property</span>
+              <span title="Choose which property in this family file you want to review.">
+                Property
+              </span>
               <select
                 value={activeProperty.id}
                 onChange={(event) => {

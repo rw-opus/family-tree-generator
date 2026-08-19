@@ -604,6 +604,27 @@ textarea:focus-visible {
   background: var(--accent);
 }
 
+.property-workspace-menu button.needs-attention:not(.active) {
+  border-color: var(--plum);
+  background: #faf6fc;
+}
+
+.property-workspace-required-badge {
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--plum);
+  padding: 0.15rem 0.42rem;
+  color: #fff;
+  font-size: var(--type-micro);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.property-workspace-menu button.active .property-workspace-required-badge {
+  background: #fff;
+  color: var(--plum);
+}
+
 .property-workspace-property-selector {
   display: grid;
   grid-template-columns: auto minmax(12rem, 28rem);
@@ -4274,6 +4295,31 @@ textarea {
   font-size: var(--type-caption);
 }
 
+.initial-ownership-editor.needs-setup {
+  margin-top: 0.7rem;
+  border-left: 4px solid var(--plum);
+  background: #faf6fc;
+  padding: 0.8rem 0.85rem;
+}
+
+.initial-ownership-editor.needs-setup .initial-ownership-heading .eyebrow {
+  color: var(--plum);
+}
+
+.hover-help-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: max-content;
+  max-width: 100%;
+  cursor: help;
+}
+
+.hover-help-label svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
 .initial-owner-columns,
 .initial-owner-row {
   display: grid;
@@ -6897,11 +6943,19 @@ body.a3-print-preview-open {
   }
 
   .property-workspace-menu button {
+    flex-wrap: wrap;
+    gap: 0.2rem;
     min-width: 0;
     min-height: 3.5rem;
     padding-inline: 0.35rem;
     font-size: var(--type-control-mobile);
     text-align: center;
+  }
+
+  .property-workspace-required-badge {
+    flex-basis: 100%;
+    width: max-content;
+    margin: 0 auto;
   }
 
   .property-workspace-property-selector {
