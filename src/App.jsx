@@ -97,6 +97,18 @@ import {
   writeInitialOwnershipDraft,
 } from "./services/initialOwnershipDraftJournal.js";
 import {
+  TREE_DRAFT_RECOVERY_STATES,
+  acknowledgeTreeDraftSave,
+  compareTreeDraftToServer,
+  dismissTreeDraft,
+  listTreeDrafts,
+  markTreeDraftDeleted,
+  recoverTreeDraftTree,
+  treeDraftFingerprint,
+  treeDraftWriterId,
+  writeTreeDraft,
+} from "./services/treeDraftJournal.js";
+import {
   isLocalTrashExpired,
   loadLocalWorkspace,
   readLocalWorkspaceRecovery,
@@ -141,18 +153,24 @@ const cloudQueueSnapshotIsSaved = (queue, snapshot) =>
     ? queue.isSnapshotSaved(snapshot)
     : !queue?.hasUnsavedChanges?.();
 
+// Tree-kind items are excluded here: their "safe" vs "multiple" state is
+// decided once, definitively, when drafts are first inventoried (there is no
+// row-level replay to re-derive it from), so dynamically re-keying them by
+// the absent ownersFingerprint field would incorrectly collapse a genuinely
+// still-conflicting draft back to "safe" whenever an unrelated item is
+// discarded.
 const reclassifyCloudOwnershipRecoveryChoices = (items = []) => {
   const replayableStates = new Set(["safe", "multiple"]);
   const fingerprintsByProperty = new Map();
   items.forEach((item) => {
-    if (!replayableStates.has(item.state) || !item.draft) return;
+    if (item.kind === "tree" || !replayableStates.has(item.state) || !item.draft) return;
     const key = `${item.treeId}:${item.propertyId}`;
     const fingerprints = fingerprintsByProperty.get(key) || new Set();
     fingerprints.add(item.draft.ownersFingerprint);
     fingerprintsByProperty.set(key, fingerprints);
   });
   return items.map((item) => {
-    if (!replayableStates.has(item.state) || !item.draft) return item;
+    if (item.kind === "tree" || !replayableStates.has(item.state) || !item.draft) return item;
     const fingerprints = fingerprintsByProperty.get(`${item.treeId}:${item.propertyId}`);
     return { ...item, state: fingerprints?.size > 1 ? "multiple" : "safe" };
   });
@@ -376,9 +394,14 @@ export function App({
   if (!initialOwnershipDraftWriterIdRef.current) {
     initialOwnershipDraftWriterIdRef.current = initialOwnershipDraftWriterId();
   }
+  const treeDraftWriterIdRef = useRef("");
+  if (!treeDraftWriterIdRef.current) {
+    treeDraftWriterIdRef.current = treeDraftWriterId();
+  }
   const initialOwnershipDraftCacheRef = useRef(new Map());
   const skipNextCloudPersistenceEffectRef = useRef("");
   const recoveredInitialOwnershipDraftsRef = useRef(new Map());
+  const recoveredTreeDraftsRef = useRef(new Map());
   const latestTreeRef = useRef(tree);
   const latestTreesRef = useRef(trees);
   const latestTrashedTreesRef = useRef(trashedTrees);
@@ -467,6 +490,28 @@ export function App({
         drafts.push(draft);
       });
       return drafts;
+    },
+    [authenticatedUserId],
+  );
+
+  // Whole-tree sibling of journalInitialOwnershipChanges. Runs on every
+  // durable commit (not just ownership-row edits) so a local recovery
+  // snapshot exists the instant an edit is made, independent of whether the
+  // debounced cloud save ever completes before the tab is backgrounded,
+  // put to sleep, or discarded.
+  const journalTreeDraft = useCallback(
+    (nextTree) => {
+      const baseStorageRevision = Number(nextTree.storageRevision);
+      if (!Number.isSafeInteger(baseStorageRevision) || baseStorageRevision <= 0) return null;
+      return writeTreeDraft(
+        authenticatedUserId,
+        {
+          treeId: nextTree.id,
+          baseStorageRevision,
+          tree: prepareTreeForPersistence(nextTree),
+        },
+        { writerId: treeDraftWriterIdRef.current },
+      );
     },
     [authenticatedUserId],
   );
@@ -582,9 +627,38 @@ export function App({
             }
           });
           if (recovered) recoveredInitialOwnershipDraftsRef.current.delete(savedSnapshot.id);
+          try {
+            acknowledgeTreeDraftSave(
+              authenticatedUserId,
+              savedSnapshot.id,
+              treeDraftFingerprint(prepareTreeForPersistence(savedSnapshot)),
+              { writerId: treeDraftWriterIdRef.current },
+            );
+          } catch (error) {
+            recoveryCleanupWarnings.push(error.message);
+          }
+          const recoveredTreeDraft = recoveredTreeDraftsRef.current.get(savedSnapshot.id);
+          if (recoveredTreeDraft) {
+            try {
+              const dismissed = dismissTreeDraft(
+                authenticatedUserId,
+                recoveredTreeDraft.source.treeId,
+                recoveredTreeDraft.source.recordFingerprint,
+                { writerId: recoveredTreeDraft.source.writerId },
+              );
+              if (!dismissed) {
+                recoveryCleanupWarnings.push(
+                  "A source browser record changed while this save completed and will need review on the next reload.",
+                );
+              }
+            } catch (error) {
+              recoveryCleanupWarnings.push(error.message);
+            }
+            recoveredTreeDraftsRef.current.delete(savedSnapshot.id);
+          }
           if (recoveryCleanupWarnings.length) {
             setStatus(
-              `Saved securely, but initial-ownership recovery still needs review: ${[
+              `Saved securely, but local recovery data still needs review: ${[
                 ...new Set(recoveryCleanupWarnings),
               ].join(" ")}`,
             );
@@ -981,11 +1055,151 @@ export function App({
         const recoveryItems = [];
         const recoveredByTree = new Map();
         try {
+          // Tree drafts (general edits) are recovered before ownership drafts
+          // (initial-owner rows) so the finer-grained, more-recently-journaled
+          // ownership state can still layer on top for the tree being opened.
+          const serverTreesById = new Map(activeResult.items.map((item) => [item.id, item]));
+          const treeDraftInventory = listTreeDrafts(authenticatedUserId);
+          treeDraftInventory.invalidRecords.forEach((record, index) => {
+            recoveryItems.push({
+              id: `tree-invalid:${index}:${record.key}`,
+              kind: "tree",
+              treeId: "",
+              writerId: "",
+              title: "Unreadable family recovery record",
+              savedAt: "",
+              state: "invalid",
+              draft: null,
+              serverTree: null,
+              storageKey: record.key,
+              raw: record.raw,
+              error: record.error,
+            });
+          });
+          const treeDraftsByTree = new Map();
+          treeDraftInventory.drafts.forEach((draft) => {
+            const entries = treeDraftsByTree.get(draft.treeId) || [];
+            entries.push(draft);
+            treeDraftsByTree.set(draft.treeId, entries);
+          });
+          treeDraftsByTree.forEach((drafts, treeId) => {
+            const serverTree = serverTreesById.get(treeId);
+            if (!serverTree) {
+              const trashedTree = trashResult.items.find((candidate) => candidate.id === treeId);
+              drafts.forEach((draft) => {
+                recoveryItems.push({
+                  id: `tree:${draft.treeId}:${draft.writerId}:${draft.recordFingerprint}`,
+                  kind: "tree",
+                  treeId: draft.treeId,
+                  writerId: draft.writerId,
+                  title: trashedTree?.title || "Deleted or unavailable family",
+                  savedAt: draft.savedAt,
+                  state: trashedTree ? "trashed" : "orphan",
+                  draft,
+                  serverTree: trashedTree || null,
+                });
+              });
+              return;
+            }
+            const comparisons = drafts.map((draft) => ({
+              draft,
+              comparison: compareTreeDraftToServer(draft, serverTree),
+            }));
+            comparisons.forEach(({ draft, comparison }) => {
+              if (comparison.state === TREE_DRAFT_RECOVERY_STATES.IDENTICAL) {
+                try {
+                  dismissTreeDraft(authenticatedUserId, treeId, draft.recordFingerprint, {
+                    writerId: draft.writerId,
+                  });
+                } catch {
+                  // A harmless race with another tab clearing the same record.
+                }
+                return;
+              }
+              if (comparison.state === TREE_DRAFT_RECOVERY_STATES.CONFLICT) {
+                recoveryItems.push({
+                  id: `tree:${draft.treeId}:${draft.writerId}:${draft.recordFingerprint}`,
+                  kind: "tree",
+                  treeId: draft.treeId,
+                  writerId: draft.writerId,
+                  title: serverTree.title || "Family",
+                  savedAt: draft.savedAt,
+                  state: "conflict",
+                  draft,
+                  serverTree,
+                });
+              }
+            });
+            const restorable = comparisons.filter(
+              ({ comparison }) => comparison.state === TREE_DRAFT_RECOVERY_STATES.SAFE_TO_RESTORE,
+            );
+            if (!restorable.length) return;
+            // Different tabs can each hold their own unsaved draft for the same
+            // tree. Only the newest is offered automatically; the rest stay
+            // listed so nothing from another tab is silently discarded.
+            const [newest, ...rest] = [...restorable].sort((first, second) =>
+              second.draft.savedAt.localeCompare(first.draft.savedAt),
+            );
+            rest.forEach(({ draft }) =>
+              recoveryItems.push({
+                id: `tree:${draft.treeId}:${draft.writerId}:${draft.recordFingerprint}`,
+                kind: "tree",
+                treeId: draft.treeId,
+                writerId: draft.writerId,
+                title: serverTree.title || "Family",
+                savedAt: draft.savedAt,
+                state: "multiple",
+                draft,
+                serverTree,
+              }),
+            );
+            if (treeId === activationTree?.id) {
+              try {
+                const recoveredTree = prepareTreeForPersistence(
+                  normaliseTree(recoverTreeDraftTree(newest.draft, serverTree)),
+                );
+                activationTree = recoveredTree;
+                activationServerTree = serverTree;
+                serverTreesById.set(treeId, recoveredTree);
+                recoveredTreeDraftsRef.current.set(treeId, { serverTree, source: newest.draft });
+                recoveredPendingDraft = true;
+              } catch (error) {
+                recoveryItems.push({
+                  id: `tree:${newest.draft.treeId}:${newest.draft.writerId}:${newest.draft.recordFingerprint}`,
+                  kind: "tree",
+                  treeId: newest.draft.treeId,
+                  writerId: newest.draft.writerId,
+                  title: serverTree.title || "Family",
+                  savedAt: newest.draft.savedAt,
+                  state: "safe",
+                  draft: newest.draft,
+                  serverTree,
+                });
+                recoveryWarnings.push(
+                  `A pending local version could not be restored automatically: ${error.message}`,
+                );
+              }
+            } else {
+              recoveryItems.push({
+                id: `tree:${newest.draft.treeId}:${newest.draft.writerId}:${newest.draft.recordFingerprint}`,
+                kind: "tree",
+                treeId: newest.draft.treeId,
+                writerId: newest.draft.writerId,
+                title: serverTree.title || "Family",
+                savedAt: newest.draft.savedAt,
+                state: "safe",
+                draft: newest.draft,
+                serverTree,
+              });
+            }
+          });
+
           const safeDraftsByProperty = new Map();
           const pendingInventory = listInitialOwnershipDrafts(authenticatedUserId);
           pendingInventory.invalidRecords.forEach((record, index) => {
             recoveryItems.push({
               id: `invalid:${index}:${record.key}`,
+              kind: "ownership",
               treeId: "",
               propertyId: "",
               writerId: "",
@@ -1000,15 +1214,14 @@ export function App({
             });
           });
           pendingInventory.drafts.forEach((draft) => {
-            const serverTree = activeResult.items.find(
-              (candidate) => candidate.id === draft.treeId,
-            );
+            const serverTree = serverTreesById.get(draft.treeId);
             if (!serverTree) {
               const trashedTree = trashResult.items.find(
                 (candidate) => candidate.id === draft.treeId,
               );
               recoveryItems.push({
                 id: `${draft.treeId}:${draft.propertyId}:${draft.writerId}:${draft.recordFingerprint}`,
+                kind: "ownership",
                 treeId: draft.treeId,
                 propertyId: draft.propertyId,
                 writerId: draft.writerId,
@@ -1040,6 +1253,7 @@ export function App({
             }
             recoveryItems.push({
               id: `${draft.treeId}:${draft.propertyId}:${draft.writerId}:${draft.recordFingerprint}`,
+              kind: "ownership",
               treeId: draft.treeId,
               propertyId: draft.propertyId,
               writerId: draft.writerId,
@@ -1063,6 +1277,7 @@ export function App({
               entries.forEach((entry) =>
                 recoveryItems.push({
                   id: `${entry.draft.treeId}:${entry.draft.propertyId}:${entry.draft.writerId}:${entry.draft.recordFingerprint}`,
+                  kind: "ownership",
                   treeId: entry.draft.treeId,
                   propertyId: entry.draft.propertyId,
                   writerId: entry.draft.writerId,
@@ -1113,6 +1328,7 @@ export function App({
               entries.forEach((entry) =>
                 recoveryItems.push({
                   id: `${entry.draft.treeId}:${entry.draft.propertyId}:${entry.draft.writerId}:${entry.draft.recordFingerprint}`,
+                  kind: "ownership",
                   treeId: entry.draft.treeId,
                   propertyId: entry.draft.propertyId,
                   writerId: entry.draft.writerId,
@@ -1129,7 +1345,7 @@ export function App({
             }
           });
         } catch (error) {
-          recoveryWarnings.push(`Pending initial ownership needs attention: ${error.message}`);
+          recoveryWarnings.push(`Pending local changes need attention: ${error.message}`);
         }
 
         recoveredInitialOwnershipDraftsRef.current = recoveredByTree;
@@ -1305,12 +1521,13 @@ export function App({
         const queue = cloudSaveQueueRef.current;
         if (!queue) throw new Error("The secure save queue is unavailable.");
         journalInitialOwnershipChanges(base, nextTree);
+        journalTreeDraft(nextTree);
         queue.schedule(nextTree);
         skipNextCloudPersistenceEffectRef.current = nextTree.id;
         if (flushCloud) void queue.flush().catch(() => undefined);
       } catch (error) {
         setStatus(
-          `The change was not applied because initial-ownership recovery could not be secured: ${error.message}`,
+          `The change was not applied because it could not be secured locally: ${error.message}`,
         );
         setSaveState({ phase: "error", detail: error.message });
         return null;
@@ -1800,31 +2017,42 @@ export function App({
   const downloadCloudPendingRecovery = (recoveryId) => {
     const recovery = cloudPendingRecoveries.find((item) => item.id === recoveryId);
     if (!recovery) return;
+    const isTreeKind = recovery.kind === "tree";
     const payload =
       recovery.state === "invalid"
         ? recovery.raw
         : JSON.stringify(
-            {
-              exportedAt: new Date().toISOString(),
-              reason: recovery.state,
-              savedAt: recovery.savedAt,
-              treeId: recovery.treeId,
-              propertyId: recovery.propertyId,
-              owners: recovery.draft.owners,
-              outsideParties: recovery.draft.outsideParties,
-            },
+            isTreeKind
+              ? {
+                  exportedAt: new Date().toISOString(),
+                  reason: recovery.state,
+                  savedAt: recovery.savedAt,
+                  treeId: recovery.treeId,
+                  tree: recovery.draft.tree,
+                }
+              : {
+                  exportedAt: new Date().toISOString(),
+                  reason: recovery.state,
+                  savedAt: recovery.savedAt,
+                  treeId: recovery.treeId,
+                  propertyId: recovery.propertyId,
+                  owners: recovery.draft.owners,
+                  outsideParties: recovery.draft.outsideParties,
+                },
             null,
             2,
           );
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = `pending-initial-ownership-${recovery.treeId || "unreadable"}.json`;
+    link.download = `pending-${isTreeKind ? "family" : "initial-ownership"}-${recovery.treeId || "unreadable"}.json`;
     document.body.append(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setStatus("Downloaded the selected pending initial-ownership record. Keep it secure.");
+    setStatus(
+      `Downloaded the selected pending ${isTreeKind ? "family" : "initial-ownership"} record. Keep it secure.`,
+    );
   };
 
   const removeCloudRecoveryItem = (recoveryId) => {
@@ -1853,6 +2081,19 @@ export function App({
         if (!storage || storage.getItem(recovery.storageKey) !== recovery.raw) return false;
         storage.removeItem(recovery.storageKey);
         if (storage.getItem(recovery.storageKey) !== null) return false;
+      } else if (recovery.kind === "tree") {
+        const dismissed = dismissTreeDraft(
+          authenticatedUserId,
+          recovery.treeId,
+          recovery.draft.recordFingerprint,
+          { writerId: recovery.writerId },
+        );
+        if (!dismissed) {
+          setStatus(
+            "That browser copy changed before it could be dismissed. Reload the family library to review the newer version.",
+          );
+          return false;
+        }
       } else {
         const dismissed = dismissInitialOwnershipDraft(
           authenticatedUserId,
@@ -1874,7 +2115,7 @@ export function App({
     }
     removeCloudRecoveryItem(recoveryId);
     setStatus(
-      "The selected initial-ownership record was hidden without changing the cloud family. It will reappear if its source records newer changes.",
+      `The selected ${recovery.kind === "tree" ? "family" : "initial-ownership"} record was hidden without changing the cloud family. It will reappear if its source records newer changes.`,
     );
     return true;
   };
@@ -1891,14 +2132,26 @@ export function App({
       }
     }
     try {
+      const isTreeKind = recovery.kind === "tree";
       const recoveredTree = prepareTreeForPersistence(
-        normaliseTree(recoverInitialOwnershipDraftTree(recovery.draft, recovery.serverTree)),
+        normaliseTree(
+          isTreeKind
+            ? recoverTreeDraftTree(recovery.draft, recovery.serverTree)
+            : recoverInitialOwnershipDraftTree(recovery.draft, recovery.serverTree),
+        ),
       );
-      recoveredInitialOwnershipDraftsRef.current.set(recovery.treeId, {
-        sources: [recovery.draft],
-        serverTree: recovery.serverTree,
-        tree: recoveredTree,
-      });
+      if (isTreeKind) {
+        recoveredTreeDraftsRef.current.set(recovery.treeId, {
+          serverTree: recovery.serverTree,
+          source: recovery.draft,
+        });
+      } else {
+        recoveredInitialOwnershipDraftsRef.current.set(recovery.treeId, {
+          sources: [recovery.draft],
+          serverTree: recovery.serverTree,
+          tree: recoveredTree,
+        });
+      }
       setTrees((items) =>
         items.map((item) => (item.id === recovery.treeId ? recoveredTree : item)),
       );
@@ -1908,11 +2161,11 @@ export function App({
       setShowLibrary(false);
       removeCloudRecoveryItem(recoveryId);
       setStatus(
-        "Opened the recovered initial ownership. Its small browser safety record remains intact until the cloud save is acknowledged.",
+        `Opened the recovered ${isTreeKind ? "family" : "initial ownership"}. Its small browser safety record remains intact until the cloud save is acknowledged.`,
       );
       return true;
     } catch (error) {
-      setStatus(`The pending initial ownership could not be opened safely: ${error.message}`);
+      setStatus(`The pending change could not be opened safely: ${error.message}`);
       return false;
     }
   };
@@ -2153,6 +2406,29 @@ export function App({
         setCloudPendingRecoveries((items) => {
           const reclassified = items.flatMap((item) => {
             if (item.treeId !== treeId || !item.draft) return [item];
+            if (item.kind === "tree") {
+              try {
+                const comparison = compareTreeDraftToServer(item.draft, active);
+                if (comparison.state === TREE_DRAFT_RECOVERY_STATES.IDENTICAL) {
+                  dismissTreeDraft(authenticatedUserId, item.treeId, item.draft.recordFingerprint, {
+                    writerId: item.writerId,
+                  });
+                  return [];
+                }
+                return [
+                  {
+                    ...item,
+                    state:
+                      comparison.state === TREE_DRAFT_RECOVERY_STATES.SAFE_TO_RESTORE
+                        ? "safe"
+                        : "conflict",
+                    serverTree: active,
+                  },
+                ];
+              } catch (error) {
+                return [{ ...item, state: "conflict", serverTree: active, error }];
+              }
+            }
             try {
               const comparison = compareInitialOwnershipDraftToTree(item.draft, active);
               if (comparison.state === INITIAL_OWNERSHIP_DRAFT_RECOVERY_STATES.IDENTICAL) {
@@ -2213,7 +2489,13 @@ export function App({
         } catch (error) {
           browserCleanupError = error;
         }
+        try {
+          markTreeDraftDeleted(authenticatedUserId, treeId);
+        } catch (error) {
+          browserCleanupError = browserCleanupError || error;
+        }
         recoveredInitialOwnershipDraftsRef.current.delete(treeId);
+        recoveredTreeDraftsRef.current.delete(treeId);
         for (const cacheKey of initialOwnershipDraftCacheRef.current.keys()) {
           if (cacheKey.startsWith(`${treeId}:`)) {
             initialOwnershipDraftCacheRef.current.delete(cacheKey);
@@ -2660,6 +2942,7 @@ export function App({
         recoveryAvailable={Boolean(startupWorkspace.recoveryKey)}
         pendingCloudRecoveries={cloudPendingRecoveries.map((item) => ({
           id: item.id,
+          kind: item.kind,
           treeId: item.treeId,
           title: item.title,
           savedAt: item.savedAt,

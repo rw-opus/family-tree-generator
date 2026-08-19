@@ -211,6 +211,7 @@ import {
   readInitialOwnershipDraft,
   writeInitialOwnershipDraft,
 } from "../../src/services/initialOwnershipDraftJournal.js";
+import { listTreeDrafts, writeTreeDraft } from "../../src/services/treeDraftJournal.js";
 
 const pendingInitialOwnership = (serverTree, owners, { writerId = "default-writer", now } = {}) =>
   writeInitialOwnershipDraft(
@@ -223,6 +224,17 @@ const pendingInitialOwnership = (serverTree, owners, { writerId = "default-write
       owners,
       baseOutsideParties: serverTree.outsideParties || [],
       outsideParties: serverTree.outsideParties || [],
+    },
+    { writerId, now },
+  );
+
+const pendingTreeEdit = (serverTree, editedTree, { writerId = "default-writer", now } = {}) =>
+  writeTreeDraft(
+    "user-1",
+    {
+      treeId: serverTree.id,
+      baseStorageRevision: serverTree.storageRevision,
+      tree: editedTree,
     },
     { writerId, now },
   );
@@ -339,6 +351,87 @@ describe("App cloud session identity", () => {
       await Promise.resolve();
     });
     expect(listInitialOwnershipDrafts("user-1").drafts).toEqual([]);
+  });
+
+  it("recovers a general edit (a new person) the cloud never acknowledged, on next load", async () => {
+    // This is the reported bug: a person was added, the tab was backgrounded
+    // before the debounced cloud save finished, and reopening the family
+    // showed the tree without them. The local tree draft, written on every
+    // commit independent of the cloud save's own timing, is what closes that
+    // gap for edits beyond initial-owner rows.
+    const serverTree = {
+      ...caseActivationState(tree("first", "First family")).caseData,
+      storageRevision: 1,
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+    const editedTree = {
+      ...serverTree,
+      people: [
+        ...serverTree.people,
+        {
+          id: "new-child",
+          givenNames: "New",
+          surname: "Child",
+          fullName: "New Child",
+          fatherId: "first-person",
+          sex: "Other",
+        },
+      ],
+    };
+    pendingTreeEdit(serverTree, editedTree);
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Open First family");
+    expect(cloudHarness.queueAcknowledge).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "first" }),
+    );
+    expect(cloudHarness.queueSchedule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "first",
+        people: expect.arrayContaining([expect.objectContaining({ id: "new-child" })]),
+      }),
+    );
+
+    await act(async () => {
+      await cloudHarness.flushQueue();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(listTreeDrafts("user-1").drafts).toEqual([]);
+  });
+
+  it("leaves a tree draft for manual review once the server has moved past its base", async () => {
+    const serverTree = {
+      ...caseActivationState(tree("first", "First family")).caseData,
+      storageRevision: 2,
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+    // Base revision 1 predates the server's current revision 2: something
+    // else was saved in between, so this must not be silently overwritten.
+    pendingTreeEdit(
+      { ...serverTree, storageRevision: 1 },
+      { ...serverTree, storageRevision: 1, title: "Stale local edit" },
+    );
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Pending First family (conflict)");
+    expect(cloudHarness.queueSchedule).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Stale local edit" }),
+    );
   });
 
   it("hydrates every safe family and saves each recovered ownership when opened", async () => {
