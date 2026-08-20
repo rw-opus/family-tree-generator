@@ -13,6 +13,7 @@ import {
 } from "./fractions.js";
 import { approximateFraction } from "./ownership.js";
 import { validateCausaMortisDateChronology } from "./chronology.js";
+import { peopleWithEffectiveDeathDates } from "./deceasedStatus.js";
 
 export const causaMortisDeclaredShare = (declaration = {}) => {
   const numerator = fractionComponentNumber(declaration.declaredShareNumerator);
@@ -166,7 +167,8 @@ export function buildCausaMortisShareCoverage(
   outsideParties = [],
   { casePropertyIds = properties.map((property) => property?.id) } = {},
 ) {
-  const peopleById = new Map(people.map((person) => [person.id, person]));
+  const effectivePeople = peopleWithEffectiveDeathDates(people);
+  const peopleById = new Map(effectivePeople.map((person) => [person.id, person]));
   const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const scopedCasePropertyIds = [
     ...new Set(
@@ -177,7 +179,7 @@ export function buildCausaMortisShareCoverage(
 
   properties.forEach((property) => {
     const requiredByPerson = new Map();
-    buildPropertyOwnership(people, property, outsideParties).transmissions.forEach(
+    buildPropertyOwnership(effectivePeople, property, outsideParties).transmissions.forEach(
       (transmission) => {
         const amountFraction =
           transmission.amountFraction || approximateFraction(transmission.amount);

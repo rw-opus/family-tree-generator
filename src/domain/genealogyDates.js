@@ -8,6 +8,7 @@ const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {},
  * a year, an approximate date, or source wording can be recorded safely.
  */
 export function genealogyDeathDateText(person = {}) {
+  if (person.dateOfDeathUnknown === true) return "Date of death unknown";
   const recordedText = hasOwn(person, "deathDateText")
     ? String(person.deathDateText || "").trim()
     : "";

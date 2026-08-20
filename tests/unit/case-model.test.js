@@ -38,6 +38,24 @@ const legacyCase = () => ({
 });
 
 describe("case model migration", () => {
+  it("marks grandparents and earlier generations deceased when their date is unknown", () => {
+    const result = normalizeCase({
+      id: "older-generations",
+      people: [
+        { id: "grandparent", fullName: "Grandparent" },
+        { id: "parent", fullName: "Parent", fatherId: "grandparent" },
+        { id: "child", fullName: "Child", fatherId: "parent" },
+      ],
+    });
+
+    expect(result.people.find((person) => person.id === "grandparent")).toMatchObject({
+      isDeceased: true,
+      dateOfDeathUnknown: true,
+      designations: ["Deceased"],
+    });
+    expect(result.people.find((person) => person.id === "parent")?.isDeceased).not.toBe(true);
+  });
+
   it("canonicalises legacy null relationship fields before strict persistence", () => {
     const result = normalizeCase({
       id: "legacy-null-references",
@@ -70,6 +88,37 @@ describe("case model migration", () => {
       intestateHeirs: [],
       causaMortisDeclarations: [],
       designations: [],
+    });
+  });
+
+  it("removes obsolete legitim records from people and pending status sessions", () => {
+    const result = normalizeCase({
+      id: "legacy-legitim-data",
+      people: [
+        {
+          id: "person-1",
+          fullName: "Joseph Borg",
+          legacyArticle616Statuses: [{ personId: "child", participation: "taking" }],
+          legacyArticle616Estate: { debts: "100" },
+        },
+      ],
+      statusToggleSessions: [
+        {
+          id: "session-1",
+          personId: "person-1",
+          personFields: {
+            legacyArticle616Statuses: { present: true, value: [{ personId: "child" }] },
+            legacyArticle616Estate: { present: true, value: { debts: "100" } },
+            willHeirs: { present: true, value: [] },
+          },
+        },
+      ],
+    });
+
+    expect(result.people[0]).not.toHaveProperty("legacyArticle616Statuses");
+    expect(result.people[0]).not.toHaveProperty("legacyArticle616Estate");
+    expect(result.statusToggleSessions[0].personFields).toEqual({
+      willHeirs: { present: true, value: [] },
     });
   });
 
@@ -928,13 +977,6 @@ describe("family-scoped person removal", () => {
 
   it.each([
     {
-      name: "Article 616 status rows",
-      personPatch: {
-        legacyArticle616Statuses: [{ personId: "person", participation: "renounced" }],
-      },
-      label: "an Article 616 status record",
-    },
-    {
       name: "saved will-beneficiary review rows",
       personPatch: {
         willHeirsConfirmationSnapshot: {
@@ -963,12 +1005,6 @@ describe("family-scoped person removal", () => {
         willHeirs: [{ id: "saved-heir", personId: "person", sharePercent: 100 }],
       },
       label: "a saved will-beneficiary review",
-    },
-    {
-      name: "pending-session Article 616 statuses",
-      sessionField: "legacyArticle616Statuses",
-      sessionValue: [{ personId: "person", participation: "renounced" }],
-      label: "an Article 616 status record",
     },
     {
       name: "pending-session causa mortis declarations",

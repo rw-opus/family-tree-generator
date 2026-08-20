@@ -172,7 +172,7 @@ export function buildInheritanceSourcesByOwner(ownership = {}, people = [], outs
 
   (ownership.transmissions || []).forEach((transmission) => {
     const deceased = peopleById.get(transmission.deceasedId);
-    const inheritanceDate = String(deceased?.dateOfDeath || "");
+    const inheritanceDate = String(transmission.dateOfDeath || deceased?.dateOfDeath || "");
     const exactAllocations = transmission.exactAllocations || new Map();
     allocationEntries(transmission.allocations).forEach(([ownerId, allocatedShare]) => {
       const allocationFraction =

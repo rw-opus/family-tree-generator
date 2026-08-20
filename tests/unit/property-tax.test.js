@@ -144,7 +144,7 @@ describe("Maltese inherited property estimates", () => {
     expect(result.shares.get("child-b")).toBe(50);
     expect(result.warnings).toEqual([]);
   });
-  it("limits legacy suggestion warnings to a changed section engaged by the heir class", () => {
+  it("does not warn about article 825 when descendants take the pre-1993 estate", () => {
     const spouseAndChildren = allocateLegacyDescendantIntestacy(
       [
         { id: "spouse", relationship: "Surviving spouse", status: "accepted" },
@@ -157,7 +157,9 @@ describe("Maltese inherited property estimates", () => {
       "1990-04-02",
     );
 
-    expect(spouseAndChildren.warnings.join(" ")).toContain("article 825");
+    expect(spouseAndChildren.warnings.join(" ")).not.toContain("article 825");
+    expect(spouseAndChildren.shares.get("spouse")).toBe(0);
+    expect(spouseAndChildren.shares.get("child")).toBe(100);
     expect(childrenOnly.warnings.join(" ")).not.toContain("Historical law must be checked");
   });
   it("suggests childless pre-2005 spouse and sibling shares instead of leaving them unresolved", () => {

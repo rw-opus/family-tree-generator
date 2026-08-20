@@ -265,7 +265,7 @@ describe("automatic family ownership", () => {
     expect(result.transmissions[0].destination).toBe("descendants");
   });
 
-  it("cascades a pre-2005 testate property share through children's legitim", () => {
+  it("uses the recorded will shares without an automatic protected-portion adjustment", () => {
     const people = [
       person("edgar", {
         fullName: "Edgar Wadge",
@@ -284,14 +284,14 @@ describe("automatic family ownership", () => {
       owners: [{ personId: "edgar", sharePercent: 100 }],
     });
 
-    expect(result.ownershipByPerson["child-a"]).toBeCloseTo(1 / 6);
-    expect(result.ownershipByPerson["child-b"]).toBeCloseTo(1 / 6);
-    expect(result.ownershipByPerson.niece).toBeCloseTo(2 / 3);
-    expect(result.transmissions[0].destination).toBe("will-with-legacy-legitim");
+    expect(result.ownershipByPerson["child-a"] || 0).toBe(0);
+    expect(result.ownershipByPerson["child-b"] || 0).toBe(0);
+    expect(result.ownershipByPerson.niece).toBeCloseTo(1);
+    expect(result.transmissions[0].destination).toBe("will");
     expect(result.unresolved).toEqual([]);
   });
 
-  it("ignores a predeceased child's will and gives that branch to their descendants", () => {
+  it("does not create descendant branches outside the recorded will", () => {
     const people = [
       person("testator", {
         isDeceased: true,
@@ -317,9 +317,9 @@ describe("automatic family ownership", () => {
       owners: [{ personId: "testator", sharePercent: 100 }],
     });
 
-    expect(result.ownershipByPerson["living-child"]).toBeCloseTo(1 / 6);
-    expect(result.ownershipByPerson.grandchild).toBeCloseTo(1 / 6);
-    expect(result.ownershipByPerson.niece).toBeCloseTo(2 / 3);
+    expect(result.ownershipByPerson["living-child"] || 0).toBe(0);
+    expect(result.ownershipByPerson.grandchild || 0).toBe(0);
+    expect(result.ownershipByPerson.niece).toBeCloseTo(1);
     expect(result.ownershipByPerson["child-will-beneficiary"] || 0).toBe(0);
   });
 
@@ -1111,9 +1111,9 @@ describe("automatic family ownership", () => {
         dateOfDeath: "2000-01-01",
         fatherId: "maternal-grandfather",
       }),
-      person("paternal-grandfather"),
-      person("paternal-grandmother"),
-      person("maternal-grandfather"),
+      person("paternal-grandfather", { isDeceased: true, dateOfDeath: "2010-01-01" }),
+      person("paternal-grandmother", { isDeceased: true, dateOfDeath: "2011-01-01" }),
+      person("maternal-grandfather", { isDeceased: true, dateOfDeath: "2012-01-01" }),
     ];
 
     const allocation = intestateAllocations(people, "owner");
@@ -1169,7 +1169,7 @@ describe("automatic family ownership", () => {
     expect(allocation.destination).toBe("spouse-and-descendants");
   });
 
-  it("calculates a pre-1993 estate provisionally and identifies the articles to check", () => {
+  it("gives a pre-1993 intestate estate to descendants without an article 825 warning", () => {
     const people = [
       person("edgar", {
         isDeceased: true,
@@ -1189,11 +1189,95 @@ describe("automatic family ownership", () => {
       expect(allocation.shares.get(id)).toBeCloseTo(1 / 4),
     );
     expect(allocation.shares.has("giovanna")).toBe(false);
-    expect(allocation.warnings.join(" ")).toContain("article 825");
-    expect(allocation.warnings.join(" ")).toContain("01-12-1993");
-    expect(allocation.warnings.join(" ")).toContain("28-02-2005");
+    expect(allocation.warnings.join(" ")).not.toContain("article 825");
+    expect(allocation.warnings.join(" ")).not.toContain("Historical law must be checked");
     expect(allocation.warnings.join(" ")).not.toContain("808");
     expect(allocation.warnings.join(" ")).not.toContain("Enter the date of death for giovanna");
+  });
+
+  it("uses a linked spouse's exact death date when the other spouse's date is unknown", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "1990-04-02",
+        spouseIds: ["spouse"],
+      }),
+      person("spouse", {
+        isDeceased: true,
+        dateOfDeathUnknown: true,
+        spouseIds: ["owner"],
+      }),
+      person("child", { fatherId: "owner", motherId: "spouse" }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.destination).toBe("legacy-descendants");
+    expect(allocation.shares.get("child")).toBe(1);
+    expect(allocation.shares.has("spouse")).toBe(false);
+    expect(allocation.warnings.join(" ")).not.toContain("Enter the date of death for spouse");
+  });
+
+  it("uses the spouse-assumed date in property succession history", () => {
+    const people = [
+      person("known-spouse", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        spouseIds: ["owner"],
+      }),
+      person("owner", {
+        isDeceased: true,
+        dateOfDeathUnknown: true,
+        spouseIds: ["known-spouse"],
+      }),
+      person("child", { fatherId: "owner", motherId: "known-spouse" }),
+    ];
+
+    const result = buildPropertyOwnership(people, {
+      id: "home",
+      owners: [
+        {
+          id: "initial-owner",
+          personId: "owner",
+          shareNumerator: 1,
+          shareDenominator: 1,
+        },
+      ],
+      transfers: [],
+    });
+
+    expect(result.ownershipByPerson.child).toBe(1);
+    expect(result.transmissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          deceasedId: "owner",
+          dateOfDeath: "2020-01-01",
+          dateOfDeathAssumedFromSpouse: true,
+        }),
+      ]),
+    );
+  });
+
+  it("treats an undated grandparent as deceased when determining representation", () => {
+    const people = [
+      person("owner", {
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        fatherId: "parent",
+      }),
+      person("parent", {
+        isDeceased: true,
+        dateOfDeath: "2010-01-01",
+        fatherId: "grandparent",
+      }),
+      person("grandparent"),
+      person("uncle", { fatherId: "grandparent" }),
+    ];
+
+    const allocation = intestateAllocations(people, "owner");
+
+    expect(allocation.shares.has("grandparent")).toBe(false);
+    expect(allocation.warnings.join(" ")).not.toContain("grandparent");
   });
 
   it("waits to identify an applicable changed section while spouse survival is unresolved", () => {
@@ -1287,7 +1371,7 @@ describe("automatic family ownership", () => {
     expect(transmission.warnings.join(" ")).not.toContain("Historical law must be checked");
   });
 
-  it("protects a childless pre-2005 spouse's full-ownership portion under a will", () => {
+  it("does not override a recorded pre-2005 will with a spouse floor", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -1304,10 +1388,10 @@ describe("automatic family ownership", () => {
     const result = buildAutomaticFamilyOwnership(people);
     const transmission = result.transmissions.find((entry) => entry.deceasedId === "owner");
 
-    expect(transmission.destination).toBe("will-with-legacy-spouse-portion");
-    expect(result.ownershipByPerson.spouse).toBeCloseTo(1 / 4);
-    expect(result.ownershipByPerson.niece).toBeCloseTo(3 / 4);
-    expect(transmission.warnings.join(" ")).toContain("full-ownership portion");
+    expect(transmission.destination).toBe("will");
+    expect(result.ownershipByPerson.spouse || 0).toBe(0);
+    expect(result.ownershipByPerson.niece).toBeCloseTo(1);
+    expect(transmission.warnings).toEqual([]);
   });
 
   it("allows a complete manual allocation for an unresolved pre-2005 succession", () => {

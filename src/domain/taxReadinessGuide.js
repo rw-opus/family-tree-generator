@@ -1,6 +1,6 @@
 import { isCausaMortisCoverageActionRequired } from "./causaMortisPresentation.js";
 import { isValidIsoDate } from "./dateFormat.js";
-import { isMarkedDeceased } from "./deceasedStatus.js";
+import { effectiveDateOfDeath, isMarkedDeceased } from "./deceasedStatus.js";
 import { requiredSpouseDeathDatePersonIds, willAllocationReadiness } from "./familyOwnership.js";
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
 import { personIdentityIssues } from "./people.js";
@@ -255,7 +255,8 @@ export function buildTaxReadinessIssues({
       relevantDeathDateIds.has(person.id) &&
       !requiredSpouseDateIds.has(person.id) &&
       isMarkedDeceased(person) &&
-      !isValidIsoDate(person.dateOfDeath)
+      !isValidIsoDate(effectiveDateOfDeath(people, person.id)) &&
+      person.dateOfDeathUnknown !== true
     ) {
       addIssue(issuesByPerson, person.id, {
         key: "death-date",

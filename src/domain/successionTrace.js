@@ -201,7 +201,7 @@ export function buildSuccessionTrace({
           allocations: transmission.allocations,
           exactAllocations: transmission.exactAllocations,
         },
-        date: deceased?.dateOfDeath || "",
+        date: transmission.dateOfDeath || deceased?.dateOfDeath || "",
         title: `Succession of ${partyName(transmission.deceasedId)}`,
         description: `${partyName(transmission.deceasedId)} held ${shareLabel(
           estateShare,

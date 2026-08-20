@@ -183,7 +183,6 @@ export function allocateLegacyIntestacy(heirs = [], dateOfDeath = "") {
   const hasDescendants = [...descendantShares.values()].some((share) => share > 0);
   if (hasDescendants) {
     descendantShares.forEach((share, id) => shares.set(id, share));
-    if (spouse) addLegacyDateWarning(warnings, dateOfDeath, ["825"]);
     return { shares, warnings, destination: "legacy-descendants" };
   }
 

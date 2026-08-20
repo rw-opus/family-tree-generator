@@ -59,6 +59,15 @@ describe("marital status at death", () => {
     ).toBe(true);
   });
 
+  it("uses the known spouse's date when the linked spouse's death date is unknown", () => {
+    expect(
+      deriveNoSurvivingSpouseAtDeath(
+        marriedPeople({ spouse: { isDeceased: true, dateOfDeathUnknown: true } }),
+        "subject",
+      ),
+    ).toBe(true);
+  });
+
   it("keeps the status off when a spouse lived beyond the subject or remains alive", () => {
     expect(
       deriveNoSurvivingSpouseAtDeath(
