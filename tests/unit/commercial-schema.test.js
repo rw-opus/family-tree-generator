@@ -288,7 +288,7 @@ describe("commercial Supabase schema", () => {
     );
     expect(adminRepairMigration).toContain("timestamptz '2026-08-17 14:40:52.119201+00'");
     expect(adminRepairMigration).toContain("on conflict (user_id) do update");
-    expect(adminRepairMigration).toContain(
+    expect(normaliseSql(adminRepairMigration)).toContain(
       "greatest(\n  entitlement.free_tree_limit,\n  excluded.free_tree_limit\n)",
     );
     expect(adminRepairMigration).toContain(
