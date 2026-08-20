@@ -17,7 +17,7 @@ import { DesignationFamilyTree } from "./familyTree/DesignationFamilyTree.jsx";
 import { FamilyPersonCard, familyPersonCardState } from "./familyTree/FamilyPersonCard.jsx";
 import { familyGenerationById, widestFamilyGeneration } from "./familyTree/generationRows.js";
 import { LayeredFamilyTree } from "./familyTree/LayeredFamilyTree.jsx";
-import { personCardName } from "./familyTree/treePresentation.js";
+import { capitalisedName, personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
 import { PersonCardDisplayControl } from "./PersonCardDisplayControl.jsx";
 
@@ -26,6 +26,37 @@ import { PersonCardDisplayControl } from "./PersonCardDisplayControl.jsx";
 // person card below.
 const NO_PEOPLE = Object.freeze([]);
 const NO_LOOKUP = Object.freeze({});
+
+function reuseUnchangedCardState(previous, next) {
+  if (Object.is(previous, next)) return previous;
+  if (Array.isArray(previous) && Array.isArray(next)) {
+    if (previous.length !== next.length) return next;
+    const values = next.map((value, index) => reuseUnchangedCardState(previous[index], value));
+    return values.every((value, index) => value === previous[index]) ? previous : values;
+  }
+  if (
+    !previous ||
+    !next ||
+    typeof previous !== "object" ||
+    typeof next !== "object" ||
+    Array.isArray(previous) ||
+    Array.isArray(next)
+  ) {
+    return next;
+  }
+  const previousKeys = Object.keys(previous);
+  const nextKeys = Object.keys(next);
+  if (previousKeys.length !== nextKeys.length) return next;
+  const values = {};
+  let unchanged = true;
+  for (const key of nextKeys) {
+    if (!Object.prototype.hasOwnProperty.call(previous, key)) return next;
+    const value = reuseUnchangedCardState(previous[key], next[key]);
+    values[key] = value;
+    if (value !== previous[key]) unchanged = false;
+  }
+  return unchanged ? previous : values;
+}
 
 function hasRelationalData(person) {
   return Boolean(
@@ -135,10 +166,21 @@ export function FamilyTreeCanvas({
       people.filter((person) => person.id || person.fullName || personDesignations(person).length),
     [people],
   );
-  const displayNamesById = useMemo(
-    () => new Map(cleanPeople.map((person) => [person.id, personDisplayName(person, cleanPeople)])),
-    [cleanPeople],
-  );
+  const displayNameCacheRef = useRef(new Map());
+  const displayNamesById = useMemo(() => {
+    const previousNames = displayNameCacheRef.current;
+    const names = new Map();
+    cleanPeople.forEach((person) => {
+      const previous = previousNames.get(person.id);
+      const name =
+        previous?.person === person ? previous.name : personDisplayName(person, cleanPeople);
+      names.set(person.id, name);
+    });
+    displayNameCacheRef.current = new Map(
+      cleanPeople.map((person) => [person.id, { person, name: names.get(person.id) }]),
+    );
+    return names;
+  }, [cleanPeople]);
   const deceased = cleanPeople.find(
     (person) => person.isDeceased || hasDesignation(person, "Deceased"),
   );
@@ -151,6 +193,20 @@ export function FamilyTreeCanvas({
     (person) => personCardName(person, cleanPeople, displayNamesById),
     [cleanPeople, displayNamesById],
   );
+  const cardNameCacheRef = useRef(new Map());
+  const cardNamesById = useMemo(() => {
+    const previousNames = cardNameCacheRef.current;
+    const names = new Map();
+    cleanPeople.forEach((person) => {
+      const previous = previousNames.get(person.id);
+      const name = previous?.person === person ? previous.name : cardName(person);
+      names.set(person.id, name);
+    });
+    cardNameCacheRef.current = new Map(
+      cleanPeople.map((person) => [person.id, { person, name: names.get(person.id) }]),
+    );
+    return names;
+  }, [cardName, cleanPeople]);
   const title =
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");
@@ -211,25 +267,36 @@ export function FamilyTreeCanvas({
    * Keyed on the default (empty) variant. The designation layout renders its
    * focal person with variant "deceased", and that card derives its own state.
    */
+  const cardStateCacheRef = useRef(new Map());
   const cardStateById = useMemo(() => {
+    const previousStates = cardStateCacheRef.current;
     const states = new Map();
     cleanPeople.forEach((person) => {
+      const nextState = familyPersonCardState({
+        person,
+        people: cleanPeople,
+        legalWorkspaceEnabled,
+        deathDateMissing: requiredSpouseDeathDateIds.has(person.id),
+        historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
+        causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
+      });
+      const excludedLinkedSpouseNames = nextState.excludedLinkedSpouses.map((spouse) =>
+        capitalisedName(displayNamesById.get(spouse.id) || personDisplayName(spouse, cleanPeople)),
+      );
       states.set(
         person.id,
-        familyPersonCardState({
-          person,
-          people: cleanPeople,
-          legalWorkspaceEnabled,
-          deathDateMissing: requiredSpouseDeathDateIds.has(person.id),
-          historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
-          causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
+        reuseUnchangedCardState(previousStates.get(person.id), {
+          ...nextState,
+          excludedLinkedSpouseNames,
         }),
       );
     });
+    cardStateCacheRef.current = states;
     return states;
   }, [
     causaMortisCoverageByPerson,
     cleanPeople,
+    displayNamesById,
     historicalLawWarningsByPerson,
     legalWorkspaceEnabled,
     requiredSpouseDeathDateIds,
@@ -597,9 +664,13 @@ export function FamilyTreeCanvas({
         // Only the default variant is precomputed above; anything else derives
         // its own state inside the card.
         cardState={variant ? undefined : cardStateById.get(person.id)}
-        people={cleanPeople}
+        // Default relational cards receive a precomputed state and display
+        // strings. Keeping the full people array off their props lets React
+        // retain every unaffected card after a small edit elsewhere.
+        people={variant ? cleanPeople : undefined}
+        displayName={displayNamesById.get(person.id) || ""}
         deathDateMissing={requiredSpouseDeathDateIds.has(person.id)}
-        cardName={cardName}
+        cardName={cardNamesById.get(person.id) || ""}
         ownershipByPerson={ownershipByPerson}
         ownershipFractionsByPerson={ownershipFractionsByPerson}
         currentOwnerPresentationsByPerson={resolvedCurrentOwnerPresentationsByPerson}
@@ -620,10 +691,11 @@ export function FamilyTreeCanvas({
       />
     ),
     [
-      cardName,
+      cardNamesById,
       cardStateById,
       causaMortisCoverageByPerson,
       cleanPeople,
+      displayNamesById,
       generationByPerson,
       handleCardKeyDown,
       historicalLawWarningsByPerson,

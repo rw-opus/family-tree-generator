@@ -31,6 +31,31 @@ function cloneValue(value) {
   );
 }
 
+// Normalisation creates a safe, complete tree. Reuse exact canonical input
+// branches in the result so a small edit does not make every family member
+// look new to React. Schema and legal-state changes still receive new values.
+function reuseUnchangedValue(previous, next) {
+  if (Object.is(previous, next)) return previous;
+  if (Array.isArray(previous) && Array.isArray(next)) {
+    if (previous.length !== next.length) return next;
+    const values = next.map((value, index) => reuseUnchangedValue(previous[index], value));
+    return values.every((value, index) => value === previous[index]) ? previous : values;
+  }
+  if (!isRecord(previous) || !isRecord(next)) return next;
+  const previousKeys = Object.keys(previous);
+  const nextKeys = Object.keys(next);
+  if (previousKeys.length !== nextKeys.length) return next;
+  const values = {};
+  let unchanged = true;
+  for (const key of nextKeys) {
+    if (!Object.prototype.hasOwnProperty.call(previous, key)) return next;
+    const value = reuseUnchangedValue(previous[key], next[key]);
+    values[key] = value;
+    if (value !== previous[key]) unchanged = false;
+  }
+  return unchanged ? previous : values;
+}
+
 function text(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -410,7 +435,8 @@ function legacyFamilyGroup(caseData) {
  * read during the transition.
  */
 export function normalizeCase(value = {}) {
-  const source = isRecord(value) ? cloneValue(value) : {};
+  const previous = isRecord(value) ? value : {};
+  const source = cloneValue(previous);
   const caseId = text(source.id) || DEFAULT_CASE_ID;
   const applyLegalNormalisation = propertyTaxWorkspaceEnabled(source.settings?.workspaceMode);
   const peopleResult = normalizePeople(source.people, {
@@ -509,7 +535,7 @@ export function normalizeCase(value = {}) {
   const uniqueWarnings = [...new Set(dataWarnings.map(text).filter(Boolean))];
   if (uniqueWarnings.length) result.dataWarnings = uniqueWarnings;
   else delete result.dataWarnings;
-  return result;
+  return reuseUnchangedValue(previous, result);
 }
 
 // British spelling is retained as an alias for the codebase's existing naming style.

@@ -22,6 +22,27 @@ function edgeClassName(edge) {
 const MARRIAGE_LINE_OFFSET = 2;
 const PARTNER_ROUTE_CLEARANCE = 7;
 
+function layoutSignature(person) {
+  return [
+    person.id,
+    person.fatherId || "",
+    person.motherId || "",
+    ...(person.spouseIds || []),
+    "|",
+    ...(person.siblingIds || []),
+    "|",
+    ...(person.partnerRelationships || []).map((relationship) =>
+      [
+        relationship.personId || "",
+        relationship.type || "",
+        relationship.startDate || "",
+        relationship.endDate || "",
+        relationship.endReason || "",
+      ].join(":"),
+    ),
+  ].join("\u0001");
+}
+
 /**
  * A marriage is two parallel horizontal lines between the spouses; anyone not
  * married is joined by a single dotted line. Both read the same in black and
@@ -95,9 +116,27 @@ function PartnerLink({ edge }) {
 export function LayeredFamilyTree({ people = [], renderCard, emptyState = null, zoom = 100 }) {
   const treeRef = useRef(null);
   const [nodeSizes, setNodeSizes] = useState({});
+  const layoutPeopleCacheRef = useRef({ people: [], entries: new Map() });
+  const layoutPeople = useMemo(() => {
+    const previous = layoutPeopleCacheRef.current;
+    const entries = new Map();
+    const nextPeople = people.map((person) => {
+      const signature = layoutSignature(person);
+      const cached = previous.entries.get(person.id);
+      const layoutPerson = cached?.signature === signature ? cached.person : person;
+      entries.set(person.id, { signature, person: layoutPerson });
+      return layoutPerson;
+    });
+    const unchanged =
+      nextPeople.length === previous.people.length &&
+      nextPeople.every((person, index) => person === previous.people[index]);
+    const resolved = unchanged ? previous.people : nextPeople;
+    layoutPeopleCacheRef.current = { people: resolved, entries };
+    return resolved;
+  }, [people]);
   const layout = useMemo(
     () =>
-      buildFamilyTreeLayout(people, {
+      buildFamilyTreeLayout(layoutPeople, {
         nodeHeights: Object.fromEntries(
           Object.entries(nodeSizes).map(([personId, size]) => [personId, size.height]),
         ),
@@ -105,7 +144,7 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null, 
           Object.entries(nodeSizes).map(([personId, size]) => [personId, size.width]),
         ),
       }),
-    [nodeSizes, people],
+    [layoutPeople, nodeSizes],
   );
 
   useLayoutEffect(() => {

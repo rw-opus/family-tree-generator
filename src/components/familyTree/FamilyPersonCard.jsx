@@ -174,6 +174,7 @@ function FamilyPersonCardComponent({
   // the entire people list, so a tree of cards doing it individually is
   // quadratic work. Left optional: without it the card still derives its own.
   cardState: providedCardState,
+  displayName = "",
   cardName,
   ownershipByPerson,
   ownershipFractionsByPerson = {},
@@ -245,10 +246,10 @@ function FamilyPersonCardComponent({
   const causaMortisDetails = legalWorkspaceEnabled
     ? availableCausaMortisDetails(person, propertyId)
     : [];
-  const excludedSpouseNames = excludedLinkedSpouses.map((spouse) =>
-    capitalisedName(personDisplayName(spouse, people)),
-  );
-  const name = cardName(person);
+  const excludedSpouseNames =
+    cardState.excludedLinkedSpouseNames ||
+    excludedLinkedSpouses.map((spouse) => capitalisedName(personDisplayName(spouse, people)));
+  const name = cardName || displayName || personDisplayName(person, people);
   const displayedDeathDate = legalWorkspaceEnabled
     ? person.dateOfDeath
       ? formattedDate(person.dateOfDeath)
@@ -264,7 +265,7 @@ function FamilyPersonCardComponent({
   const showSurname = Boolean(surname);
   const personName =
     !person.isPlaceholder && String(person.fullName || "").trim()
-      ? capitalisedName(personDisplayName(person, people))
+      ? capitalisedName(displayName || personDisplayName(person, people))
       : name;
   const accessibleName = `${personName}${ownDeathDateMissing ? ". Date of death missing" : ""}${
     spouseAtDeathConflict
