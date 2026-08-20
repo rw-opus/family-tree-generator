@@ -167,7 +167,7 @@ describe("tree draft journal", () => {
     const storage = new MemoryStorage();
     const draft = writeDraft(storage);
     expect(
-      clearTreeDraft("auth-user-1", "tree-1", "fnv1a128:0:00000000000000000000000000000000", {
+      clearTreeDraft("auth-user-1", "tree-1", "fnv1a64:0:0000000000000000", {
         storage,
       }),
     ).toBe(false);
