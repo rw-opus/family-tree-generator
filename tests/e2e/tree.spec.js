@@ -1,4 +1,4 @@
-import { test, expect, openEstate, PEOPLE, WORKSPACE_KEY } from "./fixtures.js";
+import { test, expect, openEstate, estate, workspace, PEOPLE, WORKSPACE_KEY } from "./fixtures.js";
 
 const chartState = (page) =>
   page.evaluate(() => {
@@ -62,6 +62,77 @@ test.describe("family tree canvas", () => {
     await page.waitForTimeout(600);
 
     expect(await chartState(page)).toEqual(before);
+  });
+
+  test("persists buffered will fields and percentage when immediately returning to the tree", async ({
+    page,
+  }) => {
+    const tree = estate();
+    const subject = tree.people.find((person) => person.id === PEOPLE.gorg);
+    Object.assign(subject, {
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "will",
+      designations: ["Deceased"],
+      wills: [{ id: "will-buffered", date: "2019-01-01", notaryName: "", description: "" }],
+      willHeirs: [
+        {
+          id: "heir-buffered",
+          personId: PEOPLE.pawlu,
+          shareNumerator: 1,
+          shareDenominator: 1,
+          sharePercent: 100,
+        },
+      ],
+    });
+    await page.addInitScript(
+      ([key, value]) => {
+        if (window.sessionStorage.getItem("buffered-will-seeded") === "yes") return;
+        window.localStorage.setItem(key, JSON.stringify(value));
+        window.sessionStorage.setItem("buffered-will-seeded", "yes");
+      },
+      [WORKSPACE_KEY, workspace(tree)],
+    );
+    await openEstate(page);
+    await page.locator(`[data-person-id="${PEOPLE.gorg}"]`).click();
+
+    await page.getByLabel("Notary for will 1").fill("Notary Vella");
+    await page.getByLabel("Description for will 1").fill("UK historic will");
+    await page.getByLabel("Will share percentage").fill("33.335");
+    await page.getByRole("button", { name: "Back to Tree" }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ([key, personId]) => {
+            const savedWorkspace = JSON.parse(window.localStorage.getItem(key) || "{}");
+            return savedWorkspace.trees?.[0]?.people?.find((person) => person.id === personId);
+          },
+          [WORKSPACE_KEY, PEOPLE.gorg],
+        ),
+      )
+      .toMatchObject({
+        wills: [
+          expect.objectContaining({
+            notaryName: "Notary Vella",
+            description: "UK historic will",
+          }),
+        ],
+        willHeirs: [
+          expect.objectContaining({
+            shareNumerator: 6667,
+            shareDenominator: 20000,
+            sharePercent: 33.335,
+          }),
+        ],
+      });
+
+    await page.reload();
+    await openEstate(page);
+    await page.locator(`[data-person-id="${PEOPLE.gorg}"]`).click();
+    await expect(page.getByLabel("Notary for will 1")).toHaveValue("Notary Vella");
+    await expect(page.getByLabel("Description for will 1")).toHaveValue("UK historic will");
+    await expect(page.getByLabel("Will share percentage")).toHaveValue("33.34");
   });
 
   test("fits the whole tree into view", async ({ page }) => {

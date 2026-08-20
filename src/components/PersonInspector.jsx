@@ -128,6 +128,192 @@ const blankDonationDraft = () => ({
 });
 
 export const IDENTITY_DRAFT_COMMIT_DELAY_MS = 700;
+export const PERSON_RECORD_DRAFT_COMMIT_DELAY_MS = 700;
+
+const bufferedRecordFields = [
+  "deathDateText",
+  "dateOfDeathUnknown",
+  "wills",
+  "willDate",
+  "willNotaryName",
+  "willDescription",
+  "willHeirs",
+];
+
+const sameBufferedValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+const bufferedRecordPatchMatchesPerson = (record, person) =>
+  record?.personId === person?.id &&
+  Object.entries(record.patch || {}).every(([field, value]) =>
+    sameBufferedValue(person?.[field], value),
+  );
+
+let bufferedPersonRecordEditSequence = 0;
+
+/**
+ * Keeps an individual text/number draft below PersonInspector so a keystroke
+ * does not rerender the inspector or send the whole tree through App. The
+ * parent-owned controller commits every registered field as one person patch.
+ */
+function BufferedPersonRecordInput({
+  personId,
+  value = "",
+  onRegisterController,
+  applyDraft,
+  commitUnchangedOnBlur = false,
+  formatDraftAfterCommit,
+  retainTouchedDraft = false,
+  ...inputProps
+}) {
+  const initialValue = String(value ?? "");
+  const [draft, setDraft] = useState(initialValue);
+  const draftRef = useRef(initialValue);
+  const baseValueRef = useRef(initialValue);
+  const dirtyRef = useRef(false);
+  const valueChangedRef = useRef(false);
+  const timerRef = useRef(null);
+  const applyDraftRef = useRef(applyDraft);
+  const formatDraftAfterCommitRef = useRef(formatDraftAfterCommit);
+  const requestFlushRef = useRef(() => true);
+  const controllerRef = useRef(null);
+
+  applyDraftRef.current = applyDraft;
+  formatDraftAfterCommitRef.current = formatDraftAfterCommit;
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current === null) return;
+    globalThis.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  if (!controllerRef.current) {
+    controllerRef.current = {
+      personId,
+      sequence: 0,
+      hasPending: () => dirtyRef.current,
+      apply: (person) =>
+        dirtyRef.current
+          ? applyDraftRef.current(person, draftRef.current, {
+              changed: valueChangedRef.current,
+            })
+          : person,
+      acknowledge: () => {
+        clearTimer();
+        dirtyRef.current = false;
+        valueChangedRef.current = false;
+        const committedDraft = formatDraftAfterCommitRef.current
+          ? String(formatDraftAfterCommitRef.current(draftRef.current) ?? "")
+          : draftRef.current;
+        draftRef.current = committedDraft;
+        baseValueRef.current = committedDraft;
+        setDraft(committedDraft);
+      },
+      flush: () => requestFlushRef.current(),
+    };
+  }
+
+  useEffect(() => {
+    if (dirtyRef.current) return;
+    const nextValue = String(value ?? "");
+    if (draftRef.current === nextValue) return;
+    draftRef.current = nextValue;
+    baseValueRef.current = nextValue;
+    setDraft(nextValue);
+  }, [value]);
+
+  useEffect(() => {
+    const controller = controllerRef.current;
+    const registration = onRegisterController?.(controller);
+    requestFlushRef.current = registration?.flush || (() => true);
+    return () => {
+      if (controller.hasPending()) requestFlushRef.current();
+      registration?.unregister?.();
+      clearTimer();
+    };
+  }, [clearTimer, onRegisterController]);
+
+  const updateDraft = (nextValue) => {
+    draftRef.current = nextValue;
+    dirtyRef.current = retainTouchedDraft || nextValue !== baseValueRef.current;
+    valueChangedRef.current = retainTouchedDraft || nextValue !== baseValueRef.current;
+    controllerRef.current.sequence = ++bufferedPersonRecordEditSequence;
+    setDraft(nextValue);
+    clearTimer();
+    if (dirtyRef.current) {
+      timerRef.current = globalThis.setTimeout(() => {
+        timerRef.current = null;
+        if (dirtyRef.current) requestFlushRef.current();
+      }, PERSON_RECORD_DRAFT_COMMIT_DELAY_MS);
+    }
+  };
+
+  const { onBlur, ...restInputProps } = inputProps;
+  return (
+    <input
+      {...restInputProps}
+      value={draft}
+      onChange={(event) => updateDraft(event.target.value)}
+      onBlur={(event) => {
+        if (commitUnchangedOnBlur && !dirtyRef.current) {
+          dirtyRef.current = true;
+          valueChangedRef.current = false;
+          controllerRef.current.sequence = ++bufferedPersonRecordEditSequence;
+        }
+        requestFlushRef.current();
+        onBlur?.(event);
+      }}
+    />
+  );
+}
+
+const personWithBufferedDeathDateText = (person, value) => ({
+  ...person,
+  deathDateText: value,
+  dateOfDeathUnknown: false,
+});
+
+const personWithBufferedWillField = (person, willId, field, value) => {
+  const wills = personWills(person);
+  const sourceWills = wills.length
+    ? wills
+    : [{ id: willId, date: "", notaryName: "", description: "" }];
+  return personWithWills(
+    person,
+    sourceWills.map((will) => (will.id === willId ? { ...will, [field]: value } : will)),
+  );
+};
+
+const withoutTransientShareInput = (share) => {
+  const persistedShare = { ...share };
+  delete persistedShare.sharePercentInput;
+  return persistedShare;
+};
+
+const personWithBufferedWillHeirFraction = (person, heirId, field, value) => ({
+  ...person,
+  willHeirs: (person.willHeirs || []).map((heir) =>
+    heir.id === heirId
+      ? withoutTransientShareInput({
+          ...heir,
+          ...shareFromFractionInput(heir, { [field]: value }),
+        })
+      : heir,
+  ),
+});
+
+const personWithBufferedWillHeirPercentage = (person, heirId, value, { changed } = {}) => ({
+  ...person,
+  willHeirs: (person.willHeirs || []).map((heir) => {
+    if (heir.id !== heirId) return heir;
+    return withoutTransientShareInput({
+      ...heir,
+      ...shareFromFractionInput(
+        changed ? { ...heir, ...shareFromPercentageInput(value) } : heir,
+        {},
+      ),
+    });
+  }),
+});
 
 const identityDraftFromPerson = (person = {}) => {
   const surname = personSurname(person);
@@ -278,7 +464,7 @@ function BufferedIdentityFields({
     if (committed === false || committed === null) return false;
 
     acknowledgeOverlayRef.current(committed);
-    return true;
+    return committed ?? true;
   };
 
   const commitDraft = useCallback(() => commitRef.current(), []);
@@ -290,6 +476,7 @@ function BufferedIdentityFields({
       Boolean(Object.keys(committedIdentityPatchRef.current?.patch || {}).length),
     [],
   );
+  const getIdentityOverlayPersonId = useCallback(() => draftRef.current.personId || "", []);
   const overlayPeople = useCallback((sourcePeople) => overlayPeopleRef.current(sourcePeople), []);
   const acknowledgeOverlay = useCallback(
     (commitResult) => acknowledgeOverlayRef.current(commitResult),
@@ -303,6 +490,7 @@ function BufferedIdentityFields({
       flushWithPatch: commitDraftWithPatch,
       hasPending: hasPendingDraft,
       hasIdentityOverlay,
+      getIdentityOverlayPersonId,
       overlayPeople,
       acknowledgeOverlay,
     });
@@ -310,6 +498,7 @@ function BufferedIdentityFields({
     acknowledgeOverlay,
     commitDraft,
     commitDraftWithPatch,
+    getIdentityOverlayPersonId,
     hasIdentityOverlay,
     hasPendingDraft,
     onRegisterPendingEditFlush,
@@ -552,24 +741,72 @@ export function PersonInspector({
   const [donationOpen, setDonationOpen] = useState(false);
   const [donationDraft, setDonationDraft] = useState(blankDonationDraft);
   const [editingTransferId, setEditingTransferId] = useState("");
-  const willPercentageEditsRef = useRef(new Set());
   const identityDraftControllerRef = useRef(null);
-  const registerIdentityDraftController = useCallback(
-    (controller) => {
-      identityDraftControllerRef.current = controller;
-      const unregister = onRegisterPendingEditFlush?.(controller);
-      return () => {
-        if (identityDraftControllerRef.current === controller) {
-          identityDraftControllerRef.current = null;
-        }
-        unregister?.();
-      };
-    },
-    [onRegisterPendingEditFlush],
-  );
+  const personRecordInputControllersRef = useRef(new Set());
+  const committedPersonRecordPatchesRef = useRef(new Map());
+  const flushPersonRecordDraftsRef = useRef(() => true);
+  const overlayPersonRecordRef = useRef((person) => person);
+  const acknowledgePersonRecordRef = useRef(() => true);
+  const personRecordControllerRef = useRef(null);
+  const personDraftControllerRef = useRef(null);
+  if (!personRecordControllerRef.current) {
+    personRecordControllerRef.current = {
+      flush: () => flushPersonRecordDraftsRef.current(),
+      flushWithPatch: (patch) => flushPersonRecordDraftsRef.current(patch),
+      hasPending: () =>
+        [...personRecordInputControllersRef.current].some((controller) => controller.hasPending()),
+      hasRecordOverlay: () =>
+        committedPersonRecordPatchesRef.current.size > 0 ||
+        [...personRecordInputControllersRef.current].some((controller) => controller.hasPending()),
+      overlayPeople: (sourcePeople = []) =>
+        sourcePeople.map((person) => overlayPersonRecordRef.current(person)),
+      acknowledgeOverlay: (commitResult) => acknowledgePersonRecordRef.current(commitResult),
+    };
+  }
+  if (!personDraftControllerRef.current) {
+    personDraftControllerRef.current = {
+      flush: () => {
+        const recordController = personRecordControllerRef.current;
+        const result = recordController?.hasPending?.()
+          ? recordController.flush()
+          : (identityDraftControllerRef.current?.flush?.() ?? true);
+        return result !== false && result !== null;
+      },
+      hasPending: () =>
+        Boolean(
+          personRecordControllerRef.current?.hasPending?.() ||
+          identityDraftControllerRef.current?.hasPending?.(),
+        ),
+    };
+  }
+  const registerPersonRecordInputController = useCallback((controller) => {
+    personRecordInputControllersRef.current.add(controller);
+    return {
+      flush: () => flushPersonRecordDraftsRef.current(null, controller.personId),
+      unregister: () => personRecordInputControllersRef.current.delete(controller),
+    };
+  }, []);
+  const registerIdentityDraftController = useCallback((controller) => {
+    identityDraftControllerRef.current = controller;
+    return () => {
+      if (identityDraftControllerRef.current === controller) {
+        identityDraftControllerRef.current = null;
+      }
+    };
+  }, []);
+  useEffect(() => {
+    if (!onRegisterPendingEditFlush) return undefined;
+    return onRegisterPendingEditFlush(personDraftControllerRef.current);
+  }, [onRegisterPendingEditFlush]);
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
+  for (const [personId, committedPatch] of committedPersonRecordPatchesRef.current) {
+    const canonicalPerson = people.find((person) => person.id === personId);
+    if (!canonicalPerson || bufferedRecordPatchMatchesPerson(committedPatch, canonicalPerson)) {
+      committedPersonRecordPatchesRef.current.delete(personId);
+    }
+  }
   const effectiveSelectedDeathDate = selectedPerson
     ? effectiveDateOfDeath(people, selectedPerson.id)
     : "";
@@ -748,25 +985,169 @@ export function PersonInspector({
     );
   };
 
-  const updateSelected = (patch) => {
-    if (!selectedPerson) return;
+  const updatePersonFromIdentityDraft = (personId, patch) => {
+    const recordDraftWasPending = [...personRecordInputControllersRef.current].some(
+      (controller) => controller.personId === personId && controller.hasPending(),
+    );
+    const committed = updatePerson(personId, patch);
+    if (recordDraftWasPending && committed !== false && committed !== null) {
+      acknowledgePersonRecordRef.current(committed, personId);
+    }
+    return committed;
+  };
+
+  const recordPatchFromOverlay = (basePerson, overlaidPerson) =>
+    Object.fromEntries(
+      bufferedRecordFields
+        .filter((field) => !sameBufferedValue(basePerson?.[field], overlaidPerson?.[field]))
+        .map((field) => [field, overlaidPerson?.[field]]),
+    );
+
+  overlayPersonRecordRef.current = (person) => {
+    if (!person?.id) return person;
+    let overlaid = person;
+    const committed = committedPersonRecordPatchesRef.current.get(person.id);
+    if (committed) overlaid = { ...overlaid, ...committed.patch };
+    const pendingControllers = [...personRecordInputControllersRef.current]
+      .filter((controller) => controller.personId === person.id && controller.hasPending())
+      .sort((first, second) => first.sequence - second.sequence);
+    for (const controller of pendingControllers) {
+      if (controller.personId === person.id) {
+        overlaid = controller.apply(overlaid);
+      }
+    }
+    return overlaid;
+  };
+
+  const commitPersonPatchWithIdentity = (personId, patch) => {
     const identityController = identityDraftControllerRef.current;
-    if (identityController?.hasIdentityOverlay?.() && identityController.flushWithPatch) {
+    if (
+      identityController?.getIdentityOverlayPersonId?.() === personId &&
+      identityController?.hasIdentityOverlay?.() &&
+      identityController.flushWithPatch
+    ) {
       return identityController.flushWithPatch(patch);
     }
-    return updatePerson(selectedPerson.id, patch);
+    return updatePerson(personId, patch);
   };
+
+  acknowledgePersonRecordRef.current = (commitResult = null, targetPersonId = "") => {
+    const basePerson = targetPersonId
+      ? people.find((person) => person.id === targetPersonId)
+      : selectedPerson;
+    if (!basePerson) return false;
+    const overlaidPerson = overlayPersonRecordRef.current(basePerson);
+    const patch = recordPatchFromOverlay(basePerson, overlaidPerson);
+    const committedPerson = Array.isArray(commitResult?.people)
+      ? commitResult.people.find((candidate) => candidate.id === basePerson.id)
+      : null;
+    for (const controller of personRecordInputControllersRef.current) {
+      if (controller.personId === basePerson.id) controller.acknowledge();
+    }
+    if (Object.keys(patch).length) {
+      committedPersonRecordPatchesRef.current.set(basePerson.id, {
+        personId: basePerson.id,
+        patch: Object.fromEntries(
+          Object.keys(patch).map((field) => [
+            field,
+            committedPerson ? committedPerson[field] : overlaidPerson[field],
+          ]),
+        ),
+      });
+    } else {
+      committedPersonRecordPatchesRef.current.delete(basePerson.id);
+    }
+    return true;
+  };
+
+  flushPersonRecordDraftsRef.current = (additionalPatch = null, targetPersonId = "") => {
+    const basePerson = targetPersonId
+      ? people.find((person) => person.id === targetPersonId)
+      : selectedPerson;
+    if (!basePerson) return false;
+    const overlaidPerson = overlayPersonRecordRef.current(basePerson);
+    const recordPatch = recordPatchFromOverlay(basePerson, overlaidPerson);
+    const hasAdditionalPatch =
+      additionalPatch && typeof additionalPatch === "object" && Object.keys(additionalPatch).length;
+    if (!Object.keys(recordPatch).length && !hasAdditionalPatch) {
+      const identityController = identityDraftControllerRef.current;
+      if (
+        identityController?.getIdentityOverlayPersonId?.() === basePerson.id &&
+        identityController?.hasPending?.()
+      ) {
+        return identityController.flush();
+      }
+      for (const controller of personRecordInputControllersRef.current) {
+        if (controller.personId === basePerson.id) controller.acknowledge();
+      }
+      return true;
+    }
+
+    let committed;
+    try {
+      committed = commitPersonPatchWithIdentity(basePerson.id, {
+        ...recordPatch,
+        ...(hasAdditionalPatch ? additionalPatch : {}),
+      });
+    } catch {
+      return false;
+    }
+    if (committed === false || committed === null) return false;
+
+    const committedPerson = Array.isArray(committed?.people)
+      ? committed.people.find((candidate) => candidate.id === basePerson.id)
+      : null;
+    for (const controller of personRecordInputControllersRef.current) {
+      if (controller.personId === basePerson.id) controller.acknowledge();
+    }
+    const retainedFields = new Set([
+      ...Object.keys(recordPatch),
+      ...Object.keys(additionalPatch || {}).filter((field) => bufferedRecordFields.includes(field)),
+    ]);
+    if (retainedFields.size) {
+      committedPersonRecordPatchesRef.current.set(basePerson.id, {
+        personId: basePerson.id,
+        patch: Object.fromEntries(
+          [...retainedFields].map((field) => [
+            field,
+            committedPerson
+              ? committedPerson[field]
+              : ((additionalPatch || {})[field] ?? overlaidPerson[field]),
+          ]),
+        ),
+      });
+    } else {
+      committedPersonRecordPatchesRef.current.delete(basePerson.id);
+    }
+    return committed;
+  };
+
+  const updateSelected = (patch) => {
+    if (!selectedPerson) return;
+    const recordController = personRecordControllerRef.current;
+    if (recordController?.hasRecordOverlay?.() && recordController.flushWithPatch) {
+      return recordController.flushWithPatch(patch);
+    }
+    return commitPersonPatchWithIdentity(selectedPerson.id, patch);
+  };
+
+  const selectedPersonWithPendingRecordEdits = () =>
+    overlayPersonRecordRef.current(selectedPerson) || selectedPerson;
 
   const peopleWithIdentityOverlay = (nextPeople) => {
     const identityController = identityDraftControllerRef.current;
-    return identityController?.overlayPeople
+    const identityOverlaidPeople = identityController?.overlayPeople
       ? identityController.overlayPeople(nextPeople)
       : nextPeople;
+    return personRecordControllerRef.current?.overlayPeople
+      ? personRecordControllerRef.current.overlayPeople(identityOverlaidPeople)
+      : identityOverlaidPeople;
   };
 
   const acknowledgeIdentityOverlay = (committed) => {
     if (committed !== false && committed !== null) {
       identityDraftControllerRef.current?.acknowledgeOverlay?.(committed);
+      personRecordControllerRef.current?.acknowledgeOverlay?.(committed);
     }
     return committed;
   };
@@ -817,28 +1198,27 @@ export function PersonInspector({
   };
 
   const changeOwnershipDisplay = (mode) => {
+    const recordController = personRecordControllerRef.current;
+    if (recordController?.hasPending?.()) {
+      const committed = recordController.flush();
+      if (committed === false || committed === null) return false;
+    }
     setOwnershipDisplay(mode);
     onShareDisplayChange?.(mode);
+    return true;
   };
 
   const updateWillHeir = (heirId, patch) => {
+    const sourcePerson = selectedPersonWithPendingRecordEdits();
     updateSelected({
-      willHeirs: (selectedPerson.willHeirs || []).map((heir) =>
+      willHeirs: (sourcePerson.willHeirs || []).map((heir) =>
         heir.id === heirId ? { ...heir, ...patch } : heir,
       ),
     });
   };
 
-  const updateWillHeirPercentage = (heirId, percentage) => {
-    updateWillHeir(heirId, shareFromPercentageInput(percentage));
-  };
-
-  const updateWillHeirFraction = (heir, patch) => {
-    updateWillHeir(heir.id, shareFromFractionInput(heir, patch));
-  };
-
   const writeWills = (wills) => {
-    const updated = personWithWills(selectedPerson, wills);
+    const updated = personWithWills(selectedPersonWithPendingRecordEdits(), wills);
     updateSelected({
       wills: updated.wills,
       willDate: updated.willDate,
@@ -848,8 +1228,9 @@ export function PersonInspector({
   };
 
   const addWill = () => {
+    const sourcePerson = selectedPersonWithPendingRecordEdits();
     writeWills([
-      ...personWills(selectedPerson),
+      ...personWills(sourcePerson),
       {
         id: crypto.randomUUID(),
         date: "",
@@ -860,7 +1241,7 @@ export function PersonInspector({
   };
 
   const updateWill = (willId, patch) => {
-    const currentWills = personWills(selectedPerson);
+    const currentWills = personWills(selectedPersonWithPendingRecordEdits());
     if (!currentWills.length) {
       writeWills([
         { id: crypto.randomUUID(), date: "", notaryName: "", description: "", ...patch },
@@ -871,15 +1252,18 @@ export function PersonInspector({
   };
 
   const removeWill = (willId) => {
-    writeWills(personWills(selectedPerson).filter((will) => will.id !== willId));
+    writeWills(
+      personWills(selectedPersonWithPendingRecordEdits()).filter((will) => will.id !== willId),
+    );
   };
 
   const addWillHeir = () => {
-    const hasHeirs = (selectedPerson.willHeirs || []).length > 0;
+    const sourcePerson = selectedPersonWithPendingRecordEdits();
+    const hasHeirs = (sourcePerson.willHeirs || []).length > 0;
     const share = shareFromPercentage(hasHeirs ? 0 : 100);
     updateSelected({
       willHeirs: [
-        ...(selectedPerson.willHeirs || []),
+        ...(sourcePerson.willHeirs || []),
         {
           id: crypto.randomUUID(),
           personId: "",
@@ -890,8 +1274,9 @@ export function PersonInspector({
   };
 
   const removeWillHeir = (heirId) => {
+    const sourcePerson = selectedPersonWithPendingRecordEdits();
     updateSelected({
-      willHeirs: (selectedPerson.willHeirs || []).filter((heir) => heir.id !== heirId),
+      willHeirs: (sourcePerson.willHeirs || []).filter((heir) => heir.id !== heirId),
     });
   };
 
@@ -1009,6 +1394,10 @@ export function PersonInspector({
   };
 
   const setDeceased = (checked) => {
+    if (!checked && personRecordControllerRef.current?.hasPending?.()) {
+      const committed = personRecordControllerRef.current.flush();
+      if (committed === false || committed === null) return false;
+    }
     const current = personDesignations(selectedPerson).filter(
       (designation) => String(designation).toLowerCase() !== "deceased",
     );
@@ -1694,10 +2083,11 @@ export function PersonInspector({
 
   const addOutsideWillHeir = (party) => {
     createOutsideParty(party);
-    const hasHeirs = (selectedPerson.willHeirs || []).length > 0;
+    const sourcePerson = selectedPersonWithPendingRecordEdits();
+    const hasHeirs = (sourcePerson.willHeirs || []).length > 0;
     updateSelected({
       willHeirs: [
-        ...(selectedPerson.willHeirs || []),
+        ...(sourcePerson.willHeirs || []),
         {
           id: crypto.randomUUID(),
           personId: party.id,
@@ -1743,8 +2133,8 @@ export function PersonInspector({
           : `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
     );
     if (!confirmed) return;
-    const identityController = identityDraftControllerRef.current;
-    if (identityController?.flush?.() === false || identityController?.hasPending?.()) return;
+    const draftController = personDraftControllerRef.current;
+    if (draftController?.flush?.() === false || draftController?.hasPending?.()) return;
     if (onDeletePerson) {
       onDeletePerson(selectedPerson.id);
       return;
@@ -1988,11 +2378,12 @@ export function PersonInspector({
     selectedPerson.willHeirsConfirmed === true &&
     selectedPerson.willHeirsConfirmationSource === "suggested";
   const setSuggestedWillHeirsConfirmed = (confirmed) => {
+    const sourcePerson = selectedPersonWithPendingRecordEdits();
     const suggestedHeirs = [...(automaticIntestacy?.shares || new Map()).entries()];
     if (confirmed && !suggestedHeirs.length) return;
 
     if (!confirmed) {
-      const snapshot = selectedPerson.willHeirsConfirmationSnapshot;
+      const snapshot = sourcePerson.willHeirsConfirmationSnapshot;
       updateSelected({
         willHeirs: Array.isArray(snapshot?.willHeirs)
           ? snapshot.willHeirs.map((heir) => ({ ...heir }))
@@ -2013,9 +2404,9 @@ export function PersonInspector({
       willHeirsConfirmed: true,
       willHeirsConfirmationSource: "suggested",
       willHeirsConfirmationSnapshot: {
-        willHeirs: (selectedPerson.willHeirs || []).map((heir) => ({ ...heir })),
-        willHeirsConfirmed: selectedPerson.willHeirsConfirmed === true,
-        willHeirsConfirmationSource: selectedPerson.willHeirsConfirmationSource || "",
+        willHeirs: (sourcePerson.willHeirs || []).map((heir) => ({ ...heir })),
+        willHeirsConfirmed: sourcePerson.willHeirsConfirmed === true,
+        willHeirsConfirmationSource: sourcePerson.willHeirsConfirmationSource || "",
       },
     });
   };
@@ -3036,7 +3427,7 @@ export function PersonInspector({
           person={selectedPerson}
           disabled={!isEditing}
           legalWorkspaceEnabled={legalWorkspaceEnabled}
-          onCommit={updatePerson}
+          onCommit={updatePersonFromIdentityDraft}
           onRegisterPendingEditFlush={registerIdentityDraftController}
         />
         <div className="person-status-controls">
@@ -3164,7 +3555,11 @@ export function PersonInspector({
                 <span>
                   Date of death <small>(optional)</small>
                 </span>
-                <input
+                <BufferedPersonRecordInput
+                  key={`${selectedPerson.id}:death-date-text`}
+                  personId={selectedPerson.id}
+                  onRegisterController={registerPersonRecordInputController}
+                  applyDraft={personWithBufferedDeathDateText}
                   type="text"
                   aria-label="Date of death (optional)"
                   autoComplete="off"
@@ -3172,12 +3567,6 @@ export function PersonInspector({
                   placeholder="e.g. 1858, about 1858, or 11 February 1858"
                   value={genealogyDeathDateText(selectedPerson)}
                   disabled={selectedPerson.dateOfDeathUnknown === true}
-                  onChange={(event) =>
-                    updateSelected({
-                      deathDateText: event.target.value,
-                      dateOfDeathUnknown: false,
-                    })
-                  }
                 />
               </label>
               <label className="succession-detail-row succession-death-date-unknown">
@@ -3354,23 +3743,39 @@ export function PersonInspector({
                               )}
                               <label>
                                 <span>Notary (optional)</span>
-                                <input
+                                <BufferedPersonRecordInput
+                                  key={`${selectedPerson.id}:${will.id}:notaryName`}
+                                  personId={selectedPerson.id}
+                                  onRegisterController={registerPersonRecordInputController}
+                                  applyDraft={(person, value) =>
+                                    personWithBufferedWillField(
+                                      person,
+                                      will.id,
+                                      "notaryName",
+                                      value,
+                                    )
+                                  }
                                   aria-label={`Notary for will ${index + 1}`}
                                   value={will.notaryName || ""}
-                                  onChange={(event) =>
-                                    updateWill(will.id, { notaryName: event.target.value })
-                                  }
                                   placeholder="Notary's name"
                                 />
                               </label>
                               <label>
                                 <span>Description (optional)</span>
-                                <input
+                                <BufferedPersonRecordInput
+                                  key={`${selectedPerson.id}:${will.id}:description`}
+                                  personId={selectedPerson.id}
+                                  onRegisterController={registerPersonRecordInputController}
+                                  applyDraft={(person, value) =>
+                                    personWithBufferedWillField(
+                                      person,
+                                      will.id,
+                                      "description",
+                                      value,
+                                    )
+                                  }
                                   aria-label={`Description for will ${index + 1}`}
                                   value={will.description || ""}
-                                  onChange={(event) =>
-                                    updateWill(will.id, { description: event.target.value })
-                                  }
                                   placeholder="e.g. UK will"
                                 />
                               </label>
@@ -3422,7 +3827,6 @@ export function PersonInspector({
                           const fraction = fractionForShare(heir);
                           const numerator = heir.shareNumerator ?? fraction.numerator;
                           const denominator = heir.shareDenominator ?? fraction.denominator;
-                          const percentageBeingEdited = willPercentageEditsRef.current.has(heir.id);
                           return (
                             <div className={`will-heir-row ${ownershipDisplay}`} key={heir.id}>
                               <select
@@ -3468,7 +3872,19 @@ export function PersonInspector({
                               </select>
                               {ownershipDisplay !== "percentage" && (
                                 <span className="will-heir-fraction">
-                                  <input
+                                  <BufferedPersonRecordInput
+                                    key={`${selectedPerson.id}:${heir.id}:numerator`}
+                                    personId={selectedPerson.id}
+                                    retainTouchedDraft
+                                    onRegisterController={registerPersonRecordInputController}
+                                    applyDraft={(person, value) =>
+                                      personWithBufferedWillHeirFraction(
+                                        person,
+                                        heir.id,
+                                        "numerator",
+                                        value,
+                                      )
+                                    }
                                     data-tax-readiness-field="will-beneficiary-share"
                                     data-tax-readiness-target-id={heir.id}
                                     aria-label="Will share numerator"
@@ -3477,14 +3893,21 @@ export function PersonInspector({
                                     max={MAX_FRACTION_INTEGER}
                                     step="1"
                                     value={numerator}
-                                    onChange={(event) =>
-                                      updateWillHeirFraction(heir, {
-                                        numerator: event.target.value,
-                                      })
-                                    }
                                   />
                                   <b>/</b>
-                                  <input
+                                  <BufferedPersonRecordInput
+                                    key={`${selectedPerson.id}:${heir.id}:denominator`}
+                                    personId={selectedPerson.id}
+                                    retainTouchedDraft
+                                    onRegisterController={registerPersonRecordInputController}
+                                    applyDraft={(person, value) =>
+                                      personWithBufferedWillHeirFraction(
+                                        person,
+                                        heir.id,
+                                        "denominator",
+                                        value,
+                                      )
+                                    }
                                     data-tax-readiness-field="will-beneficiary-share"
                                     data-tax-readiness-target-id={heir.id}
                                     aria-label="Will share denominator"
@@ -3493,17 +3916,26 @@ export function PersonInspector({
                                     max={MAX_FRACTION_INTEGER}
                                     step="1"
                                     value={denominator}
-                                    onChange={(event) =>
-                                      updateWillHeirFraction(heir, {
-                                        denominator: event.target.value,
-                                      })
-                                    }
                                   />
                                 </span>
                               )}
                               {ownershipDisplay !== "fraction" && (
                                 <span className="will-heir-percent">
-                                  <input
+                                  <BufferedPersonRecordInput
+                                    key={`${selectedPerson.id}:${heir.id}:percentage`}
+                                    personId={selectedPerson.id}
+                                    commitUnchangedOnBlur={heir.sharePercentInput !== undefined}
+                                    formatDraftAfterCommit={normalisePercentageInput}
+                                    retainTouchedDraft
+                                    onRegisterController={registerPersonRecordInputController}
+                                    applyDraft={(person, value, options) =>
+                                      personWithBufferedWillHeirPercentage(
+                                        person,
+                                        heir.id,
+                                        value,
+                                        options,
+                                      )
+                                    }
                                     data-tax-readiness-field="will-beneficiary-share"
                                     data-tax-readiness-target-id={heir.id}
                                     aria-label="Will share percentage"
@@ -3513,22 +3945,10 @@ export function PersonInspector({
                                     step="0.01"
                                     inputMode="decimal"
                                     value={
-                                      percentageBeingEdited
-                                        ? (heir.sharePercentInput ?? "")
-                                        : (willPercentageDisplay.rows[heirIndex]
-                                            ?.displayPercentage ??
-                                          heir.sharePercent ??
-                                          "")
+                                      willPercentageDisplay.rows[heirIndex]?.displayPercentage ??
+                                      heir.sharePercent ??
+                                      ""
                                     }
-                                    onChange={(event) => {
-                                      willPercentageEditsRef.current.add(heir.id);
-                                      updateWillHeirPercentage(heir.id, event.target.value);
-                                    }}
-                                    onBlur={() => {
-                                      willPercentageEditsRef.current.delete(heir.id);
-                                      if (heir.sharePercentInput === undefined) return;
-                                      updateWillHeirFraction(heir, {});
-                                    }}
                                   />
                                   <b>%</b>
                                 </span>
