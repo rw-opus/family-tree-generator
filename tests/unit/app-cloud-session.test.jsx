@@ -22,6 +22,21 @@ const cloudHarness = vi.hoisted(() => ({
   trashFamilyTree: vi.fn(),
 }));
 
+const caseModelHarness = vi.hoisted(() => ({
+  normaliseCase: vi.fn(),
+}));
+
+vi.mock("../../src/domain/caseModel.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    normaliseCase: (...args) => {
+      caseModelHarness.normaliseCase(...args);
+      return actual.normaliseCase(...args);
+    },
+  };
+});
+
 vi.mock("../../src/services/familyTrees.js", () => ({
   createFamilyTree: vi.fn(async (tree) => tree),
   familyTreeSaveFingerprint: (tree) => JSON.stringify(tree),
@@ -197,9 +212,19 @@ vi.mock("../../src/components/AnnouncementBanner.jsx", () => ({
 }));
 
 vi.mock("../../src/components/FamilyTreeCanvas.jsx", () => ({
-  FamilyTreeCanvas: ({ treeTitle, toolbar }) => (
+  FamilyTreeCanvas: ({ treeTitle, toolbar, people = [], onSelectPerson }) => (
     <>
       <div data-testid="tree-canvas">{treeTitle}</div>
+      {people.map((person) => (
+        <button
+          type="button"
+          data-testid={`open-person-${person.id}`}
+          key={person.id}
+          onClick={() => onSelectPerson?.(person.id)}
+        >
+          Open person {person.id}
+        </button>
+      ))}
       <div>{toolbar}</div>
     </>
   ),
@@ -270,6 +295,7 @@ describe("App cloud session identity", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    caseModelHarness.normaliseCase.mockClear();
     cloudHarness.flushQueue = null;
     localStorage.clear();
     cloudHarness.isPlatformAdmin.mockResolvedValue(true);
@@ -563,7 +589,7 @@ describe("App cloud session identity", () => {
     container.remove();
   });
 
-  it("flushes a focused initial-owner field before disposing the App save queue", async () => {
+  it("flushes simultaneous property and initial-owner drafts before disposing the save queue", async () => {
     const serverTree = {
       ...caseActivationState({
         ...tree("first", "First family"),
@@ -608,9 +634,15 @@ describe("App cloud session identity", () => {
       await Promise.resolve();
     });
 
+    const address = container.querySelector('input[placeholder="Full address of the property"]');
     const numerator = container.querySelector('input[aria-label="Initial ownership numerator"]');
     expect(numerator).not.toBeNull();
     act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        address,
+        "Buffered address",
+      );
+      address.dispatchEvent(new Event("input", { bubbles: true }));
       numerator.focus();
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(numerator, "2");
       numerator.dispatchEvent(new Event("input", { bubbles: true }));
@@ -623,13 +655,83 @@ describe("App cloud session identity", () => {
     const drafts = listInitialOwnershipDrafts("user-1").drafts;
     expect(drafts).toHaveLength(1);
     expect(String(drafts[0].owners[0].shareNumerator)).toBe("2");
+    const treeDrafts = listTreeDrafts("user-1").drafts;
+    expect(treeDrafts).toHaveLength(1);
+    expect(treeDrafts[0].tree.properties[0]).toMatchObject({
+      address: "Buffered address",
+      owners: [expect.objectContaining({ shareNumerator: "2" })],
+    });
     expect(cloudHarness.queueSchedule).toHaveBeenLastCalledWith(
       expect.objectContaining({
         properties: [
           expect.objectContaining({
+            address: "Buffered address",
             owners: [expect.objectContaining({ shareNumerator: "2" })],
           }),
         ],
+      }),
+    );
+  });
+
+  it("keeps rapid identity typing local and journals the final text before App teardown", async () => {
+    const serverTree = {
+      ...caseActivationState(tree("first", "First family")).caseData,
+      storageRevision: 1,
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open First family")
+        .click();
+      await Promise.resolve();
+      container.querySelector('[data-testid="open-person-first-person"]').click();
+      await Promise.resolve();
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Edit identity")
+        .click();
+      await Promise.resolve();
+    });
+
+    caseModelHarness.normaliseCase.mockClear();
+    const surname = container.querySelector('[data-person-field="surname"]');
+    await act(async () => {
+      surname.focus();
+      ["V", "Ve", "Vel", "Vell", "Vella"].forEach((value) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+          surname,
+          value,
+        );
+        surname.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await Promise.resolve();
+    });
+
+    expect(surname.value).toBe("Vella");
+    expect(caseModelHarness.normaliseCase).not.toHaveBeenCalled();
+    expect(listTreeDrafts("user-1").drafts).toEqual([]);
+
+    act(() => root.unmount());
+    root = null;
+
+    expect(caseModelHarness.normaliseCase.mock.calls.length).toBeLessThanOrEqual(1);
+    const drafts = listTreeDrafts("user-1").drafts;
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].tree.people[0]).toMatchObject({
+      surname: "Vella",
+      fullName: "First Family Vella",
+    });
+    expect(cloudHarness.queueSchedule).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        people: [expect.objectContaining({ surname: "Vella" })],
       }),
     );
   });
@@ -675,9 +777,11 @@ describe("App cloud session identity", () => {
         }
         return originalSetItem.call(this, key, value);
       });
+    caseModelHarness.normaliseCase.mockClear();
 
     const address = container.querySelector('input[placeholder="Full address of the property"]');
     await act(async () => {
+      address.focus();
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
         address,
         "Editable property",
@@ -687,6 +791,13 @@ describe("App cloud session identity", () => {
       await Promise.resolve();
     });
     expect(address.value).toBe("Editable property");
+    expect(caseModelHarness.normaliseCase).not.toHaveBeenCalled();
+
+    await act(async () => {
+      address.blur();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(cloudHarness.queueSchedule).toHaveBeenLastCalledWith(
       expect.objectContaining({
         properties: [expect.objectContaining({ address: "Editable property" })],
@@ -709,6 +820,64 @@ describe("App cloud session identity", () => {
     const percentage = container.querySelector('input[aria-label="Initial ownership percentage"]');
     expect(percentage).not.toBeNull();
     expect(percentage.disabled).toBe(false);
+  });
+
+  it("does no whole-tree normalisation per property keystroke and one when the draft commits", async () => {
+    const serverTree = {
+      ...caseActivationState({
+        ...tree("first", "First family"),
+        settings: { workspaceMode: "property-tax", activePropertyId: "first-property" },
+      }).caseData,
+      storageRevision: 1,
+    };
+    serverTree.settings = {
+      ...serverTree.settings,
+      workspaceMode: "property-tax",
+      activePropertyId: "first-property",
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open First family")
+        .click();
+      await Promise.resolve();
+      container.querySelector('button[aria-label="Property & Tax"]').click();
+      await Promise.resolve();
+    });
+
+    caseModelHarness.normaliseCase.mockClear();
+    const address = container.querySelector('input[placeholder="Full address of the property"]');
+    await act(async () => {
+      address.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        address,
+        "Fast property",
+      );
+      address.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(address.value).toBe("Fast property");
+    expect(caseModelHarness.normaliseCase).not.toHaveBeenCalled();
+
+    await act(async () => {
+      address.blur();
+      await Promise.resolve();
+    });
+    expect(caseModelHarness.normaliseCase).toHaveBeenCalledTimes(1);
+    expect(cloudHarness.queueSchedule).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        properties: [expect.objectContaining({ address: "Fast property" })],
+      }),
+    );
   });
 
   it("stops a cloud save when its ownership lineage cannot be stored", async () => {

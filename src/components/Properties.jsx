@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Home, Trash2 } from "lucide-react";
 import {
   buildPropertyVendorTaxReport,
@@ -26,6 +27,167 @@ const makeProperty = () => ({
   saleLots: [],
 });
 
+export const PROPERTY_DETAILS_DRAFT_COMMIT_DELAY_MS = 700;
+
+const propertyDetailsDraft = (property = {}) => ({
+  propertyId: property.id || "",
+  address: property.address || "",
+  description: property.description || "",
+  saleValue: property.saleValue ?? "",
+});
+
+const propertyDetailsEqual = (left, right) =>
+  left.propertyId === right.propertyId &&
+  left.address === right.address &&
+  left.description === right.description &&
+  left.saleValue === right.saleValue;
+
+function BufferedPropertyDetails({
+  property,
+  singleProperty,
+  onCommit,
+  onRegisterPendingEditFlush,
+}) {
+  const initialDraft = propertyDetailsDraft(property);
+  const [draft, setDraft] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
+  const baseDraftRef = useRef(initialDraft);
+  const latestPropertyRef = useRef(property);
+  const dirtyFieldsRef = useRef(new Set());
+  const commitTimerRef = useRef(null);
+  const onCommitRef = useRef(onCommit);
+  const commitRef = useRef(() => true);
+
+  latestPropertyRef.current = property;
+  onCommitRef.current = onCommit;
+
+  const clearCommitTimer = useCallback(() => {
+    if (commitTimerRef.current === null) return;
+    globalThis.clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = null;
+  }, []);
+
+  commitRef.current = () => {
+    clearCommitTimer();
+    const dirtyFields = new Set(dirtyFieldsRef.current);
+    if (!dirtyFields.size) return true;
+    const currentDraft = draftRef.current;
+    if (!currentDraft.propertyId) return false;
+
+    const patch = {};
+    dirtyFields.forEach((field) => {
+      patch[field] = currentDraft[field];
+    });
+
+    let committed;
+    try {
+      committed = onCommitRef.current?.(currentDraft.propertyId, patch);
+    } catch {
+      return false;
+    }
+    if (committed === false || committed === null) return false;
+
+    dirtyFieldsRef.current.clear();
+    baseDraftRef.current = currentDraft;
+    return true;
+  };
+
+  const commitDraft = useCallback(() => commitRef.current(), []);
+  const hasPendingDraft = useCallback(() => dirtyFieldsRef.current.size > 0, []);
+
+  useEffect(() => {
+    if (!onRegisterPendingEditFlush) return undefined;
+    return onRegisterPendingEditFlush({ flush: commitDraft, hasPending: hasPendingDraft });
+  }, [commitDraft, hasPendingDraft, onRegisterPendingEditFlush]);
+
+  useEffect(() => {
+    const nextDraft = propertyDetailsDraft(property);
+    if (draftRef.current.propertyId !== nextDraft.propertyId) {
+      commitDraft();
+      dirtyFieldsRef.current.clear();
+      draftRef.current = nextDraft;
+      baseDraftRef.current = nextDraft;
+      setDraft(nextDraft);
+      return;
+    }
+    if (dirtyFieldsRef.current.size === 0 && !propertyDetailsEqual(draftRef.current, nextDraft)) {
+      draftRef.current = nextDraft;
+      baseDraftRef.current = nextDraft;
+      setDraft(nextDraft);
+    }
+  }, [
+    commitDraft,
+    property,
+    property.address,
+    property.description,
+    property.id,
+    property.saleValue,
+  ]);
+
+  useEffect(
+    () => () => {
+      commitRef.current();
+      clearCommitTimer();
+    },
+    [clearCommitTimer],
+  );
+
+  const updateDraft = (field, value) => {
+    const nextDraft = { ...draftRef.current, [field]: value };
+    const dirtyFields = dirtyFieldsRef.current;
+    if (value === baseDraftRef.current[field]) dirtyFields.delete(field);
+    else dirtyFields.add(field);
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    clearCommitTimer();
+    if (dirtyFields.size) {
+      commitTimerRef.current = globalThis.setTimeout(() => {
+        commitTimerRef.current = null;
+        commitRef.current();
+      }, PROPERTY_DETAILS_DRAFT_COMMIT_DELAY_MS);
+    }
+  };
+
+  return (
+    <div
+      className="form-grid"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) commitDraft();
+      }}
+    >
+      <label className="full-width">
+        Address
+        <input
+          value={draft.address}
+          onChange={(event) => updateDraft("address", event.target.value)}
+          placeholder="Full address of the property"
+        />
+      </label>
+      {!singleProperty && (
+        <label className="full-width">
+          Description
+          <input
+            value={draft.description}
+            onChange={(event) => updateDraft("description", event.target.value)}
+            placeholder="Optional registry, title or internal reference"
+          />
+        </label>
+      )}
+      <label className="full-width">
+        Value of the property being sold today (€) (optional)
+        <input
+          aria-label="Value of the property being sold today"
+          type="number"
+          min="0"
+          step="any"
+          value={draft.saleValue}
+          onChange={(event) => updateDraft("saleValue", event.target.value)}
+        />
+      </label>
+    </div>
+  );
+}
+
 export function Properties({
   properties,
   people,
@@ -37,6 +199,9 @@ export function Properties({
   onSelectOutsideOwner,
   onPickInitialOwner,
   onRegisterInitialOwnershipFlush,
+  onRegisterPendingEditFlush,
+  onPropertyDetailsChange,
+  onPropertyOwnersChange,
   taxReadinessGuideSummary = null,
   onStartTaxReadinessGuide,
   onChange,
@@ -46,6 +211,8 @@ export function Properties({
     updateProperties(
       properties.map((property) => (property.id === id ? { ...property, ...patch } : property)),
     );
+  const commitPropertyDetails = (id, patch) =>
+    onPropertyDetailsChange ? onPropertyDetailsChange(id, patch) : updateProperty(id, patch);
   const addProperty = () => updateProperties([...properties, makeProperty()]);
   const removeProperty = (id) =>
     updateProperties(properties.filter((property) => property.id !== id));
@@ -115,43 +282,12 @@ export function Properties({
                 )}
               </div>
 
-              <div className="form-grid">
-                <label className="full-width">
-                  Address
-                  <input
-                    value={property.address || ""}
-                    onChange={(event) =>
-                      updateProperty(property.id, { address: event.target.value })
-                    }
-                    placeholder="Full address of the property"
-                  />
-                </label>
-                {!singleProperty && (
-                  <label className="full-width">
-                    Description
-                    <input
-                      value={property.description || ""}
-                      onChange={(event) =>
-                        updateProperty(property.id, { description: event.target.value })
-                      }
-                      placeholder="Optional registry, title or internal reference"
-                    />
-                  </label>
-                )}
-                <label className="full-width">
-                  Value of the property being sold today (€) (optional)
-                  <input
-                    aria-label="Value of the property being sold today"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={property.saleValue ?? ""}
-                    onChange={(event) =>
-                      updateProperty(property.id, { saleValue: event.target.value })
-                    }
-                  />
-                </label>
-              </div>
+              <BufferedPropertyDetails
+                property={property}
+                singleProperty={singleProperty}
+                onCommit={commitPropertyDetails}
+                onRegisterPendingEditFlush={onRegisterPendingEditFlush}
+              />
 
               {!startingOwnership.isComplete && (
                 <div className="ownership-blocking-notice" role="alert">
@@ -164,7 +300,11 @@ export function Properties({
                 property={property}
                 people={people}
                 outsideParties={outsideParties}
-                onChange={(owners) => updateProperty(property.id, { owners })}
+                onChange={(owners) =>
+                  onPropertyOwnersChange
+                    ? onPropertyOwnersChange(property.id, owners)
+                    : updateProperty(property.id, { owners })
+                }
                 helperText="Choose the original owner or owners. Fractions must total 100%."
                 onPickFromTree={onPickInitialOwner}
                 onRegisterPendingFlush={onRegisterInitialOwnershipFlush}

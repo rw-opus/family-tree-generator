@@ -569,6 +569,17 @@ export function createFamilyGroup(caseValue, rootPerson, options = {}) {
  */
 export function addPersonIdsToFamilyGroup(caseValue, groupId, personIds = []) {
   const caseData = normalizeCase(caseValue);
+  return addPersonIdsToNormalisedFamilyGroup(caseData, groupId, personIds);
+}
+
+/**
+ * Adds group membership to a case that has already crossed the schema
+ * normalisation boundary. Keeping this small mutation separate lets live
+ * Person edits canonicalise the people registry once, then reconcile the
+ * resulting relationship ids without running the whole legal normaliser a
+ * second time.
+ */
+function addPersonIdsToNormalisedFamilyGroup(caseData, groupId, personIds = []) {
   const validPersonIds = new Set(caseData.people.map((person) => person.id));
   const additions = uniqueIds(personIds).filter((personId) => validPersonIds.has(personId));
   return {
@@ -900,7 +911,27 @@ function relationshipIds(person = {}) {
  * registry while keeping membership changes scoped to the active family group.
  */
 export function reconcilePeopleUpdate(caseValue, activeGroupId, incomingPeople, options = {}) {
-  const caseData = normalizeCase(caseValue);
+  return reconcileNormalisedPeopleUpdate(
+    normalizeCase(caseValue),
+    activeGroupId,
+    incomingPeople,
+    options,
+  );
+}
+
+/**
+ * Reconciles a live editor payload when the caller already holds a canonical
+ * case. The returned case is canonical too. This is the hot path used by the
+ * App: one full normalisation applies the incoming Person fields, legal
+ * derived state and nested-record ids; the membership-only tail is then a
+ * bounded update over the already-normalised result.
+ */
+export function reconcileNormalisedPeopleUpdate(
+  caseData,
+  activeGroupId,
+  incomingPeople,
+  options = {},
+) {
   const people = Array.isArray(incomingPeople) ? incomingPeople : [];
   const activeGroup = caseData.familyGroups.find((group) => group.id === activeGroupId);
   if (!activeGroup) return normalizeCase({ ...caseData, people });
@@ -988,7 +1019,7 @@ export function reconcilePeopleUpdate(caseValue, activeGroupId, incomingPeople, 
     })
     .filter((personId) => knownIds.has(personId) && !excludedPersonIds.has(personId));
 
-  return addPersonIdsToFamilyGroup(nextCase, activeGroupId, [
+  return addPersonIdsToNormalisedFamilyGroup(nextCase, activeGroupId, [
     ...addedIds,
     ...newlyReferencedRelationshipIds,
   ]);
