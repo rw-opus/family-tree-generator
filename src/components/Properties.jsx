@@ -29,6 +29,7 @@ const makeProperty = () => ({
 export function Properties({
   properties,
   people,
+  familyPersonIds = null,
   outsideParties,
   singleProperty = false,
   onSelectPerson,
@@ -252,6 +253,7 @@ export function Properties({
                 <TaxCalculationPanel
                   property={property}
                   people={people}
+                  familyPersonIds={familyPersonIds}
                   outsideParties={outsideParties}
                   vendorReport={vendorReport}
                   taxCalculationReport={taxCalculationReport}

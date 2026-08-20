@@ -3090,6 +3090,7 @@ export function App({
           <Properties
             properties={activeProperties}
             people={currentTree.people}
+            familyPersonIds={activeFamilyGroup?.personIds || []}
             outsideParties={currentTree.outsideParties}
             singleProperty
             selectedOutsideOwnerId={selectedOutsideOwnerId}

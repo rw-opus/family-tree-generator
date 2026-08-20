@@ -57,6 +57,7 @@ const provenanceSummaryText = (row = {}) =>
 export function TaxCalculationPanel({
   property,
   people,
+  familyPersonIds = null,
   outsideParties,
   vendorReport,
   taxCalculationReport = null,
@@ -99,10 +100,17 @@ export function TaxCalculationPanel({
           <button
             type="button"
             className="secondary-button"
-            disabled={!report.vendors.length}
-            onClick={() => downloadVendorTaxSpreadsheet(report, property, historyEvents)}
+            disabled={!people.length && !report.vendors.length}
+            onClick={() =>
+              downloadVendorTaxSpreadsheet(report, property, historyEvents, {
+                people,
+                familyPersonIds,
+                outsideParties,
+                propertyReport: vendorReport,
+              })
+            }
           >
-            <FileSpreadsheet size={16} /> Download one-sheet Excel
+            <FileSpreadsheet size={16} /> Download Excel workbook
           </button>
           <VendorSettlementStatement
             report={report}
@@ -110,8 +118,8 @@ export function TaxCalculationPanel({
             people={people}
             onSelectPerson={onSelectPerson}
           />
-          {!report.vendors.length && (
-            <small>Add a living current owner to enable the export and vendor list.</small>
+          {!people.length && !report.vendors.length && (
+            <small>Add a person to the family tree to enable the workbook.</small>
           )}
         </span>
       </div>
