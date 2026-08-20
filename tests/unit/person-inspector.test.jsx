@@ -4451,7 +4451,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Notary (optional)");
     expect(container.textContent).toContain("Description (optional)");
     expect(container.textContent).toContain("Suggested Heirs");
-    expect(container.textContent).toContain("Confirm Heirs?");
+    expect(container.textContent).toContain("Select all");
     expect(container.textContent).not.toContain("Will notes");
     expect(container.textContent).toContain("Causa Mortis");
     expect(container.textContent).toContain("Date of Declaration Causa Mortis");
@@ -4651,7 +4651,7 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Causa Mortis");
   });
 
-  it("confirms suggested heirs for a testate estate and allows editable will fractions", () => {
+  it("selects suggested heirs individually, rebalances their shares, and allows editable will fractions", () => {
     let latestPeople = [];
     const initialPeople = [
       {
@@ -4705,9 +4705,28 @@ describe("PersonInspector", () => {
     expect(container.textContent).toContain("Paul Borg");
     expect(container.textContent).toContain("1/2");
 
-    const confirmHeirs = container.querySelector('input[aria-label="Confirm Heirs?"]');
-    expect(confirmHeirs.checked).toBe(false);
-    act(() => confirmHeirs.click());
+    const selectAll = () =>
+      container.querySelector('input[aria-label="Select all suggested heirs"]');
+    const selectMaria = () =>
+      container.querySelector('input[aria-label="Select Maria Borg as a suggested heir"]');
+    const selectPaul = () =>
+      container.querySelector('input[aria-label="Select Paul Borg as a suggested heir"]');
+
+    expect(selectAll().checked).toBe(false);
+    expect(selectMaria().checked).toBe(false);
+    expect(selectPaul().checked).toBe(false);
+
+    act(() => selectPaul().click());
+
+    expect(latestPeople[0].willHeirs).toHaveLength(1);
+    expect(latestPeople[0].willHeirs[0]).toMatchObject({
+      personId: "child",
+      shareNumerator: 1,
+      shareDenominator: 1,
+      sharePercent: 100,
+    });
+
+    act(() => selectMaria().click());
 
     expect(latestPeople[0].willHeirs).toHaveLength(2);
     expect(latestPeople[0].willHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
@@ -4715,9 +4734,33 @@ describe("PersonInspector", () => {
       willHeirsConfirmed: true,
       willHeirsConfirmationSource: "suggested",
     });
-    expect(container.querySelector('input[aria-label="Confirm Heirs?"]').checked).toBe(true);
+    expect(selectAll().checked).toBe(true);
     expect(container.querySelectorAll(".will-heir-fraction")).toHaveLength(2);
     expect(container.querySelectorAll(".will-heir-percent")).toHaveLength(0);
+
+    act(() => selectMaria().click());
+    expect(latestPeople[0].willHeirs).toHaveLength(1);
+    expect(latestPeople[0].willHeirs[0]).toMatchObject({
+      personId: "child",
+      shareNumerator: 1,
+      shareDenominator: 1,
+      sharePercent: 100,
+    });
+
+    act(() => selectAll().click());
+    expect(latestPeople[0].willHeirs.map((heir) => heir.sharePercent)).toEqual([50, 50]);
+
+    const percentageToggle = [...container.querySelectorAll(".person-share-toggle button")].find(
+      (button) => button.textContent.trim() === "Percentage",
+    );
+    act(() => percentageToggle.click());
+    expect(container.querySelectorAll(".will-heir-fraction")).toHaveLength(0);
+    expect(container.querySelectorAll(".will-heir-percent")).toHaveLength(2);
+
+    const fractionToggle = [...container.querySelectorAll(".person-share-toggle button")].find(
+      (button) => button.textContent.trim() === "Fraction",
+    );
+    act(() => fractionToggle.click());
 
     const denominator = container.querySelectorAll('input[aria-label="Will share denominator"]')[1];
     const setNumberInput = (input, value) => {
@@ -4738,7 +4781,7 @@ describe("PersonInspector", () => {
     leaveInput(updatedDenominator);
     expect(latestPeople[0].willHeirs[1].sharePercent).toBe(25);
 
-    act(() => container.querySelector('input[aria-label="Confirm Heirs?"]').click());
+    act(() => selectAll().click());
     expect(latestPeople[0].willHeirs).toEqual([]);
     expect(latestPeople[0].willHeirsConfirmed).toBe(false);
     expect(latestPeople[0].willHeirsConfirmationSource).toBe("");

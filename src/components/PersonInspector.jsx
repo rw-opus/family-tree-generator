@@ -56,6 +56,7 @@ import {
 import {
   fractionForShare,
   normalisePercentageInput,
+  shareFromFraction,
   shareFromFractionInput,
   shareFromPercentage,
   shareFromPercentageInput,
@@ -2374,15 +2375,20 @@ export function PersonInspector({
         row.requiresCausaMortisAcquisitionValue === true &&
         row.provenancePersonId === selectedPerson.id,
     );
-  const suggestedWillHeirsConfirmed =
+  const selectedSuggestedWillHeirIds =
     selectedPerson.willHeirsConfirmed === true &&
-    selectedPerson.willHeirsConfirmationSource === "suggested";
-  const setSuggestedWillHeirsConfirmed = (confirmed) => {
+    selectedPerson.willHeirsConfirmationSource === "suggested"
+      ? (selectedPerson.willHeirs || []).map((heir) => heir.personId).filter(Boolean)
+      : [];
+  const setSelectedSuggestedWillHeirs = (nextPersonIds) => {
     const sourcePerson = selectedPersonWithPendingRecordEdits();
     const suggestedHeirs = [...(automaticIntestacy?.shares || new Map()).entries()];
-    if (confirmed && !suggestedHeirs.length) return;
+    const suggestedPersonIds = new Set(suggestedHeirs.map(([personId]) => personId));
+    const selectedPersonIds = [
+      ...new Set(nextPersonIds.filter((personId) => suggestedPersonIds.has(personId))),
+    ];
 
-    if (!confirmed) {
+    if (!selectedPersonIds.length) {
       const snapshot = sourcePerson.willHeirsConfirmationSnapshot;
       updateSelected({
         willHeirs: Array.isArray(snapshot?.willHeirs)
@@ -2395,18 +2401,30 @@ export function PersonInspector({
       return;
     }
 
+    const equalShare = shareFromFraction(1, selectedPersonIds.length);
     updateSelected({
-      willHeirs: suggestedHeirs.map(([personId, share]) => ({
+      willHeirs: selectedPersonIds.map((personId) => ({
         id: crypto.randomUUID(),
         personId,
-        ...shareFromPercentage(share * 100),
+        ...equalShare,
       })),
       willHeirsConfirmed: true,
       willHeirsConfirmationSource: "suggested",
       willHeirsConfirmationSnapshot: {
-        willHeirs: (sourcePerson.willHeirs || []).map((heir) => ({ ...heir })),
-        willHeirsConfirmed: sourcePerson.willHeirsConfirmed === true,
-        willHeirsConfirmationSource: sourcePerson.willHeirsConfirmationSource || "",
+        willHeirs:
+          sourcePerson.willHeirsConfirmationSource === "suggested"
+            ? (sourcePerson.willHeirsConfirmationSnapshot?.willHeirs || []).map((heir) => ({
+                ...heir,
+              }))
+            : (sourcePerson.willHeirs || []).map((heir) => ({ ...heir })),
+        willHeirsConfirmed:
+          sourcePerson.willHeirsConfirmationSource === "suggested"
+            ? sourcePerson.willHeirsConfirmationSnapshot?.willHeirsConfirmed === true
+            : sourcePerson.willHeirsConfirmed === true,
+        willHeirsConfirmationSource:
+          sourcePerson.willHeirsConfirmationSource === "suggested"
+            ? sourcePerson.willHeirsConfirmationSnapshot?.willHeirsConfirmationSource || ""
+            : sourcePerson.willHeirsConfirmationSource || "",
       },
     });
   };
@@ -3789,9 +3807,8 @@ export function PersonInspector({
                         displayName={displayParty}
                         shareDisplay={ownershipDisplay}
                         title="Suggested Heirs"
-                        confirmationLabel="Confirm Heirs?"
-                        confirmed={suggestedWillHeirsConfirmed}
-                        onConfirmationChange={setSuggestedWillHeirsConfirmed}
+                        selectedPersonIds={selectedSuggestedWillHeirIds}
+                        onSelectedPersonIdsChange={setSelectedSuggestedWillHeirs}
                       />
                       <div className="will-beneficiaries">
                         <div className="will-beneficiaries-heading">

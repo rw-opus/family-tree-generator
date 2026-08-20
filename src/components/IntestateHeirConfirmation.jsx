@@ -16,6 +16,7 @@ import { personChoiceLabel, sortPeopleForChoice } from "../domain/people.js";
 import {
   fractionForShare,
   shareFromFractionInput,
+  shareFromFraction,
   shareFromPercentage,
   shareFromPercentageInput,
 } from "../domain/shares.js";
@@ -51,8 +52,17 @@ export function IntestacyProposal({
   confirmationLabel = "",
   confirmed = false,
   onConfirmationChange,
+  selectedPersonIds = null,
+  onSelectedPersonIdsChange,
 }) {
   const entries = [...(calculated?.shares || new Map()).entries()];
+  const selectionEnabled =
+    Array.isArray(selectedPersonIds) && typeof onSelectedPersonIdsChange === "function";
+  const selectedIds = selectionEnabled
+    ? [...new Set(selectedPersonIds.filter((personId) => entries.some(([id]) => id === personId)))]
+    : [];
+  const allSelected = entries.length > 0 && selectedIds.length === entries.length;
+  const selectAllRef = useRef(null);
   const percentageDisplay = reconcileFractionPercentageDisplay(
     entries.map(
       ([personId, share]) =>
@@ -60,7 +70,22 @@ export function IntestacyProposal({
     ),
     { keys: entries.map(([personId]) => personId) },
   );
+  const selectedShare = selectedIds.length
+    ? fractionForShare(shareFromFraction(1, selectedIds.length))
+    : null;
+  const selectedPercentageDisplay = reconcileFractionPercentageDisplay(
+    selectedIds.map(() => selectedShare),
+    { keys: selectedIds },
+  );
   const peopleById = new Map(people.map((person) => [person.id, person]));
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate =
+        selectedIds.length > 0 && selectedIds.length < entries.length;
+    }
+  }, [entries.length, selectedIds.length]);
+
   return (
     <div className="calculated-intestacy">
       <div className="intestate-confirmation-heading">
@@ -77,21 +102,69 @@ export function IntestacyProposal({
             {confirmationLabel}
           </label>
         )}
+        {selectionEnabled && (
+          <label className="detail-checkbox intestacy-proposal-confirmation">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              aria-label="Select all suggested heirs"
+              checked={allSelected}
+              disabled={entries.length === 0}
+              onChange={(event) =>
+                onSelectedPersonIdsChange(
+                  event.target.checked ? entries.map(([personId]) => personId) : [],
+                )
+              }
+            />
+            Select all
+          </label>
+        )}
       </div>
+      {selectionEnabled && (
+        <small>
+          Select one or more heirs. Selected shares begin equally and can then be adjusted below in
+          Fraction, Percentage, or Both.
+        </small>
+      )}
       {entries.length > 0 ? (
         entries.map(([personId, share], index) => {
           const person = peopleById.get(personId);
+          const selectedIndex = selectedIds.indexOf(personId);
+          const selected = selectedIndex >= 0;
           return (
-            <div className="calculated-intestacy-row" key={personId}>
+            <label
+              className={`calculated-intestacy-row${selectionEnabled ? " selectable" : ""}`}
+              key={personId}
+            >
+              {selectionEnabled && (
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${displayName(person)} as a suggested heir`}
+                  checked={selected}
+                  onChange={(event) =>
+                    onSelectedPersonIdsChange(
+                      event.target.checked
+                        ? [...selectedIds, personId]
+                        : selectedIds.filter((id) => id !== personId),
+                    )
+                  }
+                />
+              )}
               <span>{displayName(person)}</span>
               <b>
-                {shareLabel(
-                  share,
-                  shareDisplay,
-                  percentageDisplay.rows[index]?.displayPercentageLabel,
-                )}
+                {selected
+                  ? shareLabel(
+                      1 / selectedIds.length,
+                      shareDisplay,
+                      selectedPercentageDisplay.rows[selectedIndex]?.displayPercentageLabel,
+                    )
+                  : `${selectionEnabled ? "Suggested " : ""}${shareLabel(
+                      share,
+                      shareDisplay,
+                      percentageDisplay.rows[index]?.displayPercentageLabel,
+                    )}`}
               </b>
-            </div>
+            </label>
           );
         })
       ) : (
