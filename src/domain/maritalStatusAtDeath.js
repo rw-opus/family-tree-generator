@@ -1,5 +1,5 @@
 import { isValidIsoDate } from "./dateFormat.js";
-import { isMarkedDeceased, isRecordedDeceased } from "./deceasedStatus.js";
+import { effectiveDateOfDeath, isMarkedDeceased, isRecordedDeceased } from "./deceasedStatus.js";
 import { isPotentialParentSurvivalUnresolved } from "./potentialParentSurvival.js";
 import {
   findPartnerRelationship,
@@ -21,7 +21,7 @@ export function deriveNoSurvivingSpouseAtDeath(people = [], personId) {
   const person = peopleById.get(personId);
   if (!person || !isMarkedDeceased(person)) return null;
 
-  const deathDate = isValidIsoDate(person.dateOfDeath) ? person.dateOfDeath : "";
+  const deathDate = effectiveDateOfDeath(people, personId);
   let hasMarriage = false;
   let survivalUnresolved = false;
 
@@ -49,11 +49,12 @@ export function deriveNoSurvivingSpouseAtDeath(people = [], personId) {
       continue;
     }
     if (!isRecordedDeceased(spouse)) return false;
-    if (!deathDate || !isValidIsoDate(spouse.dateOfDeath)) {
+    const spouseDeathDate = effectiveDateOfDeath(people, spouse.id);
+    if (!deathDate || !isValidIsoDate(spouseDeathDate)) {
       survivalUnresolved = true;
       continue;
     }
-    if (spouse.dateOfDeath > deathDate) return false;
+    if (spouseDeathDate > deathDate) return false;
   }
 
   if (!hasMarriage) return true;

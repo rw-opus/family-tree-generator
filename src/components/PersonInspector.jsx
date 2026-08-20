@@ -29,7 +29,6 @@ import {
   intestacyLegalContextSignature,
   intestateAllocations,
   isPersonDeceased,
-  linkedLegalSpousesFor,
   linkedSpousesFor,
   missingPotentialIntestateParents,
   previewPropertyTransferCapacity,
@@ -54,7 +53,6 @@ import {
   fractionToNumber,
   normaliseFraction,
 } from "../domain/fractions.js";
-import { applyLegacyProtectedPortionsToWill } from "../domain/legacyLegitim.js";
 import {
   fractionForShare,
   normalisePercentageInput,
@@ -63,6 +61,7 @@ import {
   shareFromPercentageInput,
 } from "../domain/shares.js";
 import { isValidIsoDate, isoDateToDisplay } from "../domain/dateFormat.js";
+import { effectiveDateOfDeath } from "../domain/deceasedStatus.js";
 import { genealogyDeathDateText } from "../domain/genealogyDates.js";
 import { operativeWillFromRecords, personWills, personWithWills } from "../domain/wills.js";
 import {
@@ -94,7 +93,6 @@ import { tagStatusCreatedRecord } from "../domain/statusToggleSessions.js";
 import { MARITAL_STATUS_AT_DEATH_SOURCES } from "../domain/maritalStatusAtDeath.js";
 import { DateInput } from "./DateInput.jsx";
 import { IntestacyProposal, IntestateHeirConfirmation } from "./IntestateHeirConfirmation.jsx";
-import { LegacyLegitimPanel } from "./LegacyLegitimPanel.jsx";
 import { OutsidePartyCreator } from "./OutsidePartyCreator.jsx";
 import { CausaMortisSection } from "./personInspector/CausaMortisSection.jsx";
 import { FinalWithholdingTaxSection } from "./personInspector/FinalWithholdingTaxSection.jsx";
@@ -182,24 +180,6 @@ const money = new Intl.NumberFormat("en-MT", {
   maximumFractionDigits: 2,
 });
 
-function legacyProtectedWillForPerson(people, deceased) {
-  const legalSpouses = linkedLegalSpousesFor(people, deceased.id, deceased.dateOfDeath);
-  const survivingSpouses = legalSpouses.filter(
-    (spouse) =>
-      !isPersonDeceased(spouse) ||
-      (spouse.dateOfDeath && spouse.dateOfDeath > deceased.dateOfDeath),
-  );
-  return applyLegacyProtectedPortionsToWill({
-    people,
-    deceased,
-    hasSurvivingSpouse: survivingSpouses.length > 0,
-    survivingSpouseIds: survivingSpouses.map((spouse) => spouse.id),
-    spouseSurvivalUnresolved: legalSpouses.some(
-      (spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath,
-    ),
-  });
-}
-
 export function PersonInspector({
   people,
   legalWorkspaceEnabled = true,
@@ -250,6 +230,9 @@ export function PersonInspector({
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
+  const effectiveSelectedDeathDate = selectedPerson
+    ? effectiveDateOfDeath(people, selectedPerson.id)
+    : "";
   const selectedPersonIdentityIssues = useMemo(() => {
     if (!selectedPerson) return [];
     const issues = personIdentityIssues(selectedPerson);
@@ -653,7 +636,7 @@ export function PersonInspector({
     const propertyId = declaration.propertyId || (properties.length === 1 ? properties[0].id : "");
     const normalizedDeclaration = { ...declaration, propertyId };
     const error = validateCausaMortisDeclaration(normalizedDeclaration, {
-      dateOfDeath: selectedPerson.dateOfDeath || "",
+      dateOfDeath: effectiveSelectedDeathDate,
     });
 
     if (error) {
@@ -712,6 +695,7 @@ export function PersonInspector({
       designations: checked ? ["Deceased", ...current] : current,
       isDeceased: checked,
       dateOfDeath: checked ? selectedPerson.dateOfDeath || "" : "",
+      dateOfDeathUnknown: checked ? selectedPerson.dateOfDeathUnknown === true : false,
       ...(!legalWorkspaceEnabled && !checked ? { deathDateText: "" } : {}),
     };
     const patch = legalWorkspaceEnabled
@@ -751,7 +735,22 @@ export function PersonInspector({
         : {};
     updateSelected({
       dateOfDeath,
+      dateOfDeathUnknown: false,
       ...(isValidIsoDate(dateOfDeath) ? { deathDateText: isoDateToDisplay(dateOfDeath) } : {}),
+      ...survivalPatch,
+    });
+  };
+
+  const updateDateOfDeathUnknown = (checked) => {
+    const survivalPatch =
+      legalWorkspaceEnabled && selectedPerson.isPotentialIntestateParent
+        ? checked
+          ? { survivalStatusRequired: false, survivalStatusConfirmed: "death-date-unknown" }
+          : { survivalStatusRequired: true, survivalStatusConfirmed: "" }
+        : {};
+    updateSelected({
+      dateOfDeathUnknown: checked,
+      ...(checked ? { dateOfDeath: "", deathDateText: "" } : {}),
       ...survivalPatch,
     });
   };
@@ -1592,19 +1591,13 @@ export function PersonInspector({
   const willTotal = willReadiness.totalPercent;
   const automaticIntestacy =
     legalWorkspaceEnabled && isDeceased ? intestateAllocations(people, selectedPerson.id) : null;
-  const protectedWill =
-    legalWorkspaceEnabled && isDeceased && inheritanceBasis === "will"
-      ? legacyProtectedWillForPerson(people, selectedPerson)
-      : null;
   const editedIntestacy =
     inheritanceBasis === "intestacy" &&
     automaticIntestacy &&
     editedIntestacyAllocations(people, selectedPerson.id, automaticIntestacy, outsideParties);
   const successionHeirIds = legalWorkspaceEnabled
     ? inheritanceBasis === "will"
-      ? protectedWill?.resolved
-        ? [...protectedWill.shares.keys()]
-        : willHeirs.map((heir) => heir.personId).filter(Boolean)
+      ? willHeirs.map((heir) => heir.personId).filter(Boolean)
       : [
           ...((editedIntestacy?.valid
             ? editedIntestacy.shares
@@ -1683,8 +1676,8 @@ export function PersonInspector({
     (row) => row.status === "date-unknown",
   );
   const isPreCausaMortisCutoff =
-    Boolean(selectedPerson.dateOfDeath) &&
-    selectedPerson.dateOfDeath < INHERITANCE_CAUSA_MORTIS_CUTOFF;
+    Boolean(effectiveSelectedDeathDate) &&
+    effectiveSelectedDeathDate < INHERITANCE_CAUSA_MORTIS_CUTOFF;
   // The 7% rule only bears on a share somebody is still holding. Where every
   // heir has since died the share has passed again, and sales tax looks only at
   // the last passage of title, so saying anything about this succession's rate
@@ -1698,7 +1691,7 @@ export function PersonInspector({
   );
   const requiresCausaMortisDetails =
     hasUnknownCausaMortisDeathDate ||
-    (Boolean(selectedPerson.dateOfDeath) && !isPreCausaMortisCutoff);
+    (Boolean(effectiveSelectedDeathDate) && !isPreCausaMortisCutoff);
   const displayedSurnameAtBirth =
     selectedPerson.surnameAtBirthReviewRequired === true
       ? selectedPerson.surnameAtBirth || ""
@@ -2874,8 +2867,26 @@ export function PersonInspector({
                   maxLength={120}
                   placeholder="e.g. 1858, about 1858, or 11 February 1858"
                   value={genealogyDeathDateText(selectedPerson)}
-                  onChange={(event) => updateSelected({ deathDateText: event.target.value })}
+                  disabled={selectedPerson.dateOfDeathUnknown === true}
+                  onChange={(event) =>
+                    updateSelected({
+                      deathDateText: event.target.value,
+                      dateOfDeathUnknown: false,
+                    })
+                  }
                 />
+              </label>
+              <label className="succession-detail-row succession-death-date-unknown">
+                <span>Date status</span>
+                <span className="detail-checkbox">
+                  <input
+                    type="checkbox"
+                    aria-label="Date of death unknown"
+                    checked={selectedPerson.dateOfDeathUnknown === true}
+                    onChange={(event) => updateDateOfDeathUnknown(event.target.checked)}
+                  />
+                  Date of death unknown
+                </span>
               </label>
               <p>An exact date, a year, or an approximate date may be recorded here.</p>
             </div>
@@ -2891,9 +2902,28 @@ export function PersonInspector({
                 <DateInput
                   data-person-field="date-of-death"
                   value={selectedPerson.dateOfDeath || ""}
+                  disabled={selectedPerson.dateOfDeathUnknown === true}
                   onChange={updateDateOfDeath}
                 />
               </label>
+              <label className="succession-detail-row succession-death-date-unknown">
+                <span>Date status</span>
+                <span className="detail-checkbox">
+                  <input
+                    type="checkbox"
+                    aria-label="Date of death unknown"
+                    checked={selectedPerson.dateOfDeathUnknown === true}
+                    onChange={(event) => updateDateOfDeathUnknown(event.target.checked)}
+                  />
+                  Date of death unknown
+                </span>
+              </label>
+              {selectedPerson.dateOfDeathUnknown === true && (
+                <small className="succession-marital-status-note">
+                  If a linked spouse has an exact death date, succession and tax calculations use
+                  that same date for this person without changing the historical record.
+                </small>
+              )}
               {!spouseSurvivalNotMaterialToOwnership && (
                 <>
                   <label className="succession-detail-row marital-status-at-death">
@@ -3240,48 +3270,6 @@ export function PersonInspector({
                     </div>
                   )}
 
-                  <LegacyLegitimPanel
-                    deceased={selectedPerson}
-                    people={people}
-                    shareDisplay={ownershipDisplay}
-                    displayName={displayName}
-                    onUpdatePerson={updatePerson}
-                  />
-
-                  {protectedWill?.calculation?.article === "633" && (
-                    <section
-                      className="legacy-legitim-panel"
-                      aria-label="Old-law surviving spouse portion"
-                    >
-                      <div className="legacy-legitim-heading">
-                        <div>
-                          <strong>Surviving spouse&apos;s protected portion</strong>
-                          <small>Automatically applied for a death before 01/03/2005</small>
-                        </div>
-                        <b>
-                          {ownershipLabel(
-                            protectedWill.calculation.collectiveFraction.decimal,
-                            ownershipDisplay,
-                          )}
-                        </b>
-                      </div>
-                      <div className="legacy-legitim-results">
-                        {protectedWill.calculation.beneficiaryFloors.map((floor) => {
-                          const spouse = peopleById.get(floor.beneficiaryId);
-                          return (
-                            <div className="legacy-legitim-result" key={floor.beneficiaryId}>
-                              <span>{spouse ? displayName(spouse) : "Surviving spouse"}</span>
-                              <span>
-                                Full-ownership portion{" "}
-                                <b>{ownershipLabel(floor.fraction.decimal, ownershipDisplay)}</b>
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  )}
-
                   {isPreCausaMortisCutoff && (
                     <p className="helper-text causa-mortis-not-applicable">
                       No Causa Mortis declaration: death before 25/11/1992.
@@ -3298,7 +3286,7 @@ export function PersonInspector({
                       properties={properties}
                       candidates={declarationCandidates}
                       candidateLabel={personSelectionLabel}
-                      dateOfDeath={selectedPerson.dateOfDeath || ""}
+                      dateOfDeath={effectiveSelectedDeathDate}
                       hasUnknownDeathDate={hasUnknownCausaMortisDeathDate}
                       errors={causaMortisErrors}
                       taxValuePropertyId={properties[0]?.id || ""}

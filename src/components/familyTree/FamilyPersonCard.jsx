@@ -238,7 +238,11 @@ export function FamilyPersonCard({
   );
   const name = cardName(person);
   const displayedDeathDate = legalWorkspaceEnabled
-    ? person.dateOfDeath && formattedDate(person.dateOfDeath)
+    ? person.dateOfDeath
+      ? formattedDate(person.dateOfDeath)
+      : person.dateOfDeathUnknown === true
+        ? "unknown"
+        : ""
     : genealogyDeathDateLabel(person);
   const givenNames = capitalisedName(personGivenNames(person));
   const surname = capitalisedName(personSurname(person));

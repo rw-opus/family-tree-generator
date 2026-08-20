@@ -321,6 +321,7 @@ export function createPerson(designation = "") {
     siblingIds: [],
     dateOfBirth: "",
     dateOfDeath: "",
+    dateOfDeathUnknown: false,
     unmarriedOrWidowedAtDeath: false,
     wills: [],
     notes: "",

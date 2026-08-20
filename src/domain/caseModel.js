@@ -1,7 +1,10 @@
 import { normalizePartnerRelationships } from "./partnerRelationships.js";
 import { synchroniseMaritalStatusAtDeath } from "./maritalStatusAtDeath.js";
 import { normalisePersonNameFields, personGivenNames } from "./people.js";
-import { synchroniseDeceasedStatus } from "./deceasedStatus.js";
+import {
+  applyOlderGenerationDeathAssumptions,
+  synchroniseDeceasedStatus,
+} from "./deceasedStatus.js";
 import { synchronisePotentialParentSurvival } from "./potentialParentSurvival.js";
 import { personWithWills } from "./wills.js";
 import { propertyTaxWorkspaceEnabled } from "./treeWorkspaceMode.js";
@@ -128,6 +131,8 @@ const LEGACY_PERSON_COLLECTION_FIELDS = [
 
 function normalizeLegacyPersonNulls(person) {
   const normalized = cloneValue(person);
+  delete normalized.legacyArticle616Statuses;
+  delete normalized.legacyArticle616Estate;
   LEGACY_PERSON_REFERENCE_FIELDS.forEach((field) => {
     if (normalized[field] === null) normalized[field] = "";
   });
@@ -175,7 +180,8 @@ function normalizePeople(
     );
     return result;
   }, []);
-  const deceasedPeople = normalized.map(synchroniseDeceasedStatus);
+  const deceasedPeople =
+    applyOlderGenerationDeathAssumptions(normalized).map(synchroniseDeceasedStatus);
   // A father and mother recorded in a pure genealogy are co-parents, not proof
   // of marriage. Persist that distinction so enabling legal tools later cannot
   // silently manufacture a surviving-spouse assumption.
@@ -491,6 +497,15 @@ export function normalizeCase(value = {}) {
     familyGroups,
     activeFamilyGroupId,
   };
+  if (Array.isArray(result.statusToggleSessions)) {
+    result.statusToggleSessions = result.statusToggleSessions.map((session) => {
+      if (!isRecord(session?.personFields)) return session;
+      const personFields = { ...session.personFields };
+      delete personFields.legacyArticle616Statuses;
+      delete personFields.legacyArticle616Estate;
+      return { ...session, personFields };
+    });
+  }
   const uniqueWarnings = [...new Set(dataWarnings.map(text).filter(Boolean))];
   if (uniqueWarnings.length) result.dataWarnings = uniqueWarnings;
   else delete result.dataWarnings;
@@ -591,7 +606,6 @@ function hasRecordedPersonLegalData(person = {}) {
     person.willHeirs,
     person.intestateHeirs,
     person.causaMortisDeclarations,
-    person.legacyArticle616Statuses,
   ].some((value) => records(value).length > 0);
   const hasLegacyWill = [
     person.willDate,
@@ -610,19 +624,7 @@ function hasRecordedPersonLegalData(person = {}) {
     text(person.survivalStatusConfirmed) ||
     text(person.unmarriedOrWidowedAtDeathSource) === "manual" ||
     (text(person.inheritanceBasis) && text(person.inheritanceBasis) !== "intestacy");
-  const hasLegacyEstate =
-    isRecord(person.legacyArticle616Estate) &&
-    Object.values(person.legacyArticle616Estate).some(
-      (value) => value !== "" && value !== null && value !== undefined,
-    );
-
-  return (
-    hasRecordRows ||
-    hasLegacyWill ||
-    hasRecordedConfirmation ||
-    hasRecordedLegalStatus ||
-    hasLegacyEstate
-  );
+  return hasRecordRows || hasLegacyWill || hasRecordedConfirmation || hasRecordedLegalStatus;
 }
 
 function hasRecordedLegacyOwnership(person = {}) {
@@ -661,9 +663,6 @@ function collectCasePersonReferences(caseData, options = {}) {
     );
     records(person.intestateHeirs).forEach((heir) =>
       add(resolvePersonId(heir.personId), "a confirmed intestate-heir record"),
-    );
-    records(person.legacyArticle616Statuses).forEach((status) =>
-      add(resolvePersonId(status.personId), "an Article 616 status record"),
     );
     records(person.willHeirsConfirmationSnapshot?.willHeirs).forEach((heir) =>
       add(resolvePersonId(heir.personId), "a saved will-beneficiary review"),

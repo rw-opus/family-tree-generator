@@ -15,6 +15,11 @@ import { FamilyLibrary } from "./components/FamilyLibrary.jsx";
 import { FamilyTreeCanvas } from "./components/FamilyTreeCanvas.jsx";
 import { FractionCalculator } from "./components/FractionCalculator.jsx";
 import { EditableTreeTitle } from "./components/EditableTreeTitle.jsx";
+import {
+  DashboardResizeHandle,
+  readDashboardPanelWidth,
+  storeDashboardPanelWidth,
+} from "./components/DashboardResizeHandle.jsx";
 import { PersonInspector } from "./components/PersonInspector.jsx";
 import { PersonFinder } from "./components/PersonFinder.jsx";
 import { Properties } from "./components/Properties.jsx";
@@ -385,6 +390,7 @@ export function App({
   );
   const [pendingTrashActivationId, setPendingTrashActivationId] = useState("");
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [dashboardPanelWidth, setDashboardPanelWidth] = useState(readDashboardPanelWidth);
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [selectedOutsideOwnerId, setSelectedOutsideOwnerId] = useState("");
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
@@ -437,6 +443,8 @@ export function App({
     () => observeStickyNavOffset(propertyWorkspaceRef.current, propertyWorkspaceNavRef.current),
     [workspaceView],
   );
+
+  useEffect(() => storeDashboardPanelWidth(dashboardPanelWidth), [dashboardPanelWidth]);
 
   const initialOwnershipDraftCacheKey = (treeId, propertyId) => `${treeId}:${propertyId}`;
   const journalInitialOwnershipChanges = useCallback(
@@ -3111,9 +3119,15 @@ export function App({
       <AnnouncementBanner localOnlyMode={!cloudMode} />
       <div
         className={`workbench-body ${dashboardOpen && selectedPersonId ? "person-card-open" : "person-card-closed"}`}
+        style={
+          dashboardOpen && selectedPersonId
+            ? { "--panel-width": `${dashboardPanelWidth}px` }
+            : undefined
+        }
       >
         {dashboardOpen && selectedPersonId && (
           <aside className="context-dashboard open">
+            <DashboardResizeHandle width={dashboardPanelWidth} onChange={setDashboardPanelWidth} />
             <div className="dashboard-topline">
               <p className="eyebrow">Person Details</p>
               <button type="button" className="dashboard-back-button" onClick={closePersonCard}>

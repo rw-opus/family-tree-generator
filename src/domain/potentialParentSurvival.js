@@ -4,6 +4,7 @@ import { isMarkedDeceased } from "./deceasedStatus.js";
 export const POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS = Object.freeze({
   ALIVE: "alive",
   DEATH_DATE_RECORDED: "death-date-recorded",
+  DEATH_DATE_UNKNOWN: "death-date-unknown",
 });
 
 /**
@@ -12,6 +13,7 @@ export const POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS = Object.freeze({
  */
 export function isPotentialParentSurvivalUnresolved(person = {}) {
   if (isValidIsoDate(person.dateOfDeath)) return false;
+  if (person.dateOfDeathUnknown === true) return false;
   if (
     String(person.survivalStatusConfirmed || "") ===
       POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS.ALIVE &&
@@ -44,6 +46,20 @@ export function synchronisePotentialParentSurvival(person = {}) {
       ...person,
       survivalStatusRequired: false,
       survivalStatusConfirmed: POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS.DEATH_DATE_RECORDED,
+    };
+  }
+
+  if (person.dateOfDeathUnknown === true) {
+    if (
+      person.survivalStatusRequired === false &&
+      person.survivalStatusConfirmed === POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS.DEATH_DATE_UNKNOWN
+    ) {
+      return person;
+    }
+    return {
+      ...person,
+      survivalStatusRequired: false,
+      survivalStatusConfirmed: POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS.DEATH_DATE_UNKNOWN,
     };
   }
 

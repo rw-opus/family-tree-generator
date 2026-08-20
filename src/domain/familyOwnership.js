@@ -22,9 +22,8 @@ import {
   partnerRelationshipKey,
   partnerRelationshipStatusAt,
 } from "./partnerRelationships.js";
-import { applyLegacyProtectedPortionsToWill } from "./legacyLegitim.js";
 import { isPotentialParentSurvivalUnresolved } from "./potentialParentSurvival.js";
-import { isRecordedDeceased } from "./deceasedStatus.js";
+import { isRecordedDeceased, peopleWithEffectiveDeathDates } from "./deceasedStatus.js";
 import { validateRelationshipDateChronology, validateWillDateChronology } from "./chronology.js";
 import { applyPortions, selectTranchePortions } from "./trancheOwnership.js";
 import { operativeWill, personWills } from "./wills.js";
@@ -194,7 +193,8 @@ export function linkedLegalSpousesFor(people = [], personId, atDate = "") {
 }
 
 export function linkedSpousesMissingDeathDates(people = [], deceasedId, atDate = "") {
-  return linkedLegalSpousesFor(people, deceasedId, atDate).filter(
+  const effectivePeople = peopleWithEffectiveDeathDates(normalizePartnerRelationships(people));
+  return linkedLegalSpousesFor(effectivePeople, deceasedId, atDate).filter(
     (person) => isPersonDeceased(person) && !person.dateOfDeath,
   );
 }
@@ -223,7 +223,11 @@ function branchesMissingSurvivalDates(roots, atDate, index) {
     visited.add(person.id);
     if (!isPersonDeceased(person)) return;
     if (!person.dateOfDeath) {
-      missing.push(person);
+      if (person.dateOfDeathUnknown === true) {
+        (index.childrenByParent.get(person.id) || []).forEach(inspect);
+      } else {
+        missing.push(person);
+      }
       return;
     }
     if (person.dateOfDeath > atDate) return;
@@ -234,7 +238,8 @@ function branchesMissingSurvivalDates(roots, atDate, index) {
 }
 
 export function descendantsMissingDeathDates(people = [], deceasedId) {
-  const index = familyIndex(people);
+  const effectivePeople = peopleWithEffectiveDeathDates(normalizePartnerRelationships(people));
+  const index = familyIndex(effectivePeople);
   const deceased = index.peopleById.get(deceasedId);
   if (!deceased?.dateOfDeath) return [];
   return branchesMissingSurvivalDates(
@@ -257,7 +262,8 @@ function legacyDescendantsControlIntestacyOwnership({ deceased, ruleset, descend
  * living lower descendant proves that the branch survives either way.
  */
 export function spouseDeathDatesAreOptionalForIntestacy(people = [], deceasedId) {
-  const index = familyIndex(people);
+  const effectivePeople = peopleWithEffectiveDeathDates(normalizePartnerRelationships(people));
+  const index = familyIndex(effectivePeople);
   const deceased = index.peopleById.get(deceasedId);
   if (!deceased || !isPersonDeceased(deceased) || !deceased.dateOfDeath) return false;
 
@@ -284,7 +290,7 @@ export function requiredSpouseDeathDatePersonIds(people = [], relevantDeceasedId
       : Array.isArray(relevantDeceasedIds)
         ? new Set(relevantDeceasedIds)
         : null;
-  const normalizedPeople = normalizePartnerRelationships(people);
+  const normalizedPeople = peopleWithEffectiveDeathDates(normalizePartnerRelationships(people));
   const index = familyIndex(normalizedPeople);
   const relationshipsByKey = new Map();
 
@@ -378,7 +384,9 @@ function nearestAscendantStatus(person, atDate, peopleById) {
       (candidate) =>
         !provisional.includes(candidate) &&
         (isPotentialParentSurvivalUnresolved(candidate) ||
-          (isPersonDeceased(candidate) && !candidate.dateOfDeath)),
+          (isPersonDeceased(candidate) &&
+            !candidate.dateOfDeath &&
+            candidate.dateOfDeathUnknown !== true)),
     );
     if (missing.length) return { living: [], missing };
     const living = unique.filter(
@@ -520,6 +528,13 @@ function collateralDegree(deceasedId, candidateId, index, maxDegree = 12) {
 }
 
 function calculateIntestateAllocations(people = [], deceasedId) {
+  return calculateIntestateAllocationsWithEffectiveDates(
+    peopleWithEffectiveDeathDates(normalizePartnerRelationships(people)),
+    deceasedId,
+  );
+}
+
+function calculateIntestateAllocationsWithEffectiveDates(people = [], deceasedId) {
   const index = familyIndex(people);
   const deceased = index.peopleById.get(deceasedId);
   const shares = new Map();
@@ -693,9 +708,6 @@ function calculateIntestateAllocations(people = [], deceasedId) {
       livingSpouses.forEach((spouse) =>
         addShare(shares, spouse.id, spouseTotal / livingSpouses.length),
       );
-    }
-    if (isLegacy && (livingSpouses.length || spousesWithUnknownSurvival.length)) {
-      addHistoricalLawWarning(warnings, atDate, ["825"]);
     }
     if (ruleset.article815ReviewRequired) warnings.push(article815ReviewWarning());
     return {
@@ -1178,6 +1190,20 @@ function buildFamilyOwnershipCore(
   people = [],
   startingOwnership = {},
   outsideParties = [],
+  options = {},
+) {
+  return buildFamilyOwnershipCoreWithEffectiveDates(
+    peopleWithEffectiveDeathDates(normalizePartnerRelationships(people)),
+    startingOwnership,
+    outsideParties,
+    options,
+  );
+}
+
+function buildFamilyOwnershipCoreWithEffectiveDates(
+  people = [],
+  startingOwnership = {},
+  outsideParties = [],
   {
     deathBefore = null,
     resolveLifetimeDisposal = false,
@@ -1286,40 +1312,12 @@ function buildFamilyOwnershipCore(
           destination: "will-unresolved",
         };
       } else {
-        const legalSpouses = linkedLegalSpousesFor(people, person.id, person.dateOfDeath);
-        const spouseSurvivalUnresolved = legalSpouses.some(
-          (spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath,
-        );
-        const survivingSpouses = legalSpouses.filter((spouse) =>
-          wasAliveAt(spouse, person.dateOfDeath),
-        );
-        const protectedWill = applyLegacyProtectedPortionsToWill({
-          people,
-          deceased: person,
-          hasSurvivingSpouse: survivingSpouses.length > 0,
-          survivingSpouseIds: survivingSpouses.map((spouse) => spouse.id),
-          spouseSurvivalUnresolved,
-        });
+        const exactShares = exactShareMapFromRecords(person.willHeirs || []);
         result = {
-          shares: protectedWill.resolved ? protectedWill.shares : new Map(),
-          exactShares: protectedWill.resolved
-            ? protectedWill.applies
-              ? exactShareMap(protectedWill.shares)
-              : exactShareMapFromRecords(person.willHeirs || [])
-            : new Map(),
-          warnings: protectedWill.warnings,
-          missingDeathDatePersonIds: spouseSurvivalUnresolved
-            ? legalSpouses
-                .filter((spouse) => isPersonDeceased(spouse) && !spouse.dateOfDeath)
-                .map((spouse) => spouse.id)
-            : protectedWill.calculation?.missingDeathDatePersonIds || [],
-          destination: protectedWill.applies
-            ? protectedWill.calculation?.article === "619"
-              ? "will-with-legacy-article-619"
-              : protectedWill.calculation?.article === "633"
-                ? "will-with-legacy-spouse-portion"
-                : "will-with-legacy-legitim"
-            : "will",
+          shares: numericShareMap(exactShares),
+          exactShares,
+          warnings: [],
+          destination: "will",
         };
       }
     } else {
@@ -1358,6 +1356,8 @@ function buildFamilyOwnershipCore(
       result.warnings.push(warning);
       transmissions.push({
         deceasedId: personId,
+        dateOfDeath: person.dateOfDeath || "",
+        dateOfDeathAssumedFromSpouse: person.effectiveDateOfDeathAssumedFromSpouse === true,
         basis,
         amount,
         amountFraction,
@@ -1385,6 +1385,8 @@ function buildFamilyOwnershipCore(
     }
     transmissions.push({
       deceasedId: personId,
+      dateOfDeath: person.dateOfDeath || "",
+      dateOfDeathAssumedFromSpouse: person.effectiveDateOfDeathAssumedFromSpouse === true,
       basis,
       amount,
       amountFraction,
@@ -1616,6 +1618,18 @@ function transferBuyerDeathError(peopleById, transfer) {
  * on the date of death may enter that person's succession.
  */
 function buildChronologicalPropertyOwnership(people = [], property = {}, outsideParties = []) {
+  return buildChronologicalPropertyOwnershipWithEffectiveDates(
+    peopleWithEffectiveDeathDates(normalizePartnerRelationships(people)),
+    property,
+    outsideParties,
+  );
+}
+
+function buildChronologicalPropertyOwnershipWithEffectiveDates(
+  people = [],
+  property = {},
+  outsideParties = [],
+) {
   const peopleById = new Map(people.map((person) => [person.id, person]));
   const outsidePartiesById = new Map(outsideParties.map((party) => [party.id, party]));
   const partyName = (partyId) => {

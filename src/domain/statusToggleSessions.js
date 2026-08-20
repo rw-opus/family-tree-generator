@@ -15,6 +15,7 @@ export const DECEASED_STATUS_FIELDS = Object.freeze([
   "isDeceased",
   "designations",
   "dateOfDeath",
+  "dateOfDeathUnknown",
   "deathDateText",
   "unmarriedOrWidowedAtDeath",
   "unmarriedOrWidowedAtDeathSource",
@@ -34,8 +35,6 @@ export const DECEASED_STATUS_FIELDS = Object.freeze([
   "intestateHeirsConfirmed",
   "intestateConfirmationBasis",
   "intestateConfirmationMigratedFromV1",
-  "legacyArticle616Statuses",
-  "legacyArticle616Estate",
   "causaMortisDeclarations",
 ]);
 
@@ -216,6 +215,7 @@ function legacyDeceasedCleanup(person) {
       )
     : [];
   cleaned.dateOfDeath = "";
+  cleaned.dateOfDeathUnknown = false;
   cleaned.unmarriedOrWidowedAtDeath = false;
   if (person.isPotentialIntestateParent === true) {
     cleaned.survivalStatusRequired = false;

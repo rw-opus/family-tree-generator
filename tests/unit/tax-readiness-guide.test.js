@@ -487,7 +487,7 @@ describe("tax readiness issues and progress", () => {
       ),
       propertyReport: { ownership: { transmissions: [], unresolved } },
     });
-    expect(modern.issuesByPerson.spouse.map((issue) => issue.code)).toContain(
+    expect(modern.issuesByPerson.spouse?.map((issue) => issue.code) || []).not.toContain(
       "required-spouse-death-date",
     );
   });

@@ -221,9 +221,62 @@ describe("PersonInspector", () => {
       survivalStatusRequired: false,
       survivalStatusConfirmed: "alive",
     });
+    const unknownDate = container.querySelector('input[aria-label="Date of death unknown"]');
+    act(() => unknownDate.click());
+    expect(latestPeople[0]).toMatchObject({
+      isDeceased: true,
+      dateOfDeath: "",
+      deathDateText: "",
+      dateOfDeathUnknown: true,
+    });
+    expect(deathDate.disabled).toBe(true);
+    expect(deathDate.value).toBe("Date of death unknown");
     expect(container.querySelector(".date-input-warning")).toBeNull();
     expect(container.textContent).not.toContain("Inheritance basis");
     expect(container.textContent).not.toContain("Marital status at death");
+  });
+
+  it("records an unknown legal death date without inventing an exact date", () => {
+    let latestPeople;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          fullName: "Maria Borg",
+          givenNames: "Maria",
+          surname: "Borg",
+          surnameAtBirth: "Borg",
+          sex: "Female",
+          spouseIds: [],
+          designations: ["Deceased"],
+          isDeceased: true,
+          dateOfDeath: "1900-01-01",
+          inheritanceBasis: "intestacy",
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          legalWorkspaceEnabled
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+
+    const unknownDate = container.querySelector('input[aria-label="Date of death unknown"]');
+    const exactDate = container.querySelector('[data-person-field="date-of-death"]');
+    act(() => unknownDate.click());
+
+    expect(latestPeople[0]).toMatchObject({
+      dateOfDeath: "",
+      dateOfDeathUnknown: true,
+    });
+    expect(exactDate.disabled).toBe(true);
   });
 
   it("does not guess a father or mother role for an Other-sex parent's child", () => {

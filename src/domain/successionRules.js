@@ -22,7 +22,6 @@ const VERIFIED_LEGACY_AMENDMENTS = Object.freeze([
       "638",
       "639",
       "646",
-      "825",
       "826",
       "829",
     ]),
