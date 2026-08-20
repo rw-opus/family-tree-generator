@@ -2,7 +2,10 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IntestateHeirConfirmation } from "../../src/components/IntestateHeirConfirmation.jsx";
+import {
+  IntestacyProposal,
+  IntestateHeirConfirmation,
+} from "../../src/components/IntestateHeirConfirmation.jsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -68,6 +71,37 @@ function editBeneficiaries() {
 }
 
 describe("IntestateHeirConfirmation draft context", () => {
+  it("shows equal shares for every checked suggested heir", () => {
+    const heirs = ["first", "second", "third"].map((id) => ({
+      id,
+      fullName: `${id} heir`,
+      designations: [],
+      spouseIds: [],
+    }));
+    const onSelectedPersonIdsChange = vi.fn();
+
+    act(() =>
+      root.render(
+        <IntestacyProposal
+          calculated={{ shares: new Map(heirs.map((heir) => [heir.id, 1 / 3])) }}
+          people={heirs}
+          displayName={(person) => person.fullName}
+          shareDisplay="both"
+          selectedPersonIds={heirs.map((heir) => heir.id)}
+          onSelectedPersonIdsChange={onSelectedPersonIdsChange}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("1/3 · 33.33%");
+    expect(container.querySelectorAll('input[aria-label^="Select "]:checked')).toHaveLength(4);
+
+    act(() =>
+      container.querySelector('input[aria-label="Select second heir as a suggested heir"]').click(),
+    );
+    expect(onSelectedPersonIdsChange).toHaveBeenCalledWith(["first", "third"]);
+  });
+
   it("reconciles three exact thirds across the proposal and editable percentage boxes", () => {
     const heirs = ["first", "second", "third"].map((id) => ({
       id,
