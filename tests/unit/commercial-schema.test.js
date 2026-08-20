@@ -278,20 +278,21 @@ describe("commercial Supabase schema", () => {
   });
 
   it("repairs the typed admin overview and grandfathers dormant pre-rollout accounts", () => {
-    expect(normaliseSql(schema)).toContain(normaliseSql(adminRepairMigration));
-    expect(adminRepairMigration).toContain("account.email::text");
-    expect(adminRepairMigration).toContain(
+    const normalisedAdminRepairMigration = normaliseSql(adminRepairMigration);
+    expect(normaliseSql(schema)).toContain(normalisedAdminRepairMigration);
+    expect(normalisedAdminRepairMigration).toContain("account.email::text");
+    expect(normalisedAdminRepairMigration).toContain(
       "coalesce(entitlement.free_tree_limit, 3::smallint)::smallint",
     );
-    expect(adminRepairMigration).toContain(
+    expect(normalisedAdminRepairMigration).toContain(
       "coalesce(entitlement.free_trees_used, 0::smallint)::smallint",
     );
-    expect(adminRepairMigration).toContain("timestamptz '2026-08-17 14:40:52.119201+00'");
-    expect(adminRepairMigration).toContain("on conflict (user_id) do update");
-    expect(adminRepairMigration).toContain(
+    expect(normalisedAdminRepairMigration).toContain("timestamptz '2026-08-17 14:40:52.119201+00'");
+    expect(normalisedAdminRepairMigration).toContain("on conflict (user_id) do update");
+    expect(normalisedAdminRepairMigration).toContain(
       "greatest(\n  entitlement.free_tree_limit,\n  excluded.free_tree_limit\n)",
     );
-    expect(adminRepairMigration).toContain(
+    expect(normalisedAdminRepairMigration).toContain(
       "where entitlement.free_tree_limit < excluded.free_tree_limit",
     );
   });

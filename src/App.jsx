@@ -102,6 +102,7 @@ import {
   writeInitialOwnershipDraft,
 } from "./services/initialOwnershipDraftJournal.js";
 import {
+  TREE_DRAFT_ERROR_CODES,
   TREE_DRAFT_RECOVERY_STATES,
   acknowledgeTreeDraftSave,
   compareTreeDraftToServer,
@@ -1529,10 +1530,26 @@ export function App({
         const queue = cloudSaveQueueRef.current;
         if (!queue) throw new Error("The secure save queue is unavailable.");
         journalInitialOwnershipChanges(base, nextTree);
-        journalTreeDraft(nextTree);
+        let treeDraftFallbackError = null;
+        try {
+          journalTreeDraft(nextTree);
+        } catch (error) {
+          const cloudFallbackCodes = new Set([
+            TREE_DRAFT_ERROR_CODES.TOO_LARGE,
+            TREE_DRAFT_ERROR_CODES.STORAGE_UNAVAILABLE,
+            TREE_DRAFT_ERROR_CODES.STORAGE_FAILURE,
+          ]);
+          if (!cloudFallbackCodes.has(error?.code)) throw error;
+          treeDraftFallbackError = error;
+        }
         queue.schedule(nextTree);
         skipNextCloudPersistenceEffectRef.current = nextTree.id;
-        if (flushCloud) void queue.flush().catch(() => undefined);
+        if (flushCloud || treeDraftFallbackError) void queue.flush().catch(() => undefined);
+        if (treeDraftFallbackError) {
+          setStatus(
+            "The change was applied and sent to the cloud immediately because this browser could not keep an additional recovery copy.",
+          );
+        }
       } catch (error) {
         setStatus(
           `The change was not applied because it could not be secured locally: ${error.message}`,

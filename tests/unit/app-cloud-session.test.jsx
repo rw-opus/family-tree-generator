@@ -634,6 +634,83 @@ describe("App cloud session identity", () => {
     );
   });
 
+  it("keeps the property and initial-ownership form editable when full-tree recovery storage is unavailable", async () => {
+    const serverTree = {
+      ...caseActivationState({
+        ...tree("first", "First family"),
+        settings: { workspaceMode: "property-tax", activePropertyId: "first-property" },
+      }).caseData,
+      storageRevision: 1,
+    };
+    serverTree.settings = {
+      ...serverTree.settings,
+      workspaceMode: "property-tax",
+      activePropertyId: "first-property",
+    };
+    cloudHarness.listFamilyTrees.mockResolvedValue([serverTree]);
+
+    await act(async () => {
+      root.render(
+        <App localOnlyMode={false} session={{ user: { id: "user-1" } }} onSignOut={() => {}} />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Open First family")
+        .click();
+      await Promise.resolve();
+      container.querySelector('button[aria-label="Property & Tax"]').click();
+      await Promise.resolve();
+    });
+
+    const originalSetItem = Storage.prototype.setItem;
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function failWholeTreeRecoveryOnly(key, value) {
+        if (String(key).includes("tree-draft:v1")) {
+          throw new DOMException("Quota exceeded", "QuotaExceededError");
+        }
+        return originalSetItem.call(this, key, value);
+      });
+
+    const address = container.querySelector('input[placeholder="Full address of the property"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        address,
+        "Editable property",
+      );
+      address.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(address.value).toBe("Editable property");
+    expect(cloudHarness.queueSchedule).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        properties: [expect.objectContaining({ address: "Editable property" })],
+      }),
+    );
+    expect(cloudHarness.queueFlush).toHaveBeenCalled();
+
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Add initial owner")
+        .click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(
+      setItem.mock.calls.some(([key]) => String(key).includes("initial-ownership-draft:v1")),
+    ).toBe(true);
+    setItem.mockRestore();
+
+    const percentage = container.querySelector('input[aria-label="Initial ownership percentage"]');
+    expect(percentage).not.toBeNull();
+    expect(percentage.disabled).toBe(false);
+  });
+
   it("stops a cloud save when its ownership lineage cannot be stored", async () => {
     const serverTree = {
       ...caseActivationState({
