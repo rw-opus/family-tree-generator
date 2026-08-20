@@ -155,6 +155,30 @@ describe("case model migration", () => {
     expect(normalizeCase(first)).toEqual(first);
   });
 
+  it("preserves unchanged person identities after normalising a small edit", () => {
+    const first = normalizeCase({
+      id: "structural-sharing",
+      people: [
+        { id: "edited", fullName: "Joseph Borg" },
+        { id: "unchanged", fullName: "Maria Borg" },
+      ],
+    });
+    const next = normalizeCase({
+      ...first,
+      people: first.people.map((person) =>
+        person.id === "edited" ? { ...person, givenNames: "Josephine" } : person,
+      ),
+    });
+
+    expect(next.people).not.toBe(first.people);
+    expect(next.people.find((person) => person.id === "edited")).not.toBe(
+      first.people.find((person) => person.id === "edited"),
+    );
+    expect(next.people.find((person) => person.id === "unchanged")).toBe(
+      first.people.find((person) => person.id === "unchanged"),
+    );
+  });
+
   it("binds an unscoped legacy causa mortis declaration to the sole property", () => {
     const result = normalizeCase({
       id: "legacy-cm-property",

@@ -146,15 +146,33 @@ describe("family tree canvas render cost", () => {
     expect(cardBodyRuns.count).toBe(0);
   });
 
-  it("re-runs only the two cards whose selected state changed", () => {
+  it("does not recompute card labels when only selection changes", () => {
     const people = family();
     act(() => root.render(<FamilyTreeCanvas {...canvasProps(people)} selectedPersonId="c1" />));
 
     cardBodyRuns.count = 0;
     act(() => root.render(<FamilyTreeCanvas {...canvasProps(people)} selectedPersonId="c2" />));
 
-    // The card losing the selection and the card gaining it, and nothing else.
-    expect(cardBodyRuns.count).toBe(2);
+    // The selected state still reaches the two affected cards, but their
+    // person-derived labels are cached and therefore do not redo whole-family
+    // display-name work.
+    expect(cardBodyRuns.count).toBe(0);
+  });
+
+  it("keeps unaffected cards and layout geometry when one person's label changes", () => {
+    const buildLayout = vi.spyOn(treeLayout, "buildFamilyTreeLayout");
+    const people = family();
+    act(() => root.render(<FamilyTreeCanvas {...canvasProps(people)} />));
+    const layoutsAfterFirstRender = buildLayout.mock.calls.length;
+
+    cardBodyRuns.count = 0;
+    const changedPeople = people.map((candidate) =>
+      candidate.id === "c1" ? { ...candidate, fullName: "Changed Child Borg" } : candidate,
+    );
+    act(() => root.render(<FamilyTreeCanvas {...canvasProps(changedPeople)} />));
+
+    expect(buildLayout.mock.calls.length).toBe(layoutsAfterFirstRender);
+    expect(cardBodyRuns.count).toBe(1);
   });
 
   it("derives each person's card state once per family, not once per card", () => {
