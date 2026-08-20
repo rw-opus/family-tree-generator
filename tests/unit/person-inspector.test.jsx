@@ -2,7 +2,10 @@
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PersonInspector } from "../../src/components/PersonInspector.jsx";
+import {
+  IDENTITY_DRAFT_COMMIT_DELAY_MS,
+  PersonInspector,
+} from "../../src/components/PersonInspector.jsx";
 import { normaliseCase } from "../../src/domain/caseModel.js";
 import { findPartnerRelationship } from "../../src/domain/partnerRelationships.js";
 import {
@@ -38,6 +41,13 @@ describe("PersonInspector", () => {
     });
   };
 
+  const leaveInput = (input) => {
+    act(() => {
+      input.focus();
+      input.blur();
+    });
+  };
+
   const completedCausaMortisShare = (person) =>
     (person.causaMortisDeclarations || [])
       .filter((declaration) => declaration.status === "complete")
@@ -62,6 +72,7 @@ describe("PersonInspector", () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    vi.useRealTimers();
     container.remove();
     vi.restoreAllMocks();
   });
@@ -95,6 +106,381 @@ describe("PersonInspector", () => {
     ).not.toBeNull();
     expect(container.textContent).not.toContain("GEDCOM");
     expect(container.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it("keeps rapid identity typing local and flushes one final patch", () => {
+    const onChange = vi.fn();
+    let controller;
+    const people = Array.from({ length: 202 }, (_, index) => ({
+      id: `person-${index + 1}`,
+      givenNames: `Person ${index + 1}`,
+      surname: "Example",
+      fullName: `Person ${index + 1} Example`,
+      sex: "Other",
+      spouseIds: [],
+    }));
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={people}
+          selectedPersonId="person-1"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+    beginEditing();
+    const namesInput = container.querySelector('[data-person-field="given-names"]');
+
+    ["M", "Ma", "Mar", "Mari", "Maria"].forEach((value) => {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+          namesInput,
+          value,
+        );
+        namesInput.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+
+    expect(namesInput.value).toBe("Maria");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(controller.hasPending()).toBe(true);
+
+    act(() => expect(controller.flush()).toBe(true));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      givenNames: "Maria",
+      fullName: "Maria Example",
+    });
+    expect(controller.hasPending()).toBe(false);
+  });
+
+  it("retains a pending identity draft when durable commit is rejected", () => {
+    let rejectCommit = true;
+    const onChange = vi.fn(() => (rejectCommit ? null : {}));
+    let controller;
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              givenNames: "Maria",
+              surname: "Borg",
+              fullName: "Maria Borg",
+              sex: "Female",
+              spouseIds: [],
+            },
+          ]}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+    beginEditing();
+    const surnameInput = container.querySelector('[data-person-field="surname"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(controller.flush()).toBe(false);
+    expect(controller.hasPending()).toBe(true);
+    expect(surnameInput.value).toBe("Vella");
+
+    rejectCommit = false;
+    expect(controller.flush()).toBe(true);
+    expect(controller.hasPending()).toBe(false);
+    expect(onChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ surname: "Vella", fullName: "Maria Vella" }),
+    ]);
+  });
+
+  it("commits an identity draft after typing becomes idle", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              givenNames: "Maria",
+              surname: "Borg",
+              fullName: "Maria Borg",
+              sex: "Female",
+              spouseIds: [],
+            },
+          ]}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    beginEditing();
+    const surnameInput = container.querySelector('[data-person-field="surname"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(IDENTITY_DRAFT_COMMIT_DELAY_MS));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      surname: "Vella",
+      fullName: "Maria Vella",
+    });
+  });
+
+  it("commits the pending identity before Done closes the editor", () => {
+    let latestPerson;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          givenNames: "Maria",
+          surname: "Borg",
+          fullName: "Maria Borg",
+          sex: "Female",
+          spouseIds: [],
+        },
+      ]);
+      latestPerson = people[0];
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+    act(() => root.render(<Harness />));
+    beginEditing();
+    const surnameInput = container.querySelector('[data-person-field="surname"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      container.querySelector('[data-person-action="done-editing"]').click();
+    });
+
+    expect(latestPerson).toMatchObject({ surname: "Vella", fullName: "Maria Vella" });
+    expect(container.querySelector(".person-edit-fields").disabled).toBe(true);
+  });
+
+  it("merges a pending identity draft with a same-event status update", () => {
+    let latestPerson;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          givenNames: "Maria",
+          surname: "Borg",
+          fullName: "Maria Borg",
+          sex: "Female",
+          spouseIds: [],
+        },
+      ]);
+      latestPerson = people[0];
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+    act(() => root.render(<Harness />));
+    beginEditing();
+    const surnameInput = container.querySelector('[data-person-field="surname"]');
+    const maleRadio = [...container.querySelectorAll('input[type="radio"]')].find(
+      (input) => input.parentElement.textContent.trim() === "Male",
+    );
+    act(() => {
+      surnameInput.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      maleRadio.focus();
+      maleRadio.click();
+    });
+
+    expect(latestPerson).toMatchObject({
+      surname: "Vella",
+      surnameAtBirth: "Vella",
+      fullName: "Maria Vella",
+      sex: "Male",
+    });
+  });
+
+  it("preserves pending identity text through the custom deceased-status callback", () => {
+    let latestPeople;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          givenNames: "Maria",
+          surname: "Borg",
+          surnameAtBirth: "Borg",
+          fullName: "Maria Borg",
+          sex: "Female",
+          spouseIds: [],
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+          onDeceasedStatusChange={({ people: sourcePeople, personId, patch }) =>
+            setPeople(
+              sourcePeople.map((person) =>
+                person.id === personId ? { ...person, ...patch } : person,
+              ),
+            )
+          }
+        />
+      );
+    }
+    act(() => root.render(<Harness />));
+    beginEditing();
+    const surnameInput = container.querySelector('[data-person-field="surname"]');
+    const deceasedInput = container.querySelector(".deceased-status-control input");
+    act(() => {
+      surnameInput.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      deceasedInput.click();
+    });
+
+    expect(latestPeople[0]).toMatchObject({
+      surname: "Vella",
+      fullName: "Maria Vella",
+      isDeceased: true,
+    });
+  });
+
+  it("preserves pending identity text when adding a relative in the same event", () => {
+    let latestPeople;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          givenNames: "Maria",
+          surname: "Borg",
+          surnameAtBirth: "Borg",
+          fullName: "Maria Borg",
+          sex: "Female",
+          spouseIds: [],
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+    act(() => root.render(<Harness />));
+    beginEditing();
+    const surnameInput = container.querySelector('[data-person-field="surname"]');
+    const addFatherButton = container.querySelector('button[title="Add father"]');
+    act(() => {
+      surnameInput.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      addFatherButton.click();
+    });
+
+    expect(latestPeople).toHaveLength(2);
+    expect(latestPeople[0]).toMatchObject({ surname: "Vella", fullName: "Maria Vella" });
+    expect(latestPeople[0].fatherId).toBe(latestPeople[1].id);
+  });
+
+  it("uses a pending father's surname when creating his child in the same event", () => {
+    let latestPeople;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "person",
+          givenNames: "Mario",
+          surname: "Borg",
+          surnameAtBirth: "Borg",
+          fullName: "Mario Borg",
+          sex: "Male",
+          spouseIds: [],
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="person"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+    act(() => root.render(<Harness />));
+    beginEditing();
+    const surnameInput = container.querySelector('[data-person-field="surname"]');
+    const addChildButton = container.querySelector('button[title="Add child"]');
+    act(() => {
+      surnameInput.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        surnameInput,
+        "Vella",
+      );
+      surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      addChildButton.click();
+    });
+
+    expect(latestPeople).toHaveLength(2);
+    expect(latestPeople[0]).toMatchObject({
+      surname: "Vella",
+      surnameAtBirth: "Vella",
+      fullName: "Mario Vella",
+    });
+    expect(latestPeople[1]).toMatchObject({
+      fatherId: "person",
+      surname: "Vella",
+      surnameAtBirth: "Vella",
+    });
   });
 
   it("places Done immediately after Delete person at the bottom", () => {
@@ -845,6 +1231,7 @@ describe("PersonInspector", () => {
       );
       surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    leaveInput(fieldInput("Surname"));
     expect(latestPerson).toMatchObject({
       surname: "Vella",
       fullName: "Anna Vella",
@@ -859,6 +1246,7 @@ describe("PersonInspector", () => {
       );
       birthSurnameInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    leaveInput(fieldInput("Surname at birth"));
     expect(latestPerson.surnameAtBirth).toBe("Camilleri");
   });
 
@@ -904,6 +1292,7 @@ describe("PersonInspector", () => {
       );
       birthSurnameInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    leaveInput(birthSurnameInput);
 
     expect(latestPerson).toMatchObject({
       surnameAtBirth: "Vella",
@@ -919,6 +1308,7 @@ describe("PersonInspector", () => {
       );
       birthSurnameInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    leaveInput(birthSurnameInput);
 
     expect(latestPerson).toMatchObject({
       surnameAtBirth: "",
@@ -3162,6 +3552,7 @@ describe("PersonInspector", () => {
       );
       namesInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    leaveInput(namesInput);
     expect(onChange.mock.calls.at(-1)[0][0]).toMatchObject({
       givenNames: "Maria Anna",
       fullName: "Maria Anna Borg",

@@ -33,7 +33,7 @@ import {
   createFamilyGroup,
   findFamilyGroupsForPerson,
   normaliseCase,
-  reconcilePeopleUpdate,
+  reconcileNormalisedPeopleUpdate,
   removePersonFromFamilyGroup,
 } from "./domain/caseModel.js";
 import { assertGedcomFileSize, parseGedcom } from "./domain/gedcom.js";
@@ -228,7 +228,21 @@ const migratedProperties = (value) => {
   ];
 };
 
+// Every App state transition stores the object returned by normaliseTree (or
+// explicitly marks the output of a domain helper that has already normalised
+// the case). Remembering those identities avoids immediately repeating the
+// whole family/legal canonicalisation when React renders the same snapshot.
+// Persisted/hydrated objects always have a new identity and therefore still
+// cross the full schema boundary before use.
+const normalisedTreeSnapshots = new WeakSet();
+
+const markNormalisedTree = (value) => {
+  if (value && typeof value === "object") normalisedTreeSnapshots.add(value);
+  return value;
+};
+
 const normaliseTree = (value) => {
+  if (value && typeof value === "object" && normalisedTreeSnapshots.has(value)) return value;
   let caseData = normaliseCase(value);
   if (!caseData.people.length) {
     const rootPerson = createPerson();
@@ -270,7 +284,7 @@ const normaliseTree = (value) => {
     activePropertyId,
     workspaceMode,
   };
-  return {
+  return markNormalisedTree({
     ...caseData,
     createdAt: caseData.createdAt || caseData.created_at || caseData.updated_at || "",
     title: caseData.title || "Untitled family",
@@ -285,7 +299,7 @@ const normaliseTree = (value) => {
       ...settings,
       personCardFields: normalisePersonCardFields(settings),
     },
-  };
+  });
 };
 
 const initialTree = (seed = {}) => {
@@ -417,7 +431,7 @@ export function App({
   const directSavePromisesRef = useRef(new Map());
   const propertyWorkspaceRef = useRef(null);
   const propertyWorkspaceNavRef = useRef(null);
-  const initialOwnershipFlushRef = useRef(null);
+  const pendingEditControllersRef = useRef(new Set());
   const [activeFamilyGroupId, setActiveFamilyGroupId] = useState(
     () => normaliseTree(tree).activeFamilyGroupId,
   );
@@ -525,14 +539,44 @@ export function App({
     [authenticatedUserId],
   );
 
-  const registerInitialOwnershipFlush = useCallback((controller) => {
-    initialOwnershipFlushRef.current = controller;
-    return () => {
-      if (initialOwnershipFlushRef.current === controller) {
-        initialOwnershipFlushRef.current = null;
-      }
-    };
+  const registerPendingEditController = useCallback((controller) => {
+    if (!controller || typeof controller.flush !== "function") return () => {};
+    pendingEditControllersRef.current.add(controller);
+    return () => pendingEditControllersRef.current.delete(controller);
   }, []);
+
+  const flushPendingEditControllers = useCallback(() => {
+    let succeeded = true;
+    for (const controller of [...pendingEditControllersRef.current]) {
+      try {
+        if (controller.flush() === false) succeeded = false;
+      } catch {
+        succeeded = false;
+      }
+    }
+    const pending = [...pendingEditControllersRef.current].some((controller) => {
+      try {
+        return Boolean(controller.hasPending?.());
+      } catch {
+        return true;
+      }
+    });
+    return { succeeded, pending };
+  }, []);
+
+  const flushPendingEdits = useCallback(
+    (message = "Finish or correct the pending edit before leaving this page.") => {
+      const result = flushPendingEditControllers();
+      if (result.succeeded && !result.pending) return true;
+      if (message) setStatus(message);
+      return false;
+    },
+    [flushPendingEditControllers],
+  );
+
+  // Keep the existing InitialOwnershipEditor registration prop stable while
+  // placing it on the same flush boundary as buffered identity/property fields.
+  const registerInitialOwnershipFlush = registerPendingEditController;
 
   useEffect(() => {
     if (!cloudMode) return undefined;
@@ -686,30 +730,29 @@ export function App({
     cloudSaveQueueRef.current = queue;
     return () => {
       if (cloudSaveQueueRef.current === queue) {
-        // Parent effect cleanups run before InitialOwnershipEditor's cleanup.
-        // Capture its still-focused field while this queue can both journal and
+        // Parent effect cleanups run before editor cleanups. Capture every
+        // still-focused buffered field while this queue can both journal and
         // schedule the final snapshot, then make the queue unavailable.
-        initialOwnershipFlushRef.current?.flush?.();
+        flushPendingEditControllers();
         cloudSaveQueueRef.current = null;
       }
       queue.dispose();
     };
-  }, [authenticatedUserId, cloudMode]);
+  }, [authenticatedUserId, cloudMode, flushPendingEditControllers]);
 
   useEffect(() => {
     const warnAboutUnsavedCloudChanges = (event) => {
-      const ownershipFlushSucceeded = initialOwnershipFlushRef.current?.flush?.() !== false;
-      const ownershipStillPending = Boolean(initialOwnershipFlushRef.current?.hasPending?.());
+      const pendingEdits = flushPendingEditControllers();
       const cloudChangesPending = Boolean(
         cloudMode && cloudSaveQueueRef.current?.hasUnsavedChanges(),
       );
-      if (ownershipFlushSucceeded && !ownershipStillPending && !cloudChangesPending) return;
+      if (pendingEdits.succeeded && !pendingEdits.pending && !cloudChangesPending) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnAboutUnsavedCloudChanges);
     return () => window.removeEventListener("beforeunload", warnAboutUnsavedCloudChanges);
-  }, [cloudMode]);
+  }, [cloudMode, flushPendingEditControllers]);
 
   const refreshTreeEntitlement = useCallback(async () => {
     if (!cloudMode) {
@@ -1433,7 +1476,7 @@ export function App({
 
   useEffect(() => {
     const persistLatestBeforeLeaving = () => {
-      initialOwnershipFlushRef.current?.flush?.();
+      flushPendingEditControllers();
       if (!activeTreeIsListedRef.current) return;
       const latestTree = normaliseTree(latestTreeRef.current);
       if (cloudMode) {
@@ -1457,7 +1500,7 @@ export function App({
       window.removeEventListener("pagehide", persistLatestBeforeLeaving);
       document.removeEventListener("visibilitychange", persistWhenHidden);
     };
-  }, [cloudMode, localRecoveryBlocked]);
+  }, [cloudMode, flushPendingEditControllers, localRecoveryBlocked]);
 
   useEffect(() => {
     if (!cloudMode) return undefined;
@@ -1583,6 +1626,7 @@ export function App({
   };
 
   const selectPerson = (personId) => {
+    if (!flushPendingEdits()) return false;
     setSelectedOutsideOwnerId("");
     const base = normaliseTree(latestTreeRef.current);
     const targetGroup =
@@ -1596,6 +1640,7 @@ export function App({
     }
     setSelectedPersonId(personId);
     setDashboardOpen(true);
+    return true;
   };
 
   const persistTaxReadinessSession = (nextSession) =>
@@ -1613,9 +1658,9 @@ export function App({
 
   const openTaxReadinessPerson = (personId) => {
     if (!personId) return;
+    if (!selectPerson(personId)) return;
     setWorkspaceView("tree");
     setPropertyWorkspaceSection("ownership");
-    selectPerson(personId);
   };
 
   const startTaxReadinessGuide = () => {
@@ -1832,8 +1877,9 @@ export function App({
   };
 
   const selectOutsideOwner = (ownerId) => {
+    if (!flushPendingEdits()) return false;
     setSelectedOutsideOwnerId(ownerId);
-    if (!ownerId) return;
+    if (!ownerId) return true;
     setSelectedPersonId("");
     setDashboardOpen(false);
     setPropertyWorkspaceSection("ownership");
@@ -1845,9 +1891,11 @@ export function App({
           ?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     });
+    return true;
   };
 
   const focusPersonOnTree = (personId) => {
+    if (!flushPendingEdits()) return false;
     const base = normaliseTree(latestTreeRef.current);
     const targetGroup =
       findFamilyGroupsForPerson(base, personId).find((group) => group.id === activeFamilyGroupId) ||
@@ -1860,11 +1908,14 @@ export function App({
     }
     setSelectedPersonId(personId);
     setDashboardOpen(false);
+    return true;
   };
 
   const closePersonCard = () => {
+    if (!flushPendingEdits()) return false;
     setSelectedPersonId("");
     setDashboardOpen(false);
+    return true;
   };
 
   const updateZoom = (nextZoom) => {
@@ -1960,7 +2011,7 @@ export function App({
           .replace(/\.(ged|gedcom)$/i, "")
           .replace(/[_-]+/g, " ")
           .trim() || "Imported family";
-      const importedTree = reconcilePeopleUpdate(baseTree, familyGroupId, result.people, {
+      const importedTree = reconcileNormalisedPeopleUpdate(baseTree, familyGroupId, result.people, {
         replaceFamilyGroup: true,
       });
       const nextTree = prepareTreeForPersistence({
@@ -2557,8 +2608,10 @@ export function App({
   };
 
   const updatePeople = (people, options) => {
-    setTree((current) =>
-      reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people, options),
+    return commitDurableTreeChange((base) =>
+      markNormalisedTree(
+        reconcileNormalisedPeopleUpdate(base, activeFamilyGroupId, people, options),
+      ),
     );
   };
 
@@ -2567,7 +2620,7 @@ export function App({
       let next = normaliseTree(current);
       if (checked) {
         next = beginStatusToggleSession(next, { type: "deceased", personId });
-        next = reconcilePeopleUpdate(next, activeFamilyGroupId, people);
+        next = reconcileNormalisedPeopleUpdate(next, activeFamilyGroupId, people);
         return normaliseTree({
           ...next,
           people: next.people.map((person) =>
@@ -2576,7 +2629,7 @@ export function App({
         });
       }
 
-      next = reconcilePeopleUpdate(next, activeFamilyGroupId, people);
+      next = reconcileNormalisedPeopleUpdate(next, activeFamilyGroupId, people);
       return normaliseTree(
         endStatusToggleSession(next, {
           type: "deceased",
@@ -2618,12 +2671,18 @@ export function App({
   };
 
   const removePerson = (personId) => {
-    const nextTree = removePersonFromFamilyGroup(currentTree, activeFamilyGroupId, personId);
+    const nextTree = removePersonFromFamilyGroup(
+      normaliseTree(latestTreeRef.current),
+      activeFamilyGroupId,
+      personId,
+    );
+    const savedTree = commitDurableTreeChange(nextTree);
+    if (!savedTree) return false;
     const nextGroup =
-      nextTree.familyGroups.find((group) => group.id === activeFamilyGroupId) ||
-      nextTree.familyGroups[0];
-    setTree(nextTree);
+      savedTree.familyGroups.find((group) => group.id === activeFamilyGroupId) ||
+      savedTree.familyGroups[0];
     setSelectedPersonId(nextGroup?.rootPersonId || nextGroup?.personIds[0] || "");
+    return true;
   };
 
   const updateTreeTitle = (title) => {
@@ -2678,7 +2737,11 @@ export function App({
   // at once. Both changes go through one functional update so neither overwrites the other.
   const recordDonation = ({ people, outsideParties, propertyId, transfer }) => {
     setTree((current) => {
-      const base = reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people);
+      const base = reconcileNormalisedPeopleUpdate(
+        normaliseTree(current),
+        activeFamilyGroupId,
+        people,
+      );
       return {
         ...base,
         outsideParties: outsideParties || base.outsideParties,
@@ -2700,7 +2763,11 @@ export function App({
     transfer,
   }) => {
     setTree((current) => {
-      const base = reconcilePeopleUpdate(normaliseTree(current), activeFamilyGroupId, people);
+      const base = reconcileNormalisedPeopleUpdate(
+        normaliseTree(current),
+        activeFamilyGroupId,
+        people,
+      );
       return {
         ...base,
         outsideParties: outsideParties || base.outsideParties,
@@ -2739,15 +2806,16 @@ export function App({
     setStatus("Transfer record deleted.");
   };
 
-  const updatePropertyWorkspace = (patch) => {
-    const base = normaliseTree(latestTreeRef.current);
-    const nextProperties = patch.properties || base.properties;
-    return commitDurableTreeChange({
-      ...base,
-      properties: nextProperties,
-      outsideParties: patch.outsideParties || base.outsideParties,
+  const updatePropertyWorkspace = (patchOrUpdater) =>
+    commitDurableTreeChange((base) => {
+      const patch =
+        typeof patchOrUpdater === "function" ? patchOrUpdater(base) : patchOrUpdater || {};
+      return {
+        ...base,
+        properties: patch.properties || base.properties,
+        outsideParties: patch.outsideParties || base.outsideParties,
+      };
     });
-  };
 
   const confirmInitialOwnerAcquisition = ({ propertyId, personId, row, acquisitionDate }) => {
     const property = currentTree.properties.find((candidate) => candidate.id === propertyId);
@@ -2869,31 +2937,23 @@ export function App({
     setStatus(`${targetPerson.fullName || "Selected person"} assigned as an initial owner.`);
   };
 
-  const updatePrimaryPropertyWorkspace = (patch, propertyId = "") => {
-    const base = normaliseTree(latestTreeRef.current);
-    const requestedActivePropertyId = propertyId || base.settings.activePropertyId;
-    return updatePropertyWorkspace({
-      ...patch,
-      properties: patch.properties
-        ? base.properties.map((property) =>
-            property.id === requestedActivePropertyId ? patch.properties[0] || property : property,
-          )
-        : base.properties,
+  const updatePrimaryPropertyWorkspace = (patch, propertyId = "") =>
+    updatePropertyWorkspace((base) => {
+      const requestedActivePropertyId = propertyId || base.settings.activePropertyId;
+      return {
+        ...patch,
+        properties: patch.properties
+          ? base.properties.map((property) =>
+              property.id === requestedActivePropertyId
+                ? patch.properties[0] || property
+                : property,
+            )
+          : base.properties,
+      };
     });
-  };
-
-  const flushPendingInitialOwnership = (
-    message = "Finish or correct the pending initial-ownership share before leaving this page.",
-  ) => {
-    const controller = initialOwnershipFlushRef.current;
-    const flushed = controller?.flush?.() !== false;
-    if (flushed && !controller?.hasPending?.()) return true;
-    setStatus(message);
-    return false;
-  };
 
   const returnHome = async () => {
-    if (!flushPendingInitialOwnership()) return;
+    if (!flushPendingEdits()) return;
     setInitialOwnerPick(null);
     setSelectedOutsideOwnerId("");
     if (!cloudMode) {
@@ -2923,6 +2983,7 @@ export function App({
   };
 
   const signOutSafely = async () => {
+    if (!flushPendingEdits()) return;
     if (!cloudMode) {
       await onSignOut();
       return;
@@ -3009,6 +3070,7 @@ export function App({
       { id: "tax", label: "Tax Calculation", icon: Calculator },
     ];
     const showPropertySection = (sectionId) => {
+      if (!flushPendingEdits()) return;
       setPropertyWorkspaceSection(sectionId);
       window.requestAnimationFrame(() => {
         document
@@ -3030,10 +3092,11 @@ export function App({
               type="button"
               className="property-tree-button property-back-button"
               onClick={() => {
-                if (!flushPendingInitialOwnership()) return;
+                if (!flushPendingEdits()) return;
                 setSelectedOutsideOwnerId("");
                 setInitialOwnerPick(null);
-                closePersonCard();
+                setSelectedPersonId("");
+                setDashboardOpen(false);
                 setWorkspaceView("tree");
               }}
             >
@@ -3079,7 +3142,7 @@ export function App({
                 value={activeProperty.id}
                 onChange={(event) => {
                   if (
-                    !flushPendingInitialOwnership(
+                    !flushPendingEdits(
                       "Finish or correct the pending initial-ownership share before switching property.",
                     )
                   )
@@ -3113,16 +3176,31 @@ export function App({
             selectedOutsideOwnerId={selectedOutsideOwnerId}
             onSelectOutsideOwner={selectOutsideOwner}
             onSelectPerson={(personId) => {
-              if (!flushPendingInitialOwnership()) return;
+              if (!selectPerson(personId)) return;
               setSelectedOutsideOwnerId("");
               setWorkspaceView("tree");
-              selectPerson(personId);
             }}
             onPickInitialOwner={(ownerId) => {
+              if (!flushPendingEdits()) return;
               beginInitialOwnerTreePick(ownerId);
               setWorkspaceView("tree");
             }}
             onRegisterInitialOwnershipFlush={registerInitialOwnershipFlush}
+            onRegisterPendingEditFlush={registerPendingEditController}
+            onPropertyDetailsChange={(propertyId, propertyPatch) =>
+              updatePropertyWorkspace((base) => ({
+                properties: base.properties.map((property) =>
+                  property.id === propertyId ? { ...property, ...propertyPatch } : property,
+                ),
+              }))
+            }
+            onPropertyOwnersChange={(propertyId, owners) =>
+              updatePropertyWorkspace((base) => ({
+                properties: base.properties.map((property) =>
+                  property.id === propertyId ? { ...property, owners } : property,
+                ),
+              }))
+            }
             taxReadinessGuideSummary={taxReadinessGuideSummary}
             onStartTaxReadinessGuide={startTaxReadinessGuide}
             onChange={(patch) => updatePrimaryPropertyWorkspace(patch, activeProperty.id)}
@@ -3200,6 +3278,7 @@ export function App({
                 }
                 onSelectPerson={selectPerson}
                 onSelectOutsideOwner={selectOutsideOwner}
+                onRegisterPendingEditFlush={registerPendingEditController}
                 onDeletePerson={removePerson}
                 onChange={updatePeople}
                 onRecordDonation={recordDonation}
@@ -3292,10 +3371,10 @@ export function App({
                         aria-label="Property & Tax"
                         title="Open Property and Tax workspace"
                         onClick={() => {
+                          if (!closePersonCard()) return;
                           setPropertyWorkspaceSection("setup");
                           setSelectedOutsideOwnerId("");
                           setInitialOwnerPick(null);
-                          closePersonCard();
                           setWorkspaceView("property");
                         }}
                       >

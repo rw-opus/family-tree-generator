@@ -2,7 +2,10 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Properties } from "../../src/components/Properties.jsx";
+import {
+  PROPERTY_DETAILS_DRAFT_COMMIT_DELAY_MS,
+  Properties,
+} from "../../src/components/Properties.jsx";
 import { TaxCalculationPanel } from "../../src/components/TaxCalculationPanel.jsx";
 import {
   intestacyAllocationSignature,
@@ -45,6 +48,7 @@ describe("unified Property & Tax workspace", () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    vi.useRealTimers();
     container.remove();
   });
 
@@ -367,10 +371,95 @@ describe("unified Property & Tax workspace", () => {
     act(() => {
       setValue.call(saleValue, "325000");
       saleValue.dispatchEvent(new Event("input", { bubbles: true }));
+      saleValue.focus();
+      saleValue.blur();
     });
 
     expect(onChange).toHaveBeenCalledWith({
       properties: [{ ...properties[0], saleValue: "325000" }],
+    });
+  });
+
+  it("keeps rapid property typing local and commits once after idle", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    let controller;
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          onChange={onChange}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+
+    const address = container.querySelector('input[placeholder="Full address of the property"]');
+    ["2", "20", "20A", "20A High", "20A High Street"].forEach((value) => {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+          address,
+          value,
+        );
+        address.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+
+    expect(address.value).toBe("20A High Street");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(controller.hasPending()).toBe(true);
+    act(() => vi.advanceTimersByTime(PROPERTY_DETAILS_DRAFT_COMMIT_DELAY_MS));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({
+      properties: [{ ...properties[0], address: "20A High Street" }],
+    });
+    expect(controller.hasPending()).toBe(false);
+  });
+
+  it("retains a pending property draft when durable commit is rejected", () => {
+    let rejectCommit = true;
+    const onChange = vi.fn(() => (rejectCommit ? null : {}));
+    let controller;
+    act(() =>
+      root.render(
+        <Properties
+          properties={properties}
+          people={people}
+          outsideParties={[]}
+          singleProperty
+          onChange={onChange}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+
+    const address = container.querySelector('input[placeholder="Full address of the property"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        address,
+        "20A High Street",
+      );
+      address.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(controller.flush()).toBe(false);
+    expect(controller.hasPending()).toBe(true);
+    expect(address.value).toBe("20A High Street");
+
+    rejectCommit = false;
+    expect(controller.flush()).toBe(true);
+    expect(controller.hasPending()).toBe(false);
+    expect(onChange).toHaveBeenLastCalledWith({
+      properties: [{ ...properties[0], address: "20A High Street" }],
     });
   });
 

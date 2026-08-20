@@ -127,6 +127,331 @@ const blankDonationDraft = () => ({
   error: "",
 });
 
+export const IDENTITY_DRAFT_COMMIT_DELAY_MS = 700;
+
+const identityDraftFromPerson = (person = {}) => {
+  const surname = personSurname(person);
+  return {
+    personId: person.id || "",
+    givenNames: personGivenNames(person),
+    surname,
+    surnameAtBirth:
+      person.surnameAtBirthReviewRequired === true
+        ? person.surnameAtBirth || ""
+        : person.surnameAtBirth || (person.sex === "Male" ? surname : ""),
+  };
+};
+
+const identityDraftEquals = (left, right) =>
+  left.personId === right.personId &&
+  left.givenNames === right.givenNames &&
+  left.surname === right.surname &&
+  left.surnameAtBirth === right.surnameAtBirth;
+
+const identityPatchMatchesPerson = (patch, person) =>
+  Object.entries(patch || {}).every(([field, value]) => person?.[field] === value);
+
+function identityPatchFromDraft(person, draft, dirtyFields) {
+  const patch = {};
+  const givenNames = dirtyFields.has("givenNames") ? draft.givenNames : personGivenNames(person);
+  const surname = dirtyFields.has("surname") ? draft.surname : personSurname(person);
+
+  if (dirtyFields.has("givenNames")) patch.givenNames = givenNames;
+  if (dirtyFields.has("surname")) patch.surname = surname;
+  if (dirtyFields.has("givenNames") || dirtyFields.has("surname")) {
+    patch.fullName = composeFullName(givenNames, surname);
+  }
+
+  if (dirtyFields.has("surnameAtBirth")) {
+    const needsBirthSurname = person.gedcomUnmarriedParents === true || person.sex === "Female";
+    patch.surnameAtBirth = draft.surnameAtBirth;
+    patch.surnameAtBirthReviewRequired = needsBirthSurname && !draft.surnameAtBirth.trim();
+  } else if (
+    dirtyFields.has("surname") &&
+    person.sex === "Male" &&
+    !person.surnameAtBirthReviewRequired &&
+    (!person.surnameAtBirth || person.surnameAtBirth === personSurname(person))
+  ) {
+    patch.surnameAtBirth = surname;
+  }
+
+  return patch;
+}
+
+function BufferedIdentityFields({
+  person,
+  disabled,
+  legalWorkspaceEnabled,
+  onCommit,
+  onRegisterPendingEditFlush,
+}) {
+  const initialDraft = identityDraftFromPerson(person);
+  const [draft, setDraft] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
+  const baseDraftRef = useRef(initialDraft);
+  const draftPersonRef = useRef(person);
+  const latestPersonRef = useRef(person);
+  const dirtyFieldsRef = useRef(new Set());
+  const committedIdentityPatchRef = useRef(null);
+  const commitTimerRef = useRef(null);
+  const onCommitRef = useRef(onCommit);
+  const commitRef = useRef(() => true);
+  const overlayPeopleRef = useRef((sourcePeople) => sourcePeople);
+  const acknowledgeOverlayRef = useRef(() => true);
+
+  latestPersonRef.current = person;
+  onCommitRef.current = onCommit;
+
+  const clearCommitTimer = useCallback(() => {
+    if (commitTimerRef.current === null) return;
+    globalThis.clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = null;
+  }, []);
+
+  const currentIdentityOverlay = () => {
+    const currentDraft = draftRef.current;
+    const latestPerson = latestPersonRef.current;
+    const draftPerson =
+      latestPerson?.id === currentDraft.personId ? latestPerson : draftPersonRef.current;
+    if (!draftPerson?.id) return null;
+    const committed = committedIdentityPatchRef.current;
+    const committedPatch =
+      committed?.personId === currentDraft.personId ? committed.patch || {} : {};
+    return {
+      personId: currentDraft.personId,
+      patch: {
+        ...committedPatch,
+        ...identityPatchFromDraft(draftPerson, currentDraft, new Set(dirtyFieldsRef.current)),
+      },
+    };
+  };
+
+  acknowledgeOverlayRef.current = (commitResult = null) => {
+    clearCommitTimer();
+    const overlay = currentIdentityOverlay();
+    if (overlay && Object.keys(overlay.patch).length) {
+      const committedPerson = Array.isArray(commitResult?.people)
+        ? commitResult.people.find((candidate) => candidate.id === overlay.personId)
+        : null;
+      const committedPatch = committedPerson
+        ? Object.fromEntries(
+            Object.keys(overlay.patch).map((field) => [field, committedPerson[field]]),
+          )
+        : overlay.patch;
+      committedIdentityPatchRef.current = {
+        ...overlay,
+        patch: committedPatch,
+      };
+    }
+    dirtyFieldsRef.current.clear();
+    baseDraftRef.current = draftRef.current;
+    return true;
+  };
+
+  overlayPeopleRef.current = (sourcePeople = []) => {
+    const overlay = currentIdentityOverlay();
+    if (!overlay || !Object.keys(overlay.patch).length) return sourcePeople;
+    return sourcePeople.map((candidate) =>
+      candidate.id === overlay.personId ? { ...candidate, ...overlay.patch } : candidate,
+    );
+  };
+
+  commitRef.current = (additionalPatch = null) => {
+    clearCommitTimer();
+    const dirtyFields = new Set(dirtyFieldsRef.current);
+    const hasAdditionalPatch =
+      additionalPatch && typeof additionalPatch === "object" && Object.keys(additionalPatch).length;
+    if (!dirtyFields.size && !hasAdditionalPatch) return true;
+
+    const overlay = currentIdentityOverlay();
+    if (!overlay?.personId) return false;
+
+    let committed;
+    try {
+      committed = onCommitRef.current?.(overlay.personId, {
+        ...overlay.patch,
+        ...(hasAdditionalPatch ? additionalPatch : {}),
+      });
+    } catch {
+      return false;
+    }
+    if (committed === false || committed === null) return false;
+
+    acknowledgeOverlayRef.current(committed);
+    return true;
+  };
+
+  const commitDraft = useCallback(() => commitRef.current(), []);
+  const commitDraftWithPatch = useCallback((patch) => commitRef.current(patch), []);
+  const hasPendingDraft = useCallback(() => dirtyFieldsRef.current.size > 0, []);
+  const hasIdentityOverlay = useCallback(
+    () =>
+      dirtyFieldsRef.current.size > 0 ||
+      Boolean(Object.keys(committedIdentityPatchRef.current?.patch || {}).length),
+    [],
+  );
+  const overlayPeople = useCallback((sourcePeople) => overlayPeopleRef.current(sourcePeople), []);
+  const acknowledgeOverlay = useCallback(
+    (commitResult) => acknowledgeOverlayRef.current(commitResult),
+    [],
+  );
+
+  useEffect(() => {
+    if (!onRegisterPendingEditFlush) return undefined;
+    return onRegisterPendingEditFlush({
+      flush: commitDraft,
+      flushWithPatch: commitDraftWithPatch,
+      hasPending: hasPendingDraft,
+      hasIdentityOverlay,
+      overlayPeople,
+      acknowledgeOverlay,
+    });
+  }, [
+    acknowledgeOverlay,
+    commitDraft,
+    commitDraftWithPatch,
+    hasIdentityOverlay,
+    hasPendingDraft,
+    onRegisterPendingEditFlush,
+    overlayPeople,
+  ]);
+
+  useEffect(() => {
+    const nextDraft = identityDraftFromPerson(person);
+    if (draftRef.current.personId !== nextDraft.personId) {
+      commitDraft();
+      dirtyFieldsRef.current.clear();
+      committedIdentityPatchRef.current = null;
+      draftRef.current = nextDraft;
+      baseDraftRef.current = nextDraft;
+      draftPersonRef.current = person;
+      setDraft(nextDraft);
+      return;
+    }
+    const committed = committedIdentityPatchRef.current;
+    if (
+      committed?.personId === nextDraft.personId &&
+      identityPatchMatchesPerson(committed.patch, person)
+    ) {
+      committedIdentityPatchRef.current = null;
+    }
+    if (
+      dirtyFieldsRef.current.size === 0 &&
+      !committedIdentityPatchRef.current &&
+      !identityDraftEquals(draftRef.current, nextDraft)
+    ) {
+      draftRef.current = nextDraft;
+      baseDraftRef.current = nextDraft;
+      draftPersonRef.current = person;
+      setDraft(nextDraft);
+    }
+  }, [
+    commitDraft,
+    person,
+    person.givenNames,
+    person.id,
+    person.sex,
+    person.surname,
+    person.surnameAtBirth,
+    person.surnameAtBirthReviewRequired,
+  ]);
+
+  useEffect(() => {
+    const warnAboutPendingIdentity = (event) => {
+      if (!dirtyFieldsRef.current.size) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnAboutPendingIdentity);
+    return () => {
+      window.removeEventListener("beforeunload", warnAboutPendingIdentity);
+      // The App flushes registered editors before disposing its save queue.
+      // This remains as a final safety net for standalone/programmatic unmounts.
+      commitRef.current();
+      clearCommitTimer();
+    };
+  }, [clearCommitTimer]);
+
+  const updateDraft = (field, value) => {
+    const nextDraft = { ...draftRef.current, [field]: value };
+    const dirtyFields = dirtyFieldsRef.current;
+    if (value === baseDraftRef.current[field]) dirtyFields.delete(field);
+    else dirtyFields.add(field);
+
+    if (
+      field === "surname" &&
+      !dirtyFields.has("surnameAtBirth") &&
+      person.sex === "Male" &&
+      !person.surnameAtBirthReviewRequired &&
+      (!person.surnameAtBirth || person.surnameAtBirth === personSurname(person))
+    ) {
+      nextDraft.surnameAtBirth = value;
+    }
+
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    clearCommitTimer();
+    if (dirtyFields.size) {
+      commitTimerRef.current = globalThis.setTimeout(() => {
+        commitTimerRef.current = null;
+        commitRef.current();
+      }, IDENTITY_DRAFT_COMMIT_DELAY_MS);
+    }
+  };
+
+  return (
+    <fieldset
+      className="person-edit-fields"
+      disabled={disabled}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) commitDraft();
+      }}
+    >
+      <div className="inspector-fields">
+        <label>
+          <span>Name</span>
+          <input
+            data-person-field="given-names"
+            autoFocus={!draft.givenNames}
+            value={draft.givenNames}
+            onChange={(event) => updateDraft("givenNames", event.target.value)}
+            placeholder="Given name or names"
+          />
+        </label>
+        <label>
+          <span>Surname</span>
+          <input
+            data-person-field="surname"
+            value={draft.surname}
+            onChange={(event) => updateDraft("surname", event.target.value)}
+            placeholder="Current surname"
+          />
+        </label>
+        <label
+          className={
+            legalWorkspaceEnabled && person.surnameAtBirthReviewRequired
+              ? "surname-at-birth-review-field"
+              : undefined
+          }
+        >
+          <span>Surname at birth</span>
+          <input
+            data-person-field="surname-at-birth"
+            value={draft.surnameAtBirth}
+            onChange={(event) => updateDraft("surnameAtBirth", event.target.value)}
+            placeholder={person.sex === "Male" ? "Same as current surname" : ""}
+          />
+          {legalWorkspaceEnabled && person.surnameAtBirthReviewRequired && (
+            <small className="surname-at-birth-review-note">
+              The imported parents are recorded as unmarried. Confirm this surname.
+            </small>
+          )}
+        </label>
+      </div>
+    </fieldset>
+  );
+}
+
 const transferDraftFromRecord = (transfer = {}, amountFraction = null) => ({
   ...blankDonationDraft(),
   kind: transfer.kind === "sale" ? "sale" : "donation",
@@ -211,6 +536,7 @@ export function PersonInspector({
   onSelectPerson,
   onSelectOutsideOwner,
   onDeletePerson,
+  onRegisterPendingEditFlush,
 }) {
   const [spouseChooserOpen, setSpouseChooserOpen] = useState(false);
   const [partnerRelationshipType, setPartnerRelationshipType] = useState(
@@ -227,6 +553,20 @@ export function PersonInspector({
   const [donationDraft, setDonationDraft] = useState(blankDonationDraft);
   const [editingTransferId, setEditingTransferId] = useState("");
   const willPercentageEditsRef = useRef(new Set());
+  const identityDraftControllerRef = useRef(null);
+  const registerIdentityDraftController = useCallback(
+    (controller) => {
+      identityDraftControllerRef.current = controller;
+      const unregister = onRegisterPendingEditFlush?.(controller);
+      return () => {
+        if (identityDraftControllerRef.current === controller) {
+          identityDraftControllerRef.current = null;
+        }
+        unregister?.();
+      };
+    },
+    [onRegisterPendingEditFlush],
+  );
   const selectedPerson =
     people.find((person) => person.id === selectedPersonId) ||
     (familyPersonIds === null ? people[0] : undefined);
@@ -342,8 +682,11 @@ export function PersonInspector({
 
   const createMissingIntestateParents = () => {
     if (!selectedPerson || !missingIntestateParentRoles.length) return;
-    const stampedPeople = stampUnsignedIntestacyContexts();
-    const subjectName = personGivenNames(selectedPerson).trim() || displayName(selectedPerson);
+    const sourcePeople = peopleWithIdentityOverlay(people);
+    const sourceSelected =
+      sourcePeople.find((person) => person.id === selectedPerson.id) || selectedPerson;
+    const stampedPeople = stampUnsignedIntestacyContexts(sourcePeople);
+    const subjectName = personGivenNames(sourceSelected).trim() || displayName(sourceSelected);
     const selectedPatch = {};
     const createdParents = missingIntestateParentRoles.map((role) => {
       const relationship = role === "mother" ? "Mother" : "Father";
@@ -357,21 +700,21 @@ export function PersonInspector({
         isPotentialIntestateParent: true,
         potentialParentAddedExplicitly: true,
         survivalStatusRequired: true,
-        survivalStatusReferencePersonId: selectedPerson.id,
+        survivalStatusReferencePersonId: sourceSelected.id,
       });
       selectedPatch[`${role}Id`] = parent.id;
       selectedPatch[`${role}ExplicitlyUnassigned`] = false;
       return parent;
     });
-    onChange([
+    commitPeopleChange([
       ...stampedPeople.map((person) =>
-        person.id === selectedPerson.id ? { ...person, ...selectedPatch } : person,
+        person.id === sourceSelected.id ? { ...person, ...selectedPatch } : person,
       ),
       ...createdParents,
     ]);
   };
 
-  const stampUnsignedIntestacyContexts = (sourcePeople = people) =>
+  const stampUnsignedIntestacyContexts = (sourcePeople = peopleWithIdentityOverlay(people)) =>
     legalWorkspaceEnabled
       ? sourcePeople.map((person) => {
           if (
@@ -396,7 +739,7 @@ export function PersonInspector({
     // family context, the old manual override becomes visibly stale instead of
     // silently defeating the recalculated statutory shares.
     const stampedPeople = stampUnsignedIntestacyContexts();
-    onChange(
+    return onChange(
       stampedPeople.map((person) => {
         if (person.id !== personId) return person;
         const updated = { ...person, ...patch };
@@ -407,18 +750,39 @@ export function PersonInspector({
 
   const updateSelected = (patch) => {
     if (!selectedPerson) return;
-    updatePerson(selectedPerson.id, patch);
+    const identityController = identityDraftControllerRef.current;
+    if (identityController?.hasIdentityOverlay?.() && identityController.flushWithPatch) {
+      return identityController.flushWithPatch(patch);
+    }
+    return updatePerson(selectedPerson.id, patch);
   };
+
+  const peopleWithIdentityOverlay = (nextPeople) => {
+    const identityController = identityDraftControllerRef.current;
+    return identityController?.overlayPeople
+      ? identityController.overlayPeople(nextPeople)
+      : nextPeople;
+  };
+
+  const acknowledgeIdentityOverlay = (committed) => {
+    if (committed !== false && committed !== null) {
+      identityDraftControllerRef.current?.acknowledgeOverlay?.(committed);
+    }
+    return committed;
+  };
+
+  const commitPeopleChange = (nextPeople) =>
+    acknowledgeIdentityOverlay(onChange(peopleWithIdentityOverlay(nextPeople)));
 
   const acceptParentSuggestion = (suggestion) => {
     const suggestedPeople = applyParentSuggestions(stampUnsignedIntestacyContexts(), [suggestion]);
     if (suggestion.field !== "fatherId") {
-      onChange(suggestedPeople);
+      commitPeopleChange(suggestedPeople);
       return;
     }
 
     const father = suggestedPeople.find((person) => person.id === suggestion.suggestedPersonId);
-    onChange(
+    commitPeopleChange(
       suggestedPeople.map((person) =>
         person.id === suggestion.personId
           ? { ...person, ...fatherSurnameDefaultPatch(person, father) }
@@ -430,57 +794,26 @@ export function PersonInspector({
   const dismissParentSuggestion = (suggestion) => {
     const flag =
       suggestion.field === "motherId" ? "motherExplicitlyUnassigned" : "fatherExplicitlyUnassigned";
-    onChange(
+    commitPeopleChange(
       stampUnsignedIntestacyContexts().map((person) =>
         person.id === suggestion.personId ? { ...person, [flag]: true } : person,
       ),
     );
   };
 
-  const updateGivenNames = (givenNames) => {
-    updateSelected({
-      givenNames,
-      fullName: composeFullName(givenNames, personSurname(selectedPerson)),
-    });
-  };
-
-  const updateSurname = (surname) => {
-    const previousSurname = personSurname(selectedPerson);
-    const patch = {
-      surname,
-      fullName: composeFullName(personGivenNames(selectedPerson), surname),
-    };
-    if (
-      selectedPerson.sex === "Male" &&
-      !selectedPerson.surnameAtBirthReviewRequired &&
-      (!selectedPerson.surnameAtBirth || selectedPerson.surnameAtBirth === previousSurname)
-    ) {
-      patch.surnameAtBirth = surname;
-    }
-    updateSelected(patch);
-  };
-
   const updateSex = (sex) => {
+    const identityPerson = peopleWithIdentityOverlay([selectedPerson])[0] || selectedPerson;
     const patch = { sex };
-    if (sex === "Male" && !selectedPerson.surnameAtBirth) {
-      if (selectedPerson.gedcomUnmarriedParents !== true) {
-        patch.surnameAtBirth = personSurname(selectedPerson);
+    if (sex === "Male" && !identityPerson.surnameAtBirth) {
+      if (identityPerson.gedcomUnmarriedParents !== true) {
+        patch.surnameAtBirth = personSurname(identityPerson);
         patch.surnameAtBirthReviewRequired = false;
       }
     }
-    if (sex === "Female" && !String(selectedPerson.surnameAtBirth || "").trim()) {
+    if (sex === "Female" && !String(identityPerson.surnameAtBirth || "").trim()) {
       patch.surnameAtBirthReviewRequired = true;
     }
     updateSelected(patch);
-  };
-
-  const updateSurnameAtBirth = (surnameAtBirth) => {
-    const needsBirthSurname =
-      selectedPerson.gedcomUnmarriedParents === true || selectedPerson.sex === "Female";
-    updateSelected({
-      surnameAtBirth,
-      surnameAtBirthReviewRequired: needsBirthSurname && !surnameAtBirth.trim(),
-    });
   };
 
   const changeOwnershipDisplay = (mode) => {
@@ -715,12 +1048,14 @@ export function PersonInspector({
       : genealogicalPatch;
 
     if (onDeceasedStatusChange) {
-      onDeceasedStatusChange({
-        checked,
-        personId: selectedPerson.id,
-        people: stampUnsignedIntestacyContexts(),
-        patch,
-      });
+      acknowledgeIdentityOverlay(
+        onDeceasedStatusChange({
+          checked,
+          personId: selectedPerson.id,
+          people: peopleWithIdentityOverlay(stampUnsignedIntestacyContexts()),
+          patch,
+        }),
+      );
       return;
     }
     updateSelected(patch);
@@ -756,16 +1091,24 @@ export function PersonInspector({
   };
 
   const addRelative = (kind, secondParentId = "") => {
+    const sourcePeople = peopleWithIdentityOverlay(people);
+    const sourceSelected =
+      sourcePeople.find((person) => person.id === selectedPerson?.id) || selectedPerson;
+    const sourceIdentityIssues = sourceSelected
+      ? personIdentityIssues(sourceSelected).filter(
+          (issue) => legalWorkspaceEnabled || issue !== "Surname at birth",
+        )
+      : [];
     if (
-      !selectedPerson ||
-      selectedPersonIdentityIssues.length ||
+      !sourceSelected ||
+      sourceIdentityIssues.length ||
       (["child", "marriage", "partnership"].includes(kind) &&
-        !["Male", "Female"].includes(selectedPerson.sex))
+        !["Male", "Female"].includes(sourceSelected.sex))
     ) {
       return;
     }
-    const stampedPeople = stampUnsignedIntestacyContexts();
-    const counts = personRelationshipCounts(people, selectedPerson);
+    const stampedPeople = stampUnsignedIntestacyContexts(sourcePeople);
+    const counts = personRelationshipCounts(sourcePeople, sourceSelected);
     if ((kind === "father" && counts.father) || (kind === "mother" && counts.mother)) {
       return;
     }
@@ -792,10 +1135,10 @@ export function PersonInspector({
           ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
           : PARTNER_RELATIONSHIP_TYPES.MARRIAGE;
       Object.assign(relative, {
-        sex: String(selectedPerson.sex).toLowerCase() === "male" ? "Female" : "Male",
+        sex: String(sourceSelected.sex).toLowerCase() === "male" ? "Female" : "Male",
         designations: [
           relationshipType === PARTNER_RELATIONSHIP_TYPES.MARRIAGE
-            ? hasDesignation(selectedPerson, "Deceased")
+            ? hasDesignation(sourceSelected, "Deceased")
               ? "Surviving Spouse"
               : "Spouse"
             : "Partner",
@@ -804,42 +1147,42 @@ export function PersonInspector({
     }
     if (kind === "child") {
       Object.assign(relative, { designations: ["Child"] });
-      const secondParent = people.find((person) => person.id === secondParentId);
+      const secondParent = sourcePeople.find((person) => person.id === secondParentId);
       if (
-        selectedPerson.sex === "Female" ||
-        (selectedPerson.sex !== "Male" && secondParent?.sex === "Male")
+        sourceSelected.sex === "Female" ||
+        (sourceSelected.sex !== "Male" && secondParent?.sex === "Male")
       ) {
-        relative.motherId = selectedPerson.id;
+        relative.motherId = sourceSelected.id;
         relative.fatherId = secondParent?.id || "";
       } else {
-        relative.fatherId = selectedPerson.id;
+        relative.fatherId = sourceSelected.id;
         relative.motherId = secondParent?.id || "";
       }
     }
     if (kind === "sibling") {
       Object.assign(relative, {
         designations: ["Sibling"],
-        fatherId: selectedPerson.fatherId || "",
-        motherId: selectedPerson.motherId || "",
-        siblingIds: [selectedPerson.id],
+        fatherId: sourceSelected.fatherId || "",
+        motherId: sourceSelected.motherId || "",
+        siblingIds: [sourceSelected.id],
       });
       selectedPatch = {
-        siblingIds: [...new Set([...(selectedPerson.siblingIds || []), relative.id])],
+        siblingIds: [...new Set([...(sourceSelected.siblingIds || []), relative.id])],
       };
     }
 
     if ((kind === "child" || kind === "sibling") && relative.fatherId) {
-      const father = people.find((person) => person.id === relative.fatherId);
+      const father = sourcePeople.find((person) => person.id === relative.fatherId);
       Object.assign(relative, fatherSurnameDefaultPatch(relative, father));
     }
 
     const updatedPeople = stampedPeople.map((person) =>
-      person.id === selectedPerson.id ? { ...person, ...selectedPatch } : person,
+      person.id === sourceSelected.id ? { ...person, ...selectedPatch } : person,
     );
     const nextPeople = [...updatedPeople, relative];
     if (kind === "marriage" || kind === "partnership") {
-      onChange(
-        linkPartnerRelationship(nextPeople, selectedPerson.id, relative.id, {
+      commitPeopleChange(
+        linkPartnerRelationship(nextPeople, sourceSelected.id, relative.id, {
           type:
             kind === "partnership"
               ? PARTNER_RELATIONSHIP_TYPES.PARTNERSHIP
@@ -848,7 +1191,7 @@ export function PersonInspector({
       );
       return;
     }
-    onChange(nextPeople);
+    commitPeopleChange(nextPeople);
   };
 
   const activeProperty = properties[0] || null;
@@ -1193,7 +1536,7 @@ export function PersonInspector({
     }
 
     let acquirer = null;
-    let nextPeople = people;
+    let nextPeople = peopleWithIdentityOverlay(people);
     let nextOutsideParties = outsideParties;
     if (donationDraft.doneeMode === "new") {
       const name = donationDraft.doneeName.trim();
@@ -1234,7 +1577,7 @@ export function PersonInspector({
           interVivosStatusSession,
           { role: "transfer-acquirer" },
         );
-        nextPeople = [...people, acquirer];
+        nextPeople = [...nextPeople, acquirer];
       }
     } else {
       if (!donationDraft.doneeId) {
@@ -1335,8 +1678,10 @@ export function PersonInspector({
       transferId: transfer.id,
       transfer,
     };
-    if (originalTransfer) onUpdateInterVivosTransfer(payload);
-    else onRecordDonation(payload);
+    const committed = originalTransfer
+      ? onUpdateInterVivosTransfer(payload)
+      : onRecordDonation(payload);
+    acknowledgeIdentityOverlay(committed);
     closeTransferEditor();
   };
 
@@ -1370,7 +1715,7 @@ export function PersonInspector({
     const existingPerson = people.find((person) => person.id === existingSpouseId);
     if (!existingPerson) return;
     const stampedPeople = stampUnsignedIntestacyContexts();
-    onChange(
+    commitPeopleChange(
       linkPartnerRelationship(stampedPeople, selectedPerson.id, existingPerson.id, {
         type: partnerRelationshipType,
       }),
@@ -1398,11 +1743,13 @@ export function PersonInspector({
           : `Are you sure you want to delete ${displayName(selectedPerson)} from the family tree? This cannot be undone.`,
     );
     if (!confirmed) return;
+    const identityController = identityDraftControllerRef.current;
+    if (identityController?.flush?.() === false || identityController?.hasPending?.()) return;
     if (onDeletePerson) {
       onDeletePerson(selectedPerson.id);
       return;
     }
-    onChange(
+    commitPeopleChange(
       stampUnsignedIntestacyContexts()
         .filter((person) => person.id !== selectedPerson.id)
         .map((person) => ({
@@ -1423,14 +1770,14 @@ export function PersonInspector({
       return parentIds.has(selectedPerson.id) && parentIds.has(partnerId);
     });
     if (hasSharedChildren) return;
-    onChange(
+    commitPeopleChange(
       removePartnerRelationship(stampUnsignedIntestacyContexts(), selectedPerson.id, partnerId),
     );
   };
 
   const updatePartnerLink = (partnerId, patch) => {
     if (!selectedPerson || !partnerId) return;
-    onChange(
+    commitPeopleChange(
       upsertPartnerRelationship(
         stampUnsignedIntestacyContexts(),
         selectedPerson.id,
@@ -1442,7 +1789,7 @@ export function PersonInspector({
 
   const removeSiblingLink = (siblingId) => {
     if (!selectedPerson || !siblingId) return;
-    onChange(
+    commitPeopleChange(
       people.map((person) => {
         if (person.id === selectedPerson.id) {
           return {
@@ -1692,13 +2039,6 @@ export function PersonInspector({
   const requiresCausaMortisDetails =
     hasUnknownCausaMortisDeathDate ||
     (Boolean(effectiveSelectedDeathDate) && !isPreCausaMortisCutoff);
-  const displayedSurnameAtBirth =
-    selectedPerson.surnameAtBirthReviewRequired === true
-      ? selectedPerson.surnameAtBirth || ""
-      : selectedPerson.surnameAtBirth ||
-        (selectedPerson.sex === "Male" ? personSurname(selectedPerson) : "");
-  const displayedGivenNames = personGivenNames(selectedPerson);
-  const displayedSurname = personSurname(selectedPerson);
   const recordedPropertySaleValue = recordedNonNegativeMoney(properties[0]?.saleValue);
   const estateShareAtDeathFraction = fullyTransferredInterVivos
     ? ZERO_FRACTION
@@ -2692,49 +3032,13 @@ export function PersonInspector({
 
       <section className="inspector-section" data-person-section="identity">
         <p className="eyebrow">Personal details</p>
-        <fieldset className="person-edit-fields" disabled={!isEditing}>
-          <div className="inspector-fields">
-            <label>
-              <span>Name</span>
-              <input
-                data-person-field="given-names"
-                autoFocus={!displayedGivenNames}
-                value={displayedGivenNames}
-                onChange={(event) => updateGivenNames(event.target.value)}
-                placeholder="Given name or names"
-              />
-            </label>
-            <label>
-              <span>Surname</span>
-              <input
-                data-person-field="surname"
-                value={displayedSurname}
-                onChange={(event) => updateSurname(event.target.value)}
-                placeholder="Current surname"
-              />
-            </label>
-            <label
-              className={
-                legalWorkspaceEnabled && selectedPerson.surnameAtBirthReviewRequired
-                  ? "surname-at-birth-review-field"
-                  : undefined
-              }
-            >
-              <span>Surname at birth</span>
-              <input
-                data-person-field="surname-at-birth"
-                value={displayedSurnameAtBirth}
-                onChange={(event) => updateSurnameAtBirth(event.target.value)}
-                placeholder={selectedPerson.sex === "Male" ? "Same as current surname" : ""}
-              />
-              {legalWorkspaceEnabled && selectedPerson.surnameAtBirthReviewRequired && (
-                <small className="surname-at-birth-review-note">
-                  The imported parents are recorded as unmarried. Confirm this surname.
-                </small>
-              )}
-            </label>
-          </div>
-        </fieldset>
+        <BufferedIdentityFields
+          person={selectedPerson}
+          disabled={!isEditing}
+          legalWorkspaceEnabled={legalWorkspaceEnabled}
+          onCommit={updatePerson}
+          onRegisterPendingEditFlush={registerIdentityDraftController}
+        />
         <div className="person-status-controls">
           <div className="person-status-control" role="group" aria-label="Sex">
             <span>Sex</span>
@@ -3470,7 +3774,11 @@ export function PersonInspector({
                 type="button"
                 className="person-edit-button active"
                 data-person-action="done-editing"
-                onClick={() => setIsEditing(false)}
+                onClick={() => {
+                  const controller = identityDraftControllerRef.current;
+                  if (controller?.flush?.() === false || controller?.hasPending?.()) return;
+                  setIsEditing(false);
+                }}
               >
                 <Check size={15} aria-hidden="true" />
                 Done
