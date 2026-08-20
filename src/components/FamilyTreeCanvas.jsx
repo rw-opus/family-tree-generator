@@ -200,27 +200,45 @@ export function FamilyTreeCanvas({
     () => (legalWorkspaceEnabled ? requiredSpouseDeathDatePersonIds(cleanPeople) : new Set()),
     [cleanPeople, legalWorkspaceEnabled],
   );
+  /**
+   * Each person's legal card state, derived once per change to the family.
+   *
+   * Deriving it reads the whole people list (partner links, will chronology),
+   * so doing it per card makes a render quadratic in the size of the tree --
+   * and it used to be done twice over, once here for the legend and again
+   * inside every card. The cards read their entry from this map instead.
+   *
+   * Keyed on the default (empty) variant. The designation layout renders its
+   * focal person with variant "deceased", and that card derives its own state.
+   */
+  const cardStateById = useMemo(() => {
+    const states = new Map();
+    cleanPeople.forEach((person) => {
+      states.set(
+        person.id,
+        familyPersonCardState({
+          person,
+          people: cleanPeople,
+          legalWorkspaceEnabled,
+          deathDateMissing: requiredSpouseDeathDateIds.has(person.id),
+          historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
+          causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
+        }),
+      );
+    });
+    return states;
+  }, [
+    causaMortisCoverageByPerson,
+    cleanPeople,
+    historicalLawWarningsByPerson,
+    legalWorkspaceEnabled,
+    requiredSpouseDeathDateIds,
+  ]);
+
   const showActionRequiredKey = useMemo(
     () =>
-      legalWorkspaceEnabled &&
-      cleanPeople.some(
-        (person) =>
-          familyPersonCardState({
-            person,
-            people: cleanPeople,
-            legalWorkspaceEnabled,
-            deathDateMissing: requiredSpouseDeathDateIds.has(person.id),
-            historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
-            causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
-          }).redActionRequired,
-      ),
-    [
-      causaMortisCoverageByPerson,
-      cleanPeople,
-      historicalLawWarningsByPerson,
-      legalWorkspaceEnabled,
-      requiredSpouseDeathDateIds,
-    ],
+      legalWorkspaceEnabled && [...cardStateById.values()].some((state) => state.redActionRequired),
+    [cardStateById, legalWorkspaceEnabled],
   );
 
   const centerPerson = useCallback(
@@ -576,6 +594,9 @@ export function FamilyTreeCanvas({
         person={person}
         legalWorkspaceEnabled={legalWorkspaceEnabled}
         variant={typeof variant === "string" ? variant : ""}
+        // Only the default variant is precomputed above; anything else derives
+        // its own state inside the card.
+        cardState={variant ? undefined : cardStateById.get(person.id)}
         people={cleanPeople}
         deathDateMissing={requiredSpouseDeathDateIds.has(person.id)}
         cardName={cardName}
@@ -600,6 +621,7 @@ export function FamilyTreeCanvas({
     ),
     [
       cardName,
+      cardStateById,
       causaMortisCoverageByPerson,
       cleanPeople,
       generationByPerson,

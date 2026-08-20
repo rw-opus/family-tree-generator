@@ -170,6 +170,10 @@ function FamilyPersonCardComponent({
   people,
   legalWorkspaceEnabled = true,
   deathDateMissing = false,
+  // Derived once for the whole family by the canvas. Deriving it here reads
+  // the entire people list, so a tree of cards doing it individually is
+  // quadratic work. Left optional: without it the card still derives its own.
+  cardState: providedCardState,
   cardName,
   ownershipByPerson,
   ownershipFractionsByPerson = {},
@@ -187,15 +191,17 @@ function FamilyPersonCardComponent({
   tabIndex = -1,
   onKeyDown,
 }) {
-  const cardState = familyPersonCardState({
-    person,
-    people,
-    variant,
-    legalWorkspaceEnabled,
-    deathDateMissing,
-    historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
-    causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
-  });
+  const cardState =
+    providedCardState ||
+    familyPersonCardState({
+      person,
+      people,
+      variant,
+      legalWorkspaceEnabled,
+      deathDateMissing,
+      historicalLawWarnings: historicalLawWarningsByPerson[person.id] || [],
+      causaMortisCoverage: causaMortisCoverageByPerson[person.id] || [],
+    });
   const {
     causaMortisActionRequired,
     historicalLawWarning,

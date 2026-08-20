@@ -24,6 +24,20 @@ vi.mock("../../src/components/familyTree/treePresentation.js", async (importOrig
   };
 });
 
+// familyPersonCardState() calls personWills() exactly once, so this counts how
+// many times that state is derived across the whole canvas.
+const cardStateDerivations = { count: 0 };
+vi.mock("../../src/domain/wills.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    personWills: (...args) => {
+      cardStateDerivations.count += 1;
+      return actual.personWills(...args);
+    },
+  };
+});
+
 const treeLayout = await import("../../src/components/familyTree/treeLayout.js");
 const { FamilyTreeCanvas } = await import("../../src/components/FamilyTreeCanvas.jsx");
 
@@ -37,6 +51,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   cardBodyRuns.count = 0;
+  cardStateDerivations.count = 0;
 });
 
 afterEach(() => {
@@ -140,6 +155,15 @@ describe("family tree canvas render cost", () => {
 
     // The card losing the selection and the card gaining it, and nothing else.
     expect(cardBodyRuns.count).toBe(2);
+  });
+
+  it("derives each person's card state once per family, not once per card", () => {
+    const people = family();
+    act(() => root.render(<FamilyTreeCanvas {...canvasProps(people)} />));
+
+    // Deriving this reads the whole people list. It used to be done twice per
+    // person -- once for the action-required legend and again inside the card.
+    expect(cardStateDerivations.count).toBe(people.length);
   });
 
   it("still marks the selected card, and still selects on click", () => {
