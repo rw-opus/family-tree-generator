@@ -52,8 +52,7 @@ export function synchronisePotentialParentSurvival(person = {}) {
   if (person.dateOfDeathUnknown === true) {
     if (
       person.survivalStatusRequired === false &&
-      person.survivalStatusConfirmed ===
-        POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS.DEATH_DATE_UNKNOWN
+      person.survivalStatusConfirmed === POTENTIAL_PARENT_SURVIVAL_CONFIRMATIONS.DEATH_DATE_UNKNOWN
     ) {
       return person;
     }
