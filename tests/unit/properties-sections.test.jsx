@@ -72,6 +72,7 @@ describe("unified Property & Tax workspace", () => {
       "View full history",
     );
     expect(container.textContent).toContain("Tax Calculation");
+    expect(container.textContent).toContain("Download Excel workbook");
     expect(container.querySelector("#property-workspace-setup")).not.toBeNull();
     expect(container.querySelector("#property-workspace-ownership")).not.toBeNull();
     expect(container.querySelector("#property-workspace-tax")).not.toBeNull();

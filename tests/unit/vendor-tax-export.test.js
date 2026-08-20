@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { vendorTaxSpreadsheetXml } from "../../src/domain/vendorTaxExport.js";
 
+const expectWorksheetRowCountsToMatch = (xml) => {
+  const worksheets = [...xml.matchAll(/<Worksheet ss:Name="([^"]+)">([\s\S]*?)<\/Worksheet>/g)];
+  worksheets.forEach(([, name, worksheet]) => {
+    const declared = Number(worksheet.match(/ss:ExpandedRowCount="(\d+)"/)?.[1]);
+    expect(declared, `${name} declared row count`).toBe(
+      (worksheet.match(/<Row(?:\s|>)/g) || []).length,
+    );
+  });
+};
+
 describe("vendor tax Excel export", () => {
   it("creates a typed Excel workbook with each source, CM value, tax and net balance", () => {
     const xml = vendorTaxSpreadsheetXml(
@@ -86,9 +96,10 @@ describe("vendor tax Excel export", () => {
     expect(xml).toContain('<Data ss:Type="Number">117.6</Data>');
     expect(xml).toContain("1 Republic Street");
     expect(xml).toContain('<NumberFormat ss:Format="0.00%"/>');
-    expect(xml.match(/<Worksheet ss:Name=/g) || []).toHaveLength(1);
-    const declaredRowCount = Number(xml.match(/ss:ExpandedRowCount="(\d+)"/)?.[1]);
-    expect(declaredRowCount).toBe((xml.match(/<Row(?:\s|>)/g) || []).length);
+    expect(xml.match(/<Worksheet ss:Name=/g) || []).toHaveLength(3);
+    expect(xml).toContain('<Worksheet ss:Name="Person Data">');
+    expect(xml).toContain('<Worksheet ss:Name="Missing Data">');
+    expectWorksheetRowCountsToMatch(xml);
   });
 
   it("keeps negative sale-to-declaration differences visible in the workings", () => {
@@ -166,8 +177,89 @@ describe("vendor tax Excel export", () => {
     expect(xml).toContain("Review warnings");
     expect(xml).toContain("Maria Borg: saved legacy tax lot not used");
     expect(xml).toContain("cannot be matched to one current ownership source");
-    const declaredRowCount = Number(xml.match(/ss:ExpandedRowCount="(\d+)"/)?.[1]);
-    expect(declaredRowCount).toBe((xml.match(/<Row(?:\s|>)/g) || []).length);
+    expectWorksheetRowCountsToMatch(xml);
+  });
+
+  it("adds current person-card data and missing-data worksheets to the existing workbook", () => {
+    const xml = vendorTaxSpreadsheetXml(
+      { vendors: [] },
+      {
+        id: "property",
+        address: "1 Republic Street",
+        owners: [
+          {
+            id: "owner-maria",
+            personId: "maria",
+            shareNumerator: 1,
+            shareDenominator: 1,
+            acquisitionDate: "1990-03-04",
+          },
+        ],
+        transfers: [],
+      },
+      [],
+      {
+        people: [
+          {
+            id: "father",
+            givenNames: "Joseph",
+            surname: "Borg",
+            fullName: "Joseph Borg",
+            sex: "Male",
+          },
+          {
+            id: "mother",
+            givenNames: "Carmela",
+            surname: "Vella",
+            fullName: "Carmela Vella",
+            sex: "Female",
+            surnameAtBirth: "Vella",
+          },
+          {
+            id: "maria",
+            givenNames: "Maria",
+            surname: "Abela",
+            fullName: "Maria Abela",
+            surnameAtBirth: "Borg",
+            sex: "Female",
+            fatherId: "father",
+            motherId: "mother",
+            dateOfBirth: "1940-02-03",
+            dateOfDeath: "2020-05-06",
+            isDeceased: true,
+            inheritanceBasis: "will",
+            wills: [
+              {
+                id: "will-maria",
+                date: "2019-01-02",
+                notaryName: "Anna Notary",
+              },
+            ],
+            willHeirs: [
+              {
+                id: "heir-row",
+                personId: "father",
+                shareNumerator: 1,
+                shareDenominator: 1,
+              },
+            ],
+            notes: "Original deed held in file.",
+          },
+        ],
+        outsideParties: [],
+      },
+    );
+
+    expect(xml).toContain("Parents&apos; names");
+    expect(xml).toContain("Father: Joseph Borg; Mother: Carmela Vella");
+    expect(xml).toContain("06/05/2020");
+    expect(xml).toContain("Testate");
+    expect(xml).toContain("02/01/2019");
+    expect(xml).toContain("Anna Notary");
+    expect(xml).toContain("1/1 of 1 Republic Street · acquired 04/03/1990");
+    expect(xml).toContain("Original deed held in file.");
+    expect(xml).toContain("Father&apos;s name is not recorded.");
+    expectWorksheetRowCountsToMatch(xml);
   });
 
   it("escapes workbook text and strips invalid XML controls", () => {

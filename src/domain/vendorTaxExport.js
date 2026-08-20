@@ -1,6 +1,7 @@
 import { isoDateToDisplay } from "./dateFormat.js";
 import { displayNotaryName } from "./notary.js";
 import { approximateFraction } from "./ownership.js";
+import { buildPersonDataExport } from "./personDataExport.js";
 
 const EXCEL_XML_MIME = "application/vnd.ms-excel;charset=utf-8";
 
@@ -115,7 +116,116 @@ const successionHistoryRows = (events = []) =>
       })
     : [rowXml([mergedCell("No succession or ownership events are available.", 17)])];
 
-export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = []) {
+const personDataColumns = [
+  ["Surname", "surname", 90],
+  ["Name", "name", 105],
+  ["Parents' names", "parents", 185],
+  ["Date of death", "dateOfDeath", 120],
+  ["Succession basis", "succession", 105],
+  ["Will date", "willDate", 75],
+  ["Will notary", "willNotary", 110],
+  ["Will description", "willDescription", 150],
+  ["Data status", "dataStatus", 100],
+  ["Family tree status", "familyTreeStatus", 190],
+  ["Missing data", "missingData", 190],
+  ["Available data", "availableData", 220],
+  ["Surname at birth", "surnameAtBirth", 100],
+  ["Sex", "sex", 60],
+  ["Date of birth", "dateOfBirth", 75],
+  ["Father", "father", 120],
+  ["Mother", "mother", 120],
+  ["Spouses / partners", "spouses", 190],
+  ["Children", "children", 180],
+  ["Siblings", "siblings", 180],
+  ["Designations", "designations", 120],
+  ["Marital status at death", "maritalStatusAtDeath", 130],
+  ["Other recorded wills", "otherWills", 210],
+  ["Will beneficiaries", "willBeneficiaries", 210],
+  ["Will beneficiaries confirmed", "willBeneficiariesConfirmed", 130],
+  ["Recorded intestate heirs", "intestateHeirs", 210],
+  ["Intestate heirs confirmed", "intestateHeirsConfirmed", 125],
+  ["Survival status", "survivalStatus", 115],
+  ["Declaration Causa Mortis", "causaMortis", 260],
+  ["Initial ownership", "initialOwnership", 180],
+  ["Lifetime property transfers", "transfers", 230],
+  ["Tax position", "taxPosition", 150],
+  ["GEDCOM birth source", "gedcomBirthDate", 110],
+  ["GEDCOM death source", "gedcomDeathDate", 110],
+  ["GEDCOM ID", "gedcomId", 90],
+  ["Notes", "notes", 240],
+  ["Person ID", "personId", 130],
+];
+
+const personDataWorksheet = (personExport, property = {}) => {
+  const personRows = personExport.rows.length
+    ? personExport.rows.map((person) =>
+        rowXml(
+          personDataColumns.map(([, key]) =>
+            stringCell(
+              person[key],
+              key === "dataStatus" ? (person.missingData ? "MissingText" : "CompleteText") : "Text",
+            ),
+          ),
+        ),
+      )
+    : [rowXml([mergedCell("No family-tree people are available.", personDataColumns.length - 1)])];
+  const title = `${property.address || "Property"} — Person data register`;
+  const expandedRowCount = personRows.length + 2;
+
+  return `<Worksheet ss:Name="Person Data">
+  <Table ss:ExpandedColumnCount="${personDataColumns.length}" ss:ExpandedRowCount="${expandedRowCount}" x:FullColumns="1" x:FullRows="1">
+   ${personDataColumns.map(([, , width]) => `<Column ss:Width="${width}"/>`).join("")}
+   ${rowXml([mergedCell(title, personDataColumns.length - 1, "Title")])}
+   ${rowXml(
+     personDataColumns.map(([header]) => stringCell(header, "Header")),
+     "Header",
+   )}
+   ${personRows.join("\n   ")}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>2</SplitHorizontal><TopRowBottomPane>2</TopRowBottomPane>
+   <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>`;
+};
+
+const missingDataWorksheet = (personExport, property = {}) => {
+  const columns = [
+    ["Surname", "surname", 90],
+    ["Name", "name", 105],
+    ["Parents' names", "parents", 185],
+    ["Family tree status", "familyTreeStatus", 190],
+    ["Missing field", "field", 135],
+    ["Category", "category", 120],
+    ["What is needed", "detail", 300],
+    ["Person ID", "personId", 130],
+  ];
+  const missingRows = personExport.missingRows.length
+    ? personExport.missingRows.map((entry) =>
+        rowXml(columns.map(([, key]) => stringCell(entry[key], "MissingText"))),
+      )
+    : [rowXml([mergedCell("No missing person-card data was identified.", columns.length - 1)])];
+  const title = `${property.address || "Property"} — Missing person-card data`;
+  const expandedRowCount = missingRows.length + 2;
+
+  return `<Worksheet ss:Name="Missing Data">
+  <Table ss:ExpandedColumnCount="${columns.length}" ss:ExpandedRowCount="${expandedRowCount}" x:FullColumns="1" x:FullRows="1">
+   ${columns.map(([, , width]) => `<Column ss:Width="${width}"/>`).join("")}
+   ${rowXml([mergedCell(title, columns.length - 1, "Title")])}
+   ${rowXml(
+     columns.map(([header]) => stringCell(header, "Header")),
+     "Header",
+   )}
+   ${missingRows.join("\n   ")}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>2</SplitHorizontal><TopRowBottomPane>2</TopRowBottomPane>
+   <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>`;
+};
+
+export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [], caseData = {}) {
   const headers = [
     "Vendor",
     "Total ownership fraction",
@@ -154,6 +264,15 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
       ]
     : [];
   const expandedRowCount = historyRows.length + taxRows.length + ignoredLegacyRows.length + 8;
+  const personExport = buildPersonDataExport({
+    people: caseData.people,
+    outsideParties: caseData.outsideParties,
+    property,
+    propertyReport: caseData.propertyReport,
+    taxCalculationReport: report,
+    readinessIssuesByPerson: caseData.readinessIssuesByPerson,
+    familyPersonIds: caseData.familyPersonIds,
+  });
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -174,6 +293,8 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
   <Style ss:ID="Percentage" ss:Parent="Text"><Alignment ss:Horizontal="Right" ss:Vertical="Top"/><NumberFormat ss:Format="0.00%"/></Style>
   <Style ss:ID="Integer" ss:Parent="Text"><Alignment ss:Horizontal="Right" ss:Vertical="Top"/><NumberFormat ss:Format="0"/></Style>
   <Style ss:ID="AppliedText" ss:Parent="Text"><Alignment ss:Horizontal="Center" ss:Vertical="Top"/><Font ss:Bold="1" ss:Color="#004225"/><Interior ss:Color="#E8F4EC" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="CompleteText" ss:Parent="Text"><Font ss:Bold="1" ss:Color="#004225"/><Interior ss:Color="#E8F4EC" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="MissingText" ss:Parent="Text"><Font ss:Color="#7A271A"/><Interior ss:Color="#FDECEA" ss:Pattern="Solid"/></Style>
  </Styles>
  <Worksheet ss:Name="Tax Calculation">
   <Table ss:ExpandedColumnCount="18" ss:ExpandedRowCount="${expandedRowCount}" x:FullColumns="1" x:FullRows="1">
@@ -211,11 +332,18 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
    <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
   </WorksheetOptions>
  </Worksheet>
+ ${personDataWorksheet(personExport, property)}
+ ${missingDataWorksheet(personExport, property)}
 </Workbook>`;
 }
 
-export function downloadVendorTaxSpreadsheet(report, property = {}, historyEvents = []) {
-  const xml = vendorTaxSpreadsheetXml(report, property, historyEvents);
+export function downloadVendorTaxSpreadsheet(
+  report,
+  property = {},
+  historyEvents = [],
+  caseData = {},
+) {
+  const xml = vendorTaxSpreadsheetXml(report, property, historyEvents, caseData);
   const blob = new Blob([xml], { type: EXCEL_XML_MIME });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -225,7 +353,7 @@ export function downloadVendorTaxSpreadsheet(report, property = {}, historyEvent
     .replace(/^-|-$/g, "")
     .toLowerCase();
   link.href = url;
-  link.download = `${baseName || "tax-calculation"}-tax-calculation.xls`;
+  link.download = `${baseName || "family-tree"}-case-workbook.xls`;
   document.body.append(link);
   link.click();
   link.remove();
