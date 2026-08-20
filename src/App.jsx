@@ -809,8 +809,17 @@ export function App({
     requestedActiveFamilyGroup ||
     currentTree.familyGroups.find((group) => group.id === currentTree.activeFamilyGroupId) ||
     currentTree.familyGroups[0];
-  const activePersonIds = new Set(activeFamilyGroup?.personIds || []);
-  const visiblePeople = currentTree.people.filter((person) => activePersonIds.has(person.id));
+  const activePersonIds = useMemo(
+    () => new Set(activeFamilyGroup?.personIds || []),
+    [activeFamilyGroup],
+  );
+  // The tree canvas keys its whole layout off this array's identity, so
+  // rebuilding it on every render made every keystroke and every dialog toggle
+  // recompute the tree geometry and re-render every person card.
+  const visiblePeople = useMemo(
+    () => currentTree.people.filter((person) => activePersonIds.has(person.id)),
+    [activePersonIds, currentTree.people],
+  );
   const activeProperty =
     currentTree.properties.find(
       (property) => property.id === currentTree.settings.activePropertyId,

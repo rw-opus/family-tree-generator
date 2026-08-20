@@ -21,6 +21,12 @@ import { personCardName } from "./familyTree/treePresentation.js";
 import { usePinchZoom } from "./familyTree/usePinchZoom.js";
 import { PersonCardDisplayControl } from "./PersonCardDisplayControl.jsx";
 
+// Shared frozen defaults. Written inline as `= {}` these produced a fresh
+// object on every render, which alone was enough to defeat the memo on every
+// person card below.
+const NO_PEOPLE = Object.freeze([]);
+const NO_LOOKUP = Object.freeze({});
+
 function hasRelationalData(person) {
   return Boolean(
     person.id ||
@@ -87,14 +93,14 @@ function TreePanel({
 
 export function FamilyTreeCanvas({
   treeTitle = "",
-  people = [],
+  people = NO_PEOPLE,
   legalWorkspaceEnabled = true,
-  ownershipByPerson = {},
-  ownershipFractionsByPerson = {},
-  currentOwnershipByPerson = {},
+  ownershipByPerson = NO_LOOKUP,
+  ownershipFractionsByPerson = NO_LOOKUP,
+  currentOwnershipByPerson = NO_LOOKUP,
   currentOwnerPresentationsByPerson = null,
-  historicalLawWarningsByPerson = {},
-  causaMortisCoverageByPerson = {},
+  historicalLawWarningsByPerson = NO_LOOKUP,
+  causaMortisCoverageByPerson = NO_LOOKUP,
   onPrint,
   selectedPersonId,
   onSelectPerson,
@@ -108,6 +114,15 @@ export function FamilyTreeCanvas({
   onZoomChange,
   toolbar,
 }) {
+  // These arrive as fresh closures on every render of the parent. Every person
+  // card receives them, so reading them through a ref keeps the handlers the
+  // cards actually see stable and lets their memo hold.
+  const onSelectPersonRef = useRef(onSelectPerson);
+  onSelectPersonRef.current = onSelectPerson;
+  const onFocusPersonRef = useRef(onFocusPerson);
+  onFocusPersonRef.current = onFocusPerson;
+  const selectPerson = useCallback((personId) => onSelectPersonRef.current?.(personId), []);
+
   const treeRef = useRef(null);
   const gestureSurfaceRef = useRef(null);
   const dragRef = useRef(null);
@@ -127,9 +142,15 @@ export function FamilyTreeCanvas({
   const deceased = cleanPeople.find(
     (person) => person.isDeceased || hasDesignation(person, "Deceased"),
   );
-  const displayName = (person) =>
-    displayNamesById.get(person?.id) || personDisplayName(person, cleanPeople);
-  const cardName = (person) => personCardName(person, cleanPeople, displayNamesById);
+  const displayName = useCallback(
+    (person) => displayNamesById.get(person?.id) || personDisplayName(person, cleanPeople),
+    [cleanPeople, displayNamesById],
+  );
+  // Handed to every card, so a fresh identity here would defeat their memo.
+  const cardName = useCallback(
+    (person) => personCardName(person, cleanPeople, displayNamesById),
+    [cleanPeople, displayNamesById],
+  );
   const title =
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");
@@ -156,8 +177,15 @@ export function FamilyTreeCanvas({
     ownershipFractionsByPerson,
     propertyValue,
   ]);
-  const relationalPeople = people.filter(hasRelationalData);
-  const usesRelationalLayout = relationalPeople.some(hasRelationalLinks);
+  // This array is the input to the tree layout engine and to the generation
+  // maps below. Rebuilding it on every render gave it a fresh identity each
+  // time, so every unrelated re-render -- a keystroke in the person inspector,
+  // opening a dialog -- recomputed the whole tree geometry from scratch.
+  const relationalPeople = useMemo(() => people.filter(hasRelationalData), [people]);
+  const usesRelationalLayout = useMemo(
+    () => relationalPeople.some(hasRelationalLinks),
+    [relationalPeople],
+  );
   const usesStackedLegalCards =
     legalWorkspaceEnabled && personCardFields?.stackLegalDetails === true;
   const generationByPerson = useMemo(
@@ -488,7 +516,7 @@ export function FamilyTreeCanvas({
 
   usePinchZoom(gestureSurfaceRef, treeRef, zoom, onZoomChange, usesRelationalLayout);
 
-  const handleCardKeyDown = (event, personId) => {
+  const handleCardKeyDown = useCallback((event, personId) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     const chart = treeRef.current;
     if (!chart) return;
@@ -525,44 +553,72 @@ export function FamilyTreeCanvas({
     if (!target) return;
     event.preventDefault();
     const targetId = target.dataset.personId;
-    (onFocusPerson || onSelectPerson)?.(targetId);
+    (onFocusPersonRef.current || onSelectPersonRef.current)?.(targetId);
     window.requestAnimationFrame(() => {
       const next = [...(treeRef.current?.querySelectorAll("[data-person-id]") || [])].find(
         (node) => node.dataset.personId === targetId,
       );
       next?.focus({ preventScroll: true });
     });
-  };
+  }, []);
 
   const keyboardFocusId = cleanPeople.some((person) => person.id === selectedPersonId)
     ? selectedPersonId
     : cleanPeople[0]?.id;
 
-  const renderCard = (person, variant = "") => (
-    <FamilyPersonCard
-      key={person.id}
-      person={person}
-      legalWorkspaceEnabled={legalWorkspaceEnabled}
-      variant={variant}
-      people={cleanPeople}
-      deathDateMissing={requiredSpouseDeathDateIds.has(person.id)}
-      cardName={cardName}
-      ownershipByPerson={ownershipByPerson}
-      ownershipFractionsByPerson={ownershipFractionsByPerson}
-      currentOwnerPresentationsByPerson={resolvedCurrentOwnerPresentationsByPerson}
-      historicalLawWarningsByPerson={historicalLawWarningsByPerson}
-      causaMortisCoverageByPerson={causaMortisCoverageByPerson}
-      personCardFields={personCardFields}
-      propertyId={propertyId}
-      ownershipSnapshotActive={ownershipSnapshotActive}
-      selectedPersonId={selectedPersonId}
-      onSelectPerson={onSelectPerson}
-      tabIndex={person.id === keyboardFocusId ? 0 : -1}
-      onKeyDown={(event) => handleCardKeyDown(event, person.id)}
-      stackedLegalDetails={usesStackedLegalCards}
-      generation={generationByPerson.get(person.id) || 0}
-      isWidestGeneration={generationByPerson.get(person.id) === widestGeneration}
-    />
+  // Stable across renders: LayeredFamilyTree re-measures every card in a layout
+  // effect keyed on this function, so a fresh identity forced a full DOM
+  // measuring pass and a rebuilt ResizeObserver on every render.
+  const renderCard = useCallback(
+    (person, variant = "") => (
+      <FamilyPersonCard
+        key={person.id}
+        person={person}
+        legalWorkspaceEnabled={legalWorkspaceEnabled}
+        variant={typeof variant === "string" ? variant : ""}
+        people={cleanPeople}
+        deathDateMissing={requiredSpouseDeathDateIds.has(person.id)}
+        cardName={cardName}
+        ownershipByPerson={ownershipByPerson}
+        ownershipFractionsByPerson={ownershipFractionsByPerson}
+        currentOwnerPresentationsByPerson={resolvedCurrentOwnerPresentationsByPerson}
+        historicalLawWarningsByPerson={historicalLawWarningsByPerson}
+        causaMortisCoverageByPerson={causaMortisCoverageByPerson}
+        personCardFields={personCardFields}
+        propertyId={propertyId}
+        ownershipSnapshotActive={ownershipSnapshotActive}
+        // A boolean rather than the selected id, so changing the selection
+        // re-renders the two cards that actually change, not all of them.
+        isSelected={person.id === selectedPersonId}
+        onSelectPerson={selectPerson}
+        tabIndex={person.id === keyboardFocusId ? 0 : -1}
+        onKeyDown={handleCardKeyDown}
+        stackedLegalDetails={usesStackedLegalCards}
+        generation={generationByPerson.get(person.id) || 0}
+        isWidestGeneration={generationByPerson.get(person.id) === widestGeneration}
+      />
+    ),
+    [
+      cardName,
+      causaMortisCoverageByPerson,
+      cleanPeople,
+      generationByPerson,
+      handleCardKeyDown,
+      historicalLawWarningsByPerson,
+      keyboardFocusId,
+      legalWorkspaceEnabled,
+      ownershipByPerson,
+      ownershipFractionsByPerson,
+      ownershipSnapshotActive,
+      personCardFields,
+      propertyId,
+      requiredSpouseDeathDateIds,
+      resolvedCurrentOwnerPresentationsByPerson,
+      selectPerson,
+      selectedPersonId,
+      usesStackedLegalCards,
+      widestGeneration,
+    ],
   );
 
   const navigation = (
