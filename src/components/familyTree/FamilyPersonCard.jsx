@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { compareFractions } from "../../domain/fractions.js";
 import {
   formatOwnershipFraction,
@@ -158,7 +159,12 @@ export function familyPersonCardState({
   };
 }
 
-export function FamilyPersonCard({
+/**
+ * Memoised because a whole tree of these renders on every canvas render, and
+ * each card does real work: it re-derives its legal state from the full people
+ * list, so the uncached cost of a render is quadratic in the size of the tree.
+ */
+function FamilyPersonCardComponent({
   person,
   variant = "",
   people,
@@ -173,7 +179,7 @@ export function FamilyPersonCard({
   personCardFields = DEFAULT_PERSON_CARD_FIELDS,
   propertyId = "",
   ownershipSnapshotActive = false,
-  selectedPersonId,
+  isSelected = false,
   onSelectPerson,
   stackedLegalDetails = false,
   generation = 0,
@@ -287,7 +293,7 @@ export function FamilyPersonCard({
     person.isPlaceholder && "placeholder",
     stackedLegalDetails && !person.isPlaceholder && "stacked-legal-details",
     ownershipSnapshotActive && hasOwnership && "trace-ownership-snapshot",
-    selectedPersonId === person.id && "selected",
+    isSelected && "selected",
   ]
     .filter(Boolean)
     .join(" ");
@@ -301,7 +307,7 @@ export function FamilyPersonCard({
       aria-label={`Open ${accessibleName}${actionRequiredGuidance ? `. ${actionRequiredGuidance}` : ""}`}
       title={[actionRequiredGuidance, historicalLawWarning].filter(Boolean).join(" ") || undefined}
       onClick={() => onSelectPerson?.(person.id)}
-      onKeyDown={onKeyDown}
+      onKeyDown={(event) => onKeyDown?.(event, person.id)}
       tabIndex={tabIndex}
       className={classNames}
       style={{
@@ -432,3 +438,5 @@ export function FamilyPersonCard({
     </button>
   );
 }
+
+export const FamilyPersonCard = memo(FamilyPersonCardComponent);

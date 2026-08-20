@@ -147,7 +147,12 @@ export function LayeredFamilyTree({ people = [], renderCard, emptyState = null, 
     const observer = new ResizeObserver(measure);
     tree.querySelectorAll(".family-node").forEach((card) => observer.observe(card));
     return () => observer.disconnect();
-  }, [people, renderCard]);
+    // Only the set of cards matters here: measuring reads the DOM directly, and
+    // a card that changes size without the roster changing is caught by the
+    // ResizeObserver above. Keying this on renderCard as well meant every
+    // selection change tore down the observer and forced a full measuring pass
+    // -- reading scrollHeight/offsetWidth per card, each a synchronous reflow.
+  }, [people]);
 
   if (!layout.nodes.length) return emptyState;
 
