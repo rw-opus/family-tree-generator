@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   IDENTITY_DRAFT_COMMIT_DELAY_MS,
+  PERSON_RECORD_DRAFT_COMMIT_DELAY_MS,
   PersonInspector,
 } from "../../src/components/PersonInspector.jsx";
 import { normaliseCase } from "../../src/domain/caseModel.js";
@@ -48,6 +49,40 @@ describe("PersonInspector", () => {
     });
   };
 
+  const willSharePeople = () => [
+    {
+      id: "deceased",
+      givenNames: "Joseph",
+      surname: "Borg",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "will",
+      wills: [{ id: "will", date: "2019-01-01", notaryName: "", description: "" }],
+      willHeirs: [
+        {
+          id: "share",
+          personId: "beneficiary",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          sharePercent: 50,
+        },
+      ],
+      spouseIds: [],
+      designations: ["Deceased"],
+    },
+    {
+      id: "beneficiary",
+      givenNames: "Maria",
+      surname: "Borg",
+      fullName: "Maria Borg",
+      sex: "Female",
+      spouseIds: [],
+      designations: [],
+    },
+  ];
+
   const completedCausaMortisShare = (person) =>
     (person.causaMortisDeclarations || [])
       .filter((declaration) => declaration.status === "complete")
@@ -71,7 +106,7 @@ describe("PersonInspector", () => {
   });
 
   afterEach(() => {
-    act(() => root.unmount());
+    if (root) act(() => root.unmount());
     vi.useRealTimers();
     container.remove();
     vi.restoreAllMocks();
@@ -197,16 +232,762 @@ describe("PersonInspector", () => {
       surnameInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    expect(controller.flush()).toBe(false);
+    act(() => expect(controller.flush()).toBe(false));
     expect(controller.hasPending()).toBe(true);
     expect(surnameInput.value).toBe("Vella");
 
     rejectCommit = false;
-    expect(controller.flush()).toBe(true);
+    act(() => expect(controller.flush()).toBe(true));
     expect(controller.hasPending()).toBe(false);
     expect(onChange).toHaveBeenLastCalledWith([
       expect.objectContaining({ surname: "Vella", fullName: "Maria Vella" }),
     ]);
+  });
+
+  it("keeps will text and share typing local, then commits the latest combined draft once", () => {
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    let controller;
+    const deceased = {
+      id: "deceased",
+      fullName: "Joseph Borg",
+      sex: "Male",
+      isDeceased: true,
+      dateOfDeath: "2020-01-01",
+      inheritanceBasis: "will",
+      wills: [{ id: "will", date: "2019-01-01", notaryName: "", description: "" }],
+      willHeirs: [
+        {
+          id: "share",
+          personId: "beneficiary",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          sharePercent: 50,
+        },
+        {
+          id: "share-2",
+          personId: "beneficiary-2",
+          shareNumerator: 1,
+          shareDenominator: 2,
+          sharePercent: 50,
+        },
+      ],
+      spouseIds: [],
+      siblingIds: [],
+      designations: ["Deceased"],
+    };
+    const beneficiary = {
+      id: "beneficiary",
+      fullName: "Maria Borg",
+      sex: "Female",
+      spouseIds: [],
+      designations: [],
+    };
+    const secondBeneficiary = {
+      ...beneficiary,
+      id: "beneficiary-2",
+      fullName: "Paul Borg",
+    };
+
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[deceased, beneficiary, secondBeneficiary]}
+          selectedPersonId="deceased"
+          shareDisplay="both"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+
+    const type = (selector, values, index = 0) => {
+      const input = container.querySelectorAll(selector)[index];
+      values.forEach((nextValue) => {
+        act(() => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+            input,
+            nextValue,
+          );
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      });
+      return input;
+    };
+
+    type('input[aria-label="Notary for will 1"]', ["N", "No", "Notary Vella"]);
+    const description = type('input[aria-label="Description for will 1"]', ["U", "UK", "UK will"]);
+    // Exercise two share formats without a browser focus transition. The most
+    // recently edited numerator must apply after the earlier percentage draft.
+    type('input[aria-label="Will share percentage"]', ["3", "30"]);
+    type('input[aria-label="Will share numerator"]', ["", "1"]);
+    type('input[aria-label="Will share denominator"]', ["4"], 1);
+    type('input[aria-label="Will share percentage"]', ["5", "50"], 1);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(controller.hasPending()).toBe(true);
+
+    leaveInput(description);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const committed = onChange.mock.calls[0][0][0];
+    expect(committed.wills[0]).toMatchObject({
+      notaryName: "Notary Vella",
+      description: "UK will",
+    });
+    expect(committed.willHeirs[0]).toMatchObject({
+      shareNumerator: "1",
+      shareDenominator: 10,
+      sharePercent: 10,
+    });
+    expect(committed.willHeirs[1]).toMatchObject({
+      shareNumerator: 1,
+      shareDenominator: 2,
+      sharePercent: 50,
+    });
+    expect(controller.hasPending()).toBe(false);
+  });
+
+  it("retains a buffered will draft after a rejected durable commit", () => {
+    let rejectCommit = true;
+    const onChange = vi.fn((nextPeople) => (rejectCommit ? null : { people: nextPeople }));
+    let controller;
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "deceased",
+              fullName: "Joseph Borg",
+              sex: "Male",
+              isDeceased: true,
+              dateOfDeath: "2020-01-01",
+              inheritanceBasis: "will",
+              wills: [{ id: "will", date: "2019-01-01", notaryName: "", description: "" }],
+              willHeirs: [],
+              spouseIds: [],
+              designations: ["Deceased"],
+            },
+          ]}
+          selectedPersonId="deceased"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+    const notary = container.querySelector('input[aria-label="Notary for will 1"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        notary,
+        "Notary Vella",
+      );
+      notary.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    act(() => expect(controller.flush()).toBe(false));
+    expect(controller.hasPending()).toBe(true);
+    expect(notary.value).toBe("Notary Vella");
+
+    rejectCommit = false;
+    act(() => expect(controller.flush()).toBeTruthy());
+    expect(controller.hasPending()).toBe(false);
+    expect(onChange.mock.calls.at(-1)[0][0].wills[0].notaryName).toBe("Notary Vella");
+  });
+
+  it("preserves a pending will field when a same-event action adds another will", () => {
+    let latestPeople;
+    function Harness() {
+      const [people, setPeople] = useState([
+        {
+          id: "deceased",
+          fullName: "Joseph Borg",
+          sex: "Male",
+          isDeceased: true,
+          dateOfDeath: "2020-01-01",
+          inheritanceBasis: "will",
+          wills: [{ id: "will", date: "2019-01-01", notaryName: "", description: "" }],
+          willHeirs: [],
+          spouseIds: [],
+          designations: ["Deceased"],
+        },
+      ]);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          onChange={setPeople}
+          onSelectPerson={vi.fn()}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    const description = container.querySelector('input[aria-label="Description for will 1"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        description,
+        "Retained wording",
+      );
+      description.dispatchEvent(new Event("input", { bubbles: true }));
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Add will")
+        .click();
+    });
+
+    expect(latestPeople[0].wills).toHaveLength(2);
+    expect(latestPeople[0].wills[0].description).toBe("Retained wording");
+  });
+
+  it("flushes an outgoing GEDCOM death-date draft against its own person after a direct switch", () => {
+    let latestPeople = [
+      {
+        id: "first",
+        fullName: "First Person",
+        sex: "Other",
+        isDeceased: true,
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+      {
+        id: "second",
+        fullName: "Second Person",
+        sex: "Other",
+        isDeceased: true,
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+    ];
+    const onChange = vi.fn((nextPeople) => {
+      latestPeople = nextPeople;
+      return { people: nextPeople };
+    });
+    let controller;
+    const renderSelected = (selectedPersonId) =>
+      root.render(
+        <PersonInspector
+          people={latestPeople}
+          legalWorkspaceEnabled={false}
+          selectedPersonId={selectedPersonId}
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      );
+
+    act(() => renderSelected("first"));
+    const firstDeathDate = container.querySelector('input[aria-label="Date of death (optional)"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        firstDeathDate,
+        "about 1858",
+      );
+      firstDeathDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => renderSelected("second"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(latestPeople.find((person) => person.id === "first")).toMatchObject({
+      deathDateText: "about 1858",
+      dateOfDeathUnknown: false,
+    });
+
+    const secondDeathDate = container.querySelector('input[aria-label="Date of death (optional)"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        secondDeathDate,
+        "circa 1900",
+      );
+      secondDeathDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    act(() => expect(controller.flush()).toBeTruthy());
+    expect(latestPeople.find((person) => person.id === "second")).toMatchObject({
+      deathDateText: "circa 1900",
+      dateOfDeathUnknown: false,
+    });
+  });
+
+  it("commits combined identity and record drafts once when switching people directly", () => {
+    let latestPeople = [
+      {
+        id: "first",
+        givenNames: "First",
+        surname: "Person",
+        fullName: "First Person",
+        sex: "Other",
+        isDeceased: true,
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+      {
+        id: "second",
+        givenNames: "Second",
+        surname: "Person",
+        fullName: "Second Person",
+        sex: "Other",
+        isDeceased: true,
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+    ];
+    const onChange = vi.fn((nextPeople) => {
+      latestPeople = nextPeople;
+      return { people: nextPeople };
+    });
+    let controller;
+    const renderSelected = (selectedPersonId) =>
+      root.render(
+        <PersonInspector
+          people={latestPeople}
+          legalWorkspaceEnabled={false}
+          selectedPersonId={selectedPersonId}
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      );
+
+    act(() => renderSelected("first"));
+    beginEditing();
+    setInputValue('[data-person-field="surname"]', "Updated");
+    setInputValue('input[aria-label="Date of death (optional)"]', "about 1858");
+
+    act(() => renderSelected("second"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(latestPeople.find((person) => person.id === "first")).toMatchObject({
+      surname: "Updated",
+      fullName: "First Updated",
+      deathDateText: "about 1858",
+    });
+    expect(controller.hasPending()).toBe(false);
+  });
+
+  it("flushes a pending person-record draft before the inspector unmounts", () => {
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              fullName: "Historic Person",
+              sex: "Other",
+              isDeceased: true,
+              spouseIds: [],
+              designations: ["Deceased"],
+            },
+          ]}
+          legalWorkspaceEnabled={false}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    const deathDate = container.querySelector('input[aria-label="Date of death (optional)"]');
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+        deathDate,
+        "circa 1750",
+      );
+      deathDate.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => root.unmount());
+    root = null;
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      deathDateText: "circa 1750",
+      dateOfDeathUnknown: false,
+    });
+  });
+
+  it("flushes one combined record patch when several buffered inputs unmount", () => {
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "deceased",
+              fullName: "Joseph Borg",
+              sex: "Male",
+              isDeceased: true,
+              dateOfDeath: "2020-01-01",
+              inheritanceBasis: "will",
+              wills: [{ id: "will", date: "2019-01-01", notaryName: "", description: "" }],
+              willHeirs: [
+                {
+                  id: "share",
+                  personId: "beneficiary",
+                  shareNumerator: 1,
+                  shareDenominator: 1,
+                  sharePercent: 100,
+                },
+              ],
+              spouseIds: [],
+              designations: ["Deceased"],
+            },
+            {
+              id: "beneficiary",
+              fullName: "Maria Borg",
+              sex: "Female",
+              spouseIds: [],
+              designations: [],
+            },
+          ]}
+          selectedPersonId="deceased"
+          shareDisplay="both"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    setInputValue('input[aria-label="Description for will 1"]', "Retained on teardown");
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => root.unmount());
+    root = null;
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0].wills[0].description).toBe("Retained on teardown");
+  });
+
+  it("acknowledges a record draft included by the earlier identity idle commit", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    let controller;
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              givenNames: "Maria",
+              surname: "Borg",
+              fullName: "Maria Borg",
+              sex: "Female",
+              isDeceased: true,
+              spouseIds: [],
+              designations: ["Deceased"],
+            },
+          ]}
+          legalWorkspaceEnabled={false}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+    beginEditing();
+    setInputValue('[data-person-field="surname"]', "Vella");
+    act(() => vi.advanceTimersByTime(100));
+    setInputValue('input[aria-label="Date of death (optional)"]', "about 1858");
+
+    act(() => vi.advanceTimersByTime(IDENTITY_DRAFT_COMMIT_DELAY_MS - 100));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      surname: "Vella",
+      fullName: "Maria Vella",
+      deathDateText: "about 1858",
+    });
+    expect(controller.hasPending()).toBe(false);
+
+    act(() => vi.advanceTimersByTime(200));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains a committed record overlay for an earlier person while canonical props lag", () => {
+    const canonicalPeople = [
+      {
+        id: "first",
+        fullName: "First Person",
+        sex: "Other",
+        isDeceased: true,
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+      {
+        id: "second",
+        fullName: "Second Person",
+        sex: "Other",
+        isDeceased: true,
+        spouseIds: [],
+        designations: ["Deceased"],
+      },
+    ];
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    let controller;
+    const renderSelected = (selectedPersonId) =>
+      root.render(
+        <PersonInspector
+          people={canonicalPeople}
+          legalWorkspaceEnabled={false}
+          selectedPersonId={selectedPersonId}
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      );
+
+    act(() => renderSelected("first"));
+    setInputValue('input[aria-label="Date of death (optional)"]', "about 1800");
+    act(() => expect(controller.flush()).toBe(true));
+
+    act(() => renderSelected("second"));
+    setInputValue('input[aria-label="Date of death (optional)"]', "about 1900");
+    act(() => expect(controller.flush()).toBe(true));
+
+    expect(onChange).toHaveBeenCalledTimes(2);
+    const latestSnapshot = onChange.mock.calls[1][0];
+    expect(latestSnapshot.find((person) => person.id === "first").deathDateText).toBe("about 1800");
+    expect(latestSnapshot.find((person) => person.id === "second").deathDateText).toBe(
+      "about 1900",
+    );
+  });
+
+  it("keeps a rejected share draft visible when changing the share display", () => {
+    const onChange = vi.fn(() => null);
+    let controller;
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "deceased",
+              fullName: "Joseph Borg",
+              sex: "Male",
+              isDeceased: true,
+              dateOfDeath: "2020-01-01",
+              inheritanceBasis: "will",
+              wills: [{ id: "will", date: "2019-01-01", notaryName: "", description: "" }],
+              willHeirs: [
+                {
+                  id: "share",
+                  personId: "beneficiary",
+                  shareNumerator: 1,
+                  shareDenominator: 1,
+                  sharePercent: 100,
+                },
+              ],
+              spouseIds: [],
+              designations: ["Deceased"],
+            },
+            {
+              id: "beneficiary",
+              fullName: "Maria Borg",
+              sex: "Female",
+              spouseIds: [],
+              designations: [],
+            },
+          ]}
+          selectedPersonId="deceased"
+          shareDisplay="both"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+    setInputValue('input[aria-label="Will share numerator"]', "2");
+
+    const percentageButton = [...container.querySelectorAll(".person-share-toggle button")].find(
+      (button) => button.textContent.trim() === "Percentage",
+    );
+    act(() => percentageButton.click());
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(controller.hasPending()).toBe(true);
+    expect(container.querySelector('input[aria-label="Will share numerator"]').value).toBe("2");
+    expect(percentageButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("commits a buffered person-record draft only after 700 milliseconds idle", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={[
+            {
+              id: "person",
+              fullName: "Historic Person",
+              sex: "Other",
+              isDeceased: true,
+              spouseIds: [],
+              designations: ["Deceased"],
+            },
+          ]}
+          legalWorkspaceEnabled={false}
+          selectedPersonId="person"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+        />,
+      ),
+    );
+    setInputValue('input[aria-label="Date of death (optional)"]', "b");
+    setInputValue('input[aria-label="Date of death (optional)"]', "before");
+    setInputValue('input[aria-label="Date of death (optional)"]', "before 1800");
+
+    act(() => vi.advanceTimersByTime(PERSON_RECORD_DRAFT_COMMIT_DELAY_MS - 1));
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      deathDateText: "before 1800",
+      dateOfDeathUnknown: false,
+    });
+  });
+
+  it("commits a percentage on its own idle timer after an earlier record commit rerenders", () => {
+    vi.useFakeTimers();
+    let latestPeople;
+    const onChange = vi.fn();
+    let controller;
+    function Harness() {
+      const [people, setPeople] = useState(willSharePeople);
+      latestPeople = people;
+      return (
+        <PersonInspector
+          people={people}
+          selectedPersonId="deceased"
+          shareDisplay="both"
+          onChange={(nextPeople) => {
+            onChange(nextPeople);
+            setPeople(nextPeople);
+            return { people: nextPeople };
+          }}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />
+      );
+    }
+
+    act(() => root.render(<Harness />));
+    setInputValue('input[aria-label="Notary for will 1"]', "Notary Vella");
+    const description = container.querySelector('input[aria-label="Description for will 1"]');
+    act(() => description.focus());
+    setInputValue('input[aria-label="Description for will 1"]', "UK historic will");
+    act(() => container.querySelector('input[aria-label="Will share percentage"]').focus());
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(latestPeople[0].wills[0]).toMatchObject({
+      notaryName: "Notary Vella",
+      description: "UK historic will",
+    });
+
+    setInputValue('input[aria-label="Will share percentage"]', "33.335");
+    act(() => vi.advanceTimersByTime(PERSON_RECORD_DRAFT_COMMIT_DELAY_MS - 1));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(1));
+
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(latestPeople[0].willHeirs[0]).toMatchObject({
+      shareNumerator: 6667,
+      shareDenominator: 20000,
+      sharePercent: 33.335,
+    });
+    expect(controller.hasPending()).toBe(false);
+  });
+
+  it("acknowledges a touched share draft that returns to its canonical value", () => {
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    let controller;
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={willSharePeople()}
+          selectedPersonId="deceased"
+          shareDisplay="both"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+    setInputValue('input[aria-label="Will share percentage"]', "60");
+    setInputValue('input[aria-label="Will share percentage"]', "50");
+    expect(controller.hasPending()).toBe(true);
+
+    act(() => expect(controller.flush()).toBe(true));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(controller.hasPending()).toBe(false);
+    expect(container.querySelector('input[aria-label="Will share percentage"]').value).toBe("50");
+  });
+
+  it("commits identity while acknowledging a reverted share in the same aggregate flush", () => {
+    const onChange = vi.fn((nextPeople) => ({ people: nextPeople }));
+    let controller;
+    act(() =>
+      root.render(
+        <PersonInspector
+          people={willSharePeople()}
+          selectedPersonId="deceased"
+          shareDisplay="both"
+          onChange={onChange}
+          onSelectPerson={vi.fn()}
+          onRegisterPendingEditFlush={(nextController) => {
+            controller = nextController;
+            return () => undefined;
+          }}
+        />,
+      ),
+    );
+    beginEditing();
+    setInputValue('[data-person-field="surname"]', "Vella");
+    setInputValue('input[aria-label="Will share percentage"]', "60");
+    setInputValue('input[aria-label="Will share percentage"]', "50");
+
+    act(() => expect(controller.flush()).toBe(true));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      surname: "Vella",
+      fullName: "Joseph Vella",
+    });
+    expect(onChange.mock.calls[0][0][0].willHeirs[0]).toMatchObject({
+      shareNumerator: 1,
+      shareDenominator: 2,
+      sharePercent: 50,
+    });
+    expect(controller.hasPending()).toBe(false);
   });
 
   it("commits an identity draft after typing becomes idle", () => {
@@ -601,6 +1382,8 @@ describe("PersonInspector", () => {
       );
       deathDate.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    expect(latestPeople[0]).not.toHaveProperty("deathDateText");
+    leaveInput(deathDate);
     expect(latestPeople[0]).toMatchObject({
       dateOfDeath: "",
       deathDateText: "about 1858",
@@ -3765,6 +4548,8 @@ describe("PersonInspector", () => {
       );
       secondWillDescription.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    expect(latestPeople[0].wills[1].description).toBe("");
+    leaveInput(secondWillDescription);
     expect(latestPeople[0].wills[1].description).toBe("UK will");
   });
 
@@ -3949,6 +4734,8 @@ describe("PersonInspector", () => {
     expect(updatedDenominator.value).toBe("");
 
     setNumberInput(updatedDenominator, "4");
+    expect(latestPeople[0].willHeirs[1].sharePercent).toBe(50);
+    leaveInput(updatedDenominator);
     expect(latestPeople[0].willHeirs[1].sharePercent).toBe(25);
 
     act(() => container.querySelector('input[aria-label="Confirm Heirs?"]').click());

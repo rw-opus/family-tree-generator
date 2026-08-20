@@ -133,6 +133,52 @@ describe("App local recovery", () => {
     });
   };
 
+  const saveTestateFamily = ({ willHeirs = [] } = {}) => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "testate-tree",
+          title: "Testate family",
+          people: [
+            {
+              id: "testator",
+              fullName: "Joseph Borg",
+              sex: "Male",
+              dateOfDeath: "2020-01-01",
+              inheritanceBasis: "will",
+              wills: [{ id: "will", date: "2019-01-01" }],
+              willHeirs,
+            },
+            { id: "child", fullName: "Maria Borg", sex: "Female", fatherId: "testator" },
+          ],
+          familyGroups: [
+            {
+              id: "family",
+              title: "Testate family",
+              rootPersonId: "testator",
+              personIds: ["testator", "child"],
+            },
+          ],
+          activeFamilyGroupId: "family",
+          properties: [{ id: "property", owners: [] }],
+          outsideParties: [],
+          settings: {
+            activePropertyId: "property",
+            shareDisplay: "both",
+            workspaceMode: "property-tax",
+          },
+        },
+      ],
+      "testate-tree",
+      window.localStorage,
+    );
+  };
+
+  const setInputValue = (input, value) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
   beforeEach(() => {
     window.localStorage.clear();
     container = document.createElement("div");
@@ -557,6 +603,65 @@ describe("App local recovery", () => {
     const stored = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));
     expect(stored.trees[0].settings.workspaceMode).toBe("family-tree");
     expect(stored.trees[0].properties).toHaveLength(1);
+  });
+
+  it("keeps a just-flushed will share when changing its display mode", () => {
+    saveTestateFamily({
+      willHeirs: [
+        {
+          id: "will-heir",
+          personId: "child",
+          shareNumerator: 1,
+          shareDenominator: 1,
+          sharePercent: 100,
+        },
+      ],
+    });
+    act(() => root.render(<App />));
+    openCurrentFamily();
+    act(() => container.querySelector('[data-person-id="testator"]').click());
+
+    const percentage = container.querySelector('input[aria-label="Will share percentage"]');
+    expect(percentage).not.toBeNull();
+    act(() => setInputValue(percentage, "33.335"));
+
+    const fraction = [...container.querySelectorAll(".person-share-toggle button")].find(
+      (button) => button.textContent.trim() === "Fraction",
+    );
+    act(() => fraction.click());
+
+    const stored = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));
+    const savedTestator = stored.trees[0].people.find((person) => person.id === "testator");
+    expect(stored.trees[0].settings.shareDisplay).toBe("fraction");
+    expect(savedTestator.willHeirs[0].sharePercent).toBe(33.335);
+  });
+
+  it("keeps an unconnected will beneficiary together with its outside-party record", () => {
+    saveTestateFamily();
+    act(() => root.render(<App />));
+    openCurrentFamily();
+    act(() => container.querySelector('[data-person-id="testator"]').click());
+
+    const addUnconnected = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent.trim() === "Add unconnected heir",
+    );
+    act(() => addUnconnected.click());
+    const outsideName = container.querySelector('input[aria-label="Unconnected heir name"]');
+    act(() => setInputValue(outsideName, "Anthony Outside"));
+    act(() =>
+      outsideName
+        .closest("form")
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+
+    const stored = JSON.parse(window.localStorage.getItem(LOCAL_WORKSPACE_KEY));
+    const savedTree = stored.trees[0];
+    const outsideParty = savedTree.outsideParties.find((party) => party.name === "Anthony Outside");
+    const savedTestator = savedTree.people.find((person) => person.id === "testator");
+    expect(outsideParty).toBeTruthy();
+    expect(savedTestator.willHeirs).toContainEqual(
+      expect.objectContaining({ personId: outsideParty.id, sharePercent: 100 }),
+    );
   });
 
   it("opens one focused tree without exposing nested family tabs", () => {

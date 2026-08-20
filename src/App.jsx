@@ -3267,10 +3267,10 @@ export function App({
                 selectedPersonId={selectedPersonId}
                 shareDisplay={currentTree.settings.shareDisplay}
                 onShareDisplayChange={(shareDisplay) =>
-                  setTree({
-                    ...currentTree,
-                    settings: { ...currentTree.settings, shareDisplay },
-                  })
+                  commitDurableTreeChange((base) => ({
+                    ...base,
+                    settings: { ...base.settings, shareDisplay },
+                  }))
                 }
                 retainedIdentityLabels={selectedRetainedIdentityLabels}
                 personFamilyGroupCount={
@@ -3293,7 +3293,7 @@ export function App({
                 onConfirmInitialAcquisition={confirmInitialOwnerAcquisition}
                 onConfirmDonationAcquisitionValue={confirmDonationAcquisitionValue}
                 onOutsidePartiesChange={(outsideParties) =>
-                  setTree((current) => ({ ...normaliseTree(current), outsideParties }))
+                  commitDurableTreeChange((base) => ({ ...base, outsideParties }))
                 }
               />
             </div>
