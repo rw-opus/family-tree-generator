@@ -82,16 +82,36 @@ const storageRevision = (value) => {
 
 export function rebaseFamilyTreeStorageRevision(snapshot, savedTree) {
   if (!snapshot || !savedTree || snapshot.id !== savedTree.id) return snapshot;
+  // Hand back the very same snapshot when nothing actually moved. Callers key
+  // expensive work off this object identity, so allocating a copy for an
+  // unchanged revision makes them all redo that work for nothing.
+  const nextRevision = storageRevision(savedTree.storageRevision);
+  const nextSchemaVersion =
+    savedTree[TREE_SCHEMA_VERSION_FIELD] ?? snapshot[TREE_SCHEMA_VERSION_FIELD];
+  if (
+    snapshot.storageRevision === nextRevision &&
+    snapshot[TREE_SCHEMA_VERSION_FIELD] === nextSchemaVersion
+  ) {
+    return snapshot;
+  }
   return {
     ...snapshot,
-    [TREE_SCHEMA_VERSION_FIELD]:
-      savedTree[TREE_SCHEMA_VERSION_FIELD] ?? snapshot[TREE_SCHEMA_VERSION_FIELD],
-    storageRevision: storageRevision(savedTree.storageRevision),
+    [TREE_SCHEMA_VERSION_FIELD]: nextSchemaVersion,
+    storageRevision: nextRevision,
   };
 }
 
-export const rebaseFamilyTreeListStorageRevision = (trees, savedTree) =>
-  trees.map((tree) => rebaseFamilyTreeStorageRevision(tree, savedTree));
+export const rebaseFamilyTreeListStorageRevision = (trees, savedTree) => {
+  let changed = false;
+  const next = trees.map((tree) => {
+    const rebased = rebaseFamilyTreeStorageRevision(tree, savedTree);
+    if (rebased !== tree) changed = true;
+    return rebased;
+  });
+  // Keep the original array when no entry moved, so the library list is not
+  // re-rendered for a save that changed nothing in it.
+  return changed ? next : trees;
+};
 
 const treeDataFingerprintRecord = (tree = {}) => {
   // The database revision is trusted only from the row column. Keeping it out

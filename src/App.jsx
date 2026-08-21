@@ -716,7 +716,18 @@ export function App({
               ].join(" ")}`,
             );
           }
-          setTree((current) => rebaseFamilyTreeStorageRevision(current, savedTree));
+          setTree((current) => {
+            const rebased = rebaseFamilyTreeStorageRevision(current, savedTree);
+            if (rebased === current) return current;
+            // A save only moves the storage revision on. Left unmarked, the
+            // rebased snapshot misses the normalisation memo, so the whole case
+            // is canonicalised again and every derived array -- people above
+            // all -- comes back with a fresh identity. That rebuilt the tree
+            // geometry, re-rendered all person cards and re-ran the tax
+            // pipeline on every save, which is what made the workspace freeze
+            // for seconds each time typing paused.
+            return normalisedTreeSnapshots.has(current) ? markNormalisedTree(rebased) : rebased;
+          });
           setTrees((items) => rebaseFamilyTreeListStorageRevision(items, savedTree));
         },
         onSaveError: (error) =>
