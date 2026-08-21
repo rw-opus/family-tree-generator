@@ -1,7 +1,11 @@
 import { Building2, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
-import { reconcileFractionPercentageDisplay } from "../domain/ownershipPresentation.js";
+import {
+  ownershipShare,
+  reconcileFractionPercentageDisplay,
+  recordedNonNegativeMoney,
+} from "../domain/ownershipPresentation.js";
 import {
   assignInitialOwnerPerson,
   propertyStartingOwnershipStatus,
@@ -20,6 +24,15 @@ const makeOwner = (owners = []) => ({
   personId: "",
   ...remainingInitialOwnershipShare(owners),
 });
+
+function formattedCurrency(value) {
+  if (!Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-MT", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
 
 export function InitialOwnershipEditor({
   property,
@@ -77,6 +90,7 @@ export function InitialOwnershipEditor({
   }, [flushDraftOwners, onRegisterPendingFlush]);
 
   const owners = draftOwners;
+  const propertyValue = recordedNonNegativeMoney(property.saleValue);
   const status = propertyStartingOwnershipStatus({ ...property, owners });
   const percentageDisplay = reconcileFractionPercentageDisplay(owners.map(fractionForShare), {
     keys: owners.map((owner) => owner.personId || owner.id),
@@ -148,6 +162,7 @@ export function InitialOwnershipEditor({
             <span>Person</span>
             <span>Fraction</span>
             <span>Percentage</span>
+            <span>Notional value</span>
             <span />
           </div>
         )}
@@ -159,6 +174,10 @@ export function InitialOwnershipEditor({
             !owner.personId && !ownerFraction.error && Number(ownerFraction.numerator) > 0;
           const ownerNumerator = owner.shareNumerator ?? ownerFraction.numerator;
           const ownerDenominator = owner.shareDenominator ?? ownerFraction.denominator;
+          const notionalValue =
+            propertyValue === null || ownerFraction.error
+              ? null
+              : propertyValue * ownershipShare(owner.sharePercent / 100, ownerFraction);
           return (
             <div
               className={`initial-owner-row${ownerNeedsSelection ? " missing-owner" : ""}`}
@@ -275,6 +294,18 @@ export function InitialOwnershipEditor({
                   }}
                 />
                 <b>%</b>
+              </span>
+              <span
+                className="initial-owner-value"
+                aria-label={`Notional value ${formattedCurrency(notionalValue)}`}
+                title={
+                  propertyValue === null
+                    ? "Enter the property selling price to calculate this notional value."
+                    : undefined
+                }
+              >
+                <small>Notional value</small>
+                <strong>{formattedCurrency(notionalValue)}</strong>
               </span>
               <button
                 type="button"

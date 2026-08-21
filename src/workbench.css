@@ -4217,6 +4217,7 @@ body.dashboard-panel-resizing {
     minmax(112px, 1.4fr)
     minmax(112px, 0.9fr)
     minmax(82px, 0.66fr)
+    minmax(104px, 0.8fr)
     28px;
   align-items: center;
   gap: 0.28rem;
@@ -4276,6 +4277,29 @@ body.dashboard-panel-resizing {
 .initial-owner-row .icon-button {
   width: 28px;
   min-height: 1.8rem;
+}
+
+.initial-owner-value {
+  display: grid;
+  min-width: 0;
+  color: #475569;
+  font-family: var(--tracker-sans);
+  font-size: var(--type-label);
+  line-height: 1.15;
+  text-align: right;
+}
+
+.initial-owner-value small {
+  display: none;
+  font: inherit;
+}
+
+.initial-owner-value strong {
+  overflow: hidden;
+  font: inherit;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .initial-owner-person-control {
@@ -6873,6 +6897,25 @@ body.a3-print-preview-open {
 
   .initial-owner-row {
     padding: 0.22rem;
+  }
+
+  .initial-owner-row > .initial-owner-value {
+    grid-row: 2;
+    grid-column: 1 / 4;
+    grid-template-columns: auto 1fr;
+    gap: 0.35rem;
+    padding: 0.18rem 0.28rem 0.08rem;
+    text-align: left;
+  }
+
+  .initial-owner-row > .initial-owner-value small {
+    display: inline;
+    color: #657184;
+  }
+
+  .initial-owner-row > .icon-button {
+    grid-row: 1;
+    grid-column: 4;
   }
 
   .initial-owner-person-control {
