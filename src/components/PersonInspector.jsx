@@ -2614,8 +2614,8 @@ export function PersonInspector({
     hasEstateShareAtDeath &&
     recordedPropertySaleValue !== null &&
     !estateShareIsCurrent
-      ? "Current value not shown because this is a historical share."
-      : "Current value not calculated (selling price is optional).";
+      ? "Notional value not shown because this is a historical share."
+      : `${isDeceased ? "Notional" : "Current"} value not calculated (selling price is optional).`;
   const propertyShareSummary = (
     <section
       className={`person-share-summary${isDeceased ? " estate-balance-step" : ""}`}
@@ -2666,7 +2666,7 @@ export function PersonInspector({
         </strong>
         <small>
           {hasDisplayedPropertyShare && displayedPropertyValue !== null
-            ? `Current value ${money.format(displayedPropertyValue)}`
+            ? `${isDeceased ? "Notional" : "Current"} value ${money.format(displayedPropertyValue)}`
             : unavailablePropertyValueMessage}
         </small>
       </div>

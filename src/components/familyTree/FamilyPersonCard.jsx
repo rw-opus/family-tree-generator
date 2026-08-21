@@ -363,7 +363,11 @@ function FamilyPersonCardComponent({
         displayedShareIsCurrent &&
         currentOwnershipValue !== null && (
           <div className="family-node-detail">
-            {ownershipSnapshotActive ? "Value at this step" : "Current value"}{" "}
+            {ownershipSnapshotActive
+              ? "Value at this step"
+              : isDeceased
+                ? "Notional value"
+                : "Current value"}{" "}
             {formattedCurrency(currentOwnershipValue)}
           </div>
         )}

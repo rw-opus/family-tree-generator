@@ -3568,7 +3568,9 @@ describe("PersonInspector", () => {
     );
 
     expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.34%");
-    expect(container.querySelector(".person-share-value small").textContent).toContain("€0.34");
+    expect(container.querySelector(".person-share-value small").textContent).toContain(
+      "Current value",
+    );
   });
 
   it("shows an explicitly recorded zero value for a living current owner", () => {
@@ -3645,7 +3647,9 @@ describe("PersonInspector", () => {
     });
 
     expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.34%");
-    expect(container.querySelector(".person-share-value small").textContent).toContain("€0.34");
+    expect(container.querySelector(".person-share-value small").textContent).toContain(
+      "Notional value",
+    );
 
     renderWithPresentation({
       id: "deceased",
@@ -3657,7 +3661,7 @@ describe("PersonInspector", () => {
 
     expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.33%");
     expect(container.querySelector(".person-share-value small").textContent).toBe(
-      "Current value not shown because this is a historical share.",
+      "Notional value not shown because this is a historical share.",
     );
   });
 
@@ -7430,7 +7434,7 @@ describe("PersonInspector deceased property flow", () => {
     expect(transfer.textContent).toContain("1/4");
     expect(balance.textContent).toContain("3/4");
     expect(balance.textContent).toContain(
-      "Current value not shown because this is a historical share.",
+      "Notional value not shown because this is a historical share.",
     );
     expect(balance.textContent).not.toContain("€750,000.00");
     expect(death.compareDocumentPosition(transfer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -7889,7 +7893,7 @@ describe("PersonInspector legacy lifetime disposal records", () => {
     expect(transferCheckbox.disabled).toBe(false);
     expect(container.querySelector(".estate-balance-step").textContent).toContain("0/1");
     expect(container.querySelector(".estate-balance-step").textContent).toContain(
-      "Current value not calculated",
+      "Notional value not calculated",
     );
     expect(container.querySelector(".person-succession").classList).toContain("fully-transferred");
     expect(container.querySelector(".estate-succession-step")).toBeNull();

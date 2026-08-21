@@ -284,9 +284,7 @@ test.describe("family tree canvas", () => {
     await expect(page.locator(".tree-tools-panel")).toHaveCount(0);
 
     await cardDetails.locator("summary").click();
-    await expect(cardDetails.locator(".person-card-display-menu")).toContainText(
-      "Current holding value",
-    );
+    await expect(cardDetails.locator(".person-card-display-menu")).toContainText("Share value");
   });
 
   test("prints the family name once in normal and A3 tree output", async ({ page }) => {

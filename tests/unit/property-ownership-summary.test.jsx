@@ -161,6 +161,22 @@ describe("PropertyOwnershipSummary", () => {
     ).toEqual(["Current value €750,000.00", "Current value €250,000.00"]);
   });
 
+  it("announces a deceased owner's calculated share as a notional value", () => {
+    act(() =>
+      root.render(
+        <PropertyOwnershipSummary
+          people={[{ id: "deceased", fullName: "Joseph Borg", isDeceased: true }]}
+          outsideParties={[]}
+          property={{ id: "property", saleValue: "100000" }}
+          startingOwnership={{ deceased: 1 }}
+          transfers={[]}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".owner-value").textContent).toBe("Notional value €100,000.00");
+  });
+
   it("reconciles rounded owner values to the recorded total", () => {
     renderOwnerValues({ saleValue: "1", shares: [1 / 3, 1 / 3, 1 / 3] });
 

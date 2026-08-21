@@ -111,7 +111,7 @@ describe("FamilyTreeCanvas", () => {
     expect(navigation.firstElementChild).toBe(control);
 
     const valueToggle = [...control.querySelectorAll("label")]
-      .find((label) => label.textContent.includes("Current holding value"))
+      .find((label) => label.textContent.includes("Share value"))
       .querySelector("input");
     act(() => valueToggle.click());
 
@@ -596,7 +596,7 @@ describe("FamilyTreeCanvas", () => {
     expect(summary.parentElement.open).toBe(true);
 
     const valueToggle = [...container.querySelectorAll(".person-card-display-menu label")]
-      .find((label) => label.textContent.includes("Current holding value"))
+      .find((label) => label.textContent.includes("Share value"))
       .querySelector("input");
     const choiceMove = touchEvent("touchmove", [moved]);
     act(() => {
@@ -1133,6 +1133,36 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector('[data-person-id="deceased"]').textContent).not.toContain(
       "Current value",
     );
+  });
+
+  it("labels a deceased person's present-day share value as notional", () => {
+    renderCanvas({
+      people: [
+        person("deceased", "Joseph Borg", {
+          isDeceased: true,
+          dateOfDeath: "2020-07-18",
+        }),
+      ],
+      ownershipByPerson: { deceased: 0.5 },
+      ownershipFractionsByPerson: { deceased: { numerator: 1, denominator: 2 } },
+      currentOwnerPresentationsByPerson: {
+        deceased: {
+          id: "deceased",
+          share: 0.5,
+          shareFraction: { numerator: 1, denominator: 2 },
+          percentage: 50,
+          value: 150000,
+        },
+      },
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipValue: true,
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="deceased"]');
+    expect(card.textContent).toContain("Notional value");
+    expect(card.textContent).not.toContain("Current value");
   });
 
   it("renders a living owner's fraction, percentage, and value from one current presentation", () => {
