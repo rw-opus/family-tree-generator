@@ -92,10 +92,12 @@ describe("person data workbook export", () => {
     expect(result.rows[0].availableData).toContain("Declaration Causa Mortis");
     expect(result.rows[2].familyTreeStatus).toContain("Retained legal / tax identity");
     expect(result.missingRows).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ personId: "father", field: "Father" }),
-        expect.objectContaining({ personId: "father", field: "Date of birth" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ personId: "father", field: "Father" })]),
+    );
+    // The date of birth drives no succession or tax outcome, so it is carried
+    // as recorded data and never reported as a gap.
+    expect(result.missingRows).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: "Date of birth" })]),
     );
   });
 
