@@ -6902,7 +6902,7 @@ body.a3-print-preview-open {
   .initial-owner-row > .initial-owner-value {
     grid-row: 2;
     grid-column: 1 / 4;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 0.35rem;
     padding: 0.18rem 0.28rem 0.08rem;
     text-align: left;
@@ -6911,6 +6911,10 @@ body.a3-print-preview-open {
   .initial-owner-row > .initial-owner-value small {
     display: inline;
     color: #657184;
+  }
+
+  .initial-owner-columns > .initial-owner-value-heading {
+    display: none;
   }
 
   .initial-owner-row > .icon-button {

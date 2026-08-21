@@ -162,7 +162,7 @@ export function InitialOwnershipEditor({
             <span>Person</span>
             <span>Fraction</span>
             <span>Percentage</span>
-            <span>Notional value</span>
+            <span className="initial-owner-value-heading">Notional value</span>
             <span />
           </div>
         )}
