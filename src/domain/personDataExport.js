@@ -300,15 +300,14 @@ export function buildPersonDataExport({
     }
     if (!fatherName) addGap(gaps, "Father", "Family details", "Father's name is not recorded.");
     if (!motherName) addGap(gaps, "Mother", "Family details", "Mother's name is not recorded.");
-    if (!isValidIsoDate(person.dateOfBirth)) {
-      addGap(
-        gaps,
-        "Date of birth",
-        "Family details",
-        text(person.gedcomBirthDate)
-          ? `Enter an exact date of birth; GEDCOM source text is “${text(person.gedcomBirthDate)}”.`
-          : "Date of birth is not recorded.",
-      );
+    // A GEDCOM commonly records a birth as a year, a month and year, or an
+    // approximation ("ABT 1875"). None of those is an exact legal date, but the
+    // information is not missing either -- and unlike the date of death, the date
+    // of birth drives no succession or tax outcome. Reporting every imported
+    // approximation as a gap buried the real gaps, so an imprecise imported date
+    // is carried as recorded data instead.
+    if (!isValidIsoDate(person.dateOfBirth) && !text(person.gedcomBirthDate)) {
+      addGap(gaps, "Date of birth", "Family details", "Date of birth is not recorded.");
     }
     if (deceased && !isValidIsoDate(person.dateOfDeath) && person.dateOfDeathUnknown !== true) {
       addGap(gaps, "Date of death", "Succession", "Enter the date of death or mark it unknown.");
@@ -348,6 +347,9 @@ export function buildPersonDataExport({
       name && "Name",
       parents && "Parents",
       isValidIsoDate(person.dateOfBirth) && "Date of birth",
+      !isValidIsoDate(person.dateOfBirth) &&
+        text(person.gedcomBirthDate) &&
+        `Date of birth as recorded (${text(person.gedcomBirthDate)})`,
       text(person.sex) && "Sex",
       text(person.surnameAtBirth) && "Surname at birth",
       deceased && "Death status",
