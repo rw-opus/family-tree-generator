@@ -217,9 +217,11 @@ function normalizePeople(
           ? { ...person, coParentRelationshipExplicitOnly: true }
           : person,
       );
-  const relationalPeople = normalizePartnerRelationships(relationshipPeople, {
-    inferCoParents: inferCoParentMarriages,
-  });
+  const relationalPeople = applySoleSpouseParentAssumptions(
+    normalizePartnerRelationships(relationshipPeople, {
+      inferCoParents: inferCoParentMarriages,
+    }),
+  );
   if (!applyLegalNormalisation) {
     return { people: relationalPeople, warnings };
   }
@@ -228,6 +230,45 @@ function normalizePeople(
     people: synchroniseMaritalStatusAtDeath(survivalNormalised),
     warnings,
   };
+}
+
+/**
+ * A child recorded against one parent belongs to that marriage. Where the
+ * recorded parent has exactly one partner there is nothing to decide, so the
+ * other parent is filled in rather than raised as a question. Where the parent
+ * had more than one partner the child could belong to either marriage, and the
+ * gap is deliberately left for the person card to ask about.
+ *
+ * A parent the user has explicitly cleared is never re-inferred.
+ */
+function applySoleSpouseParentAssumptions(people = []) {
+  // These people have already been through normalizePartnerRelationships, so
+  // spouseIds is authoritative here. Calling partnerIdsForPerson instead would
+  // re-normalise the entire list once per person, which is quadratic and, on a
+  // large imported family, slow enough to stall the workspace.
+  const partnersById = new Map(
+    people.map((person) => [person.id, Array.isArray(person.spouseIds) ? person.spouseIds : []]),
+  );
+  let changed = false;
+  const next = people.map((person) => {
+    const infer = (recordedParentId, missingField, clearedFlag) => {
+      if (!recordedParentId || person[missingField] || person[clearedFlag] === true) return "";
+      const partners = partnersById.get(recordedParentId) || [];
+      if (partners.length !== 1) return "";
+      const partnerId = partners[0];
+      return partnerId && partnerId !== person.id ? partnerId : "";
+    };
+    const motherId = infer(person.fatherId, "motherId", "motherExplicitlyUnassigned");
+    const fatherId = infer(person.motherId, "fatherId", "fatherExplicitlyUnassigned");
+    if (!motherId && !fatherId) return person;
+    changed = true;
+    return {
+      ...person,
+      ...(motherId ? { motherId } : {}),
+      ...(fatherId ? { fatherId } : {}),
+    };
+  });
+  return changed ? next : people;
 }
 
 function isUntouchedLegacyPotentialParent(person, people, protectedPersonIds) {

@@ -381,6 +381,25 @@ export function parseGedcom(text, idFactory = () => crypto.randomUUID()) {
     },
   );
 
+  // A GEDCOM family often names only one parent on a child. Where the recorded
+  // parent has exactly one spouse, that spouse is the other parent and there is
+  // nothing to ask about. Where the recorded parent had more than one spouse the
+  // child could belong to either marriage, so the gap is left for the person
+  // card to raise rather than guessed at.
+  people.forEach((person) => {
+    const inferFrom = (recordedParentId, missingField) => {
+      if (!recordedParentId || person[missingField]) return;
+      const recordedParent = peopleById.get(recordedParentId);
+      const partners = recordedParent?.spouseIds || [];
+      if (partners.length !== 1) return;
+      const partnerId = partners[0];
+      if (!partnerId || partnerId === person.id) return;
+      person[missingField] = partnerId;
+    };
+    inferFrom(person.fatherId, "motherId");
+    inferFrom(person.motherId, "fatherId");
+  });
+
   people.forEach((person) => {
     if (!person.fatherId) return;
     const father = peopleById.get(person.fatherId);
