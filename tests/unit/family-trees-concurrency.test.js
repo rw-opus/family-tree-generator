@@ -186,6 +186,30 @@ describe("family tree optimistic concurrency", () => {
     );
   });
 
+  // A save that only moves the revision on must not hand back fresh objects:
+  // the workspace keys its layout, its person cards and the whole tax pipeline
+  // off these identities, and rebuilding all of that on every save is what made
+  // typing stall for seconds each time it paused.
+  it("returns the very same snapshot when the revision has not moved", () => {
+    const local = currentTree({ storageRevision: 8 });
+    const saved = hydrateFamilyTree(savedRecord());
+    expect(saved.storageRevision).toBe(8);
+    expect(rebaseFamilyTreeStorageRevision(local, saved)).toBe(local);
+  });
+
+  it("keeps the people array identical when only the revision moves", () => {
+    const local = currentTree({ people: [{ id: "person-1" }], storageRevision: 7 });
+    const rebased = rebaseFamilyTreeStorageRevision(local, hydrateFamilyTree(savedRecord()));
+    expect(rebased).not.toBe(local);
+    expect(rebased.storageRevision).toBe(8);
+    expect(rebased.people).toBe(local.people);
+  });
+
+  it("returns the same list when no tree in it moved", () => {
+    const list = [currentTree({ storageRevision: 8 })];
+    expect(rebaseFamilyTreeListStorageRevision(list, hydrateFamilyTree(savedRecord()))).toBe(list);
+  });
+
   it("adopts the persisted tree schema marker when rebasing a legacy snapshot", () => {
     const legacy = {
       ...currentTree({ storageRevision: 7 }),
