@@ -79,8 +79,18 @@ describe("imported birth dates and the missing-data list", () => {
     expect(row.availableData).toMatch(/Date of birth as recorded \(ABT 1875\)/);
   });
 
-  it("still reports it when nothing at all was recorded", () => {
-    const { rows } = rowsFor([person("p2", { gedcomBirthDate: "", dateOfBirth: "" })]);
-    expect(rows.find((entry) => entry.personId === "p2").missingData).toMatch(/Date of birth/);
+  // A genealogy routinely has no exact birth date for most of the family, and
+  // the date of birth drives no succession or tax outcome, so it is never a gap.
+  it("does not report a date of birth as missing even when nothing was recorded", () => {
+    const { rows, missingRows } = rowsFor([person("p2", { gedcomBirthDate: "", dateOfBirth: "" })]);
+    expect(rows.find((entry) => entry.personId === "p2").missingData).not.toMatch(/Date of birth/);
+    expect(missingRows.some((row) => row.field === "Date of birth")).toBe(false);
+  });
+
+  it("still reports a missing date of death, which does drive succession", () => {
+    const { rows } = rowsFor([
+      person("p3", { isDeceased: true, dateOfDeath: "", dateOfBirth: "" }),
+    ]);
+    expect(rows.find((entry) => entry.personId === "p3").missingData).toMatch(/Date of death/);
   });
 });
