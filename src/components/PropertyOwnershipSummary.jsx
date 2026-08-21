@@ -116,6 +116,9 @@ export function PropertyOwnershipSummary({
           ledger.owners.map((owner) => {
             const presentation = currentOwnerPresentations[owner.id];
             const currentValue = recordedNonNegativeMoney(presentation.value);
+            const valueLabel = peopleById.get(owner.id)?.isDeceased
+              ? "Notional value"
+              : "Current value";
             return (
               <div className="owner-row read-only-owner-row" key={owner.id}>
                 {/* No provenance line. The name is the row; an outside owner is
@@ -134,7 +137,7 @@ export function PropertyOwnershipSummary({
                   </small>
                   {currentValue !== null && (
                     <small className="owner-value">
-                      <span className="sr-only">Current value </span>
+                      <span className="sr-only">{valueLabel} </span>
                       {money.format(currentValue)}
                     </small>
                   )}

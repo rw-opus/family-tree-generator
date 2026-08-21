@@ -24,6 +24,12 @@ function blockFor(source, selector) {
   return "";
 }
 
+function exactBlockFor(source, selector) {
+  const selectorIndex = source.indexOf(`${selector} {`);
+  if (selectorIndex < 0) return "";
+  return blockFor(source.slice(selectorIndex), selector);
+}
+
 /**
  * The label layer used to sit below the type scale rather than inside it: 144
  * declarations spread over seventeen values between 0.52rem and 0.69rem, steps
@@ -57,6 +63,26 @@ describe("type scale", () => {
   it("still uses both label steps, so the collapse did not flatten them into one", () => {
     expect(screenCss).toMatch(/font-size:\s*var\(--type-micro\)/);
     expect(screenCss).toMatch(/font-size:\s*var\(--type-label\)/);
+  });
+});
+
+describe("person-card type scale", () => {
+  it("uses one sans family and only two deliberate card sizes", () => {
+    const card = exactBlockFor(css, ".tree-stage .family-node");
+    const name = exactBlockFor(css, ".tree-stage .family-node-name");
+    const surname = exactBlockFor(css, ".tree-stage .family-node-surname");
+    const birthSurname = exactBlockFor(css, ".tree-stage .family-node-birth-surname");
+    const ownership = exactBlockFor(css, ".tree-stage .family-node-ownership");
+    const detail = exactBlockFor(css, ".tree-stage .family-node-detail");
+
+    expect(card).toMatch(/font-family:\s*var\(--tracker-sans\)/);
+    expect(card).toContain("--family-card-identity-size: var(--type-caption)");
+    expect(card).toContain("--family-card-text-size: var(--type-label)");
+    expect(name).toMatch(/font-size:\s*var\(--family-card-identity-size\)/);
+    expect(surname).toMatch(/font-size:\s*var\(--family-card-identity-size\)/);
+    [birthSurname, ownership, detail].forEach((rule) =>
+      expect(rule).toMatch(/font-size:\s*var\(--family-card-text-size\)/),
+    );
   });
 });
 

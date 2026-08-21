@@ -111,7 +111,7 @@ describe("FamilyTreeCanvas", () => {
     expect(navigation.firstElementChild).toBe(control);
 
     const valueToggle = [...control.querySelectorAll("label")]
-      .find((label) => label.textContent.includes("Current holding value"))
+      .find((label) => label.textContent.includes("Share value"))
       .querySelector("input");
     act(() => valueToggle.click());
 
@@ -596,7 +596,7 @@ describe("FamilyTreeCanvas", () => {
     expect(summary.parentElement.open).toBe(true);
 
     const valueToggle = [...container.querySelectorAll(".person-card-display-menu label")]
-      .find((label) => label.textContent.includes("Current holding value"))
+      .find((label) => label.textContent.includes("Share value"))
       .querySelector("input");
     const choiceMove = touchEvent("touchmove", [moved]);
     act(() => {
@@ -1105,7 +1105,7 @@ describe("FamilyTreeCanvas", () => {
     expect(card.textContent).not.toContain("CM");
   });
 
-  it("shows the current holding value only for a person who still owns the share", () => {
+  it("distinguishes a living current value from a deceased notional value", () => {
     const people = [
       person("deceased", "Joseph Borg", {
         isDeceased: true,
@@ -1130,9 +1130,32 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector('[data-person-id="owner"]').textContent).toContain(
       "Current value €150,000.00",
     );
-    expect(container.querySelector('[data-person-id="deceased"]').textContent).not.toContain(
-      "Current value",
+    expect(container.querySelector('[data-person-id="deceased"]').textContent).toContain(
+      "Notional value €150,000.00",
     );
+  });
+
+  it("shows a notional value on a deceased initial owner's card without current title", () => {
+    renderCanvas({
+      people: [
+        person("deceased", "Joseph Borg", {
+          isDeceased: true,
+          dateOfDeath: "2020-07-18",
+        }),
+      ],
+      ownershipByPerson: { deceased: 0.5 },
+      ownershipFractionsByPerson: { deceased: { numerator: 1, denominator: 2 } },
+      currentOwnerPresentationsByPerson: {},
+      propertyValue: 300000,
+      personCardFields: {
+        ownershipFraction: true,
+        ownershipValue: true,
+      },
+    });
+
+    const card = container.querySelector('[data-person-id="deceased"]');
+    expect(card.textContent).toContain("Notional value €150,000.00");
+    expect(card.textContent).not.toContain("Current value");
   });
 
   it("renders a living owner's fraction, percentage, and value from one current presentation", () => {

@@ -64,6 +64,32 @@ describe("InitialOwnershipEditor percentage display", () => {
     expect(latestOwners[0].sharePercentInput).toBeUndefined();
   });
 
+  it("shows each initial owner's notional value from the property value and exact fraction", () => {
+    act(() =>
+      root.render(
+        <InitialOwnershipEditor
+          property={{
+            saleValue: "400000",
+            owners: [
+              {
+                id: "title",
+                personId: "owner",
+                shareNumerator: 1,
+                shareDenominator: 4,
+              },
+            ],
+          }}
+          people={[{ id: "owner", fullName: "Owner" }]}
+          onChange={() => ({})}
+        />,
+      ),
+    );
+
+    expect(container.querySelector(".initial-owner-value").textContent).toContain(
+      "Notional value€100,000.00",
+    );
+  });
+
   it("normalises an explicitly typed percentage only when the field loses focus", () => {
     const people = [{ id: "owner", fullName: "Owner" }];
 

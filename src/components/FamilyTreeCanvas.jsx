@@ -138,7 +138,7 @@ export function FamilyTreeCanvas({
   onFocusPerson,
   personCardFields,
   onPersonCardFieldsChange,
-  propertyValue = 0,
+  propertyValue = null,
   propertyId = "",
   ownershipSnapshotActive = false,
   zoom = 100,
@@ -674,6 +674,7 @@ export function FamilyTreeCanvas({
         ownershipByPerson={ownershipByPerson}
         ownershipFractionsByPerson={ownershipFractionsByPerson}
         currentOwnerPresentationsByPerson={resolvedCurrentOwnerPresentationsByPerson}
+        propertyValue={propertyValue}
         historicalLawWarningsByPerson={historicalLawWarningsByPerson}
         causaMortisCoverageByPerson={causaMortisCoverageByPerson}
         personCardFields={personCardFields}
@@ -704,6 +705,7 @@ export function FamilyTreeCanvas({
       ownershipByPerson,
       ownershipFractionsByPerson,
       ownershipSnapshotActive,
+      propertyValue,
       personCardFields,
       propertyId,
       requiredSpouseDeathDateIds,

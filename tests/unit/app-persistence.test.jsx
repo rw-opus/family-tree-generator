@@ -458,6 +458,67 @@ describe("App local recovery", () => {
     expect(container.textContent).not.toContain("Owners & transfers");
   });
 
+  it("shows the current property value as notional on a deceased initial owner's tree card", () => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "tree",
+          title: "Deceased initial owner",
+          people: [
+            {
+              id: "owner",
+              fullName: "Joseph Borg",
+              sex: "Male",
+              isDeceased: true,
+              dateOfDeath: "1900-01-01",
+            },
+          ],
+          familyGroups: [
+            {
+              id: "family",
+              title: "Borg family",
+              rootPersonId: "owner",
+              personIds: ["owner"],
+            },
+          ],
+          activeFamilyGroupId: "family",
+          properties: [
+            {
+              id: "property",
+              saleValue: "7000000",
+              owners: [
+                {
+                  id: "initial-owner",
+                  personId: "owner",
+                  shareNumerator: 1,
+                  shareDenominator: 1,
+                },
+              ],
+            },
+          ],
+          settings: {
+            activePropertyId: "property",
+            workspaceMode: "property-tax",
+            personCardFields: {
+              ownershipFraction: true,
+              ownershipPercentage: true,
+              ownershipValue: true,
+            },
+          },
+        },
+      ],
+      "tree",
+      window.localStorage,
+    );
+
+    act(() => root.render(<App />));
+    openCurrentFamily();
+
+    expect(container.querySelector('[data-person-id="owner"]').textContent).toContain(
+      "Notional value €7,000,000.00",
+    );
+  });
+
   it("shows a selected initial owner's share on the tree before title reaches 100%", () => {
     saveLocalWorkspace(
       [

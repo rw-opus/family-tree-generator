@@ -4,6 +4,7 @@ import {
   formatOwnershipFraction,
   formatOwnershipPercentage,
   ownershipFraction,
+  ownershipShare,
   recordedNonNegativeMoney,
 } from "../../domain/ownershipPresentation.js";
 import {
@@ -179,6 +180,7 @@ function FamilyPersonCardComponent({
   ownershipByPerson,
   ownershipFractionsByPerson = {},
   currentOwnerPresentationsByPerson = {},
+  propertyValue = null,
   historicalLawWarningsByPerson = {},
   causaMortisCoverageByPerson = {},
   personCardFields = DEFAULT_PERSON_CARD_FIELDS,
@@ -224,6 +226,7 @@ function FamilyPersonCardComponent({
     ? currentOwnerPresentationsByPerson[person.id] || null
     : null;
   const currentOwnershipValue = recordedNonNegativeMoney(currentOwnerPresentation?.value);
+  const recordedPropertyValue = recordedNonNegativeMoney(propertyValue);
   const hasCurrentOwnership = Boolean(currentOwnerPresentation);
   const useCurrentPresentation = !ownershipSnapshotActive && !isDeceased && hasCurrentOwnership;
   const displayedOwnership = useCurrentPresentation ? currentOwnerPresentation.share : ownership;
@@ -243,6 +246,14 @@ function FamilyPersonCardComponent({
   const displayedShareIsCurrent =
     currentOwnerPresentation &&
     compareFractions(displayedOwnershipFraction, currentOwnerPresentation.shareFraction) === 0;
+  const displayedOwnershipValue = isDeceased
+    ? recordedPropertyValue === null || !hasDisplayedOwnership
+      ? null
+      : recordedPropertyValue * ownershipShare(displayedOwnership, displayedOwnershipFraction)
+    : currentOwnershipValue;
+  const displayedOwnershipValueIsAvailable = isDeceased
+    ? displayedOwnershipValue !== null
+    : hasCurrentOwnership && displayedShareIsCurrent && displayedOwnershipValue !== null;
   const causaMortisDetails = legalWorkspaceEnabled
     ? availableCausaMortisDetails(person, propertyId)
     : [];
@@ -357,16 +368,16 @@ function FamilyPersonCardComponent({
       {!person.isPlaceholder && shareParts.length > 0 && (
         <div className="family-node-ownership">{shareParts.join(" · ")}</div>
       )}
-      {!person.isPlaceholder &&
-        fields.ownershipValue &&
-        hasCurrentOwnership &&
-        displayedShareIsCurrent &&
-        currentOwnershipValue !== null && (
-          <div className="family-node-detail">
-            {ownershipSnapshotActive ? "Value at this step" : "Current value"}{" "}
-            {formattedCurrency(currentOwnershipValue)}
-          </div>
-        )}
+      {!person.isPlaceholder && fields.ownershipValue && displayedOwnershipValueIsAvailable && (
+        <div className="family-node-detail">
+          {ownershipSnapshotActive
+            ? "Value at this step"
+            : isDeceased
+              ? "Notional value"
+              : "Current value"}{" "}
+          {formattedCurrency(displayedOwnershipValue)}
+        </div>
+      )}
       {!person.isPlaceholder && fields.dateOfDeath && isDeceased && displayedDeathDate && (
         <div className="family-node-detail">d. {displayedDeathDate}</div>
       )}

@@ -3,7 +3,7 @@ import { SlidersHorizontal } from "lucide-react";
 const legalFieldOptions = [
   ["ownershipFraction", "Fractions"],
   ["ownershipPercentage", "Percentages"],
-  ["ownershipValue", "Current holding value"],
+  ["ownershipValue", "Share value"],
   ["successionBasis", "Testate / intestate"],
   ["willDetails", "Will details"],
   ["causaMortisDetails", "Causa mortis details"],
