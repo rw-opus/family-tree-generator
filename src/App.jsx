@@ -3352,6 +3352,7 @@ export function App({
                 ownershipByPerson={ownershipByPerson}
                 ownershipFractionsByPerson={ownershipFractionsByPerson}
                 currentOwnerPresentationsByPerson={currentOwnerPresentationsByPerson}
+                propertyValue={activeProperty.saleValue}
                 historicalLawWarningsByPerson={historicalLawWarningsByPerson}
                 causaMortisCoverageByPerson={causaMortisCoverage.byPerson}
                 selectedPersonId={selectedPersonId}

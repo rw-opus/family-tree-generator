@@ -1105,7 +1105,7 @@ describe("FamilyTreeCanvas", () => {
     expect(card.textContent).not.toContain("CM");
   });
 
-  it("shows the current holding value only for a person who still owns the share", () => {
+  it("distinguishes a living current value from a deceased notional value", () => {
     const people = [
       person("deceased", "Joseph Borg", {
         isDeceased: true,
@@ -1130,12 +1130,12 @@ describe("FamilyTreeCanvas", () => {
     expect(container.querySelector('[data-person-id="owner"]').textContent).toContain(
       "Current value €150,000.00",
     );
-    expect(container.querySelector('[data-person-id="deceased"]').textContent).not.toContain(
-      "Current value",
+    expect(container.querySelector('[data-person-id="deceased"]').textContent).toContain(
+      "Notional value €150,000.00",
     );
   });
 
-  it("labels a deceased person's present-day share value as notional", () => {
+  it("shows a notional value on a deceased initial owner's card without current title", () => {
     renderCanvas({
       people: [
         person("deceased", "Joseph Borg", {
@@ -1145,15 +1145,8 @@ describe("FamilyTreeCanvas", () => {
       ],
       ownershipByPerson: { deceased: 0.5 },
       ownershipFractionsByPerson: { deceased: { numerator: 1, denominator: 2 } },
-      currentOwnerPresentationsByPerson: {
-        deceased: {
-          id: "deceased",
-          share: 0.5,
-          shareFraction: { numerator: 1, denominator: 2 },
-          percentage: 50,
-          value: 150000,
-        },
-      },
+      currentOwnerPresentationsByPerson: {},
+      propertyValue: 300000,
       personCardFields: {
         ownershipFraction: true,
         ownershipValue: true,
@@ -1161,7 +1154,7 @@ describe("FamilyTreeCanvas", () => {
     });
 
     const card = container.querySelector('[data-person-id="deceased"]');
-    expect(card.textContent).toContain("Notional value");
+    expect(card.textContent).toContain("Notional value €150,000.00");
     expect(card.textContent).not.toContain("Current value");
   });
 
