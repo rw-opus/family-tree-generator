@@ -795,7 +795,7 @@ describe("App local recovery", () => {
       (button) => button.textContent.trim() === "Property & initial ownership",
     );
     expect(setupLink.className).toContain("active");
-    expect(container.textContent).toContain("Current ownership & history");
+    expect(container.textContent).toContain("Current title positions & history");
     expect(container.textContent).toContain("Tax Calculation");
     expect(container.textContent).not.toContain("Record a sale or transfer");
     const propertyPrint = container.querySelector(
@@ -870,7 +870,7 @@ describe("App local recovery", () => {
 
     expect(container.querySelector(".property-workspace-page")).not.toBeNull();
     expect(container.querySelector(".property-workspace-menu button.active").textContent).toContain(
-      "Current ownership & history",
+      "Current title positions & history",
     );
     expect(container.querySelector("#outside-owner-title").textContent).toBe(
       "Harbour Holdings Limited",

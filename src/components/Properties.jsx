@@ -335,7 +335,7 @@ export function Properties({
             >
               <div className="property-workspace-section-heading">
                 <p className="eyebrow">Ownership</p>
-                <h2>Current ownership & history</h2>
+                <h2>Current title positions & history</h2>
               </div>
               {startingOwnership.isComplete ? (
                 <>

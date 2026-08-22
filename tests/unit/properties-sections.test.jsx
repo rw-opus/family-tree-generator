@@ -67,8 +67,8 @@ describe("unified Property & Tax workspace", () => {
 
     expect(container.textContent).toContain("Initial owner/s of the property");
     expect(container.textContent).toContain("Value of the property being sold today");
-    expect(container.textContent).toContain("Current ownership & history");
-    expect(container.textContent).toContain("Current ownership");
+    expect(container.textContent).toContain("Current title positions & history");
+    expect(container.textContent).toContain("Current title positions");
     expect(container.querySelector("#property-workspace-ownership").textContent).toContain(
       "Trace succession",
     );

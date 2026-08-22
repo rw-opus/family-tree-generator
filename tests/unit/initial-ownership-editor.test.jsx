@@ -37,7 +37,13 @@ describe("InitialOwnershipEditor percentage display", () => {
         })),
       );
       latestOwners = owners;
-      return <InitialOwnershipEditor property={{ owners }} people={people} onChange={setOwners} />;
+      return (
+        <InitialOwnershipEditor
+          property={{ saleValue: 1, owners }}
+          people={people}
+          onChange={setOwners}
+        />
+      );
     }
 
     act(() => root.render(<Harness />));
@@ -47,6 +53,11 @@ describe("InitialOwnershipEditor percentage display", () => {
     ];
     expect(percentages.map((input) => input.value)).toEqual(["33.34", "33.33", "33.33"]);
     expect(percentages.reduce((total, input) => total + Number(input.value), 0)).toBe(100);
+    expect(
+      [...container.querySelectorAll(".initial-owner-value strong")].map(
+        (value) => value.textContent,
+      ),
+    ).toEqual(["€0.34", "€0.33", "€0.33"]);
     percentages.forEach((input) => {
       expect(input.step).toBe("0.01");
       expect(input.inputMode).toBe("decimal");
@@ -88,6 +99,36 @@ describe("InitialOwnershipEditor percentage display", () => {
     expect(container.querySelector(".initial-owner-value").textContent).toContain(
       "Notional value€100,000.00",
     );
+  });
+
+  it("keeps notional values visible while an entered ownership total is invalid", () => {
+    act(() =>
+      root.render(
+        <InitialOwnershipEditor
+          property={{
+            saleValue: "100000",
+            owners: ["first", "second"].map((personId) => ({
+              id: `${personId}-title`,
+              personId,
+              shareNumerator: 3,
+              shareDenominator: 4,
+            })),
+          }}
+          people={[
+            { id: "first", fullName: "First" },
+            { id: "second", fullName: "Second" },
+          ]}
+          onChange={() => ({})}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("must equal 100%");
+    expect(
+      [...container.querySelectorAll(".initial-owner-value strong")].map(
+        (value) => value.textContent,
+      ),
+    ).toEqual(["€75,000.00", "€75,000.00"]);
   });
 
   it("normalises an explicitly typed percentage only when the field loses focus", () => {

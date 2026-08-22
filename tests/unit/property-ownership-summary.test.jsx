@@ -175,6 +175,7 @@ describe("PropertyOwnershipSummary", () => {
     );
 
     expect(container.querySelector(".owner-value").textContent).toBe("Notional value €100,000.00");
+    expect(container.querySelector(".owner-status").textContent).toBe("Heirs to be Identified");
   });
 
   it("reconciles rounded owner values to the recorded total", () => {
@@ -325,7 +326,7 @@ describe("PropertyOwnershipSummary", () => {
     (saleValue) => {
       renderOwnerValues({ saleValue, shares: [1] });
 
-      expect(container.querySelector(".owner-value")).toBeNull();
+      expect(container.querySelector(".owner-value").textContent).toBe("Current value —");
       expect(container.textContent).not.toContain("€0.00");
     },
   );
@@ -753,11 +754,11 @@ describe("PropertyOwnershipSummary", () => {
     expect(link.children).toHaveLength(1);
   });
 
-  it("drops the kicker above the current-ownership heading", () => {
+  it("names the section as current title positions and drops the kicker", () => {
     renderSummary();
 
     // The heading is still named for the section it labels.
-    expect(container.querySelector("#current-title").textContent).toBe("Current ownership");
+    expect(container.querySelector("#current-title").textContent).toBe("Current title positions");
     expect(container.querySelector(".section-heading .eyebrow")).toBeNull();
   });
 
