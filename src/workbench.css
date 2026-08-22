@@ -654,6 +654,13 @@ textarea:focus-visible {
   font-size: var(--type-caption);
 }
 
+.property-ownership-summary .owner-status {
+  color: #92400e;
+  font-family: var(--tracker-sans);
+  font-size: var(--type-label);
+  line-height: 1.2;
+}
+
 /* The share sat stacked above its own percentage, spending two lines to say
    one thing twice. They read as a single value on one line.
 

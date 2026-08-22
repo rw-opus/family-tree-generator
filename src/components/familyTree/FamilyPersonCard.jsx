@@ -44,7 +44,7 @@ function ownershipParts(ownership, fields, exactFraction, displayPercentageLabel
 }
 
 function formattedCurrency(value) {
-  if (!Number.isFinite(value)) return "";
+  if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en-MT", {
     style: "currency",
     currency: "EUR",
@@ -251,9 +251,9 @@ function FamilyPersonCardComponent({
       ? null
       : recordedPropertyValue * ownershipShare(displayedOwnership, displayedOwnershipFraction)
     : currentOwnershipValue;
-  const displayedOwnershipValueIsAvailable = isDeceased
-    ? displayedOwnershipValue !== null
-    : hasCurrentOwnership && displayedShareIsCurrent && displayedOwnershipValue !== null;
+  const shouldDisplayOwnershipValue = isDeceased
+    ? hasDisplayedOwnership
+    : hasCurrentOwnership && displayedShareIsCurrent;
   const causaMortisDetails = legalWorkspaceEnabled
     ? availableCausaMortisDetails(person, propertyId)
     : [];
@@ -368,10 +368,17 @@ function FamilyPersonCardComponent({
       {!person.isPlaceholder && shareParts.length > 0 && (
         <div className="family-node-ownership">{shareParts.join(" · ")}</div>
       )}
-      {!person.isPlaceholder && fields.ownershipValue && displayedOwnershipValueIsAvailable && (
-        <div className="family-node-detail">
+      {!person.isPlaceholder && fields.ownershipValue && shouldDisplayOwnershipValue && (
+        <div
+          className="family-node-detail"
+          title={
+            displayedOwnershipValue === null
+              ? "Enter the property selling price to calculate this value."
+              : undefined
+          }
+        >
           {ownershipSnapshotActive
-            ? "Value at this step"
+            ? "Notional value at this step"
             : isDeceased
               ? "Notional value"
               : "Current value"}{" "}

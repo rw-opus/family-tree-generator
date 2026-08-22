@@ -2460,7 +2460,9 @@ export function PersonInspector({
     compareFractions(estateShareAtDeathFraction, currentOwnerPresentation.shareFraction) === 0;
   const estateValueAtDeath = estateShareIsCurrent
     ? recordedNonNegativeMoney(currentOwnerPresentation.value)
-    : null;
+    : recordedPropertySaleValue === null
+      ? null
+      : roundMoney(recordedPropertySaleValue * estateShareAtDeath);
   const relationshipCounts = personRelationshipCounts(people, selectedPerson);
   const linkedPartners = linkedSpousesFor(people, selectedPerson.id);
   const partnerRelationshipsById = new Map(
@@ -2610,12 +2612,9 @@ export function PersonInspector({
     ? estateValueAtDeath
     : recordedNonNegativeMoney(currentOwnerPresentation?.value);
   const unavailablePropertyValueMessage =
-    isDeceased &&
-    hasEstateShareAtDeath &&
-    recordedPropertySaleValue !== null &&
-    !estateShareIsCurrent
-      ? "Notional value not shown because this is a historical share."
-      : `${isDeceased ? "Notional" : "Current"} value not calculated (selling price is optional).`;
+    recordedPropertySaleValue === null
+      ? `${isDeceased ? "Notional" : "Current"} value — (selling price not entered).`
+      : `${isDeceased ? "Notional" : "Current"} value — (share not yet calculated).`;
   const propertyShareSummary = (
     <section
       className={`person-share-summary${isDeceased ? " estate-balance-step" : ""}`}

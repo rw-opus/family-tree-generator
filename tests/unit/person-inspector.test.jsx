@@ -3599,7 +3599,7 @@ describe("PersonInspector", () => {
     expect(container.querySelector(".person-share-value small").textContent).toContain("€0.00");
   });
 
-  it("uses a canonical value only when a deceased share at death is still the current share", () => {
+  it("uses a canonical current value and calculates a historical deceased notional value", () => {
     const people = [
       {
         id: "deceased",
@@ -3661,7 +3661,7 @@ describe("PersonInspector", () => {
 
     expect(container.querySelector(".person-share-value strong").textContent).toBe("1/3 · 33.33%");
     expect(container.querySelector(".person-share-value small").textContent).toBe(
-      "Notional value not shown because this is a historical share.",
+      "Notional value €0.33",
     );
   });
 
@@ -7433,10 +7433,7 @@ describe("PersonInspector deceased property flow", () => {
     expect(transfer.textContent).toContain("Anna Vella");
     expect(transfer.textContent).toContain("1/4");
     expect(balance.textContent).toContain("3/4");
-    expect(balance.textContent).toContain(
-      "Notional value not shown because this is a historical share.",
-    );
-    expect(balance.textContent).not.toContain("€750,000.00");
+    expect(balance.textContent).toContain("Notional value €750,000.00");
     expect(death.compareDocumentPosition(transfer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
       transfer.compareDocumentPosition(balance) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -7893,7 +7890,7 @@ describe("PersonInspector legacy lifetime disposal records", () => {
     expect(transferCheckbox.disabled).toBe(false);
     expect(container.querySelector(".estate-balance-step").textContent).toContain("0/1");
     expect(container.querySelector(".estate-balance-step").textContent).toContain(
-      "Notional value not calculated",
+      "Notional value — (selling price not entered).",
     );
     expect(container.querySelector(".person-succession").classList).toContain("fully-transferred");
     expect(container.querySelector(".estate-succession-step")).toBeNull();

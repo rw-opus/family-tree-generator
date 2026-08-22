@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { isRecordedDeceased } from "../domain/deceasedStatus.js";
 import { buildPropertyLedger } from "../domain/ownership.js";
 import {
   buildCurrentOwnerPresentations,
@@ -107,7 +108,7 @@ export function PropertyOwnershipSummary({
     <section className="ownership-panel property-ownership-summary" aria-labelledby="current-title">
       <div className="section-heading">
         <div>
-          <h3 id="current-title">Current ownership</h3>
+          <h3 id="current-title">Current title positions</h3>
         </div>
       </div>
 
@@ -116,9 +117,9 @@ export function PropertyOwnershipSummary({
           ledger.owners.map((owner) => {
             const presentation = currentOwnerPresentations[owner.id];
             const currentValue = recordedNonNegativeMoney(presentation.value);
-            const valueLabel = peopleById.get(owner.id)?.isDeceased
-              ? "Notional value"
-              : "Current value";
+            const ownerPerson = peopleById.get(owner.id);
+            const ownerIsDeceased = ownerPerson ? isRecordedDeceased(ownerPerson) : false;
+            const valueLabel = ownerIsDeceased ? "Notional value" : "Current value";
             return (
               <div className="owner-row read-only-owner-row" key={owner.id}>
                 {/* No provenance line. The name is the row; an outside owner is
@@ -126,6 +127,9 @@ export function PropertyOwnershipSummary({
                   link, so a second label under every name only added height. */}
                 <span className="owner-identity">
                   <strong>{renderPartyName(owner.id, { allowOutsideOwnerCard: true })}</strong>
+                  {ownerIsDeceased && (
+                    <small className="owner-status">Heirs to be Identified</small>
+                  )}
                 </span>
                 <span className="owner-share">
                   <strong>
@@ -135,12 +139,17 @@ export function PropertyOwnershipSummary({
                     {presentation.displayPercentageLabel ||
                       formatOwnershipPercentage(presentation.share, presentation.shareFraction)}
                   </small>
-                  {currentValue !== null && (
-                    <small className="owner-value">
-                      <span className="sr-only">{valueLabel} </span>
-                      {money.format(currentValue)}
-                    </small>
-                  )}
+                  <small
+                    className="owner-value"
+                    title={
+                      currentValue === null
+                        ? "Enter the property selling price to calculate this value."
+                        : undefined
+                    }
+                  >
+                    <span className="sr-only">{valueLabel} </span>
+                    {currentValue === null ? "—" : money.format(currentValue)}
+                  </small>
                 </span>
               </div>
             );

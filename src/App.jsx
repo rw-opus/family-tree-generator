@@ -3086,7 +3086,7 @@ export function App({
   if (workspaceView !== "tree" && legalWorkspaceEnabled) {
     const workspaceSectionLinks = [
       { id: "setup", label: "Property & initial ownership", icon: Landmark },
-      { id: "ownership", label: "Current ownership & history", icon: GitBranch },
+      { id: "ownership", label: "Current title positions & history", icon: GitBranch },
       { id: "tax", label: "Tax Calculation", icon: Calculator },
     ];
     const showPropertySection = (sectionId) => {

@@ -1,6 +1,7 @@
 import { Building2, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MAX_FRACTION_INTEGER } from "../domain/fractions.js";
+import { allocateMoney, roundMoney } from "../domain/money.js";
 import {
   ownershipShare,
   reconcileFractionPercentageDisplay,
@@ -95,6 +96,15 @@ export function InitialOwnershipEditor({
   const percentageDisplay = reconcileFractionPercentageDisplay(owners.map(fractionForShare), {
     keys: owners.map((owner) => owner.personId || owner.id),
   });
+  const ownerShares = owners.map((owner) => {
+    const ownerFraction = fractionForShare(owner);
+    return ownerFraction.error ? 0 : ownershipShare(owner.sharePercent / 100, ownerFraction);
+  });
+  const coveredShare = ownerShares.reduce((total, share) => total + share, 0);
+  const notionalValues =
+    propertyValue === null
+      ? owners.map(() => null)
+      : allocateMoney(roundMoney(propertyValue * coveredShare), ownerShares);
   const totalPercentageLabel =
     percentageDisplay.totalDisplayPercentageLabel ||
     `${status.enteredTotalPercent.toLocaleString("en-MT", {
@@ -174,10 +184,7 @@ export function InitialOwnershipEditor({
             !owner.personId && !ownerFraction.error && Number(ownerFraction.numerator) > 0;
           const ownerNumerator = owner.shareNumerator ?? ownerFraction.numerator;
           const ownerDenominator = owner.shareDenominator ?? ownerFraction.denominator;
-          const notionalValue =
-            propertyValue === null || ownerFraction.error
-              ? null
-              : propertyValue * ownershipShare(owner.sharePercent / 100, ownerFraction);
+          const notionalValue = ownerFraction.error ? null : notionalValues[index];
           return (
             <div
               className={`initial-owner-row${ownerNeedsSelection ? " missing-owner" : ""}`}

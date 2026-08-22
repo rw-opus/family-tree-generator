@@ -1254,8 +1254,38 @@ describe("FamilyTreeCanvas", () => {
     expect(card.classList.contains("trace-ownership-snapshot")).toBe(true);
     expect(card.textContent).toContain("1/4");
     expect(card.textContent).toContain("25%");
-    expect(card.textContent).toContain("Value at this step €100,000.00");
+    expect(card.textContent).toContain("Notional value at this step €100,000.00");
     expect(card.textContent).not.toContain("Current value");
+  });
+
+  it("shows an explicit missing value for living and deceased ownership cards", () => {
+    renderCanvas({
+      people: [
+        person("living", "Maria Borg", { fatherId: "deceased" }),
+        person("deceased", "Joseph Borg", {
+          isDeceased: true,
+          dateOfDeath: "2020-01-01",
+        }),
+      ],
+      ownershipByPerson: { living: 0.5, deceased: 0.5 },
+      currentOwnerPresentationsByPerson: {
+        living: {
+          id: "living",
+          share: 0.5,
+          shareFraction: { numerator: 1, denominator: 2 },
+          value: null,
+        },
+      },
+      propertyValue: "",
+      personCardFields: { ownershipFraction: true, ownershipValue: true },
+    });
+
+    expect(container.querySelector('[data-person-id="living"]').textContent).toContain(
+      "Current value —",
+    );
+    expect(container.querySelector('[data-person-id="deceased"]').textContent).toContain(
+      "Notional value —",
+    );
   });
 
   it("does not force hidden legal details onto cards in a dense tree", () => {
