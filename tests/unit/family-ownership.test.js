@@ -1258,7 +1258,7 @@ describe("automatic family ownership", () => {
     );
   });
 
-  it("treats an undated grandparent as deceased when determining representation", () => {
+  it("treats an undated person with a great-grandchild as deceased during representation", () => {
     const people = [
       person("owner", {
         isDeceased: true,
@@ -1272,6 +1272,8 @@ describe("automatic family ownership", () => {
       }),
       person("grandparent"),
       person("uncle", { fatherId: "grandparent" }),
+      person("cousin", { fatherId: "uncle" }),
+      person("cousin-child", { fatherId: "cousin" }),
     ];
 
     const allocation = intestateAllocations(people, "owner");

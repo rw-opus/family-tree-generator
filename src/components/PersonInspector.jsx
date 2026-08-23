@@ -3483,7 +3483,8 @@ export function PersonInspector({
             </span>
             {selectedPerson.olderGenerationDeathAssumed === true && (
               <small>
-                Presumed from the family generations. Untick this box to record the person as alive.
+                Presumed because four generations have been drawn. Untick this box to record the
+                person as alive.
               </small>
             )}
           </label>

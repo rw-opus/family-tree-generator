@@ -218,6 +218,7 @@ describe("marital status at death indexing", () => {
       }),
       person("child", { fatherId: "subject" }),
       person("grandchild", { fatherId: "child" }),
+      person("great-grandchild", { fatherId: "grandchild" }),
     ];
     expect(deriveNoSurvivingSpouseAtDeath(rawPeople, "subject")).toBeNull();
 

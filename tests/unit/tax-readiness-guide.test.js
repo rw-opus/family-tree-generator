@@ -459,6 +459,7 @@ describe("tax readiness issues and progress", () => {
         motherId: "spouse",
       }),
       person("grandchild", { fatherId: "child" }),
+      person("great-grandchild", { fatherId: "grandchild" }),
     ];
     const property = { id: "p", owners: [owner("o", "owner")] };
     const unresolved = [
