@@ -75,7 +75,7 @@ describe("InitialOwnershipEditor percentage display", () => {
     expect(latestOwners[0].sharePercentInput).toBeUndefined();
   });
 
-  it("shows each initial owner's notional value from the property value and exact fraction", () => {
+  it("accepts a partial tracked share and shows its notional value", () => {
     act(() =>
       root.render(
         <InitialOwnershipEditor
@@ -99,6 +99,8 @@ describe("InitialOwnershipEditor percentage display", () => {
     expect(container.querySelector(".initial-owner-value").textContent).toContain(
       "Notional value€100,000.00",
     );
+    expect(container.querySelector(".share-status").textContent).toContain("valid tracked share");
+    expect(container.querySelector(".initial-title-badge").className).toContain("valid");
   });
 
   it("keeps notional values visible while an entered ownership total is invalid", () => {
@@ -123,7 +125,7 @@ describe("InitialOwnershipEditor percentage display", () => {
       ),
     );
 
-    expect(container.textContent).toContain("must equal 100%");
+    expect(container.textContent).toContain("cannot exceed 100%");
     expect(
       [...container.querySelectorAll(".initial-owner-value strong")].map(
         (value) => value.textContent,
@@ -201,7 +203,7 @@ describe("InitialOwnershipEditor percentage display", () => {
     ).toEqual(["33.33", "33.33", "33.33"]);
     expect(container.querySelector(".initial-title-badge").textContent).toBe("99.99%");
     expect(container.querySelector(".share-status").textContent).toContain(
-      "Fractions entered: 99.99% — must equal 100%",
+      "Fractions entered: 99.99% — valid tracked share",
     );
   });
 

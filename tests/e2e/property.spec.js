@@ -249,16 +249,22 @@ test.describe("Property & Tax workspace", () => {
 
 // Seeded with a different fixture, so it stays outside the block above: the
 // workspace is seeded once per browser context and is not replaced mid-test.
-test.describe("incomplete initial ownership", () => {
-  test("blocks the calculation until the shares total 100%", async ({ seeded, page }) => {
-    const incomplete = estate();
-    incomplete.properties[0].owners = [incomplete.properties[0].owners[0]];
-    await seeded(incomplete);
+test.describe("partial initial ownership", () => {
+  test("tracks an entered half without assigning the other half", async ({ seeded, page }) => {
+    const partial = estate();
+    partial.properties[0].owners = [partial.properties[0].owners[0]];
+    await seeded(partial);
     await openEstate(page);
     await openPropertyWorkspace(page);
 
-    await expect(page.locator(".ownership-blocking-notice")).toBeVisible();
-    await expect(page.locator("#property-workspace-tax")).toContainText(
+    await expect(page.locator(".ownership-blocking-notice")).toHaveCount(0);
+    await expect(page.locator(".ownership-tracked-share-notice")).toContainText(
+      "This tree tracks 50% of the whole property",
+    );
+    await expect(page.locator(".ownership-tracked-share-notice")).toContainText(
+      "remaining ownership stays outside this tree",
+    );
+    await expect(page.locator("#property-workspace-tax")).not.toContainText(
       "Complete the initial ownership above to calculate tax",
     );
   });

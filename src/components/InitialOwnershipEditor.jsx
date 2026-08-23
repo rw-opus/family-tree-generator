@@ -114,10 +114,14 @@ export function InitialOwnershipEditor({
     ? `${status.unassignedFraction.numerator}/${status.unassignedFraction.denominator}`
     : "an entered share";
   const statusMessage = status.isComplete
-    ? "valid"
+    ? status.isPartial
+      ? "valid tracked share"
+      : "valid"
     : status.hasUnassignedOwners
       ? "an owner is still required"
-      : "must equal 100%";
+      : status.isOverAllocated
+        ? "cannot exceed 100%"
+        : "enter a positive fraction";
   const updateDraftOwner = (ownerId, patch) => {
     const nextOwners = latestDraftOwnersRef.current.map((owner) => {
       if (owner.id !== ownerId) return owner;

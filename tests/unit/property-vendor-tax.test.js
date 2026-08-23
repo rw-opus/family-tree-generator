@@ -21,6 +21,46 @@ import {
 import { addFractions, ZERO_FRACTION } from "../../src/domain/fractions.js";
 
 describe("lifetime transfers before succession", () => {
+  it("keeps a tracked half independent through succession", () => {
+    const people = [
+      {
+        id: "deceased",
+        fullName: "Deceased Owner",
+        isDeceased: true,
+        dateOfDeath: "2020-01-01",
+        inheritanceBasis: "intestacy",
+      },
+      { id: "heir", fullName: "Only Heir", fatherId: "deceased" },
+    ];
+    const report = buildPropertyVendorTaxReport(
+      {
+        id: "tracked-half",
+        owners: [
+          {
+            id: "initial-half",
+            personId: "deceased",
+            shareNumerator: 1,
+            shareDenominator: 2,
+          },
+        ],
+      },
+      people,
+      [],
+    );
+
+    expect(report.startingOwnership).toMatchObject({
+      isComplete: true,
+      isPartial: true,
+      totalFraction: { numerator: 1, denominator: 2 },
+    });
+    expect(report.ledger.owners).toHaveLength(1);
+    expect(report.ledger.owners[0]).toMatchObject({
+      id: "heir",
+      shareFraction: { numerator: 1, denominator: 2 },
+    });
+    expect(report.ledger.totalFraction).toEqual({ numerator: 1, denominator: 2 });
+  });
+
   it("moves an inherited partial share to its buyer and passes only the balance to heirs", () => {
     const people = [
       {
@@ -1515,23 +1555,37 @@ describe("property vendor tax reports", () => {
     });
   });
 
-  it("requires exact full ownership rather than accepting a rounded near-total", () => {
-    expect(
-      propertyStartingOwnershipStatus({
-        owners: [
-          { personId: "a", shareNumerator: 1, shareDenominator: 3 },
-          { personId: "b", shareNumerator: 2, shareDenominator: 3 },
-        ],
-      }).isComplete,
-    ).toBe(true);
-    expect(
-      propertyStartingOwnershipStatus({
-        owners: [
-          { personId: "a", shareNumerator: 1, shareDenominator: 3 },
-          { personId: "b", shareNumerator: 666666666665, shareDenominator: 999999999999 },
-        ],
-      }).isComplete,
-    ).toBe(false);
+  it("accepts a partial tracked share but rejects more than the whole property", () => {
+    const partial = propertyStartingOwnershipStatus({
+      owners: [{ personId: "a", shareNumerator: 1, shareDenominator: 2 }],
+    });
+    expect(partial).toMatchObject({
+      isComplete: true,
+      isPartial: true,
+      isOverAllocated: false,
+      totalFraction: { numerator: 1, denominator: 2 },
+      untrackedFraction: { numerator: 1, denominator: 2 },
+    });
+
+    const whole = propertyStartingOwnershipStatus({
+      owners: [
+        { personId: "a", shareNumerator: 1, shareDenominator: 3 },
+        { personId: "b", shareNumerator: 2, shareDenominator: 3 },
+      ],
+    });
+    expect(whole).toMatchObject({ isComplete: true, isPartial: false });
+
+    const overAllocated = propertyStartingOwnershipStatus({
+      owners: [
+        { personId: "a", shareNumerator: 3, shareDenominator: 4 },
+        { personId: "b", shareNumerator: 3, shareDenominator: 4 },
+      ],
+    });
+    expect(overAllocated).toMatchObject({
+      isComplete: false,
+      isPartial: false,
+      isOverAllocated: true,
+    });
   });
 
   it("distinguishes fractions entered from shares assigned to a named owner", () => {

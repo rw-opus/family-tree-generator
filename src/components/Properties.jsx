@@ -253,7 +253,9 @@ export function Properties({
           ? "Choose a person for every positive fraction."
           : startingOwnership.isUnset
             ? "Enter the original owner or owners below."
-            : "Initial ownership must equal 100%.";
+            : startingOwnership.isOverAllocated
+              ? "Initial ownership cannot exceed 100%."
+              : "Enter a positive ownership fraction.";
 
         return (
           <section className="editor-panel unified-property-workspace" key={property.id}>
@@ -296,6 +298,16 @@ export function Properties({
                 </div>
               )}
 
+              {startingOwnership.isPartial && (
+                <div className="ownership-tracked-share-notice" role="status">
+                  <strong>This tree tracks {ownershipTotalLabel} of the whole property.</strong>
+                  <span>
+                    The remaining ownership stays outside this tree and is not included in its
+                    calculations.
+                  </span>
+                </div>
+              )}
+
               <InitialOwnershipEditor
                 property={property}
                 people={people}
@@ -305,7 +317,7 @@ export function Properties({
                     ? onPropertyOwnersChange(property.id, owners)
                     : updateProperty(property.id, { owners })
                 }
-                helperText="Choose the original owner or owners. Fractions must total 100%."
+                helperText="Choose the original owner or owners. Entered fractions may total up to 100%; that total is the share tracked by this tree."
                 onPickFromTree={onPickInitialOwner}
                 onRegisterPendingFlush={onRegisterInitialOwnershipFlush}
                 onCreateOutsideParty={(party, owners) =>

@@ -668,7 +668,7 @@ describe("App local recovery", () => {
     expect(container.querySelector(".property-workspace-page")).not.toBeNull();
     expect(container.querySelector(".context-dashboard")).toBeNull();
     expect(container.querySelector('select[aria-label="Initial owner"]').value).toBe("person-2");
-    expect(container.querySelector(".share-status").textContent).toContain("must equal 100%");
+    expect(container.querySelector(".share-status").textContent).toContain("valid tracked share");
 
     act(() =>
       [...container.querySelectorAll("button")]
