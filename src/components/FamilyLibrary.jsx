@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArchiveRestore,
   Check,
   ChevronDown,
-  ChevronUp,
   CreditCard,
   Download,
   FileUp,
@@ -16,6 +15,7 @@ import {
   ShieldCheck,
   Trash2,
   UserRound,
+  Wrench,
   X,
 } from "lucide-react";
 import { AccountPasswordDialog } from "./AccountPasswordDialog.jsx";
@@ -113,6 +113,9 @@ export function FamilyLibrary({
   const [renameDraft, setRenameDraft] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [recoveryActionId, setRecoveryActionId] = useState("");
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsRef = useRef(null);
+  const toolsTriggerRef = useRef(null);
   const filteredTrees = trees.filter((tree) =>
     String(tree.title || "Untitled family")
       .toLocaleLowerCase()
@@ -122,6 +125,27 @@ export function FamilyLibrary({
   const allowanceLoading = commercialMode && !entitlement;
   const unlimitedTrees = entitlement?.unlimitedTrees === true;
   const visibleStorageStatus = routineStorageMessages.has(storageStatus) ? "" : storageStatus;
+
+  useEffect(() => {
+    if (!toolsOpen) return undefined;
+
+    const closeFromOutside = (event) => {
+      if (!toolsRef.current?.contains(event.target)) setToolsOpen(false);
+    };
+    const closeFromKeyboard = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setToolsOpen(false);
+      toolsTriggerRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", closeFromOutside);
+    document.addEventListener("keydown", closeFromKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutside);
+      document.removeEventListener("keydown", closeFromKeyboard);
+    };
+  }, [toolsOpen]);
 
   const closeCreation = () => {
     if (creationBusy) return;
@@ -240,7 +264,154 @@ export function FamilyLibrary({
           <FolderOpen size={22} aria-hidden="true" />
           <span>Family Tree Generator</span>
         </div>
-        <WorkspaceSaveStatus state={saveState} />
+        <div className="family-library-header-actions">
+          <WorkspaceSaveStatus state={saveState} />
+          <div className="tree-tools" ref={toolsRef}>
+            <button
+              ref={toolsTriggerRef}
+              type="button"
+              className="tree-tools-trigger"
+              aria-haspopup="true"
+              aria-expanded={toolsOpen}
+              aria-controls="tree-tools-list"
+              onClick={() => setToolsOpen((open) => !open)}
+            >
+              <Wrench size={16} aria-hidden="true" />
+              <span>Tree Tools</span>
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
+            <div
+              id="tree-tools-list"
+              className="tree-tools-list"
+              role="group"
+              aria-label="Tree Tools"
+              hidden={!toolsOpen}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setToolsOpen(false);
+                  setCreationOpen(true);
+                }}
+                disabled={!canCreate}
+                title={canCreate ? "Create new family" : "Buy a tree credit to continue"}
+                aria-label="Create new family"
+              >
+                <FolderPlus size={16} aria-hidden="true" /> Create new family
+              </button>
+              <label
+                className={canCreate ? "" : "disabled"}
+                title={canCreate ? "Import GEDCOM" : "Buy a tree credit to continue"}
+              >
+                <FileUp size={16} aria-hidden="true" /> Import GEDCOM
+                <input
+                  className="library-file-input"
+                  type="file"
+                  aria-label="Import GEDCOM"
+                  accept=".ged,.gedcom,text/plain"
+                  onClick={() => setToolsOpen(false)}
+                  onChange={importGedcom}
+                  disabled={!canCreate}
+                />
+              </label>
+              <button
+                type="button"
+                aria-expanded={trashOpen}
+                aria-controls="family-library-trash"
+                onClick={() => {
+                  setTrashOpen((open) => !open);
+                  setToolsOpen(false);
+                  window.requestAnimationFrame?.(() =>
+                    document.getElementById("family-library-trash")?.scrollIntoView?.({
+                      block: "nearest",
+                    }),
+                  );
+                }}
+              >
+                <Trash2 size={16} aria-hidden="true" /> Trash ({trashedTrees.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setToolsOpen(false);
+                  onDownloadBackup();
+                }}
+                aria-label="Download workspace backup"
+                disabled={backupDisabled}
+                title={
+                  backupDisabled
+                    ? "Wait for the complete family and Trash lists before downloading a backup"
+                    : "Download workspace backup"
+                }
+              >
+                <Download size={16} aria-hidden="true" /> Download workspace backup
+              </button>
+              {recoveryAvailable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolsOpen(false);
+                    onDownloadRecovery();
+                  }}
+                >
+                  <Download size={16} aria-hidden="true" /> Download recovery copy
+                </button>
+              )}
+              {commercialMode && !allowanceLoading && !canCreate && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolsOpen(false);
+                    onBuyTree();
+                  }}
+                  disabled={billingBusy}
+                >
+                  <CreditCard size={16} aria-hidden="true" />
+                  {billingBusy ? "Opening checkout..." : "Buy one tree · €30"}
+                </button>
+              )}
+              {signedIn && (
+                <>
+                  {onChangePassword && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setToolsOpen(false);
+                        setPasswordDialogOpen(true);
+                      }}
+                      aria-label="Change password"
+                    >
+                      <KeyRound size={16} aria-hidden="true" /> Change password
+                    </button>
+                  )}
+                  <SiteFeedbackForm />
+                  {isPlatformAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setToolsOpen(false);
+                        onOpenAdminConsole();
+                      }}
+                      aria-label="Open admin console"
+                    >
+                      <ShieldCheck size={16} aria-hidden="true" /> Admin console
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setToolsOpen(false);
+                      onSignOut();
+                    }}
+                    aria-label="Sign out"
+                  >
+                    <LogOut size={16} aria-hidden="true" /> Sign out
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       </header>
 
       <div className="family-library-content">
@@ -295,63 +466,6 @@ export function FamilyLibrary({
               </>
             )}
           </dl>
-          <div className="library-account-actions">
-            {signedIn && (
-              <>
-                {onChangePassword && (
-                  <button
-                    type="button"
-                    className="library-account-action"
-                    onClick={() => setPasswordDialogOpen(true)}
-                    aria-label="Change password"
-                  >
-                    <KeyRound size={15} />
-                    <span className="library-action-label-full">Change password</span>
-                    <span className="library-action-label-short" aria-hidden="true">
-                      Password
-                    </span>
-                  </button>
-                )}
-                <SiteFeedbackForm />
-                {isPlatformAdmin && (
-                  <button
-                    type="button"
-                    className="library-account-action"
-                    onClick={onOpenAdminConsole}
-                    aria-label="Open admin console"
-                  >
-                    <ShieldCheck size={15} /> Admin console
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="library-account-action"
-                  onClick={onSignOut}
-                  aria-label="Sign out"
-                >
-                  <LogOut size={15} /> Sign out
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              className="library-account-action"
-              onClick={onDownloadBackup}
-              aria-label="Download workspace backup"
-              disabled={backupDisabled}
-              title={
-                backupDisabled
-                  ? "Wait for the complete family and Trash lists before downloading a backup"
-                  : "Download workspace backup"
-              }
-            >
-              <Download size={15} />
-              <span className="library-action-label-full">Download workspace backup</span>
-              <span className="library-action-label-short" aria-hidden="true">
-                Backup
-              </span>
-            </button>
-          </div>
           {commercialMode && (allowanceLoading || !canCreate) && (
             <div className={`tree-pricing-card ${allowanceLoading ? "loading" : "payment-needed"}`}>
               <span className="tree-pricing-icon">
@@ -362,16 +476,6 @@ export function FamilyLibrary({
                   {allowanceLoading ? "Checking allowance..." : "Additional tree · €30"}
                 </strong>
               </div>
-              {!allowanceLoading && !canCreate && (
-                <button
-                  type="button"
-                  className="library-primary-button"
-                  onClick={onBuyTree}
-                  disabled={billingBusy}
-                >
-                  {billingBusy ? "Opening checkout..." : "Buy one tree · €30"}
-                </button>
-              )}
             </div>
           )}
           {billingMessage && (
@@ -477,11 +581,6 @@ export function FamilyLibrary({
               </ul>
             </section>
           )}
-          {recoveryAvailable && (
-            <button type="button" className="library-account-action" onClick={onDownloadRecovery}>
-              Download recovery copy
-            </button>
-          )}
           <nav className="library-legal-links" aria-label="Legal and privacy information">
             <a href="/?legal=terms" aria-label="Terms and tax disclaimer">
               Terms &amp; disclaimer
@@ -497,40 +596,6 @@ export function FamilyLibrary({
             <div>
               <p className="library-kicker">Your work</p>
               <h2 id="families-title">Families</h2>
-            </div>
-            <div className="library-create-actions">
-              <button
-                type="button"
-                className="library-primary-button"
-                onClick={() => setCreationOpen(true)}
-                disabled={!canCreate}
-                title={canCreate ? "Create new family" : "Buy a tree credit to continue"}
-                aria-label="Create new family"
-              >
-                <FolderPlus size={16} />
-                <span className="library-action-label-full">Create new family</span>
-                <span className="library-action-label-short" aria-hidden="true">
-                  New family
-                </span>
-              </button>
-              <label
-                className={`library-secondary-button ${canCreate ? "" : "disabled"}`}
-                title={canCreate ? "Import GEDCOM" : "Buy a tree credit to continue"}
-              >
-                <FileUp size={16} />
-                <span className="library-action-label-full">Import GEDCOM</span>
-                <span className="library-action-label-short" aria-hidden="true">
-                  Import
-                </span>
-                <input
-                  className="library-file-input"
-                  type="file"
-                  aria-label="Import GEDCOM"
-                  accept=".ged,.gedcom,text/plain"
-                  onChange={importGedcom}
-                  disabled={!canCreate}
-                />
-              </label>
             </div>
           </div>
 
@@ -675,30 +740,18 @@ export function FamilyLibrary({
             </p>
           )}
 
-          <button
-            type="button"
-            className="library-trash-toggle"
-            aria-expanded={trashOpen}
-            aria-controls="family-library-trash"
-            onClick={() => setTrashOpen((open) => !open)}
-          >
-            <span>
-              <Trash2 size={15} aria-hidden="true" /> Trash ({trashedTrees.length})
-            </span>
-            {trashOpen ? (
-              <ChevronUp size={15} aria-hidden="true" />
-            ) : (
-              <ChevronDown size={15} aria-hidden="true" />
-            )}
-          </button>
-
           {trashOpen && (
             <section
               id="family-library-trash"
               className="family-library-trash"
               aria-labelledby="family-library-trash-title"
             >
-              <h3 id="family-library-trash-title">Trash</h3>
+              <div className="family-library-trash-heading">
+                <h3 id="family-library-trash-title">Trash</h3>
+                <button type="button" onClick={() => setTrashOpen(false)}>
+                  Close Trash
+                </button>
+              </div>
               {trashedTrees.length ? (
                 <div className="family-trash-list" role="list">
                   {trashedTrees.map((tree) => {

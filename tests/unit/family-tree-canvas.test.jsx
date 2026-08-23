@@ -97,7 +97,7 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
-  it("keeps person-card display choices in the top-left tree controls", () => {
+  it("keeps person-card display choices inside the labelled Tree Tools menu", () => {
     const onPersonCardFieldsChange = vi.fn();
     renderCanvas({
       people: [person("a", "Solitary Person")],
@@ -105,10 +105,12 @@ describe("FamilyTreeCanvas", () => {
       onPersonCardFieldsChange,
     });
 
-    const navigation = container.querySelector(".tree-navigation-tools");
-    const control = navigation.querySelector(".person-card-display-control");
+    const tools = container.querySelector(".tree-view-tools-menu");
+    const control = tools.querySelector(".person-card-display-control");
     expect(control.querySelector("summary").textContent).toContain("Person card details");
-    expect(navigation.firstElementChild).toBe(control);
+    expect(container.querySelector(".tree-view-tools > summary").textContent).toContain(
+      "Tree Tools",
+    );
 
     const valueToggle = [...control.querySelectorAll("label")]
       .find((label) => label.textContent.includes("Share value"))

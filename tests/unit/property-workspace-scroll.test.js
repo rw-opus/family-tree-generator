@@ -75,33 +75,30 @@ describe("property workspace scrolling", () => {
     );
   });
 
-  it("keeps the labelled person-card control interactive at the top-left of the tree", () => {
-    const navigationRule = blockFor(stylesheet, ".tree-navigation-tools");
-    const controlRule = blockFor(stylesheet, ".person-card-display-control");
-    const menuRule = blockFor(stylesheet, ".person-card-display-menu");
+  it("keeps the labelled person-card control inside Tree Tools", () => {
+    const triggerRule = blockFor(stylesheet, ".tree-view-tools > summary");
+    const toolsRule = blockFor(stylesheet, ".tree-view-tools-menu");
 
-    expect(navigationRule).toMatch(/top:\s*4\.55rem/);
-    expect(navigationRule).toMatch(/left:\s*0\.75rem/);
-    expect(controlRule).toMatch(/pointer-events:\s*auto/);
-    expect(controlRule).toMatch(/touch-action:\s*auto/);
-    expect(menuRule).toMatch(/left:\s*0/);
+    expect(triggerRule).toMatch(/min-height:\s*2\.5rem/);
+    expect(triggerRule).toMatch(/white-space:\s*nowrap/);
+    expect(toolsRule).toMatch(/overflow-y:\s*auto/);
+    expect(stylesheet).toMatch(
+      /\.tree-view-tools-menu \.person-card-display-menu\s*\{[^}]*position:\s*static/s,
+    );
     expect(stylesheet).not.toMatch(
       /\.person-card-display-control\s+summary\s+span\s*\{[^}]*display:\s*none/s,
     );
   });
 
-  it("places the person-card control below the mobile toolbar with a touch-sized target", () => {
+  it("keeps mobile Tree Tools touch-sized and within the viewport", () => {
     const mobileRules = blockFor(stylesheet, "@media (max-width: 900px)");
-    const navigationRule = blockFor(mobileRules, ".tree-navigation-tools");
-    const controlRule = blockFor(
-      mobileRules,
-      ".tree-navigation-tools .person-card-display-control summary",
-    );
+    const triggerRule = blockFor(mobileRules, ".tree-view-tools > summary");
+    const menuRule = blockFor(mobileRules, ".tree-view-tools-menu");
 
-    expect(navigationRule).toMatch(/top:\s*7rem/);
-    expect(navigationRule).toMatch(/right:\s*auto/);
-    expect(navigationRule).toMatch(/left:\s*0\.55rem/);
-    expect(controlRule).toMatch(/min-height:\s*2\.75rem/);
+    expect(triggerRule).toMatch(/min-height:\s*2\.75rem/);
+    expect(menuRule).toMatch(/position:\s*fixed/);
+    expect(menuRule).toMatch(/right:\s*0\.5rem/);
+    expect(menuRule).toMatch(/left:\s*0\.5rem/);
   });
 
   it("keeps the outside-owner hint spaced from the name it follows", () => {

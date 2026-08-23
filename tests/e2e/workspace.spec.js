@@ -1,4 +1,18 @@
-import { test, expect, openEstate, WORKSPACE_KEY, PEOPLE, TERMS_KEY } from "./fixtures.js";
+import {
+  test,
+  expect,
+  openEstate,
+  openTreeTools,
+  WORKSPACE_KEY,
+  PEOPLE,
+  TERMS_KEY,
+} from "./fixtures.js";
+
+const openLibraryTools = async (page) => {
+  const trigger = page.getByRole("button", { name: "Tree Tools" });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+  await expect(page.locator("#tree-tools-list")).toBeVisible();
+};
 
 test.describe("workspace and persistence", () => {
   test("keeps an edit across a reload", async ({ seeded, page }) => {
@@ -29,6 +43,7 @@ test.describe("workspace and persistence", () => {
     await page.goto("/");
 
     await expect(page.locator("button.family-name-button")).toHaveCount(0);
+    await openLibraryTools(page);
     await page.getByRole("button", { name: /Create new family/ }).click();
 
     const dialog = page.locator('[role="dialog"]');
@@ -46,6 +61,7 @@ test.describe("workspace and persistence", () => {
     await page.addInitScript((terms) => window.localStorage.setItem(terms, "yes"), TERMS_KEY);
     await page.goto("/");
 
+    await openLibraryTools(page);
     await page.getByRole("button", { name: /Create new family/ }).click();
     const dialog = page.locator('[role="dialog"]');
     await dialog.getByLabel("Family name").fill("Incomplete Fictional Family");
@@ -54,6 +70,7 @@ test.describe("workspace and persistence", () => {
     await dialog.locator("label").filter({ hasText: "Female" }).first().click();
     await dialog.getByRole("button", { name: "Create family" }).click();
 
+    await openTreeTools(page);
     await expect(page.getByLabel("Workspace mode: Family tree only")).toBeVisible();
     await expect(page.getByRole("button", { name: "Property & Tax" })).toHaveCount(0);
     await expect(page.locator(".fraction-launcher")).toHaveCount(0);
@@ -69,6 +86,7 @@ test.describe("workspace and persistence", () => {
     await expect(page.getByText("Date of death missing")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Back to Tree" }).click();
+    await openTreeTools(page);
     await page.locator(".person-card-display-control > summary").click();
     await page.getByRole("checkbox", { name: "Dates of death" }).check();
     await expect(page.locator("[data-person-id]").first()).toContainText("d. about 1858");
@@ -107,6 +125,7 @@ test.describe("workspace and persistence", () => {
     await dialog.getByRole("button", { name: "Move to Trash" }).click();
 
     await expect(page.locator("button.family-name-button")).toHaveCount(0);
+    await openLibraryTools(page);
     await page.getByRole("button", { name: "Trash (1)" }).click();
     await expect(page.getByText("Borg Fictional Estate", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Restore Borg Fictional Estate" }).click();
@@ -119,6 +138,7 @@ test.describe("workspace and persistence", () => {
     await expect(dialog).toContainText("cannot be restored");
     await dialog.getByRole("button", { name: "Delete forever" }).click();
 
+    await openLibraryTools(page);
     await expect(page.getByRole("button", { name: "Trash (0)" })).toBeVisible();
     const stored = await page.evaluate(
       (key) => JSON.parse(window.localStorage.getItem(key)),
@@ -131,6 +151,7 @@ test.describe("workspace and persistence", () => {
     await seeded();
     await page.goto("/");
 
+    await openLibraryTools(page);
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: /Download workspace backup/ }).click(),

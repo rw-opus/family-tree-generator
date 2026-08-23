@@ -21,26 +21,24 @@ function blockFor(source, selector) {
 describe("mobile family library layout", () => {
   const mobileRules = blockFor(stylesheet, "@media (max-width: 520px)");
 
-  it("packs the account summary and actions without shrinking touch targets", () => {
+  it("packs the account summary and keeps Tree Tools reachable", () => {
     expect(blockFor(mobileRules, ".account-summary-list")).toMatch(
       /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
     );
-    expect(blockFor(mobileRules, ".library-account-actions")).toMatch(
-      /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(5\.3rem,\s*1fr\)\)/,
-    );
-    expect(mobileRules).toMatch(/\.library-account-action\s*{[^}]*min-height:\s*2\.75rem/s);
-    expect(blockFor(mobileRules, ".library-action-label-short")).toMatch(/display:\s*inline/);
+    expect(blockFor(mobileRules, ".tree-tools-trigger")).toMatch(/min-height:\s*2\.75rem/);
+    expect(blockFor(mobileRules, ".tree-tools-list")).toMatch(/position:\s*fixed/);
+    expect(stylesheet).toMatch(/\.tree-tools-list\s*>\s*button,[\s\S]*?min-height:\s*2\.75rem/);
   });
 
-  it("keeps each family row compact with accessible icon actions", () => {
+  it("keeps each family row compact without hiding action labels", () => {
     expect(blockFor(mobileRules, ".family-library-row")).toMatch(
-      /"family actions"\s*"added actions"/,
+      /"family family"\s*"added actions"/,
     );
     expect(blockFor(mobileRules, ".family-row-actions .library-row-action")).toMatch(
-      /width:\s*2\.75rem/,
+      /width:\s*auto/,
     );
     expect(blockFor(mobileRules, ".family-row-actions .library-row-action-label")).toMatch(
-      /display:\s*none/,
+      /display:\s*inline/,
     );
     expect(blockFor(mobileRules, ".family-library-page input,")).toMatch(/font-size:\s*16px/);
   });
