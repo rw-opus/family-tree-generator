@@ -38,23 +38,24 @@ const legacyCase = () => ({
 });
 
 describe("case model migration", () => {
-  it("marks grandparents and earlier generations deceased when their date is unknown", () => {
+  it("starts the deceased presumption at great-grandparents when four generations exist", () => {
     const result = normalizeCase({
       id: "older-generations",
       people: [
-        { id: "grandparent", fullName: "Grandparent" },
+        { id: "great-grandparent", fullName: "Great Grandparent" },
+        { id: "grandparent", fullName: "Grandparent", fatherId: "great-grandparent" },
         { id: "parent", fullName: "Parent", fatherId: "grandparent" },
         { id: "child", fullName: "Child", fatherId: "parent" },
       ],
     });
 
-    expect(result.people.find((person) => person.id === "grandparent")).toMatchObject({
+    expect(result.people.find((person) => person.id === "great-grandparent")).toMatchObject({
       isDeceased: true,
       dateOfDeathUnknown: true,
       designations: ["Deceased"],
       olderGenerationDeathAssumed: true,
     });
-    expect(result.people.find((person) => person.id === "parent")?.isDeceased).not.toBe(true);
+    expect(result.people.find((person) => person.id === "grandparent")?.isDeceased).not.toBe(true);
   });
 
   it("keeps an explicit alive choice when an older generation is normalised again", () => {
@@ -62,12 +63,41 @@ describe("case model migration", () => {
       id: "older-generation-alive",
       people: [
         {
-          id: "grandparent",
-          fullName: "Grandparent",
+          id: "great-grandparent",
+          fullName: "Great Grandparent",
           isDeceased: false,
           dateOfDeath: "",
           dateOfDeathUnknown: false,
           olderGenerationDeathAssumptionDismissed: true,
+        },
+        { id: "grandparent", fullName: "Grandparent", fatherId: "great-grandparent" },
+        { id: "parent", fullName: "Parent", fatherId: "grandparent" },
+        { id: "child", fullName: "Child", fatherId: "parent" },
+      ],
+    });
+
+    expect(result.people.find((person) => person.id === "great-grandparent")).toMatchObject({
+      isDeceased: false,
+      dateOfDeathUnknown: false,
+      olderGenerationDeathAssumptionDismissed: true,
+    });
+    expect(
+      result.people.find((person) => person.id === "great-grandparent")?.designations || [],
+    ).not.toContain("Deceased");
+  });
+
+  it("releases a three-generation death that was created by the former presumption", () => {
+    const result = normalizeCase({
+      id: "former-grandparent-assumption",
+      people: [
+        {
+          id: "grandparent",
+          fullName: "Grandparent",
+          isDeceased: true,
+          dateOfDeath: "",
+          dateOfDeathUnknown: true,
+          designations: ["Deceased", "Owner"],
+          olderGenerationDeathAssumed: true,
         },
         { id: "parent", fullName: "Parent", fatherId: "grandparent" },
         { id: "child", fullName: "Child", fatherId: "parent" },
@@ -77,11 +107,35 @@ describe("case model migration", () => {
     expect(result.people.find((person) => person.id === "grandparent")).toMatchObject({
       isDeceased: false,
       dateOfDeathUnknown: false,
-      olderGenerationDeathAssumptionDismissed: true,
+      olderGenerationDeathAssumed: false,
+      designations: ["Owner"],
     });
-    expect(
-      result.people.find((person) => person.id === "grandparent")?.designations || [],
-    ).not.toContain("Deceased");
+  });
+
+  it("does not release a recorded death date even if an old assumption marker remains", () => {
+    const result = normalizeCase({
+      id: "recorded-grandparent-death",
+      people: [
+        {
+          id: "grandparent",
+          fullName: "Grandparent",
+          isDeceased: true,
+          dateOfDeath: "1990-01-01",
+          dateOfDeathUnknown: false,
+          designations: ["Deceased"],
+          olderGenerationDeathAssumed: true,
+        },
+        { id: "parent", fullName: "Parent", fatherId: "grandparent" },
+        { id: "child", fullName: "Child", fatherId: "parent" },
+      ],
+    });
+
+    expect(result.people.find((person) => person.id === "grandparent")).toMatchObject({
+      isDeceased: true,
+      dateOfDeath: "1990-01-01",
+      designations: ["Deceased"],
+      olderGenerationDeathAssumed: false,
+    });
   });
 
   it("canonicalises legacy null relationship fields before strict persistence", () => {

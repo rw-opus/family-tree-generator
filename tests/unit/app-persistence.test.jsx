@@ -279,13 +279,19 @@ describe("App local recovery", () => {
               fatherId: "grandparent",
             },
             { id: "child", fullName: "Luke Borg", sex: "Male", fatherId: "parent" },
+            {
+              id: "great-grandchild",
+              fullName: "Mark Borg",
+              sex: "Male",
+              fatherId: "child",
+            },
           ],
           familyGroups: [
             {
               id: "family",
               title: "Borg family",
               rootPersonId: "grandparent",
-              personIds: ["grandparent", "parent", "child"],
+              personIds: ["grandparent", "parent", "child", "great-grandchild"],
             },
           ],
           activeFamilyGroupId: "family",
@@ -309,7 +315,7 @@ describe("App local recovery", () => {
       '.deceased-status-control input[type="checkbox"]',
     );
     expect(deceasedCheckbox.checked).toBe(true);
-    expect(container.textContent).toContain("Presumed from the family generations");
+    expect(container.textContent).toContain("Presumed because four generations have been drawn");
 
     act(() => deceasedCheckbox.click());
 
@@ -317,7 +323,9 @@ describe("App local recovery", () => {
       '.deceased-status-control input[type="checkbox"]',
     );
     expect(updatedCheckbox.checked).toBe(false);
-    expect(container.textContent).not.toContain("Presumed from the family generations");
+    expect(container.textContent).not.toContain(
+      "Presumed because four generations have been drawn",
+    );
   });
 
   it("keeps family creation and deletion on Home instead of the tree canvas", () => {

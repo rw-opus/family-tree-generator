@@ -23,24 +23,45 @@ function childrenByParent(people = []) {
 }
 
 /**
- * Records the product rule that a person with a grandchild (or a later
- * descendant) is presumed deceased when no death date has been recorded.
+ * Records the product rule that a person with a great-grandchild (or a later
+ * descendant) is presumed deceased when no death date has been recorded. A
+ * three-generation tree is not enough: the presumption starts only when the
+ * fourth generation below that ancestor is actually drawn.
  * The presumption is explicit and reversible: it never invents a historical
  * date, and the UI displays it as "Date of death unknown".
  */
 export function applyOlderGenerationDeathAssumptions(people = []) {
   const children = childrenByParent(people);
-  const olderGenerationIds = new Set();
+  const fourthGenerationAncestorIds = new Set();
   people.forEach((person) => {
-    const hasGrandchild = (children.get(person.id) || []).some(
-      (child) => (children.get(child.id) || []).length > 0,
+    const hasGreatGrandchild = (children.get(person.id) || []).some((child) =>
+      (children.get(child.id) || []).some(
+        (grandchild) => (children.get(grandchild.id) || []).length > 0,
+      ),
     );
-    if (hasGrandchild) olderGenerationIds.add(person.id);
+    if (hasGreatGrandchild) fourthGenerationAncestorIds.add(person.id);
   });
 
   return people.map((person) => {
     if (
-      !olderGenerationIds.has(person.id) ||
+      person.olderGenerationDeathAssumed === true &&
+      !fourthGenerationAncestorIds.has(person.id)
+    ) {
+      if (isValidIsoDate(person.dateOfDeath)) {
+        return { ...person, olderGenerationDeathAssumed: false };
+      }
+      return {
+        ...person,
+        isDeceased: false,
+        dateOfDeathUnknown: false,
+        olderGenerationDeathAssumed: false,
+        designations: (person.designations || []).filter(
+          (designation) => String(designation).trim().toLowerCase() !== "deceased",
+        ),
+      };
+    }
+    if (
+      !fourthGenerationAncestorIds.has(person.id) ||
       person.olderGenerationDeathAssumptionDismissed === true ||
       isValidIsoDate(person.dateOfDeath) ||
       person.dateOfDeathUnknown === true
