@@ -17,6 +17,8 @@ export const DECEASED_STATUS_FIELDS = Object.freeze([
   "dateOfDeath",
   "dateOfDeathUnknown",
   "deathDateText",
+  "olderGenerationDeathAssumed",
+  "olderGenerationDeathAssumptionDismissed",
   "unmarriedOrWidowedAtDeath",
   "unmarriedOrWidowedAtDeathSource",
   "survivalStatusRequired",

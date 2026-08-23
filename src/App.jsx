@@ -2650,13 +2650,23 @@ export function App({
       }
 
       next = reconcileNormalisedPeopleUpdate(next, activeFamilyGroupId, people);
-      return normaliseTree(
-        endStatusToggleSession(next, {
-          type: "deceased",
-          personId,
-          activeFamilyGroupId,
-        }),
-      );
+      const hadSession = Boolean(statusToggleSession(next, "deceased", personId));
+      const restored = endStatusToggleSession(next, {
+        type: "deceased",
+        personId,
+        activeFamilyGroupId,
+      });
+      if (hadSession) return normaliseTree(restored);
+      // A grandparent can be presumed deceased by the generation rule without
+      // ever opening a status-toggle session. Apply the explicit alive choice
+      // after legacy/session cleanup so the next normalisation cannot recreate
+      // the presumption the user has just rejected.
+      return normaliseTree({
+        ...restored,
+        people: restored.people.map((person) =>
+          person.id === personId ? { ...person, ...patch } : person,
+        ),
+      });
     });
     setStatus(
       checked
