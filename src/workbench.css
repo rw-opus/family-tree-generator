@@ -2572,6 +2572,11 @@ body.dashboard-panel-resizing {
   border-top: 1px solid #e8edea;
 }
 
+.person-status-control > small {
+  grid-column: 2;
+  font-weight: 600;
+}
+
 .inter-vivos-status-control.completed {
   color: #7a847e;
   background: #f1f3f2;

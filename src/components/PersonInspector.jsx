@@ -1419,6 +1419,8 @@ export function PersonInspector({
       isDeceased: checked,
       dateOfDeath: checked ? selectedPerson.dateOfDeath || "" : "",
       dateOfDeathUnknown: checked ? selectedPerson.dateOfDeathUnknown === true : false,
+      olderGenerationDeathAssumed: false,
+      olderGenerationDeathAssumptionDismissed: !checked,
       ...(!legalWorkspaceEnabled && !checked ? { deathDateText: "" } : {}),
     };
     const patch = legalWorkspaceEnabled
@@ -1461,6 +1463,8 @@ export function PersonInspector({
     updateSelected({
       dateOfDeath,
       dateOfDeathUnknown: false,
+      olderGenerationDeathAssumed: false,
+      olderGenerationDeathAssumptionDismissed: false,
       ...(isValidIsoDate(dateOfDeath) ? { deathDateText: isoDateToDisplay(dateOfDeath) } : {}),
       ...survivalPatch,
     });
@@ -1475,6 +1479,8 @@ export function PersonInspector({
         : {};
     updateSelected({
       dateOfDeathUnknown: checked,
+      olderGenerationDeathAssumed: false,
+      olderGenerationDeathAssumptionDismissed: false,
       ...(checked ? { dateOfDeath: "", deathDateText: "" } : {}),
       ...survivalPatch,
     });
@@ -3475,6 +3481,11 @@ export function PersonInspector({
               />
               This person is deceased.
             </span>
+            {selectedPerson.olderGenerationDeathAssumed === true && (
+              <small>
+                Presumed from the family generations. Untick this box to record the person as alive.
+              </small>
+            )}
           </label>
           {legalWorkspaceEnabled && (
             <label

@@ -264,6 +264,62 @@ describe("App local recovery", () => {
     ).toBe("Vella");
   });
 
+  it("lets the user clear an automatically presumed older-generation death", () => {
+    saveLocalWorkspace(
+      [
+        {
+          id: "older-generation-tree",
+          title: "Living grandparent",
+          people: [
+            { id: "grandparent", fullName: "Joseph Borg", sex: "Male" },
+            {
+              id: "parent",
+              fullName: "Mario Borg",
+              sex: "Male",
+              fatherId: "grandparent",
+            },
+            { id: "child", fullName: "Luke Borg", sex: "Male", fatherId: "parent" },
+          ],
+          familyGroups: [
+            {
+              id: "family",
+              title: "Borg family",
+              rootPersonId: "grandparent",
+              personIds: ["grandparent", "parent", "child"],
+            },
+          ],
+          activeFamilyGroupId: "family",
+          properties: [{ id: "property", owners: [] }],
+          outsideParties: [],
+          settings: {
+            activePropertyId: "property",
+            workspaceMode: "property-tax",
+          },
+        },
+      ],
+      "older-generation-tree",
+      window.localStorage,
+    );
+
+    act(() => root.render(<App />));
+    openCurrentFamily();
+    act(() => container.querySelector('[data-person-id="grandparent"]').click());
+
+    const deceasedCheckbox = container.querySelector(
+      '.deceased-status-control input[type="checkbox"]',
+    );
+    expect(deceasedCheckbox.checked).toBe(true);
+    expect(container.textContent).toContain("Presumed from the family generations");
+
+    act(() => deceasedCheckbox.click());
+
+    const updatedCheckbox = container.querySelector(
+      '.deceased-status-control input[type="checkbox"]',
+    );
+    expect(updatedCheckbox.checked).toBe(false);
+    expect(container.textContent).not.toContain("Presumed from the family generations");
+  });
+
   it("keeps family creation and deletion on Home instead of the tree canvas", () => {
     saveLocalWorkspace(
       [

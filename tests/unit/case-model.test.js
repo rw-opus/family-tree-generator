@@ -52,8 +52,36 @@ describe("case model migration", () => {
       isDeceased: true,
       dateOfDeathUnknown: true,
       designations: ["Deceased"],
+      olderGenerationDeathAssumed: true,
     });
     expect(result.people.find((person) => person.id === "parent")?.isDeceased).not.toBe(true);
+  });
+
+  it("keeps an explicit alive choice when an older generation is normalised again", () => {
+    const result = normalizeCase({
+      id: "older-generation-alive",
+      people: [
+        {
+          id: "grandparent",
+          fullName: "Grandparent",
+          isDeceased: false,
+          dateOfDeath: "",
+          dateOfDeathUnknown: false,
+          olderGenerationDeathAssumptionDismissed: true,
+        },
+        { id: "parent", fullName: "Parent", fatherId: "grandparent" },
+        { id: "child", fullName: "Child", fatherId: "parent" },
+      ],
+    });
+
+    expect(result.people.find((person) => person.id === "grandparent")).toMatchObject({
+      isDeceased: false,
+      dateOfDeathUnknown: false,
+      olderGenerationDeathAssumptionDismissed: true,
+    });
+    expect(
+      result.people.find((person) => person.id === "grandparent")?.designations || [],
+    ).not.toContain("Deceased");
   });
 
   it("canonicalises legacy null relationship fields before strict persistence", () => {

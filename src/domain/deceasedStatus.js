@@ -41,6 +41,7 @@ export function applyOlderGenerationDeathAssumptions(people = []) {
   return people.map((person) => {
     if (
       !olderGenerationIds.has(person.id) ||
+      person.olderGenerationDeathAssumptionDismissed === true ||
       isValidIsoDate(person.dateOfDeath) ||
       person.dateOfDeathUnknown === true
     ) {
@@ -49,6 +50,7 @@ export function applyOlderGenerationDeathAssumptions(people = []) {
     return synchroniseDeceasedStatus({
       ...person,
       dateOfDeathUnknown: true,
+      olderGenerationDeathAssumed: true,
     });
   });
 }
