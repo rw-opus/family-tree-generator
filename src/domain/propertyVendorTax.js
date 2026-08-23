@@ -1612,6 +1612,12 @@ export function propertyStartingOwnershipStatus(property = {}) {
     ZERO_FRACTION,
   );
   const totalPercent = fractionToNumber(totalFraction) * 100;
+  const totalVsWhole = totalFraction.error ? null : compareFractions(totalFraction, WHOLE_FRACTION);
+  const hasPositiveTrackedShare =
+    !totalFraction.error && compareFractions(totalFraction, ZERO_FRACTION) > 0;
+  const isOverAllocated = totalVsWhole !== null && totalVsWhole > 0;
+  const isComplete =
+    !isUnset && !unassignedOwners.length && hasPositiveTrackedShare && !isOverAllocated;
   return {
     isUnset,
     totalPercent,
@@ -1621,11 +1627,13 @@ export function propertyStartingOwnershipStatus(property = {}) {
     unassignedFraction,
     missingOwnerCount: unassignedOwners.length,
     hasUnassignedOwners: unassignedOwners.length > 0,
-    isComplete:
-      !isUnset &&
-      !unassignedOwners.length &&
-      !totalFraction.error &&
-      compareFractions(totalFraction, WHOLE_FRACTION) === 0,
+    isOverAllocated,
+    isPartial: isComplete && totalVsWhole < 0,
+    untrackedFraction:
+      isComplete && totalVsWhole < 0
+        ? subtractFractions(WHOLE_FRACTION, totalFraction)
+        : ZERO_FRACTION,
+    isComplete,
   };
 }
 

@@ -4334,6 +4334,24 @@ body.dashboard-panel-resizing {
   font-size: var(--type-caption);
 }
 
+.ownership-tracked-share-notice {
+  display: grid;
+  gap: 0.18rem;
+  margin: 0.55rem 0;
+  border: 1px solid #b8d3c4;
+  border-left: 4px solid #004225;
+  border-radius: 7px;
+  background: #f4f9f6;
+  padding: 0.65rem 0.75rem;
+  color: #004225;
+  font-size: var(--type-label);
+  line-height: 1.35;
+}
+
+.ownership-tracked-share-notice strong {
+  font-size: var(--type-caption);
+}
+
 .initial-owner-columns,
 .initial-owner-row {
   display: grid;

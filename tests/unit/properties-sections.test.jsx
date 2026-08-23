@@ -839,7 +839,7 @@ describe("unified Property & Tax workspace", () => {
     expect(container.textContent).not.toContain("Record a sale or transfer");
   });
 
-  it("shows the actual under-allocation and withholds tax figures", () => {
+  it("treats a partial initial fraction as the complete share tracked by the tree", () => {
     act(() =>
       root.render(
         <Properties
@@ -865,10 +865,10 @@ describe("unified Property & Tax workspace", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Initial ownership totals 60%.");
-    expect(container.textContent).toContain("must equal 100%");
+    expect(container.textContent).toContain("This tree tracks 60% of the whole property.");
+    expect(container.textContent).toContain("remaining ownership stays outside this tree");
     expect(container.textContent).toContain("Tax Calculation");
-    expect(container.querySelector(".property-ownership-summary")).toBeNull();
+    expect(container.querySelector(".property-ownership-summary")).not.toBeNull();
   });
 
   it("does not disguise a near-complete initial allocation as 100% in its notice", () => {
@@ -910,8 +910,8 @@ describe("unified Property & Tax workspace", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Initial ownership totals 99.99%.");
-    expect(container.textContent).not.toContain("Initial ownership totals 100%.");
+    expect(container.textContent).toContain("This tree tracks 99.99% of the whole property.");
+    expect(container.textContent).not.toContain("This tree tracks 100% of the whole property.");
   });
 
   describe("multi-property workspace", () => {
