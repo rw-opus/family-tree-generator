@@ -177,6 +177,7 @@ function FamilyPersonCardComponent({
   cardState: providedCardState,
   displayName = "",
   cardName,
+  identity = null,
   ownershipByPerson,
   ownershipFractionsByPerson = {},
   currentOwnerPresentationsByPerson = {},
@@ -268,9 +269,9 @@ function FamilyPersonCardComponent({
         ? "unknown"
         : ""
     : genealogyDeathDateLabel(person);
-  const givenNames = capitalisedName(personGivenNames(person));
-  const surname = capitalisedName(personSurname(person));
-  const surnameAtBirth = capitalisedName(person.surnameAtBirth);
+  const givenNames = capitalisedName(identity?.givenNames ?? personGivenNames(person));
+  const surname = capitalisedName(identity?.surname ?? personSurname(person));
+  const surnameAtBirth = capitalisedName(identity?.surnameAtBirth ?? person.surnameAtBirth);
   const differentBirthSurname =
     surnameAtBirth && surnameAtBirth.localeCompare(surname, "en-MT", { sensitivity: "base" }) !== 0;
   const showSurname = Boolean(surname);

@@ -5,6 +5,8 @@ import {
   hasDesignation,
   personDesignations,
   personDisplayName,
+  personGivenNames,
+  personSurname,
 } from "../domain/people.js";
 import { openA3PrintPreview } from "../domain/a3PrintPreview.js";
 import {
@@ -200,6 +202,30 @@ export function FamilyTreeCanvas({
     );
     return names;
   }, [cardName, cleanPeople]);
+  const cardIdentityCacheRef = useRef(new Map());
+  const cardIdentityById = useMemo(() => {
+    const previous = cardIdentityCacheRef.current;
+    const next = new Map();
+    cleanPeople.forEach((person) => {
+      const candidate = {
+        givenNames: personGivenNames(person),
+        surname: personSurname(person),
+        surnameAtBirth: String(person.surnameAtBirth || ""),
+      };
+      const prior = previous.get(person.id);
+      next.set(
+        person.id,
+        prior &&
+          prior.givenNames === candidate.givenNames &&
+          prior.surname === candidate.surname &&
+          prior.surnameAtBirth === candidate.surnameAtBirth
+          ? prior
+          : candidate,
+      );
+    });
+    cardIdentityCacheRef.current = next;
+    return Object.fromEntries(next);
+  }, [cleanPeople]);
   const title =
     String(treeTitle).trim() ||
     (deceased ? `Family Tree of ${displayName(deceased)}` : "Family tree");
@@ -664,6 +690,7 @@ export function FamilyTreeCanvas({
         displayName={displayNamesById.get(person.id) || ""}
         deathDateMissing={requiredSpouseDeathDateIds.has(person.id)}
         cardName={cardNamesById.get(person.id) || ""}
+        identity={cardIdentityById[person.id]}
         ownershipByPerson={ownershipByPerson}
         ownershipFractionsByPerson={ownershipFractionsByPerson}
         currentOwnerPresentationsByPerson={resolvedCurrentOwnerPresentationsByPerson}
@@ -686,6 +713,7 @@ export function FamilyTreeCanvas({
     ),
     [
       cardNamesById,
+      cardIdentityById,
       cardStateById,
       causaMortisCoverageByPerson,
       cleanPeople,

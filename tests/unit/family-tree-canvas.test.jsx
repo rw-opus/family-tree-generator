@@ -97,6 +97,22 @@ describe("FamilyTreeCanvas", () => {
     expect(container.textContent).toContain("Select a person in the index");
   });
 
+  it("refreshes visible identity text when cached layout relationships do not change", () => {
+    const people = family();
+    renderCanvas({ people });
+
+    const updated = people.map((candidate) =>
+      candidate.id === "gf"
+        ? { ...candidate, surname: "Vella", fullName: "Karmnu Vella" }
+        : candidate,
+    );
+    renderCanvas({ people: updated });
+
+    expect(container.querySelector('[data-person-id="gf"] .family-node-surname').textContent).toBe(
+      "Vella",
+    );
+  });
+
   it("keeps person-card display choices inside the labelled Tree Tools menu", () => {
     const onPersonCardFieldsChange = vi.fn();
     renderCanvas({

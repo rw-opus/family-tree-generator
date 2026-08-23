@@ -10,6 +10,10 @@ import {
   reconcileFractionPercentageDisplay,
 } from "../domain/ownershipPresentation.js";
 import { fractionForShare } from "../domain/shares.js";
+import {
+  buildTreeCardOwnershipByPerson,
+  buildTreeCardOwnershipFractionsByPerson,
+} from "../domain/personCardDisplay.js";
 import { InitialOwnershipEditor } from "./InitialOwnershipEditor.jsx";
 import { PropertyOwnershipSummary } from "./PropertyOwnershipSummary.jsx";
 import { SuccessionTraceControl } from "./SuccessionTraceControl.jsx";
@@ -191,6 +195,8 @@ function BufferedPropertyDetails({
 export function Properties({
   properties,
   people,
+  treeTitle = "",
+  shareDisplay = "both",
   familyPersonIds = null,
   outsideParties,
   singleProperty = false,
@@ -231,6 +237,14 @@ export function Properties({
             property.saleValue,
             taxCalculationReport,
           ),
+        );
+        const ownershipByPerson = buildTreeCardOwnershipByPerson(
+          vendorReport.ledger.owners,
+          vendorReport.ownership.transmissions,
+        );
+        const ownershipFractionsByPerson = buildTreeCardOwnershipFractionsByPerson(
+          vendorReport.ledger.owners,
+          vendorReport.ownership.transmissions,
         );
         const startingPercentageDisplay = reconcileFractionPercentageDisplay(
           (property.owners || []).map(fractionForShare),
@@ -405,11 +419,15 @@ export function Properties({
                 <TaxCalculationPanel
                   property={property}
                   people={people}
+                  treeTitle={treeTitle}
+                  shareDisplay={shareDisplay}
                   familyPersonIds={familyPersonIds}
                   outsideParties={outsideParties}
                   vendorReport={vendorReport}
                   taxCalculationReport={taxCalculationReport}
                   currentOwnerPresentationsById={currentOwnerPresentationsById}
+                  ownershipByPerson={ownershipByPerson}
+                  ownershipFractionsByPerson={ownershipFractionsByPerson}
                   onSelectPerson={onSelectPerson}
                   onSelectOutsideOwner={onSelectOutsideOwner}
                 />

@@ -57,11 +57,15 @@ const provenanceSummaryText = (row = {}) =>
 export function TaxCalculationPanel({
   property,
   people,
+  treeTitle = "",
+  shareDisplay = "both",
   familyPersonIds = null,
   outsideParties,
   vendorReport,
   taxCalculationReport = null,
   currentOwnerPresentationsById = null,
+  ownershipByPerson = {},
+  ownershipFractionsByPerson = {},
   onSelectPerson,
   onSelectOutsideOwner,
 }) {
@@ -76,6 +80,10 @@ export function TaxCalculationPanel({
     currentOwnerPresentationsById,
   });
   const peopleById = new Map(people.map((person) => [person.id, person]));
+  const familyPersonIdSet = Array.isArray(familyPersonIds) ? new Set(familyPersonIds) : null;
+  const treeRegisterPeople = familyPersonIdSet
+    ? people.filter((person) => familyPersonIdSet.has(person.id))
+    : people;
   const outsidePartyIds = new Set(outsideParties.map((party) => party.id));
   const openParty = (partyId) => {
     if (outsidePartyIds.has(partyId)) {
@@ -103,10 +111,16 @@ export function TaxCalculationPanel({
             disabled={!people.length && !report.vendors.length}
             onClick={() =>
               downloadVendorTaxSpreadsheet(report, property, historyEvents, {
+                treeTitle,
+                shareDisplay,
                 people,
+                treeRegisterPeople,
                 familyPersonIds,
                 outsideParties,
                 propertyReport: vendorReport,
+                ownershipByPerson,
+                ownershipFractionsByPerson,
+                currentOwnerPresentationsByPerson: currentOwnerPresentationsById,
               })
             }
           >

@@ -96,7 +96,8 @@ describe("vendor tax Excel export", () => {
     expect(xml).toContain('<Data ss:Type="Number">117.6</Data>');
     expect(xml).toContain("1 Republic Street");
     expect(xml).toContain('<NumberFormat ss:Format="0.00%"/>');
-    expect(xml.match(/<Worksheet ss:Name=/g) || []).toHaveLength(3);
+    expect(xml.match(/<Worksheet ss:Name=/g) || []).toHaveLength(4);
+    expect(xml).toContain('<Worksheet ss:Name="Tree Register">');
     expect(xml).toContain('<Worksheet ss:Name="Person Data">');
     expect(xml).toContain('<Worksheet ss:Name="Missing Data">');
     expectWorksheetRowCountsToMatch(xml);
@@ -259,6 +260,72 @@ describe("vendor tax Excel export", () => {
     expect(xml).toContain("1/1 of 1 Republic Street · acquired 04/03/1990");
     expect(xml).toContain("Original deed held in file.");
     expect(xml).toContain("Father&apos;s name is not recorded.");
+    expectWorksheetRowCountsToMatch(xml);
+  });
+
+  it("adds the focused Tree Register with tree/property headings, multiple wills, DCMs and automatic values", () => {
+    const xml = vendorTaxSpreadsheetXml(
+      { vendors: [] },
+      { id: "property", address: "1 Republic Street", saleValue: 200000 },
+      [],
+      {
+        treeTitle: "Testaferrata de Noto",
+        shareDisplay: "both",
+        people: [
+          {
+            id: "maria",
+            givenNames: "Maria",
+            surname: "Abela",
+            fullName: "Maria Abela",
+            sex: "Female",
+            isDeceased: true,
+            dateOfDeath: "2020-05-06",
+            inheritanceBasis: "will",
+            wills: [
+              { id: "will-1", date: "2018-01-02", notaryName: "A. Vella", description: "First" },
+              { id: "will-2", date: "2019-02-03", notaryName: "B. Borg", description: "Later" },
+            ],
+            causaMortisDeclarations: [
+              { id: "cm-1", propertyId: "property", date: "2020-06-07", notaryName: "C. Calleja" },
+            ],
+          },
+        ],
+        ownershipByPerson: { maria: 0.25 },
+        ownershipFractionsByPerson: { maria: { numerator: 1, denominator: 4 } },
+        currentOwnerPresentationsByPerson: {},
+      },
+    );
+
+    expect(xml).toContain('<Worksheet ss:Name="Tree Register">');
+    expect(xml).toContain("Testaferrata de Noto");
+    expect(xml).toContain("Value of property being sold");
+    expect(xml).toContain("02/01/2018\n03/02/2019");
+    expect(xml).toContain("A. Vella\nB. Borg");
+    expect(xml).toContain("07/06/2020");
+    expect(xml).toContain("1/4 Â· 25%");
+    expect(xml).toContain('<Data ss:Type="Number">50000</Data>');
+    expectWorksheetRowCountsToMatch(xml);
+  });
+
+  it("limits the Tree Register sheet to the active family's visible people", () => {
+    const visible = { id: "visible", givenNames: "Visible", surname: "Person" };
+    const retained = { id: "retained", givenNames: "Retained", surname: "Identity" };
+    const xml = vendorTaxSpreadsheetXml(
+      { vendors: [] },
+      { id: "property", address: "1 Republic Street" },
+      [],
+      {
+        people: [visible, retained],
+        treeRegisterPeople: [visible],
+      },
+    );
+    const registerWorksheet = xml.match(
+      /<Worksheet ss:Name="Tree Register">([\s\S]*?)<\/Worksheet>/,
+    )?.[1];
+
+    expect(registerWorksheet).toContain("Visible");
+    expect(registerWorksheet).not.toContain("Retained");
+    expect(xml).toContain("Retained");
     expectWorksheetRowCountsToMatch(xml);
   });
 

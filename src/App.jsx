@@ -7,6 +7,7 @@ import {
   Landmark,
   MousePointerClick,
   Printer,
+  TableProperties,
   X,
 } from "lucide-react";
 import { AdminConsole } from "./components/AdminConsole.jsx";
@@ -26,6 +27,7 @@ import { Properties } from "./components/Properties.jsx";
 import { observeStickyNavOffset } from "./components/stickyNavOffset.js";
 import { TreeWorkspaceModeControl } from "./components/TreeWorkspaceModeControl.jsx";
 import { TaxReadinessGuideBar, taxReadinessIssueControl } from "./components/TaxReadinessGuide.jsx";
+import { TreeRegisterDialog } from "./components/TreeRegisterDialog.jsx";
 import { WorkspaceSaveStatus } from "./components/WorkspaceSaveStatus.jsx";
 import { buildCausaMortisShareCoverage } from "./domain/causaMortisCoverage.js";
 import {
@@ -73,6 +75,8 @@ import {
   normaliseTaxReadinessSession,
 } from "./domain/taxReadinessGuide.js";
 import { workspaceBackupFilename, workspaceBackupJson } from "./domain/workspaceBackup.js";
+import { buildSuccessionTrace } from "./domain/successionTrace.js";
+import { downloadVendorTaxSpreadsheet } from "./domain/vendorTaxExport.js";
 import {
   createFamilyTree,
   familyTreeSaveFingerprint,
@@ -409,6 +413,7 @@ export function App({
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [selectedOutsideOwnerId, setSelectedOutsideOwnerId] = useState("");
   const [initialOwnerPick, setInitialOwnerPick] = useState(null);
+  const [treeRegisterOpen, setTreeRegisterOpen] = useState(false);
   const [zoom, setZoom] = useState(() => Number(tree.settings?.treeZoom) || 100);
   const cloudSaveQueueRef = useRef(null);
   const initialOwnershipDraftWriterIdRef = useRef("");
@@ -899,6 +904,77 @@ export function App({
     ).filter((owner) => owner.personId);
     return ownerPresentationsById(presentations.map((owner) => ({ ...owner, id: owner.personId })));
   }, [activeProperty.saleValue, propertyReport, taxCalculationReport]);
+  const treeRegisterPropertyReport = useMemo(() => {
+    if (propertyReport) return propertyReport;
+    if (!treeRegisterOpen) return null;
+    return buildPropertyVendorTaxReport(
+      activeProperty,
+      currentTree.people,
+      currentTree.outsideParties,
+    );
+  }, [
+    activeProperty,
+    currentTree.outsideParties,
+    currentTree.people,
+    propertyReport,
+    treeRegisterOpen,
+  ]);
+  const treeRegisterTaxCalculationReport = useMemo(() => {
+    if (taxCalculationReport) return taxCalculationReport;
+    if (!treeRegisterOpen || !treeRegisterPropertyReport?.startingOwnership?.isComplete)
+      return null;
+    return buildTaxCalculationReport(
+      activeProperty,
+      currentTree.people,
+      currentTree.outsideParties,
+      treeRegisterPropertyReport,
+    );
+  }, [
+    activeProperty,
+    currentTree.outsideParties,
+    currentTree.people,
+    taxCalculationReport,
+    treeRegisterOpen,
+    treeRegisterPropertyReport,
+  ]);
+  const treeRegisterOwnershipByPerson = useMemo(() => {
+    if (propertyReport) return ownershipByPerson;
+    return treeRegisterPropertyReport
+      ? buildTreeCardOwnershipByPerson(
+          treeRegisterPropertyReport.ledger.owners,
+          treeRegisterPropertyReport.ownership.transmissions,
+        )
+      : {};
+  }, [ownershipByPerson, propertyReport, treeRegisterPropertyReport]);
+  const treeRegisterOwnershipFractionsByPerson = useMemo(() => {
+    if (propertyReport) return ownershipFractionsByPerson;
+    return treeRegisterPropertyReport
+      ? buildTreeCardOwnershipFractionsByPerson(
+          treeRegisterPropertyReport.ledger.owners,
+          treeRegisterPropertyReport.ownership.transmissions,
+        )
+      : {};
+  }, [ownershipFractionsByPerson, propertyReport, treeRegisterPropertyReport]);
+  const treeRegisterOwnerPresentationsByPerson = useMemo(() => {
+    if (propertyReport) return currentOwnerPresentationsByPerson;
+    return treeRegisterPropertyReport
+      ? ownerPresentationsById(
+          buildCurrentOwnerPresentations(
+            treeRegisterPropertyReport.ledger.owners,
+            activeProperty.saleValue,
+            treeRegisterTaxCalculationReport,
+          )
+            .filter((owner) => owner.personId)
+            .map((owner) => ({ ...owner, id: owner.personId })),
+        )
+      : {};
+  }, [
+    activeProperty.saleValue,
+    currentOwnerPresentationsByPerson,
+    propertyReport,
+    treeRegisterPropertyReport,
+    treeRegisterTaxCalculationReport,
+  ]);
   const causaMortisCoverage = useMemo(
     () =>
       legalWorkspaceEnabled && propertyReport
@@ -2718,15 +2794,15 @@ export function App({
   const updateTreeTitle = (title) => {
     if ([...String(title || "")].length > TREE_DATA_LIMITS.maxTitleCharacters) {
       setStatus(`Family names are limited to ${TREE_DATA_LIMITS.maxTitleCharacters} characters.`);
-      return;
+      return false;
     }
-    setTree({
-      ...currentTree,
+    return commitDurableTreeChange((base) => ({
+      ...base,
       title,
-      familyGroups: currentTree.familyGroups.map((group) =>
+      familyGroups: base.familyGroups.map((group) =>
         group.id === activeFamilyGroupId ? { ...group, title } : group,
       ),
-    });
+    }));
   };
 
   const updateWorkspaceMode = (workspaceMode) => {
@@ -2982,6 +3058,74 @@ export function App({
       };
     });
 
+  const updateTreeRegisterPerson = (personId, patchOrUpdater) =>
+    commitDurableTreeChange((base) => ({
+      ...base,
+      people: base.people.map((person) => {
+        if (person.id !== personId) return person;
+        const next =
+          typeof patchOrUpdater === "function"
+            ? patchOrUpdater(person)
+            : { ...person, ...(patchOrUpdater || {}) };
+        return next && typeof next === "object" ? next : person;
+      }),
+    }));
+
+  const setTreeRegisterDeceased = (personId, checked) => {
+    const snapshot = normaliseTree(latestTreeRef.current);
+    const person = snapshot.people.find((candidate) => candidate.id === personId);
+    if (!person) return false;
+    const designations = (person.designations || []).filter(
+      (designation) => String(designation).trim().toLowerCase() !== "deceased",
+    );
+    const patch = {
+      designations: checked ? ["Deceased", ...designations] : designations,
+      isDeceased: checked,
+      dateOfDeath: checked ? person.dateOfDeath || "" : "",
+      dateOfDeathUnknown: checked ? person.dateOfDeathUnknown === true : false,
+      olderGenerationDeathAssumed: false,
+      olderGenerationDeathAssumptionDismissed: !checked,
+      ...(!checked
+        ? {
+            unmarriedOrWidowedAtDeath: false,
+            survivalStatusRequired: false,
+            survivalStatusConfirmed: "alive",
+          }
+        : {}),
+    };
+    changeDeceasedStatus({ checked, personId, people: snapshot.people, patch });
+    return true;
+  };
+
+  const downloadTreeRegisterWorkbook = () => {
+    const historyEvents = treeRegisterPropertyReport
+      ? buildSuccessionTrace({
+          property: activeProperty,
+          people: currentTree.people,
+          outsideParties: currentTree.outsideParties,
+          propertyReport: treeRegisterPropertyReport,
+          currentOwnerPresentationsById: treeRegisterOwnerPresentationsByPerson,
+        })
+      : [];
+    downloadVendorTaxSpreadsheet(
+      treeRegisterTaxCalculationReport || { vendors: [] },
+      activeProperty,
+      historyEvents,
+      {
+        treeTitle: currentTree.title,
+        shareDisplay: currentTree.settings.shareDisplay,
+        people: visiblePeople,
+        treeRegisterPeople: visiblePeople,
+        familyPersonIds: activeFamilyGroup?.personIds || [],
+        outsideParties: currentTree.outsideParties,
+        propertyReport: treeRegisterPropertyReport,
+        ownershipByPerson: treeRegisterOwnershipByPerson,
+        ownershipFractionsByPerson: treeRegisterOwnershipFractionsByPerson,
+        currentOwnerPresentationsByPerson: treeRegisterOwnerPresentationsByPerson,
+      },
+    );
+  };
+
   const returnHome = async () => {
     if (!flushPendingEdits()) return;
     setInitialOwnerPick(null);
@@ -3200,6 +3344,8 @@ export function App({
           <Properties
             properties={activeProperties}
             people={currentTree.people}
+            treeTitle={currentTree.title}
+            shareDisplay={currentTree.settings.shareDisplay}
             familyPersonIds={activeFamilyGroup?.personIds || []}
             outsideParties={currentTree.outsideParties}
             singleProperty
@@ -3422,6 +3568,14 @@ export function App({
                         <span>Property &amp; Tax</span>
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="tree-register-button"
+                      onClick={() => setTreeRegisterOpen(true)}
+                    >
+                      <TableProperties size={16} aria-hidden="true" />
+                      <span>Tree Register</span>
+                    </button>
                     <PersonFinder people={visiblePeople} onSelectPerson={focusPersonOnTree} />
                     <label className="tree-zoom-slider">
                       <span>Zoom</span>
@@ -3443,6 +3597,39 @@ export function App({
           )}
         </section>
       </div>
+      <TreeRegisterDialog
+        open={treeRegisterOpen}
+        treeTitle={currentTree.title}
+        property={activeProperty}
+        people={visiblePeople}
+        ownershipByPerson={treeRegisterOwnershipByPerson}
+        ownershipFractionsByPerson={treeRegisterOwnershipFractionsByPerson}
+        currentOwnerPresentationsByPerson={treeRegisterOwnerPresentationsByPerson}
+        shareDisplay={currentTree.settings.shareDisplay}
+        onShareDisplayChange={(shareDisplay) =>
+          commitDurableTreeChange((base) => ({
+            ...base,
+            settings: { ...base.settings, shareDisplay },
+          }))
+        }
+        onUpdateTreeTitle={updateTreeTitle}
+        onUpdateProperty={(patch) =>
+          updatePropertyWorkspace((base) => ({
+            properties: base.properties.map((property) =>
+              property.id === activeProperty.id ? { ...property, ...patch } : property,
+            ),
+          }))
+        }
+        onUpdatePerson={updateTreeRegisterPerson}
+        onSetDeceased={setTreeRegisterDeceased}
+        onOpenPerson={(personId) => {
+          setTreeRegisterOpen(false);
+          selectPerson(personId);
+        }}
+        onDownload={downloadTreeRegisterWorkbook}
+        onRegisterPendingEditFlush={registerPendingEditController}
+        onClose={() => setTreeRegisterOpen(false)}
+      />
       {legalWorkspaceEnabled && <FractionCalculator />}
     </main>
   );

@@ -211,6 +211,7 @@ test.describe("phone layout", () => {
 
     await expect(menu.getByText("Legal workspace", { exact: true })).toBeVisible();
     await expect(menu.getByRole("button", { name: "Property & Tax" })).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Tree Register" })).toBeVisible();
     await expect(menu.getByText("Find person", { exact: true })).toBeVisible();
     await expect(menu.getByText("Zoom", { exact: true })).toBeVisible();
     await expect(menu.getByText("Person card details", { exact: true })).toBeVisible();
@@ -225,6 +226,38 @@ test.describe("phone layout", () => {
       };
     });
     expect(layout).toEqual({ insideViewport: true, fitsWidth: true });
+  });
+
+  test("keeps the Tree Register inside the phone viewport with a horizontally scrollable grid", async ({
+    page,
+  }) => {
+    await openTreeTools(page);
+    await page.getByRole("button", { name: "Tree Register" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Tree Register" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Tree name")).toBeVisible();
+    await expect(dialog.getByLabel("Value of property being sold")).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Download Excel" })).toBeVisible();
+
+    const layout = await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const scroller = element.querySelector(".tree-register-scroll");
+      return {
+        insideViewport:
+          rect.left >= 0 &&
+          rect.top >= 0 &&
+          rect.right <= window.innerWidth &&
+          rect.bottom <= window.innerHeight,
+        bodyOverflow: document.body.scrollWidth - document.body.clientWidth,
+        gridScrollsInsideDialog: scroller.scrollWidth > scroller.clientWidth,
+      };
+    });
+    expect(layout).toEqual({
+      insideViewport: true,
+      bodyOverflow: 0,
+      gridScrollsInsideDialog: true,
+    });
   });
 
   test("keeps tree controls usable at 320px in legal and family-only modes", async ({ page }) => {
