@@ -212,7 +212,7 @@ vi.mock("../../src/components/AnnouncementBanner.jsx", () => ({
 }));
 
 vi.mock("../../src/components/FamilyTreeCanvas.jsx", () => ({
-  FamilyTreeCanvas: ({ treeTitle, toolbar, people = [], onSelectPerson }) => (
+  FamilyTreeCanvas: ({ treeTitle, toolbar, tools, people = [], onSelectPerson }) => (
     <>
       <div data-testid="tree-canvas">{treeTitle}</div>
       {people.map((person) => (
@@ -226,6 +226,7 @@ vi.mock("../../src/components/FamilyTreeCanvas.jsx", () => ({
         </button>
       ))}
       <div>{toolbar}</div>
+      <div>{tools}</div>
     </>
   ),
 }));

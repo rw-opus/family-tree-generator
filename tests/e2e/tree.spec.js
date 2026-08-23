@@ -1,4 +1,13 @@
-import { test, expect, openEstate, estate, workspace, PEOPLE, WORKSPACE_KEY } from "./fixtures.js";
+import {
+  test,
+  expect,
+  openEstate,
+  openTreeTools,
+  estate,
+  workspace,
+  PEOPLE,
+  WORKSPACE_KEY,
+} from "./fixtures.js";
 
 const chartState = (page) =>
   page.evaluate(() => {
@@ -136,6 +145,7 @@ test.describe("family tree canvas", () => {
   });
 
   test("fits the whole tree into view", async ({ page }) => {
+    await openTreeTools(page);
     await page.getByRole("button", { name: /Fit tree/ }).click();
     await page.waitForTimeout(800);
 
@@ -147,6 +157,7 @@ test.describe("family tree canvas", () => {
   });
 
   test("finds a person and highlights them on the tree", async ({ page }) => {
+    await openTreeTools(page);
     await page.locator(".person-finder > summary").click();
     await page.locator(".person-finder").getByText("Marija Borg").first().click();
 
@@ -268,6 +279,7 @@ test.describe("family tree canvas", () => {
       )
       .toEqual({ visible: false, excluded: true });
 
+    await openTreeTools(page);
     await page.locator(".person-finder > summary").click();
     await expect(page.locator(".person-finder-results > button")).toHaveCount(3);
 
@@ -278,10 +290,14 @@ test.describe("family tree canvas", () => {
   });
 
   test("names its controls in plain sight rather than hiding them", async ({ page }) => {
+    const tools = page.locator("details.tree-view-tools");
+    await expect(tools.locator(":scope > summary")).toContainText("Tree Tools");
+    await openTreeTools(page);
     const cardDetails = page.locator(".person-card-display-control");
     await expect(cardDetails.locator("summary")).toContainText("Person card details");
     await expect(page.locator(".fraction-launcher")).toContainText("Fractions");
-    await expect(page.locator(".tree-tools-panel")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Print preview" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Fit tree" })).toBeVisible();
 
     await cardDetails.locator("summary").click();
     await expect(cardDetails.locator(".person-card-display-menu")).toContainText("Share value");
@@ -296,6 +312,7 @@ test.describe("family tree canvas", () => {
     await expect(printTitle).toBeVisible();
     await page.emulateMedia({ media: "screen" });
 
+    await openTreeTools(page);
     await page.getByRole("button", { name: "Print preview" }).click();
     const preview = page.locator("iframe.a3-preview-frame").contentFrame();
     await expect(preview.locator(".a3-page-header strong")).toHaveCount(1);

@@ -1,4 +1,11 @@
-import { test, expect, openEstate, openPropertyWorkspace, estate } from "./fixtures.js";
+import {
+  test,
+  expect,
+  openEstate,
+  openTreeTools,
+  openPropertyWorkspace,
+  estate,
+} from "./fixtures.js";
 
 /**
  * F3 — hostile-looking text stored as ordinary client data.
@@ -110,6 +117,7 @@ test.describe("stored text is data, never code", () => {
   });
 
   test("renders hostile names in the person finder", async ({ page }) => {
+    await openTreeTools(page);
     await page.locator(".person-finder > summary").click();
 
     const finder = page.locator(".person-finder");
@@ -119,6 +127,7 @@ test.describe("stored text is data, never code", () => {
 
   test("carries hostile text through a workspace backup as text", async ({ page }) => {
     await page.getByRole("button", { name: "Back to Home" }).click();
+    await page.getByRole("button", { name: "Tree Tools" }).click();
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),

@@ -3391,6 +3391,15 @@ export function App({
                       <span className="tree-home-label-full">Back to Home</span>
                       <span className="tree-home-label-short">Home</span>
                     </button>
+                    <EditableTreeTitle
+                      value={currentTree.title}
+                      onChange={updateTreeTitle}
+                      trailing={<WorkspaceSaveStatus state={saveState} />}
+                    />
+                  </>
+                }
+                tools={
+                  <>
                     <TreeWorkspaceModeControl
                       mode={currentTree.settings.workspaceMode}
                       onChange={updateWorkspaceMode}
@@ -3413,11 +3422,6 @@ export function App({
                         <span>Property &amp; Tax</span>
                       </button>
                     )}
-                    <EditableTreeTitle
-                      value={currentTree.title}
-                      onChange={updateTreeTitle}
-                      trailing={<WorkspaceSaveStatus state={saveState} />}
-                    />
                     <PersonFinder people={visiblePeople} onSelectPerson={focusPersonOnTree} />
                     <label className="tree-zoom-slider">
                       <span>Zoom</span>

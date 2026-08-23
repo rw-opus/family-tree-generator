@@ -1,4 +1,4 @@
-import { test, expect, openEstate, openPropertyWorkspace } from "./fixtures.js";
+import { test, expect, openEstate, openTreeTools, openPropertyWorkspace } from "./fixtures.js";
 
 const horizontalOverflow = (page, selector) =>
   page.evaluate((target) => {
@@ -19,6 +19,29 @@ test.describe("phone layout", () => {
     expect(await page.evaluate(() => document.body.scrollWidth - document.body.clientWidth)).toBe(
       0,
     );
+  });
+
+  test("uses a labelled Tree Tools menu and labelled family actions on Home", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.getByRole("button", { name: "Back to Home" }).click();
+
+    const trigger = page.getByRole("button", { name: "Tree Tools" });
+    await expect(trigger).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await trigger.click();
+
+    const tools = page.locator("#tree-tools-list");
+    await expect(tools).toBeVisible();
+    await expect(tools.getByRole("button", { name: "Create new family" })).toBeVisible();
+    await expect(tools.getByText("Import GEDCOM", { exact: true })).toBeVisible();
+    await expect(tools.getByRole("button", { name: "Download workspace backup" })).toBeVisible();
+    await expect(tools.getByRole("button", { name: "Trash (0)" })).toBeVisible();
+
+    await trigger.click();
+    const row = page.locator(".family-library-row:not(.family-library-table-head)").first();
+    await expect(row.getByText("Rename", { exact: true })).toBeVisible();
+    await expect(row.getByText("Delete", { exact: true })).toBeVisible();
+    expect(await horizontalOverflow(page, ".family-library-page")).toBeLessThanOrEqual(0);
   });
 
   for (const width of [320, 393, 430]) {
@@ -182,43 +205,26 @@ test.describe("phone layout", () => {
     expect(overlapping).toBe(false);
   });
 
-  test("keeps Person card details labelled below the toolbar and clear of Fit tree", async ({
-    page,
-  }) => {
-    const launcher = page.locator(".person-card-display-control summary");
-    await expect(launcher).toContainText("Person card details");
+  test("keeps every tree utility named inside Tree Tools", async ({ page }) => {
+    await openTreeTools(page);
+    const menu = page.locator(".tree-view-tools-menu");
 
-    const layout = await page.evaluate(() => {
-      const panel = document
-        .querySelector(".person-card-display-control summary")
-        .getBoundingClientRect();
-      const toolbar = document.querySelector(".tree-stage-toolbar").getBoundingClientRect();
-      const fitTree = document
-        .querySelector('.tree-navigation-tools button[title="Fit the whole tree in view"]')
-        .getBoundingClientRect();
-      const label = document.querySelector(".person-card-display-control summary span");
-      const overlaps = (first, second) =>
-        first.left < second.right &&
-        second.left < first.right &&
-        first.top < second.bottom &&
-        second.top < first.bottom;
+    await expect(menu.getByText("Legal workspace", { exact: true })).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Property & Tax" })).toBeVisible();
+    await expect(menu.getByText("Find person", { exact: true })).toBeVisible();
+    await expect(menu.getByText("Zoom", { exact: true })).toBeVisible();
+    await expect(menu.getByText("Person card details", { exact: true })).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Print preview" })).toBeVisible();
+    await expect(menu.getByRole("button", { name: "Fit tree" })).toBeVisible();
 
+    const layout = await menu.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
       return {
-        belowToolbar: panel.top >= toolbar.bottom,
-        overlapsFitTree: overlaps(panel, fitTree),
-        insideViewport: panel.left >= 0 && panel.right <= window.innerWidth,
-        toolbarInsideViewport: toolbar.left >= 0 && toolbar.right <= window.innerWidth,
-        labelVisible: getComputedStyle(label).display !== "none",
+        insideViewport: rect.left >= 0 && rect.right <= window.innerWidth,
+        fitsWidth: element.scrollWidth <= element.clientWidth + 1,
       };
     });
-
-    expect(layout).toEqual({
-      belowToolbar: true,
-      overlapsFitTree: false,
-      insideViewport: true,
-      toolbarInsideViewport: true,
-      labelVisible: true,
-    });
+    expect(layout).toEqual({ insideViewport: true, fitsWidth: true });
   });
 
   test("keeps tree controls usable at 320px in legal and family-only modes", async ({ page }) => {
@@ -226,40 +232,30 @@ test.describe("phone layout", () => {
 
     const readToolbarLayout = () =>
       page.evaluate(() => {
-        const zoom = document.querySelector(".tree-zoom-slider").getBoundingClientRect();
-        const range = document.querySelector('.tree-zoom-slider input[type="range"]');
-        const rangeRect = range.getBoundingClientRect();
-        const print = document
-          .querySelector('.tree-stage-toolbar button[aria-label="Print preview"]')
-          .getBoundingClientRect();
+        const home = document.querySelector(".tree-stage-toolbar .tree-home-button");
         const title = document.querySelector(".stage-family-title").getBoundingClientRect();
-        const overlaps = (first, second) =>
-          first.left < second.right &&
-          second.left < first.right &&
-          first.top < second.bottom &&
-          second.top < first.bottom;
+        const tools = document.querySelector(".tree-view-tools > summary");
+        const toolbar = document.querySelector(".tree-stage-toolbar");
         return {
-          zoomWidth: zoom.width,
-          rangeWidth: rangeRect.width,
           titleWidth: title.width,
-          zoomOverlapsPrint: overlaps(zoom, print),
-          printLabelHidden: getComputedStyle(
-            document.querySelector('.tree-stage-toolbar button[aria-label="Print preview"] span'),
-          ).display,
+          homeText: home.textContent.trim(),
+          toolsText: tools.textContent.trim(),
+          toolbarFits: toolbar.scrollWidth <= toolbar.clientWidth + 1,
         };
       });
 
     for (const familyTreeOnly of [false, true]) {
+      await openTreeTools(page);
       if (familyTreeOnly) {
         await page.locator(".tree-workspace-mode-control summary").click();
         await page.getByLabel("Family tree only").check();
       }
       const layout = await readToolbarLayout();
-      expect(layout.zoomWidth).toBeGreaterThanOrEqual(120);
-      expect(layout.rangeWidth).toBeGreaterThanOrEqual(72);
       expect(layout.titleWidth).toBeGreaterThanOrEqual(40);
-      expect(layout.zoomOverlapsPrint).toBe(false);
-      expect(layout.printLabelHidden).toBe("none");
+      expect(layout.homeText).toContain("Home");
+      expect(layout.toolsText).toContain("Tree Tools");
+      expect(layout.toolbarFits).toBe(true);
+      await expect(page.locator(".tree-view-tools-menu")).toBeVisible();
     }
   });
 });

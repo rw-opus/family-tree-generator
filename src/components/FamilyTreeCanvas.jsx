@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Maximize2, Move, Printer } from "lucide-react";
+import { ChevronDown, Maximize2, Move, Printer, Wrench } from "lucide-react";
 import {
   hasAnyDesignation,
   hasDesignation,
@@ -79,11 +79,11 @@ function hasRelationalLinks(person) {
 function TreePanel({
   treeRef,
   gestureSurfaceRef,
-  onPrint,
   title,
   relational,
   helperText,
   toolbar,
+  treeTools,
   navigation,
   navigator,
   showActionRequiredKey,
@@ -93,15 +93,7 @@ function TreePanel({
     <section className="tree-panel" ref={gestureSurfaceRef}>
       <header className="tree-stage-toolbar tree-stage-toolbar-unified tree-panel-fixed-controls">
         {toolbar}
-        <button
-          type="button"
-          className="secondary-button"
-          aria-label="Print preview"
-          title="Print the family tree at any stage"
-          onClick={() => onPrint(treeRef.current)}
-        >
-          <Printer size={16} /> <span>Print preview</span>
-        </button>
+        {treeTools}
         {showActionRequiredKey && (
           <p className="tree-required-data-key">
             <span aria-hidden="true" />
@@ -144,6 +136,7 @@ export function FamilyTreeCanvas({
   zoom = 100,
   onZoomChange,
   toolbar,
+  tools,
 }) {
   // These arrive as fresh closures on every render of the parent. Every person
   // card receives them, so reading them through a ref keeps the handlers the
@@ -717,18 +710,51 @@ export function FamilyTreeCanvas({
     ],
   );
 
+  const treeToolsRef = useRef(null);
+  const closeTreeTools = () => treeToolsRef.current?.removeAttribute("open");
+  const treeTools = (
+    <details className="tree-view-tools" ref={treeToolsRef}>
+      <summary aria-label="Tree Tools">
+        <Wrench size={16} aria-hidden="true" />
+        <span>Tree Tools</span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </summary>
+      <div className="tree-view-tools-menu" aria-label="Tree Tools" role="group">
+        {tools}
+        {onPersonCardFieldsChange && (
+          <PersonCardDisplayControl
+            fields={personCardFields}
+            onChange={onPersonCardFieldsChange}
+            legalWorkspaceEnabled={legalWorkspaceEnabled}
+          />
+        )}
+        <button
+          type="button"
+          aria-label="Print preview"
+          title="Print the family tree at any stage"
+          onClick={() => {
+            closeTreeTools();
+            printHandler(treeRef.current);
+          }}
+        >
+          <Printer size={16} aria-hidden="true" /> <span>Print preview</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            closeTreeTools();
+            fitWholeTree();
+          }}
+          title="Fit the whole tree in view"
+        >
+          <Maximize2 size={16} aria-hidden="true" /> <span>Fit tree</span>
+        </button>
+      </div>
+    </details>
+  );
+
   const navigation = (
     <div className="tree-navigation-tools" aria-label="Tree view controls">
-      {onPersonCardFieldsChange && (
-        <PersonCardDisplayControl
-          fields={personCardFields}
-          onChange={onPersonCardFieldsChange}
-          legalWorkspaceEnabled={legalWorkspaceEnabled}
-        />
-      )}
-      <button type="button" onClick={fitWholeTree} title="Fit the whole tree in view">
-        <Maximize2 size={15} /> <span>Fit tree</span>
-      </button>
       {panHintVisible && (
         <span className="tree-pan-hint">
           <Move size={14} /> Drag or swipe to move
@@ -768,11 +794,11 @@ export function FamilyTreeCanvas({
       <TreePanel
         treeRef={treeRef}
         gestureSurfaceRef={gestureSurfaceRef}
-        onPrint={printHandler}
         title={title}
         relational
         helperText="Select a person in the index to locate and highlight them in this tree."
         toolbar={toolbar}
+        treeTools={treeTools}
         navigation={navigation}
         navigator={navigator}
         showActionRequiredKey={showActionRequiredKey}
@@ -794,10 +820,10 @@ export function FamilyTreeCanvas({
     <TreePanel
       treeRef={treeRef}
       gestureSurfaceRef={gestureSurfaceRef}
-      onPrint={printHandler}
       title={title}
       helperText="The diagram is a working visual aid. Dashed entries are connectors added only when a relative is needed to make another branch intelligible."
       toolbar={toolbar}
+      treeTools={treeTools}
       navigation={navigation}
       navigator={navigator}
       showActionRequiredKey={showActionRequiredKey}

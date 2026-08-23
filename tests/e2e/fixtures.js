@@ -161,8 +161,18 @@ export async function openEstate(page) {
   await expect(page.locator(".tree-stage")).toBeVisible();
 }
 
+/** Opens the labelled utility menu on the tree screen. */
+export async function openTreeTools(page) {
+  const tools = page.locator("details.tree-view-tools");
+  if ((await tools.getAttribute("open")) === null) {
+    await tools.locator(":scope > summary").click();
+  }
+  await expect(tools.locator(":scope > .tree-view-tools-menu")).toBeVisible();
+}
+
 /** Opens the Property & Tax workspace from the tree screen. */
 export async function openPropertyWorkspace(page) {
+  await openTreeTools(page);
   await page.getByRole("button", { name: "Property & Tax" }).click();
   await expect(page.locator(".property-workspace-page")).toBeVisible();
 }

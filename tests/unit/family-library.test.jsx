@@ -680,11 +680,36 @@ describe("FamilyLibrary", () => {
     );
     expect(container.textContent).not.toContain("Saved securely to your workspace.");
     expect(container.textContent.match(/Unlimited/g)).toHaveLength(1);
+    const treeTools = container.querySelector('button[aria-controls="tree-tools-list"]');
+    const toolList = container.querySelector("#tree-tools-list");
+    expect(treeTools.textContent).toContain("Tree Tools");
+    expect(treeTools.getAttribute("aria-expanded")).toBe("false");
+    expect(toolList.hidden).toBe(true);
+
+    act(() => treeTools.click());
+    expect(treeTools.getAttribute("aria-expanded")).toBe("true");
+    expect(toolList.hidden).toBe(false);
+    expect(toolList.textContent).toContain("Create new family");
+    expect(toolList.textContent).toContain("Import GEDCOM");
+    expect(toolList.textContent).toContain("Download workspace backup");
+    expect(toolList.textContent).toContain("Change password");
+    expect(toolList.textContent).toContain("Send feedback");
+    expect(toolList.textContent).toContain("Sign out");
     expect(container.querySelector('button[aria-label="Change password"]')).not.toBeNull();
     expect(
       container.querySelector('button[aria-label="Download workspace backup"]'),
     ).not.toBeNull();
     expect(container.querySelector('button[aria-label="Create new family"]')).not.toBeNull();
     expect(container.querySelector('input[aria-label="Import GEDCOM"]')).not.toBeNull();
+    expect(
+      [...container.querySelectorAll(".family-row-actions .library-row-action-label")].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(["Rename", "Delete", "Rename", "Delete"]);
+
+    act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(treeTools.getAttribute("aria-expanded")).toBe("false");
+    expect(toolList.hidden).toBe(true);
+    expect(document.activeElement).toBe(treeTools);
   });
 });

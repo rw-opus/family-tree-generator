@@ -62,6 +62,98 @@ textarea:focus-visible {
   padding: 0.65rem clamp(1rem, 4vw, 3rem);
 }
 
+.family-library-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+
+.tree-tools {
+  position: relative;
+}
+
+.tree-tools-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.65rem;
+  border: 1px solid var(--forest);
+  border-radius: 6px;
+  background: var(--forest);
+  color: #fff;
+  cursor: pointer;
+  padding: 0.45rem 0.7rem;
+  font-size: var(--type-caption);
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.tree-tools-trigger:hover,
+.tree-tools-trigger[aria-expanded="true"] {
+  background: var(--forest-dark);
+}
+
+.tree-tools-trigger[aria-expanded="true"] svg:last-child {
+  transform: rotate(180deg);
+}
+
+.tree-tools-list {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  display: grid;
+  width: 19rem;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100dvh - 4.5rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid #c9d7cf;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(7, 50, 32, 0.18);
+  padding: 0.35rem;
+}
+
+.tree-tools-list[hidden] {
+  display: none;
+}
+
+.tree-tools-list > button,
+.tree-tools-list > label,
+.tree-tools-list > .feedback-form-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.55rem 0.65rem;
+  font: 750 var(--type-caption) var(--tracker-sans);
+  text-align: left;
+  text-decoration: none;
+}
+
+.tree-tools-list > button:hover,
+.tree-tools-list > label:hover,
+.tree-tools-list > .feedback-form-trigger:hover {
+  background: var(--forest-soft);
+  color: var(--forest);
+}
+
+.tree-tools-list > button:disabled,
+.tree-tools-list > label.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .family-library-brand {
   display: inline-flex;
   align-items: center;
@@ -1277,9 +1369,29 @@ body.outside-owner-inspector-open {
 }
 
 .family-library-trash h3 {
-  margin: 0 0 0.45rem;
+  margin: 0;
   color: var(--ink);
   font: 700 0.9rem var(--tracker-serif);
+}
+
+.family-library-trash-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.family-library-trash-heading button {
+  min-height: 2.5rem;
+  border: 1px solid #c9d7cf;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--forest);
+  cursor: pointer;
+  padding: 0.35rem 0.6rem;
+  font-size: var(--type-label);
+  font-weight: 800;
 }
 
 .family-trash-list {
@@ -4430,9 +4542,125 @@ body.dashboard-panel-resizing {
 
 .tree-stage-toolbar-unified {
   display: grid;
-  grid-template-columns:
-    auto auto auto minmax(150px, 1fr) auto minmax(160px, 260px)
-    auto;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+}
+
+.tree-view-tools {
+  position: relative;
+  justify-self: end;
+}
+
+.tree-view-tools > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  border: 1px solid var(--forest);
+  border-radius: 7px;
+  background: var(--forest);
+  color: #fff;
+  cursor: pointer;
+  padding: 0 0.7rem;
+  font-size: var(--type-caption);
+  font-weight: 850;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.tree-view-tools > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree-view-tools[open] > summary,
+.tree-view-tools > summary:hover {
+  background: var(--forest-dark);
+}
+
+.tree-view-tools[open] > summary svg:last-child {
+  transform: rotate(180deg);
+}
+
+.tree-view-tools-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  display: grid;
+  width: 20rem;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100dvh - 5rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid #b9cbc1;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(17, 46, 33, 0.2);
+  padding: 0.4rem;
+}
+
+.tree-view-tools-menu > button,
+.tree-view-tools-menu > label,
+.tree-view-tools-menu > details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.55rem 0.65rem;
+  font: 750 var(--type-caption) var(--tracker-sans);
+  text-align: left;
+  list-style: none;
+}
+
+.tree-view-tools-menu > button:hover,
+.tree-view-tools-menu > label:hover,
+.tree-view-tools-menu > details > summary:hover {
+  background: var(--forest-soft);
+  color: var(--forest);
+}
+
+.tree-view-tools-menu > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree-view-tools-menu .tree-workspace-mode-menu,
+.tree-view-tools-menu .person-finder-popover,
+.tree-view-tools-menu .person-card-display-menu {
+  position: static;
+  width: 100%;
+  max-width: none;
+  border: 1px solid #dbe4df;
+  box-shadow: none;
+}
+
+.tree-view-tools-menu .tree-workspace-mode-control,
+.tree-view-tools-menu .person-finder,
+.tree-view-tools-menu .person-card-display-control {
+  width: 100%;
+}
+
+.tree-view-tools-menu .tree-workspace-mode-control summary span,
+.tree-view-tools-menu .ownership-tax-button span,
+.tree-view-tools-menu .person-finder-label-full,
+.tree-view-tools-menu .person-card-display-control summary span {
+  display: inline;
+}
+
+.tree-view-tools-menu .person-finder-label-short {
+  display: none;
+}
+
+.tree-view-tools-menu .tree-zoom-slider {
+  grid-template-columns: auto minmax(0, 1fr) 3.2rem;
+  min-width: 0;
 }
 
 .ownership-tax-button {
@@ -6346,6 +6574,59 @@ body.a3-print-preview-open {
   z-index: 60;
 }
 
+/* Tree Tools owns the layout of controls that otherwise have toolbar-specific
+   sizing and popovers. Keep every item textual and let nested choices expand
+   inside the one scrollable menu. */
+.tree-view-tools-menu > .ownership-tax-button,
+.tree-view-tools-menu > .tree-workspace-mode-control > summary,
+.tree-view-tools-menu > .person-finder > summary,
+.tree-view-tools-menu > .person-card-display-control > summary {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.55rem 0.65rem;
+  font-size: var(--type-caption);
+  justify-content: flex-start;
+}
+
+.tree-view-tools-menu > .tree-zoom-slider {
+  grid-template-columns: auto minmax(0, 1fr) 3.2rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.55rem 0.65rem;
+}
+
+.tree-view-tools-menu .tree-workspace-mode-menu,
+.tree-view-tools-menu .person-finder-popover,
+.tree-view-tools-menu .person-card-display-menu {
+  position: static;
+  width: 100%;
+  max-width: none;
+  border: 1px solid #dbe4df;
+  box-shadow: none;
+}
+
+.tree-view-tools-menu .tree-workspace-mode-control summary span,
+.tree-view-tools-menu .ownership-tax-button span,
+.tree-view-tools-menu .person-finder-label-full,
+.tree-view-tools-menu .person-card-display-control summary span {
+  display: inline;
+}
+
+.tree-view-tools-menu .person-finder-label-short {
+  display: none;
+}
+
 @media (max-width: 1180px) {
   :root {
     --panel-width: 350px;
@@ -6366,9 +6647,7 @@ body.a3-print-preview-open {
   }
 
   .tree-stage-toolbar-unified {
-    grid-template-columns:
-      auto auto auto minmax(100px, 1fr) auto minmax(130px, 200px)
-      auto;
+    grid-template-columns: auto minmax(100px, 1fr) auto;
     gap: 0.4rem;
   }
 
@@ -6568,7 +6847,7 @@ body.a3-print-preview-open {
     top: 0;
     right: 0;
     left: 0;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     width: 100%;
     max-width: 100%;
     min-height: auto;
@@ -6597,12 +6876,13 @@ body.a3-print-preview-open {
   }
 
   .tree-stage-toolbar-unified .stage-family-title {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
   }
 
-  .tree-stage-toolbar-unified:not(:has(.ownership-tax-button)) .stage-family-title {
-    grid-column: 2 / 4;
+  .tree-stage-toolbar-unified .tree-view-tools {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .tree-home-label-full,
@@ -6615,28 +6895,36 @@ body.a3-print-preview-open {
     display: inline;
   }
 
-  .tree-stage-toolbar-unified .person-finder {
-    grid-column: 4;
-    grid-row: 1;
-    justify-self: end;
-  }
-
-  .tree-stage-toolbar-unified .ownership-tax-button {
-    grid-column: 2;
-    grid-row: 1;
+  .tree-view-tools > summary {
     min-height: 2.75rem;
-    padding: 0 0.5rem;
+    padding-inline: 0.6rem;
     font-size: var(--type-control-mobile);
   }
 
-  .tree-stage-toolbar-unified .tree-zoom-slider {
-    grid-column: 2 / 4;
-    grid-row: 2;
+  .tree-view-tools-menu {
+    position: fixed;
+    top: 4rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+    max-width: none;
   }
 
-  .tree-stage-toolbar-unified > .secondary-button {
-    grid-column: 4;
-    grid-row: 2;
+  .tree-view-tools-menu .tree-workspace-mode-control summary {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .tree-view-tools-menu .tree-workspace-mode-control summary span,
+  .tree-view-tools-menu .ownership-tax-button span,
+  .tree-view-tools-menu .person-finder-label-full,
+  .tree-view-tools-menu .person-card-display-control summary span {
+    display: inline;
+  }
+
+  .tree-view-tools-menu .person-finder-label-short {
+    display: none;
   }
 
   .tree-required-data-key {
@@ -6645,7 +6933,7 @@ body.a3-print-preview-open {
   }
 
   .tree-navigation-tools {
-    top: 7rem;
+    top: 4rem;
     right: auto;
     left: 0.55rem;
   }
@@ -7015,8 +7303,31 @@ body.a3-print-preview-open {
   }
 
   .family-library-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     min-height: 48px;
     padding: 0.4rem 0.65rem;
+  }
+
+  .family-library-header-actions {
+    display: grid;
+    justify-items: end;
+    gap: 0.12rem;
+  }
+
+  .tree-tools-trigger {
+    min-height: 2.75rem;
+    padding-inline: 0.6rem;
+    font-size: var(--type-control-mobile);
+  }
+
+  .tree-tools-list {
+    position: fixed;
+    top: 3.55rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+    max-width: none;
   }
 
   .family-library-brand {
@@ -7116,17 +7427,9 @@ body.a3-print-preview-open {
   }
 
   .family-library-heading {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    display: block;
     align-items: center;
-    gap: 0.5rem;
-  }
-
-  .library-create-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    justify-content: stretch;
-    gap: 0.3rem;
+    gap: 0;
   }
 
   .library-primary-button,
@@ -7140,7 +7443,7 @@ body.a3-print-preview-open {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto auto;
     grid-template-areas:
-      "family actions"
+      "family family"
       "added actions";
     gap: 0.08rem 0.35rem;
     min-height: 0;
@@ -7224,15 +7527,15 @@ body.a3-print-preview-open {
   }
 
   .family-row-actions .library-row-action {
-    width: 2.75rem;
+    width: auto;
     min-height: 2.75rem;
     flex: 0 0 auto;
     border-radius: 8px;
-    padding: 0;
+    padding: 0 0.55rem;
   }
 
   .family-row-actions .library-row-action-label {
-    display: none;
+    display: inline;
   }
 
   .family-trash-row {
@@ -7241,14 +7544,14 @@ body.a3-print-preview-open {
   }
 
   .family-trash-actions .library-row-action {
-    width: 2.75rem;
+    width: auto;
     min-height: 2.75rem;
     border-radius: 8px;
-    padding: 0;
+    padding: 0 0.55rem;
   }
 
   .family-trash-actions .library-row-action-label {
-    display: none;
+    display: inline;
   }
 
   .family-trash-details strong {
@@ -7393,23 +7696,6 @@ body.a3-print-preview-open {
   }
 
   .stage-dashboard-button {
-    display: none;
-  }
-}
-
-@media (max-width: 360px) {
-  .tree-stage-toolbar-unified .tree-home-button,
-  .tree-stage-toolbar-unified .person-finder > summary,
-  .tree-stage-toolbar-unified > .secondary-button {
-    justify-content: center;
-    width: 2.75rem;
-    min-width: 2.75rem;
-    padding: 0;
-  }
-
-  .tree-stage-toolbar-unified .tree-home-label-short,
-  .tree-stage-toolbar-unified .person-finder-label-short,
-  .tree-stage-toolbar-unified > .secondary-button span {
     display: none;
   }
 }
