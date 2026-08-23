@@ -2,6 +2,7 @@ import { isoDateToDisplay } from "./dateFormat.js";
 import { displayNotaryName } from "./notary.js";
 import { approximateFraction } from "./ownership.js";
 import { buildPersonDataExport } from "./personDataExport.js";
+import { buildTreeRegisterRows } from "./treeRegister.js";
 
 const EXCEL_XML_MIME = "application/vnd.ms-excel;charset=utf-8";
 
@@ -225,6 +226,98 @@ const missingDataWorksheet = (personExport, property = {}) => {
  </Worksheet>`;
 };
 
+const treeRegisterWorksheet = (rows, property = {}, caseData = {}) => {
+  const columns = [
+    ["Surname", 90],
+    ["Name", 105],
+    ["Son / daughter of", 190],
+    ["Alive or date of death", 115],
+    ["Intestate / wills", 105],
+    ["Will date(s)", 105],
+    ["Will notary name(s)", 150],
+    ["Will comment(s)", 190],
+    ["Declaration Causa Mortis", 150],
+    ["DCM notary name(s)", 150],
+    ["Ownership", 95],
+    ["Value of holding", 110],
+  ];
+  const shareDisplay = ["fraction", "percentage", "both"].includes(caseData.shareDisplay)
+    ? caseData.shareDisplay
+    : "both";
+  const personRows = rows.length
+    ? rows.map((row) => {
+        const willDates = row.wills
+          .map((will) => isoDateToDisplay(will.date) || will.date || "Undated")
+          .join("\n");
+        const willNotaries = row.wills.map((will) => will.notaryName || "Not recorded").join("\n");
+        const willComments = row.wills.map((will) => will.description || "").join("\n");
+        const dcmDates = row.causaMortisDeclarations
+          .map((declaration) => isoDateToDisplay(declaration.date) || declaration.date || "Undated")
+          .join("\n");
+        const dcmNotaries = row.causaMortisDeclarations
+          .map((declaration) => declaration.notaryName || "Not recorded")
+          .join("\n");
+        const ownership = row.hasHolding
+          ? shareDisplay === "fraction"
+            ? row.fractionLabel
+            : shareDisplay === "percentage"
+              ? row.percentageLabel
+              : `${row.fractionLabel} Â· ${row.percentageLabel}`
+          : "";
+        const lifeStatus = row.deceased
+          ? row.dateOfDeathUnknown
+            ? "Deceased - date unknown"
+            : isoDateToDisplay(row.dateOfDeath) || row.dateOfDeath || "Deceased - date not recorded"
+          : "Alive";
+        const succession = row.deceased
+          ? row.successionBasis === "will"
+            ? "By will"
+            : "Intestate"
+          : "Not applicable";
+
+        return rowXml([
+          stringCell(row.surname),
+          stringCell(row.name),
+          stringCell(row.parentage),
+          stringCell(lifeStatus),
+          stringCell(succession),
+          stringCell(willDates),
+          stringCell(willNotaries),
+          stringCell(willComments),
+          stringCell(dcmDates),
+          stringCell(dcmNotaries),
+          stringCell(ownership, "CenteredText"),
+          row.holdingValue === null ? stringCell("") : numberCell(row.holdingValue),
+        ]);
+      })
+    : [rowXml([mergedCell("No family-tree people are available.", columns.length - 1)])];
+  const treeName = caseData.treeTitle || "Family tree";
+  const expandedRowCount = personRows.length + 4;
+
+  return `<Worksheet ss:Name="Tree Register">
+  <Table ss:ExpandedColumnCount="${columns.length}" ss:ExpandedRowCount="${expandedRowCount}" x:FullColumns="1" x:FullRows="1">
+   ${columns.map(([, width]) => `<Column ss:Width="${width}"/>`).join("")}
+   ${rowXml([stringCell("Tree name", "Header"), mergedCell(treeName, columns.length - 2, "Title")])}
+   ${rowXml([
+     stringCell("Value of property being sold", "Header"),
+     hasNumericValue(property.saleValue)
+       ? numberCell(property.saleValue)
+       : mergedCell("Not recorded", columns.length - 2),
+   ])}
+   ${rowXml([])}
+   ${rowXml(
+     columns.map(([header]) => stringCell(header, "Header")),
+     "Header",
+   )}
+   ${personRows.join("\n   ")}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane>
+   <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>`;
+};
+
 export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [], caseData = {}) {
   const headers = [
     "Vendor",
@@ -272,6 +365,13 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
     taxCalculationReport: report,
     readinessIssuesByPerson: caseData.readinessIssuesByPerson,
     familyPersonIds: caseData.familyPersonIds,
+  });
+  const treeRegisterRows = buildTreeRegisterRows({
+    people: caseData.treeRegisterPeople || caseData.people,
+    property,
+    ownershipByPerson: caseData.ownershipByPerson,
+    ownershipFractionsByPerson: caseData.ownershipFractionsByPerson,
+    currentOwnerPresentationsByPerson: caseData.currentOwnerPresentationsByPerson,
   });
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -332,6 +432,7 @@ export function vendorTaxSpreadsheetXml(report, property = {}, historyEvents = [
    <ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
   </WorksheetOptions>
  </Worksheet>
+ ${treeRegisterWorksheet(treeRegisterRows, property, caseData)}
  ${personDataWorksheet(personExport, property)}
  ${missingDataWorksheet(personExport, property)}
 </Workbook>`;

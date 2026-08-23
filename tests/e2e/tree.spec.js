@@ -156,6 +156,38 @@ test.describe("family tree canvas", () => {
     expect(zoom).toBeLessThanOrEqual(1.4);
   });
 
+  test("edits the canonical tree through the Tree Register and shows calculated holdings", async ({
+    page,
+  }) => {
+    await openTreeTools(page);
+    await page.getByRole("button", { name: "Tree Register" }).click();
+
+    const register = page.getByRole("dialog", { name: "Tree Register" });
+    await expect(register).toBeVisible();
+    await expect(register.getByLabel("Tree name")).toHaveValue("Borg Fictional Estate");
+    await expect(register.getByLabel("Value of property being sold")).toHaveValue("400000");
+    const gorgRow = register.locator(`tr[data-person-id="${PEOPLE.gorg}"]`);
+    await expect(gorgRow).toContainText("1/2");
+    await expect(gorgRow).toContainText("50%");
+    await expect(gorgRow).toContainText("€200,000.00");
+
+    await gorgRow.getByLabel(/Surname for/).fill("Vella");
+    await gorgRow.getByRole("button", { name: "Open card" }).click();
+    await expect(register).toHaveCount(0);
+    await expect(page.locator(`[data-person-id="${PEOPLE.gorg}"]`)).toContainText("Vella");
+    await expect(page.locator(".context-dashboard")).toContainText("Vella");
+
+    await page.getByRole("button", { name: "Back to Tree" }).click();
+    await openTreeTools(page);
+    await page.getByRole("button", { name: "Tree Register" }).click();
+    await expect(
+      page
+        .getByRole("dialog", { name: "Tree Register" })
+        .locator(`tr[data-person-id="${PEOPLE.gorg}"]`)
+        .getByLabel(/Surname for/),
+    ).toHaveValue("Vella");
+  });
+
   test("finds a person and highlights them on the tree", async ({ page }) => {
     await openTreeTools(page);
     await page.locator(".person-finder > summary").click();
