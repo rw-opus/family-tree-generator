@@ -44,6 +44,17 @@ describe("mobile family library layout", () => {
   });
 });
 
+describe("desktop family library symmetry", () => {
+  it("gives the two family creation actions equal columns and widths", () => {
+    expect(blockFor(stylesheet, ".library-create-actions")).toMatch(
+      /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    );
+    expect(blockFor(stylesheet, ".library-primary-button,")).toMatch(
+      /width:\s*100%/,
+    );
+  });
+});
+
 /**
  * Between the phone layout and a comfortable desktop there was a band — small
  * tablets, and any phone in landscape — where the page had already split into
