@@ -49,9 +49,7 @@ describe("desktop family library symmetry", () => {
     expect(blockFor(stylesheet, ".library-create-actions")).toMatch(
       /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
     );
-    expect(blockFor(stylesheet, ".library-primary-button,")).toMatch(
-      /width:\s*100%/,
-    );
+    expect(blockFor(stylesheet, ".library-primary-button,")).toMatch(/width:\s*100%/);
   });
 });
 
