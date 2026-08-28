@@ -309,7 +309,7 @@ async function assertEntitlementAndTerms(config, state, aliceToken, bobToken) {
   const checks = await Promise.all([
     rest(
       config,
-      `tree_accounts?user_id=eq.${state.users.alice.id}&select=user_id,free_trees_used,total_trees_created`,
+      `tree_accounts?user_id=eq.${state.users.alice.id}&select=user_id,free_trees_used,total_trees_created,unlimited_trees`,
       aliceToken,
     ),
     rest(config, `tree_accounts?user_id=eq.${state.users.alice.id}&select=user_id`, bobToken),
@@ -329,13 +329,14 @@ async function assertEntitlementAndTerms(config, state, aliceToken, bobToken) {
   );
   if (
     aliceAccount.length !== 1 ||
-    aliceAccount[0].free_trees_used !== 1 ||
+    aliceAccount[0].free_trees_used !== 0 ||
     aliceAccount[0].total_trees_created !== 1 ||
+    aliceAccount[0].unlimited_trees !== true ||
     bobReadsAliceAccount.length !== 0 ||
     terms.length !== 1 ||
     terms[0].version !== "synthetic-restore-drill-v1" ||
     generations.length !== 1 ||
-    generations[0].entitlement_source !== "free"
+    generations[0].entitlement_source !== "admin"
   ) {
     throw new Error("Restored entitlement or terms data did not match the synthetic fixture.");
   }
