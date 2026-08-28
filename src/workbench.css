@@ -294,6 +294,17 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.library-subscription-note {
+  margin: 0.8rem 0 0;
+  border-left: 3px solid var(--forest);
+  border-radius: 4px;
+  background: var(--forest-soft);
+  padding: 0.55rem 0.65rem;
+  color: var(--forest-dark);
+  font-size: var(--type-label);
+  line-height: 1.45;
+}
+
 .library-account-action {
   display: inline-flex;
   align-items: center;

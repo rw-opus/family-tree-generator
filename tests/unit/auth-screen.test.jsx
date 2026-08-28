@@ -62,9 +62,11 @@ describe("AuthScreen public responses", () => {
     container.remove();
   });
 
-  it("advertises the same three-tree allowance enforced for new accounts", () => {
-    expect(container.textContent).toContain("First 3 trees free");
-    expect(container.textContent).not.toContain("First 5 trees free");
+  it("explains that access starts the subscription without showing a payment wall", () => {
+    expect(container.textContent).toContain("Your subscription starts with account access");
+    expect(container.textContent).toContain("Subscription fees will become due");
+    expect(container.textContent).not.toContain("trees free");
+    expect(container.textContent).not.toContain("€30");
   });
 
   it.each([

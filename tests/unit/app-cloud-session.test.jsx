@@ -18,7 +18,6 @@ const cloudHarness = vi.hoisted(() => ({
   permanentlyDeleteFamilyTree: vi.fn(),
   restoreFamilyTree: vi.fn(),
   saveFamilyTree: vi.fn(async (tree) => tree),
-  startTreeCreditCheckout: vi.fn(),
   trashFamilyTree: vi.fn(),
 }));
 
@@ -67,7 +66,6 @@ vi.mock("../../src/services/treeBilling.js", () => ({
   },
   isTreePaymentRequiredError: vi.fn(() => false),
   loadTreeEntitlement: cloudHarness.loadTreeEntitlement,
-  startTreeCreditCheckout: cloudHarness.startTreeCreditCheckout,
 }));
 
 vi.mock("../../src/services/adminConsole.js", () => ({
@@ -128,9 +126,6 @@ vi.mock("../../src/components/FamilyLibrary.jsx", () => ({
     storageStatus,
     saveState,
     entitlement,
-    canCreate,
-    billingMessage,
-    onBuyTree,
     isPlatformAdmin,
     onOpenAdminConsole,
     pendingCloudRecoveries = [],
@@ -141,13 +136,6 @@ vi.mock("../../src/components/FamilyLibrary.jsx", () => ({
       <span role="status">{saveState?.phase}</span>
       <span data-testid="storage-status">{storageStatus}</span>
       <span data-testid="paid-tree-credits">{entitlement?.paidTreeCredits ?? "loading"}</span>
-      <span data-testid="can-create-tree">{String(canCreate)}</span>
-      <span data-testid="billing-message">{billingMessage}</span>
-      {!canCreate && (
-        <button type="button" onClick={onBuyTree}>
-          Buy one tree
-        </button>
-      )}
       {isPlatformAdmin && (
         <button type="button" onClick={onOpenAdminConsole}>
           Open admin console
@@ -1014,7 +1002,7 @@ describe("App cloud session identity", () => {
     expect(cloudHarness.loadTreeEntitlement).toHaveBeenCalledTimes(3);
   });
 
-  it("refreshes a stale allowance before checkout and unlocks an unlimited account", async () => {
+  it("does not present checkout when a legacy allowance record is exhausted", async () => {
     const exhaustedEntitlement = {
       freeTreeLimit: 3,
       freeTreesUsed: 3,
@@ -1024,14 +1012,7 @@ describe("App cloud session identity", () => {
       unlimitedTrees: false,
       canCreate: false,
     };
-    const unlimitedEntitlement = {
-      ...exhaustedEntitlement,
-      unlimitedTrees: true,
-      canCreate: true,
-    };
-    cloudHarness.loadTreeEntitlement
-      .mockResolvedValueOnce(exhaustedEntitlement)
-      .mockResolvedValue(unlimitedEntitlement);
+    cloudHarness.loadTreeEntitlement.mockResolvedValue(exhaustedEntitlement);
 
     await act(async () => {
       root.render(
@@ -1045,21 +1026,8 @@ describe("App cloud session identity", () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('[data-testid="can-create-tree"]').textContent).toBe("false");
-    await act(async () => {
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Buy one tree")
-        .click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(cloudHarness.loadTreeEntitlement).toHaveBeenCalledTimes(2);
-    expect(cloudHarness.startTreeCreditCheckout).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-testid="can-create-tree"]').textContent).toBe("true");
-    expect(container.querySelector('[data-testid="billing-message"]').textContent).toContain(
-      "Unlimited tree creation is active",
-    );
+    expect(container.textContent).not.toContain("Buy one tree");
+    expect(container.textContent).not.toContain("checkout");
   });
 
   it("does not reload or reactivate the first tree when the same user's token refreshes", async () => {

@@ -592,8 +592,8 @@ describe("FamilyLibrary", () => {
     expect(rows[1].querySelector(".family-name-badges").textContent).toContain("2 reviews");
   });
 
-  it("shows the five-free pricing state and blocks creation until a paid credit exists", () => {
-    const handlers = renderLibrary(root, {
+  it("shows a started subscription without payment choices or creation blocks", () => {
+    renderLibrary(root, {
       commercialMode: true,
       entitlement: {
         freeTreeLimit: 5,
@@ -604,23 +604,18 @@ describe("FamilyLibrary", () => {
         canCreate: false,
       },
       canCreate: false,
-      billingMessage: "Payment required",
-      onBuyTree: vi.fn(),
     });
 
-    expect(container.textContent).toContain("Additional tree · €30");
-    expect(container.textContent).toContain("Payment required");
-    expect(container.querySelector('input[type="file"]').disabled).toBe(true);
+    expect(container.textContent).toContain("Subscription");
+    expect(container.textContent).toContain("Started");
+    expect(container.textContent).toContain("Subscription fees will become due");
+    expect(container.textContent).not.toContain("€30");
+    expect(container.textContent).not.toContain("Buy one tree");
+    expect(container.querySelector('input[type="file"]').disabled).toBe(false);
     const create = [...container.querySelectorAll("button")].find((button) =>
       button.textContent.includes("Create new family"),
     );
-    expect(create.disabled).toBe(true);
-
-    const buy = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent.includes("Buy one tree"),
-    );
-    act(() => buy.click());
-    expect(handlers.onBuyTree).toHaveBeenCalledOnce();
+    expect(create.disabled).toBe(false);
   });
 
   it("shows an unlimited allowance without free-tree or checkout messaging", () => {
@@ -639,8 +634,8 @@ describe("FamilyLibrary", () => {
       onBuyTree: vi.fn(),
     });
 
-    expect(container.textContent).toContain("Tree allowance");
-    expect(container.textContent).toContain("Unlimited");
+    expect(container.textContent).toContain("Subscription");
+    expect(container.textContent).toContain("Started");
     expect(container.querySelector(".tree-pricing-card")).toBeNull();
     expect(container.querySelector(".library-credit-policy")).toBeNull();
     expect(container.textContent).not.toContain("Free trees remaining");
@@ -679,7 +674,7 @@ describe("FamilyLibrary", () => {
       "Choose a family to open its tree, people and property work.",
     );
     expect(container.textContent).not.toContain("Saved securely to your workspace.");
-    expect(container.textContent.match(/Unlimited/g)).toHaveLength(1);
+    expect(container.textContent.match(/Started/g)).toHaveLength(1);
     const treeTools = container.querySelector('button[aria-controls="tree-tools-list"]');
     const toolList = container.querySelector("#tree-tools-list");
     expect(treeTools.textContent).toContain("Tree Tools");

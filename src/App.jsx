@@ -126,11 +126,9 @@ import {
   upsertWorkspaceTree,
 } from "./services/localWorkspace.js";
 import {
-  DEFAULT_FREE_TREE_LIMIT,
   defaultTreeEntitlement,
   isTreePaymentRequiredError,
   loadTreeEntitlement,
-  startTreeCreditCheckout,
 } from "./services/treeBilling.js";
 import { isPlatformAdmin } from "./services/adminConsole.js";
 
@@ -397,8 +395,6 @@ export function App({
     Boolean(startupWorkspace.loadError),
   );
   const [entitlement, setEntitlement] = useState(localOnlyMode ? defaultTreeEntitlement : null);
-  const [billingBusy, setBillingBusy] = useState(false);
-  const [billingMessage, setBillingMessage] = useState("");
   const [platformAdmin, setPlatformAdmin] = useState(false);
   const [adminConsoleOpen, setAdminConsoleOpen] = useState(false);
   const [showLibrary, setShowLibrary] = useState(true);
@@ -785,8 +781,8 @@ export function App({
     const refreshEntitlementWhenActive = () => {
       if (document.visibilityState === "hidden") return;
       refreshTreeEntitlement().catch((error) => {
-        setBillingMessage(
-          `Account allowance could not be refreshed: ${error?.message || "Unknown error"}`,
+        setStatus(
+          `Subscription status could not be refreshed: ${error?.message || "Unknown error"}`,
         );
       });
     };
@@ -1598,58 +1594,6 @@ export function App({
     };
   }, [cloudMode, flushPendingEditControllers, localRecoveryBlocked]);
 
-  useEffect(() => {
-    if (!cloudMode) return undefined;
-    const returnUrl = new URL(window.location.href);
-    const checkoutState = returnUrl.searchParams.get("checkout");
-    let cancelled = false;
-    let retryTimer;
-
-    const clearCheckoutParameters = () => {
-      returnUrl.searchParams.delete("checkout");
-      returnUrl.searchParams.delete("session_id");
-      window.history.replaceState(
-        {},
-        "",
-        `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`,
-      );
-    };
-
-    if (checkoutState === "success") {
-      setBillingMessage("Payment received. Your tree credit is being confirmed.");
-      let attempts = 0;
-      const pollForCredit = async () => {
-        attempts += 1;
-        try {
-          const nextEntitlement = await refreshTreeEntitlement();
-          if (cancelled) return;
-          if (nextEntitlement.paidTreeCredits > 0 || nextEntitlement.unlimitedTrees) {
-            setBillingMessage("Your account is ready to create a new tree.");
-            return;
-          }
-        } catch {
-          // A short retry handles normal webhook and network delays after Stripe redirects back.
-        }
-        if (!cancelled && attempts < 10) {
-          retryTimer = window.setTimeout(pollForCredit, 2000);
-        } else if (!cancelled) {
-          setBillingMessage(
-            "Payment is still being confirmed. Refresh shortly; you will not be charged twice.",
-          );
-        }
-      };
-      pollForCredit();
-      clearCheckoutParameters();
-    } else if (checkoutState === "cancelled") {
-      setBillingMessage("Checkout was cancelled. No payment was taken.");
-      clearCheckoutParameters();
-    }
-    return () => {
-      cancelled = true;
-      if (retryTimer) window.clearTimeout(retryTimer);
-    };
-  }, [cloudMode, refreshTreeEntitlement]);
-
   const treeOptions = useMemo(
     () => (activeTreeIsListed ? upsertWorkspaceTree(trees, currentTree) : trees),
     [activeTreeIsListed, currentTree, trees],
@@ -2031,12 +1975,9 @@ export function App({
 
   const handleCreationError = async (error) => {
     if (isTreePaymentRequiredError(error)) {
-      const nextEntitlement = await refreshTreeEntitlement().catch(() => null);
-      const freeLimit = nextEntitlement?.freeTreeLimit ?? DEFAULT_FREE_TREE_LIMIT;
-      setBillingMessage(
-        nextEntitlement?.unlimitedTrees
-          ? "Unlimited tree creation is active. Please try creating the tree again."
-          : `Your ${freeLimit} free tree${freeLimit === 1 ? " has" : "s have"} been used. Buy one tree credit for €30.`,
+      await refreshTreeEntitlement().catch(() => null);
+      setStatus(
+        "Subscription access is being updated. Please try creating the family again shortly.",
       );
       return;
     }
@@ -2142,31 +2083,6 @@ export function App({
       if (isTreePaymentRequiredError(error)) await handleCreationError(error);
       else setStatus(`Could not import GEDCOM: ${error.message}`);
       throw error;
-    }
-  };
-
-  const buyTreeCredit = async () => {
-    if (!cloudMode || billingBusy) return;
-    setBillingBusy(true);
-    setBillingMessage("Checking the latest account allowance...");
-    try {
-      const latestEntitlement = await refreshTreeEntitlement();
-      if (latestEntitlement.unlimitedTrees) {
-        setBillingMessage("Unlimited tree creation is active for this account.");
-        setBillingBusy(false);
-        return;
-      }
-      if (latestEntitlement.canCreate) {
-        setBillingMessage("Tree creation is available. You can create the new family now.");
-        setBillingBusy(false);
-        return;
-      }
-      setBillingMessage("Opening secure Stripe checkout...");
-      const checkoutUrl = await startTreeCreditCheckout();
-      window.location.assign(checkoutUrl);
-    } catch (error) {
-      setBillingMessage(`Could not open checkout: ${error.message}`);
-      setBillingBusy(false);
     }
   };
 
@@ -3174,9 +3090,7 @@ export function App({
   const closeAdminConsole = () => {
     setAdminConsoleOpen(false);
     refreshTreeEntitlement().catch((error) => {
-      setBillingMessage(
-        `Account allowance could not be refreshed: ${error?.message || "Unknown error"}`,
-      );
+      setStatus(`Subscription status could not be refreshed: ${error?.message || "Unknown error"}`);
     });
   };
 
@@ -3193,9 +3107,6 @@ export function App({
         session={session}
         commercialMode={cloudMode}
         entitlement={entitlement}
-        canCreate={!cloudMode || Boolean(entitlement?.canCreate)}
-        billingBusy={billingBusy}
-        billingMessage={billingMessage}
         storageStatus={cloudListState.warning || status}
         saveState={saveState}
         backupDisabled={cloudMode && !cloudListState.complete}
@@ -3230,7 +3141,6 @@ export function App({
         onRemove={removeTree}
         onRestore={restoreTree}
         onPermanentDelete={permanentlyDeleteTree}
-        onBuyTree={buyTreeCredit}
         onChangePassword={onChangePassword}
         onSignOut={signOutSafely}
       />

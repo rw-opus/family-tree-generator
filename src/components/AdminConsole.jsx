@@ -2,10 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Gauge, Megaphone, MessageSquare } from "lucide-react";
 import {
   createAdminRequestId,
-  grantTreeCredits,
   loadPlatformOverview,
   MAX_ADMIN_CREDIT_GRANT,
-  setUnlimitedTrees,
   getAnnouncement,
   setAnnouncement,
 } from "../services/adminConsole.js";
@@ -242,36 +240,10 @@ function OverviewTab() {
     });
   }, []);
 
-  const refreshAfterChange = async (savedMessage) => {
-    try {
-      await refresh();
-    } catch {
-      throw new Error(
-        `${savedMessage} The latest account data could not be reloaded; close and reopen the Overview before making another change.`,
-      );
-    }
-  };
-
-  const toggleUnlimited = async (account, next, options) => {
-    await setUnlimitedTrees(account.userId, next, options);
-    await refreshAfterChange(
-      `Unlimited tree creation was ${next ? "granted" : "revoked"} successfully.`,
-    );
-  };
-
-  const grant = async (account, credits, options) => {
-    await grantTreeCredits(account.userId, credits, options);
-    await refreshAfterChange("The paid credits were added successfully.");
-  };
-
   const cards = [
     { label: "Accounts", value: accounts.length },
     { label: "Trees (active)", value: accounts.reduce((sum, a) => sum + a.treesActive, 0) },
-    { label: "Unlimited accounts", value: accounts.filter((a) => a.unlimitedTrees).length },
-    {
-      label: "Paid credits outstanding",
-      value: accounts.reduce((sum, a) => sum + a.paidTreeCredits, 0),
-    },
+    { label: "Subscriptions started", value: accounts.length },
   ];
 
   return (
@@ -308,17 +280,14 @@ function OverviewTab() {
           <Loader status={status} error={error} empty="No accounts yet.">
             <table className="admin-table">
               <caption className="admin-visually-hidden">
-                Platform accounts and tree entitlements
+                Platform accounts and subscription status
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Account</th>
                   <th scope="col">Trees</th>
-                  <th scope="col">Free used</th>
-                  <th scope="col">Paid credits</th>
-                  <th scope="col">Unlimited</th>
+                  <th scope="col">Subscription</th>
                   <th scope="col">Last activity</th>
-                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -341,22 +310,9 @@ function OverviewTab() {
                       )}
                     </td>
                     <td>
-                      {account.freeTreesUsed} / {account.freeTreeLimit}
-                    </td>
-                    <td>
-                      <CreditsCell account={account} onGrant={grant} />
-                    </td>
-                    <td>
-                      <span
-                        className={`admin-badge ${account.unlimitedTrees ? "unlimited" : "limited"}`}
-                      >
-                        {account.unlimitedTrees ? "Unlimited" : "Standard"}
-                      </span>
+                      <span className="admin-badge unlimited">Started</span>
                     </td>
                     <td>{dateTime(account.lastActivity)}</td>
-                    <td>
-                      <UnlimitedControl account={account} onToggle={toggleUnlimited} />
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -364,9 +320,9 @@ function OverviewTab() {
           </Loader>
         </div>
         <p className="admin-console-footnote">
-          Every tree costs €30 after the free allowance. Unlimited bypasses both free and paid
-          credits; grant it sparingly. Paid credits are added on top of whatever the account already
-          holds.
+          Subscription access starts when an account is activated. Fees become due under the
+          commercial terms communicated to the account holder; no payment choice is presented in the
+          application.
         </p>
       </div>
     </div>

@@ -77,8 +77,8 @@ export function AuthScreen() {
           vendor&apos;s Maltese property tax position in one secure workspace.
         </p>
         <div className="commercial-price-callout">
-          <strong>First 3 trees free</strong>
-          <span>Then €30 for each additional tree. Editing an existing tree remains free.</span>
+          <strong>Your subscription starts with account access</strong>
+          <span>Subscription fees will become due under the communicated billing terms.</span>
         </div>
         <span className="commercial-security-note">
           <ShieldCheck size={16} /> Private account storage protected by Supabase row-level security
