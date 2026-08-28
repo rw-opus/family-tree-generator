@@ -80,6 +80,13 @@ const entitlementAuditMigration = readFileSync(
   ),
   "utf8",
 );
+const subscriptionAccessMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260828163948_start_subscriptions_without_payment_wall.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const authConfig = readFileSync(new URL("../../supabase/config.toml", import.meta.url), "utf8");
 const authScreen = readFileSync(
   new URL("../../src/components/AuthScreen.jsx", import.meta.url),
@@ -111,6 +118,14 @@ describe("commercial Supabase schema", () => {
       );
     }
     expect(unlimitedAccountsMigration).not.toContain("rolandwadge@gmail.com");
+  });
+
+  it("starts subscription access without a tree-credit payment wall", () => {
+    for (const sql of [schema, subscriptionAccessMigration]) {
+      expect(sql).toContain("alter column unlimited_trees set default true");
+      expect(sql).toContain("set unlimited_trees = true");
+      expect(sql).toContain("where unlimited_trees is distinct from true");
+    }
   });
 
   it("isolates exposed commercial tables and keeps the Stripe ledger private", () => {

@@ -13,11 +13,13 @@ import {
 describe("legal and privacy notices", () => {
   it("keeps a versioned and complete legal notice", () => {
     expect(TERMS_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}-.+/);
-    expect(LEGAL_NOTICE_SECTIONS).toHaveLength(16);
-    expect(new Set(LEGAL_NOTICE_SECTIONS.map((section) => section.h)).size).toBe(16);
+    expect(LEGAL_NOTICE_SECTIONS).toHaveLength(17);
+    expect(new Set(LEGAL_NOTICE_SECTIONS.map((section) => section.h)).size).toBe(17);
     const html = renderToStaticMarkup(<LegalNoticeContent />);
     expect(html).toContain("Professional responsibility remains with the User");
     expect(html).toContain("Governing law and jurisdiction");
+    expect(html).toContain("Subscription fees will become due");
+    expect(html).toContain("does not itself set an amount, billing interval or payment date");
     expect(html).toContain(TAX_CALCULATION_DISCLAIMER);
   });
 

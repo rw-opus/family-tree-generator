@@ -3,7 +3,6 @@ import {
   ArchiveRestore,
   Check,
   ChevronDown,
-  CreditCard,
   Download,
   FileUp,
   FolderOpen,
@@ -67,9 +66,6 @@ export function FamilyLibrary({
   session,
   commercialMode = false,
   entitlement = null,
-  canCreate = true,
-  billingBusy = false,
-  billingMessage = "",
   storageStatus = "",
   saveState,
   backupDisabled = false,
@@ -84,7 +80,6 @@ export function FamilyLibrary({
   onRemove,
   onRestore,
   onPermanentDelete,
-  onBuyTree,
   onChangePassword,
   onSignOut,
   onDownloadRecovery,
@@ -122,8 +117,6 @@ export function FamilyLibrary({
       .includes(query.trim().toLocaleLowerCase()),
   );
   const signedIn = Boolean(session);
-  const allowanceLoading = commercialMode && !entitlement;
-  const unlimitedTrees = entitlement?.unlimitedTrees === true;
   const visibleStorageStatus = routineStorageMessages.has(storageStatus) ? "" : storageStatus;
 
   useEffect(() => {
@@ -238,14 +231,6 @@ export function FamilyLibrary({
   const importGedcom = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!canCreate) {
-      const freeLimit = entitlement?.freeTreeLimit ?? 3;
-      setImportStatus(
-        `Your ${freeLimit} free tree${freeLimit === 1 ? " has" : "s have"} been used. Buy a €30 tree credit first.`,
-      );
-      event.target.value = "";
-      return;
-    }
     setImportStatus(`Importing ${file.name}...`);
     try {
       await onImport(file);
@@ -293,16 +278,12 @@ export function FamilyLibrary({
                   setToolsOpen(false);
                   setCreationOpen(true);
                 }}
-                disabled={!canCreate}
-                title={canCreate ? "Create new family" : "Buy a tree credit to continue"}
+                title="Create new family"
                 aria-label="Create new family"
               >
                 <FolderPlus size={16} aria-hidden="true" /> Create new family
               </button>
-              <label
-                className={canCreate ? "" : "disabled"}
-                title={canCreate ? "Import GEDCOM" : "Buy a tree credit to continue"}
-              >
+              <label title="Import GEDCOM">
                 <FileUp size={16} aria-hidden="true" /> Import GEDCOM
                 <input
                   className="library-file-input"
@@ -311,7 +292,6 @@ export function FamilyLibrary({
                   accept=".ged,.gedcom,text/plain"
                   onClick={() => setToolsOpen(false)}
                   onChange={importGedcom}
-                  disabled={!canCreate}
                 />
               </label>
               <button
@@ -355,19 +335,6 @@ export function FamilyLibrary({
                   }}
                 >
                   <Download size={16} aria-hidden="true" /> Download recovery copy
-                </button>
-              )}
-              {commercialMode && !allowanceLoading && !canCreate && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setToolsOpen(false);
-                    onBuyTree();
-                  }}
-                  disabled={billingBusy}
-                >
-                  <CreditCard size={16} aria-hidden="true" />
-                  {billingBusy ? "Opening checkout..." : "Buy one tree · €30"}
                 </button>
               )}
               {signedIn && (
@@ -438,49 +405,23 @@ export function FamilyLibrary({
               <dt>Storage</dt>
               <dd>{signedIn ? "Cloud" : "This device"}</dd>
             </div>
+            {commercialMode && (
+              <div className="account-subscription-detail">
+                <dt>Subscription</dt>
+                <dd>Started</dd>
+              </div>
+            )}
             {commercialMode && entitlement && (
-              <>
-                <div>
-                  <dt>Trees generated</dt>
-                  <dd>{entitlement.totalTreesCreated}</dd>
-                </div>
-                {unlimitedTrees ? (
-                  <div>
-                    <dt>Tree allowance</dt>
-                    <dd>Unlimited</dd>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <dt>Free trees remaining</dt>
-                      <dd>
-                        {entitlement.freeTreesRemaining} of {entitlement.freeTreeLimit}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Paid tree credits</dt>
-                      <dd>{entitlement.paidTreeCredits}</dd>
-                    </div>
-                  </>
-                )}
-              </>
+              <div>
+                <dt>Trees generated</dt>
+                <dd>{entitlement.totalTreesCreated}</dd>
+              </div>
             )}
           </dl>
-          {commercialMode && (allowanceLoading || !canCreate) && (
-            <div className={`tree-pricing-card ${allowanceLoading ? "loading" : "payment-needed"}`}>
-              <span className="tree-pricing-icon">
-                <CreditCard size={18} />
-              </span>
-              <div>
-                <strong>
-                  {allowanceLoading ? "Checking allowance..." : "Additional tree · €30"}
-                </strong>
-              </div>
-            </div>
-          )}
-          {billingMessage && (
-            <p className="library-billing-message" aria-live="polite">
-              {billingMessage}
+          {commercialMode && (
+            <p className="library-subscription-note">
+              Your subscription has started. Subscription fees will become due under the Terms of
+              Use.
             </p>
           )}
           {visibleStorageStatus && (
@@ -938,13 +879,6 @@ export function FamilyLibrary({
                 </span>
               </label>
             </fieldset>
-            {commercialMode && !unlimitedTrees && (
-              <p className="library-credit-notice">
-                {entitlement?.freeTreesRemaining > 0
-                  ? `This uses one free tree (${entitlement.freeTreesRemaining} remaining).`
-                  : "This uses one paid tree credit."}
-              </p>
-            )}
             <div className="library-dialog-actions">
               <button type="button" className="library-secondary-button" onClick={closeCreation}>
                 Cancel
@@ -995,9 +929,6 @@ export function FamilyLibrary({
             </div>
             <p id="delete-family-description" className="library-dialog-intro">
               You can restore this family from Trash for 30 days.
-              {commercialMode && !unlimitedTrees
-                ? " Its generation credit will not be restored."
-                : ""}
             </p>
             <div className="library-dialog-actions">
               <button

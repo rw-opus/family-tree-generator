@@ -65,15 +65,19 @@ export const LEGAL_NOTICE_SECTIONS = [
     p: "Nothing in this notice excludes or limits liability that applicable law does not permit to be excluded or limited, including liability for fraud or fraudulent misrepresentation and, where applicable, death or personal injury caused by negligence.",
   },
   {
-    h: "14. Changes to the System and this notice",
+    h: "14. Subscription and fees",
+    p: "Access to the System is provided on a subscription basis. The User's subscription starts when the User's account is activated and access is made available. Subscription fees will become due when invoiced or otherwise notified by the operator in accordance with the pricing, billing period and payment terms communicated to the User. Until those commercial terms are communicated, this clause does not itself set an amount, billing interval or payment date. Continued access before invoicing does not waive fees that later become due under the communicated terms. The operator will give reasonable notice of pricing or billing changes and will not charge a payment method without the authorisation required by applicable law.",
+  },
+  {
+    h: "15. Changes to the System and this notice",
     p: "The operator may modify, suspend or discontinue the System or update this notice. A material notice change will use a new acceptance version and the User will be asked to accept it before continuing.",
   },
   {
-    h: "15. Governing law and jurisdiction",
+    h: "16. Governing law and jurisdiction",
     p: "This notice and any dispute arising out of or in connection with the System are governed by the laws of Malta, and the User submits to the exclusive jurisdiction of the courts of Malta.",
   },
   {
-    h: "16. Acceptance",
+    h: "17. Acceptance",
     p: "By accepting this notice and continuing to use the System, the User confirms that the User has read, understood and accepted these terms.",
   },
 ];
@@ -81,19 +85,19 @@ export const LEGAL_NOTICE_SECTIONS = [
 export const PRIVACY_NOTICE_SECTIONS = [
   {
     h: "1. Roles",
-    p: "For family, property, succession and tax data entered for a client or matter, the User is the data controller and the operator acts as a service provider and, where applicable, processor. For account, licence, payment-status, security and Terms-acceptance records, the operator is the controller.",
+    p: "For family, property, succession and tax data entered for a client or matter, the User is the data controller and the operator acts as a service provider and, where applicable, processor. For account, licence, subscription-status, payment-status, security and Terms-acceptance records, the operator is the controller.",
   },
   {
     h: "2. What is stored",
-    p: "The System stores the account email address and authentication records; family trees and relationship data; names, dates of death, wills, notaries, declarations causa mortis, property details, values, ownership and tax figures entered by the User; compact browser recovery records for pending initial-owner rows and any newly created outside owner referenced by them; small browser deletion markers; tree-credit and payment-status records; acceptance of the Terms; optional feedback messages, their type, submission time and handling status; short-lived per-account counters used solely to limit feedback abuse; and technical logs required for security and reliability. A feedback row does not contain the sender's account ID or email address, but feedback is sent through a signed-in request and Supabase service logs may record the authenticated user ID, IP address and request or device metadata. Users must not include client names, personal data, privileged information or confidential case details in feedback. Stripe processes payment-card details and the System stores only the identifiers and status needed to reconcile a purchase. The System does not use advertising trackers or analytics cookies.",
+    p: "The System stores the account email address and authentication records; subscription status; family trees and relationship data; names, dates of death, wills, notaries, declarations causa mortis, property details, values, ownership and tax figures entered by the User; compact browser recovery records for pending initial-owner rows and any newly created outside owner referenced by them; small browser deletion markers; historical tree-credit or payment-status records where applicable; acceptance of the Terms; optional feedback messages, their type, submission time and handling status; short-lived per-account counters used solely to limit feedback abuse; and technical logs required for security and reliability. A feedback row does not contain the sender's account ID or email address, but feedback is sent through a signed-in request and Supabase service logs may record the authenticated user ID, IP address and request or device metadata. Users must not include client names, personal data, privileged information or confidential case details in feedback. If electronic payment collection is introduced, the payment provider will process payment-card details and the System will retain only the identifiers and status needed to administer and reconcile payments. The System does not use advertising trackers or analytics cookies.",
   },
   {
     h: "3. Purpose and legal basis",
-    p: "Data is processed to provide, secure, support and administer the family-tree and property-calculation service, enforce the tree allowance, reconcile payments, review optional feedback, investigate reported faults and improve the System. The operator does not sell it, disclose it to third parties for their own marketing or use it to train artificial-intelligence models. Processing rests on the contract with the User and, for feedback, security and reliability logs, the operator's legitimate interests in supporting, securing and improving the System.",
+    p: "Data is processed to provide, secure, support and administer the family-tree and property-calculation service and subscription, reconcile payments where applicable, review optional feedback, investigate reported faults and improve the System. The operator does not sell it, disclose it to third parties for their own marketing or use it to train artificial-intelligence models. Processing rests on the contract with the User and, for feedback, security and reliability logs, the operator's legitimate interests in supporting, securing and improving the System.",
   },
   {
     h: "4. Access, isolation and service providers",
-    p: "Database-level row access rules isolate each account's family trees. The browser may retain an account-and-family-and-property-and-tab-scoped initial-ownership recovery record on the signed-in device so an interrupted cloud save can be recovered. A tab clears only its own acknowledged record; recovered, conflicting or interrupted source records are retained or hidden rather than being silently overwritten or deleted across tabs. Anyone with access to that browser profile may be able to access browser storage, so the User must secure the device and sign-in session. Authorised platform administrators can review feedback messages and mark them as handled. Family-tree and feedback records are stored in an EU-region Supabase project. Railway hosts the web application, Stripe processes payments, and optional error monitoring receives deliberately reduced technical error details with names, free text, account details and page context removed. Supabase processes signed-in feedback requests and associated service logs. These providers operate under their own contractual terms and retention arrangements.",
+    p: "Database-level row access rules isolate each account's family trees. The browser may retain an account-and-family-and-property-and-tab-scoped initial-ownership recovery record on the signed-in device so an interrupted cloud save can be recovered. A tab clears only its own acknowledged record; recovered, conflicting or interrupted source records are retained or hidden rather than being silently overwritten or deleted across tabs. Anyone with access to that browser profile may be able to access browser storage, so the User must secure the device and sign-in session. Authorised platform administrators can review feedback messages and mark them as handled. Family-tree and feedback records are stored in an EU-region Supabase project. Railway hosts the web application, Stripe may process payments when electronic collection is introduced, and optional error monitoring receives deliberately reduced technical error details with names, free text, account details and page context removed. Supabase processes signed-in feedback requests and associated service logs. These providers operate under their own contractual terms and retention arrangements.",
   },
   {
     h: "5. Retention, backups and account deletion",

@@ -5,8 +5,8 @@ import {
   normaliseTreeEntitlement,
 } from "../../src/services/treeBilling.js";
 
-describe("commercial tree entitlements", () => {
-  it("gives a new account three free tree generations", () => {
+describe("subscription tree access", () => {
+  it("keeps legacy allowance counters informational while permitting creation", () => {
     expect(defaultTreeEntitlement).toMatchObject({
       freeTreeLimit: 3,
       freeTreesUsed: 0,
@@ -36,7 +36,7 @@ describe("commercial tree entitlements", () => {
     });
   });
 
-  it("requires the database boolean rather than a truthy value for unlimited access", () => {
+  it("normalises the legacy unlimited flag without using it as a payment wall", () => {
     for (const unlimited_trees of ["true", 1]) {
       expect(
         normaliseTreeEntitlement({
@@ -45,11 +45,11 @@ describe("commercial tree entitlements", () => {
           paid_tree_credits: 0,
           unlimited_trees,
         }),
-      ).toMatchObject({ unlimitedTrees: false, canCreate: false });
+      ).toMatchObject({ unlimitedTrees: false, canCreate: true });
     }
   });
 
-  it("allows paid credits only after the free allowance is exhausted", () => {
+  it("does not block subscription access when legacy credits are exhausted", () => {
     expect(
       normaliseTreeEntitlement({
         free_tree_limit: 5,
@@ -64,7 +64,7 @@ describe("commercial tree entitlements", () => {
         free_trees_used: 5,
         paid_tree_credits: 0,
       }).canCreate,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("recognises the database payment-required signal", () => {

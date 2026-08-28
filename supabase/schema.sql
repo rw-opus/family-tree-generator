@@ -2,10 +2,9 @@
 -- supabase/migrations/ is the authoritative database history.
 -- Family Tree Generator commercial schema.
 -- Run this only in the Family Tree Generator's own Supabase project.
--- Commercial rule: the first three lifetime tree generations are free
--- (accounts provisioned before 2026-08-17 keep the five they were given);
--- every later creation or GEDCOM import consumes one paid EUR 30 credit,
--- unless an operator has granted the account unlimited tree creation.
+-- Current commercial rule: an invited account's subscription access starts
+-- when the account is activated. Historical allowance and payment-ledger
+-- structures remain for audit compatibility but do not gate tree creation.
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
@@ -2747,3 +2746,15 @@ revoke all on function public.admin_set_unlimited_trees(uuid, boolean, uuid)
   from public, anon, authenticated;
 grant execute on function public.admin_set_unlimited_trees(uuid, boolean, uuid)
   to authenticated;
+-- Subscription access begins when an invited account is activated. The former
+-- free-tree / paid-credit checkout wall is retained only as historical ledger
+-- data and no longer blocks current accounts.
+alter table public.tree_accounts
+  alter column unlimited_trees set default true;
+
+update public.tree_accounts
+set unlimited_trees = true
+where unlimited_trees is distinct from true;
+
+comment on column public.tree_accounts.unlimited_trees is
+  'Subscription access flag. Defaults to enabled while subscription fees are administered outside the application.';

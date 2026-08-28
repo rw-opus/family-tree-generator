@@ -26,7 +26,8 @@ export function normaliseTreeEntitlement(record = {}) {
     paidTreeCredits,
     totalTreesCreated: Math.max(0, Number(record.total_trees_created ?? freeTreesUsed) || 0),
     unlimitedTrees,
-    canCreate: unlimitedTrees || freeTreesRemaining > 0 || paidTreeCredits > 0,
+    // Subscription accounts are not stopped by the retired tree-credit wall.
+    canCreate: true,
   };
 }
 
