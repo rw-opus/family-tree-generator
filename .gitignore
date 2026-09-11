@@ -14,3 +14,9 @@ playwright-report/
 .backup-work/
 *.ftgbackup
 *.ftgbackup.sha256.json
+
+# Malta gazette tooling: downloaded issues and extracted pages stay local.
+scripts/malta-gazette/cache/
+scripts/malta-gazette/output/
+scripts/malta-gazette/output.zip
+scripts/malta-gazette/__pycache__/

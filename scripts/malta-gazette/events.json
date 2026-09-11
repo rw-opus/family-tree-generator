@@ -1,0 +1,271 @@
+{
+  "description": "Malta Government Gazette notices concerning notaries under the Notarial Profession and Notarial Archives Act (Cap. 55), issued by the Court of Revision of Notarial Acts, 2020-2026.",
+  "source": "Compiled from web search of gov.mt; page locators are hints, the extractor verifies them against the PDF text.",
+  "issues": [
+    {
+      "gazette_no": "20,497",
+      "slug": "20497",
+      "date": "2020-10-09",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2020/10/Government%20Gazette%20-%209th%20October.pdf",
+      "cover_printed_page": 9069,
+      "events": [
+        {
+          "id": "20497-briffa",
+          "notary": "Dr Maria Briffa",
+          "event": "partial incapacitation",
+          "decree_date": "2020-10-07",
+          "printed_pages": [9081],
+          "notice_numbers": [1167],
+          "phrases": ["Briffa"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "20,706",
+      "slug": "20706",
+      "date": "2021-09-24",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2021/09/Government%20Gazette%20-%2024th%20September.pdf",
+      "events": [
+        {
+          "id": "20706-galea-mamo",
+          "notary": "Dr Maria Roberta Galea Mamo",
+          "event": "partial incapacitation",
+          "decree_date": "2021-09-16",
+          "printed_pages": [9809, 9810],
+          "printed_pages_approximate": true,
+          "notice_numbers": [1282],
+          "phrases": ["Galea Mamo"]
+        },
+        {
+          "id": "20706-cuschieri",
+          "notary": "Dr Clarissa Cuschieri",
+          "event": "partial incapacitation",
+          "decree_date": "2021-09-16",
+          "printed_pages": [9810],
+          "printed_pages_approximate": true,
+          "phrases": ["Cuschieri"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "20,724",
+      "slug": "20724",
+      "date": "2021-10-22",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2021/10/Government%20Gazette%20-%2022nd%20October.pdf",
+      "events": [
+        {
+          "id": "20724-galea-mamo",
+          "notary": "Dr Maria Roberta Galea Mamo",
+          "event": "cessation of incapacitation",
+          "decree_date": "2021-10-19",
+          "notice_numbers": [1403, 1405],
+          "phrases": ["Galea Mamo"]
+        },
+        {
+          "id": "20724-dimech",
+          "notary": "Dr Kristen Dimech",
+          "event": "cessation of incapacitation",
+          "decree_date": "2021-10-19",
+          "notice_numbers": [1404, 1405],
+          "phrases": ["Dimech"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "20,855",
+      "slug": "20855",
+      "date": "2022-05-10",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2022/05/Government%20Gazette%20-%2010th%20May.pdf",
+      "events": [
+        {
+          "id": "20855-herbert-cassar",
+          "notary": "Dr Herbert Cassar",
+          "event": "partial incapacitation",
+          "decree_date": "2022-05-06",
+          "notice_numbers": [504],
+          "phrases": ["Herbert Cassar"]
+        },
+        {
+          "id": "20855-joanne-cassar",
+          "notary": "Dr Joanne Cassar",
+          "event": "partial incapacitation",
+          "decree_date": "2022-05-06",
+          "notice_numbers": [506],
+          "phrases": ["Joanne Cassar"]
+        },
+        {
+          "id": "20855-saydon",
+          "notary": "Dr Joseph Henry Saydon",
+          "event": "partial incapacitation",
+          "decree_date": "2022-05-06",
+          "phrases": ["Saydon"],
+          "any_phrases": ["Rapport Numru: 224/2022", "224/2022"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "20,895",
+      "slug": "20895",
+      "date": "2022-07-22",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2022/07/Government%20Gazette%20-%2022nd%20July.pdf",
+      "events": [
+        {
+          "id": "20895-saydon",
+          "notary": "Dr Joseph Henry Saydon",
+          "event": "cessation of incapacitation",
+          "decree_date": "2022-07-13",
+          "notice_numbers": [915],
+          "phrases": ["Saydon"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "21,290",
+      "slug": "21290",
+      "date": "2024-07-26",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2024/07/Government%20Gazette%20-%2026th%20July.pdf",
+      "events": [
+        {
+          "id": "21290-critien",
+          "notary": "Dr Patrick Critien",
+          "event": "partial incapacitation",
+          "decree_date": "2024-07-18",
+          "notice_numbers": [953],
+          "phrases": ["Critien"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "21,356",
+      "slug": "21356",
+      "date": "2024-12-06",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2024/12/Government%20Gazette%20-%206th%20December.pdf",
+      "events": [
+        {
+          "id": "21356-micallef",
+          "notary": "Dr Robert Micallef",
+          "event": "partial incapacitation",
+          "decree_date": "2024-11-27",
+          "notice_numbers": [1725],
+          "phrases": ["Micallef"]
+        },
+        {
+          "id": "21356-pulis-montanaro",
+          "notary": "Dr Sarah Pulis & Dr Eugene Montanaro",
+          "event": "noted as ceased exercising function; listed as non-practising",
+          "any_phrases": ["Sarah Pulis", "Eugene Montanaro"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "21,362",
+      "slug": "21362",
+      "date": "2024-12-17",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2024/12/Government%20Gazette%20-%2017th%20December.pdf",
+      "events": [
+        {
+          "id": "21362-vella",
+          "notary": "Dr Nicholas Charles Vella",
+          "event": "cessation of incapacitation",
+          "decree_date": "2024-12-05",
+          "notice_numbers": [1767],
+          "phrases": ["Vella"]
+        },
+        {
+          "id": "21362-micallef",
+          "notary": "Dr Robert Micallef",
+          "event": "cessation of incapacitation",
+          "decree_date": "2024-12-05",
+          "notice_numbers": [1769],
+          "phrases": ["Micallef"]
+        },
+        {
+          "id": "21362-galea-mamo",
+          "notary": "Dr Maria Roberta Galea Mamo",
+          "event": "cessation of incapacitation",
+          "phrases": ["Maria Roberta", "1123/2024"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "21,481",
+      "slug": "21481",
+      "date": "2025-08-05",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2025/08/Government%20Gazette%20-%205th%20August.pdf",
+      "cover_printed_page": 10369,
+      "events": [
+        {
+          "id": "21481-zaffarese",
+          "notary": "Dr Mark Zaffarese",
+          "event": "partial incapacitation",
+          "decree_date": "2025-07-31",
+          "printed_pages": [10376, 10377],
+          "notice_numbers": [1222],
+          "phrases": ["Zaffarese"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "21,513",
+      "slug": "21513",
+      "date": "2025-09-30",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2025/09/Government%20Gazette%20-%2030th%20September.pdf",
+      "events": [
+        {
+          "id": "21513-sammut-sassi",
+          "notary": "Dr Mark Anthony Sammut Sassi",
+          "event": "partial incapacitation",
+          "decree_date": "2025-09-24",
+          "notice_numbers": [1539],
+          "phrases": ["Sammut Sassi"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "21,532",
+      "slug": "21532",
+      "date": "2025-11-04",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2025/11/Gaz%204.11.2025.pdf",
+      "url_fallbacks": [
+        "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2025/11/Government%20Gazette%20-%204th%20November.pdf"
+      ],
+      "events": [
+        {
+          "id": "21532-sammut-sassi",
+          "notary": "Dr Mark Anthony Sammut Sassi",
+          "event": "cessation of incapacitation",
+          "decree_date": "2025-10-31",
+          "notice_numbers": [1744],
+          "phrases": ["Sammut Sassi"]
+        }
+      ]
+    },
+    {
+      "gazette_no": "21,616",
+      "slug": "21616",
+      "date": "2026-04-02",
+      "url": "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2026/04/Government%20Gazette%20-%202nd%20April.pdf",
+      "url_fallbacks": [
+        "https://www.gov.mt/en/Government/DOI/Government%20Gazette/Documents/2026/04/Gaz%202.4.2026.pdf"
+      ],
+      "events": [
+        {
+          "id": "21616-briffa",
+          "notary": "Dr Maria Briffa",
+          "event": "partial incapacitation (2nd instance)",
+          "decree_date": "2026-02-19",
+          "decree_date_approximate": true,
+          "phrases": ["Maria Briffa"],
+          "any_phrases": ["19 ta' Frar, 2026", "19 ta' Frar 2026", "Frar, 2026"]
+        },
+        {
+          "id": "21616-martinelli",
+          "notary": "Dr Carmel Martinelli",
+          "event": "partial incapacitation",
+          "decree_date": "2026-03-10",
+          "phrases": ["Carmel Martinelli"]
+        }
+      ]
+    }
+  ]
+}
