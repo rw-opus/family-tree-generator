@@ -48,6 +48,7 @@ python3 gazette_extract.py fetch                  # download issues into cache/
 python3 gazette_extract.py extract                # split cached issues
 python3 gazette_extract.py extract --png --zip    # also render images, then zip
 python3 gazette_extract.py extract --only 20497   # one issue
+python3 gazette_extract.py doctor --only 20497 --verbose  # what did it parse?
 python3 gazette_extract.py index --years 2020 2023  # sweep the yearly indexes
 python3 gazette_extract.py selftest               # verify locators on fixtures
 ```
@@ -66,6 +67,12 @@ re-derived from the PDF's own text:
    `21,481` when both are five digits with a thousands separator. Pages whose
    title does not parse (the cover, full-page tables) get a number inferred from
    the dominant printed-minus-index offset, flagged as `inferred`.
+   If the running title parses on almost no pages — which is what an unfamiliar
+   layout looks like — the numbering is instead recovered structurally: every
+   margin number votes for an offset of (number − page index), and page
+   numbering is the offset nearly all pages agree on. The issue number, printed
+   on every page too, yields a different offset each time and so cannot win.
+
 2. **Notice heading.** `Nru. 1167` / `No. 1167` — the numbered heading each
    notice carries.
 3. **Phrases.** The notary's name, a report or application number such as
@@ -73,6 +80,10 @@ re-derived from the PDF's own text:
 4. **Corroboration.** A surname sitting next to `Kap. 55` / `Cap. 55`, which
    separates the real notice from a passing mention of the same name elsewhere
    in the issue (a tender notice, say).
+
+The SOMMARJU contents page is demoted, because it lists every notice number and
+usually the notaries' names as well — it therefore matches most hints without
+being the notice, and being the earlier page it would otherwise win the tie.
 
 Each class scores independently and the reasons are written to the manifest, so
 every extracted page can be traced back to why it was chosen. A weak or tied
@@ -83,6 +94,11 @@ the next page when no other notice heading follows it on its own page and the
 next page carries real text before its first heading. Where `events.json` gives
 an explicit (non-approximate) page range, that wins, and any disagreement with
 detection is recorded in the manifest as a `span_note`.
+
+If an extraction looks wrong, `doctor` is the first thing to run: it reports
+whether printed numbers came from the running title or had to be inferred,
+whether the page numbering is consistent (the offset should be a single value),
+which pages the scorer treats as contents pages, and which carry no text at all.
 
 ## Output
 
@@ -152,8 +168,19 @@ the Gazette sweep.
 ## Tests
 
 `selftest` builds synthetic issues with reportlab (`pip install reportlab`) that
-reproduce what the locator depends on — a running title offset from the internal
-index, a cover page with no title so the offset must be inferred, five-digit page
-and issue numbers on one line, two notices sharing a page, a notice running over a
-page break, and a decoy page naming a notary outside any Cap. 55 notice — then
-asserts the located pages. See `fixtures.py`.
+reproduce what the locator depends on, then asserts the located pages:
+
+- a running title offset from the internal index;
+- a cover page with no title, so the offset must be inferred;
+- five-digit page and issue numbers sharing one line (`10,376` in issue `21,481`);
+- two notices sharing a page, so a span must stop at the second;
+- a notice genuinely running over a page break;
+- a decoy page naming a notary outside any Cap. 55 notice;
+- an issue with **no running title at all**, so numbering must be recovered
+  structurally;
+- a contents page naming the notary, against a notice page that omits `Kap. 55`,
+  so the two match equally and only the demotion separates them.
+
+The last two are regression tests with teeth: without their fixes the first
+yields filenames like `21999_pi6_notice.pdf`, and the second extracts the
+contents page instead of the notice. See `fixtures.py`.

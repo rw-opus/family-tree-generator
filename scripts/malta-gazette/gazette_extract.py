@@ -62,6 +62,10 @@ NUMBER = re.compile(r"\b\d{1,2},\d{3}\b|\b\d{3,6}\b")
 # Notice headings: "Nru. 1282" (Maltese column) / "No. 1282" (English column).
 NOTICE_HEADING = re.compile(r"\b(?:nru|no)\.?\s*(\d{1,4})\b", re.I)
 
+# The contents page names itself, and any index page lists many notice numbers.
+SUMMARY_MARKER = re.compile(r"\bsommarju\b|\bsummary\b", re.I)
+INDEX_LIKE_NOTICES = 5
+
 # A following page is treated as a continuation only if it carries this much
 # text before its first notice heading (i.e. more than a bare running title).
 CONTINUATION_MIN_CHARS = 200
@@ -119,6 +123,7 @@ class Page:
     printed: int | None = None  # printed page number from the running title
     printed_inferred: bool = False
     notices: list[int] = field(default_factory=list)
+    is_summary: bool = False
 
     @property
     def label(self) -> str:
@@ -191,10 +196,56 @@ def build_pages(pdf: Path, gazette_no: str, backend: str = "auto") -> list[Page]
         page = Page(index=i, text=text, flat=fold(normalise(text)))
         page.printed = parse_printed_page(text, issue_digits)
         page.notices = [int(m.group(1)) for m in NOTICE_HEADING.finditer(text)]
+        page.is_summary = bool(SUMMARY_MARKER.search(page.flat)) or (
+            len(set(page.notices)) >= INDEX_LIKE_NOTICES
+        )
         pages.append(page)
 
+    # Trust the running title where it parsed; fall back to structure when it
+    # barely did, which is what an unfamiliar layout looks like.
+    parsed = sum(1 for p in pages if p.printed is not None)
+    if parsed < max(3, len(pages) // 4) and infer_printed_structurally(pages):
+        return pages
     infer_missing_printed(pages)
     return pages
+
+
+def candidate_numbers(text: str) -> set[int]:
+    """Numbers sitting in a page's top or bottom margin."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    found: set[int] = set()
+    for line in lines[:2] + lines[-2:]:
+        for token in NUMBER.findall(normalise(line)):
+            value = digits(token)
+            if 3 <= len(value) <= 6:
+                found.add(int(value))
+    return found
+
+
+def infer_printed_structurally(pages: list[Page]) -> bool:
+    """Recover printed numbering without relying on the running title's wording.
+
+    Every margin number votes for an offset of (number - page index).  Page
+    numbering is the offset nearly every page agrees on, because it is the only
+    number on the page that climbs in step with the page index -- the issue
+    number, printed on every page too, yields a different offset each time and
+    so can never out-vote it.  This is the safety net for an issue whose running
+    title is laid out differently from the ones this was built against.
+    """
+    votes: dict[int, int] = {}
+    for page in pages:
+        for candidate in candidate_numbers(page.text):
+            offset = candidate - page.index
+            votes[offset] = votes.get(offset, 0) + 1
+    if not votes:
+        return False
+    offset, support = max(votes.items(), key=lambda kv: (kv[1], -abs(kv[0])))
+    if support < max(3, len(pages) // 4):
+        return False
+    for page in pages:
+        page.printed = page.index + offset
+        page.printed_inferred = True
+    return True
 
 
 def infer_missing_printed(pages: list[Page]) -> None:
@@ -281,6 +332,14 @@ def score_page(page: Page, event: dict) -> Hit | None:
         score += 30
         evidence.append("surname next to Kap./Cap. 55")
 
+    # The SOMMARJU contents page lists every notice number and usually the
+    # notaries' names as well, so it matches most hints without being the
+    # notice.  Without this it ties with the real page and, being earlier, wins.
+    if score and page.is_summary:
+        score -= 50
+        evidence.append("summary/index page, demoted")
+
+    score = max(score, 0)
     if score == 0:
         return None
     return Hit(page=page, score=score, evidence=evidence)
@@ -693,6 +752,53 @@ def cmd_selftest(args) -> int:
     return 1 if failures else 0
 
 
+def cmd_doctor(args) -> int:
+    """Print what was parsed from a cached issue, to diagnose a real run.
+
+    Run this first if an extraction looks wrong: it shows whether printed page
+    numbers came from the running title or had to be inferred, whether the
+    numbering is consistent, and which pages carry no text at all.
+    """
+    data = load_events(args.events)
+    for issue in data["issues"]:
+        if args.only and issue["slug"] not in args.only:
+            continue
+        src = args.cache / f"{issue['slug']}.pdf"
+        if not src.exists() or not looks_like_pdf(src):
+            print(f"{issue['gazette_no']}: not cached -- run `fetch` first")
+            continue
+
+        pages = build_pages(src, issue["gazette_no"], backend=args.text_backend)
+        titled = sum(1 for p in pages if p.printed is not None and not p.printed_inferred)
+        inferred = sum(1 for p in pages if p.printed_inferred)
+        textless = sum(1 for p in pages if len(p.text.strip()) < MIN_PAGE_TEXT)
+        offsets = sorted({p.printed - p.index for p in pages if p.printed is not None})
+
+        print(f"\n=== {issue['gazette_no']}  {issue['date']}  ({len(pages)} pages) ===")
+        print(f"  printed number read from running title : {titled}/{len(pages)}")
+        print(f"  printed number inferred                : {inferred}")
+        print(f"  pages with no extractable text         : {textless}"
+              + ("  <- scanned issue, needs OCR" if textless == len(pages) else ""))
+        print(f"  printed-minus-index offset(s)          : {offsets}"
+              + ("  <- should be a single value" if len(offsets) > 1 else ""))
+        print(f"  summary/index pages                    : "
+              f"{[p.label for p in pages if p.is_summary] or '-'}")
+        if args.verbose:
+            for page in pages:
+                flags = "".join(
+                    f" [{name}]"
+                    for name, on in (
+                        ("no text", len(page.text.strip()) < MIN_PAGE_TEXT),
+                        ("inferred", page.printed_inferred),
+                        ("summary", page.is_summary),
+                    )
+                    if on
+                )
+                seen = ", ".join(str(n) for n in sorted(set(page.notices))[:8]) or "-"
+                print(f"   pdf {page.index + 1:>4}  printed {page.label:>7}  notices: {seen}{flags}")
+    return 0
+
+
 def cmd_run(args) -> int:
     rc = cmd_fetch(args)
     if rc:
@@ -716,14 +822,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--years", nargs="*", type=int,
                         default=[2020, 2021, 2022, 2023, 2024, 2025],
                         help="years for the `index` sweep")
+    parser.add_argument("--verbose", action="store_true",
+                        help="per-page detail in `doctor`")
     parser.add_argument("command", nargs="?", default="run",
-                        choices=("run", "fetch", "extract", "index", "selftest"))
+                        choices=("run", "fetch", "extract", "doctor", "index", "selftest"))
 
     args = parser.parse_args(argv)
     handlers = {
         "run": cmd_run,
         "fetch": cmd_fetch,
         "extract": cmd_extract,
+        "doctor": cmd_doctor,
         "index": cmd_index,
         "selftest": cmd_selftest,
     }

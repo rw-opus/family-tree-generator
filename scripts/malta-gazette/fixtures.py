@@ -73,6 +73,15 @@ def _text_block(c, x, y, lines, name="", leading=LINE):
     return y
 
 
+def _bare_page_number(c, printed_page, page_index):
+    """A layout with no running title at all -- just a page number in a corner."""
+    label = f"{printed_page:,}" if printed_page >= 10000 else str(printed_page)
+    if page_index % 2 == 0:
+        c.drawString(MARGIN, HEIGHT - 30, label)
+    else:
+        c.drawRightString(WIDTH - MARGIN, HEIGHT - 30, label)
+
+
 def _running_title(c, printed_page, gazette_no, page_index):
     """Bottom running title, page number alternating sides as in the real issues."""
     label = f"{printed_page:,}" if printed_page >= 10000 else str(printed_page)
@@ -128,7 +137,11 @@ def build_fixture(dest: Path, case: dict) -> Path:
                     c.drawString(MARGIN, y, line)
                     y -= LINE
 
-        if not page.get("cover"):
+        if page.get("cover"):
+            pass
+        elif case.get("bare_page_numbers"):
+            _bare_page_number(c, page["printed"], i)
+        else:
             _running_title(c, page["printed"], case["gazette_no"], i)
         c.showPage()
         c.setFont(BODY_FONT, 9)
@@ -325,4 +338,94 @@ _case_21362 = {
     ],
 }
 
-FIXTURE_CASES = [_case_20497, _case_21481, _case_20855, _case_21362]
+_case_bare = {
+    "name": "unfamiliar layout — no running title, page numbers inferred structurally",
+    "slug": "fixture-bare",
+    "gazette_no": "21,999",
+    "bare_page_numbers": True,
+    "pages": (
+        [{"cover": True, "printed": 7200, "summary": ["Nru. 88  Inabilitazzjoni Parzjali"]}]
+        + _plain_pages(7201, 4)
+        + [
+            {
+                "printed": 7205,
+                "notices": [
+                    {"number": 88, "name": "Karmnu Borg", "date_line": "It-3 ta' Marzu, 2026"}
+                ],
+            }
+        ]
+        + _plain_pages(7206, 2)
+    ),
+    "checks": [
+        {
+            "event": {
+                "id": "bare-borg",
+                "notary": "Dr Karmnu Borg",
+                "printed_pages": [7205],
+                "notice_numbers": [88],
+                "phrases": ["Borg"],
+            },
+            "expect_printed": ["7205"],
+            "expect_pdf": [6],
+        }
+    ],
+}
+
+_case_summary_rival = {
+    "name": "contents page names the notary too, and the notice omits Kap. 55",
+    "slug": "fixture-summary",
+    "gazette_no": "21,777",
+    "pages": (
+        [
+            {
+                "cover": True,
+                "printed": 8100,
+                # The real SOMMARJU lists numbers *and* names, so it matches
+                # every hint the notice page does.
+                "summary": [
+                    "Nru. 640  Waqfien tal-Inabilitazzjoni ta' Nutar — Sarah Pulis",
+                    "Nru. 641  Ħatra ta' Nutar Ġdid",
+                    "Nru. 642  Avviż tal-Gvern",
+                ],
+            }
+        ]
+        + _plain_pages(8101, 3)
+        + [
+            {
+                "printed": 8104,
+                "lines": [
+                    "Nru. 640",
+                    "No. 640",
+                    "QORTI TAL-REVIŻJONI TAL-ATTI NOTARILI",
+                    "Waqfien tal-Inabilitazzjoni",
+                    "",
+                    "Ngħarrfu illi l-inabilitazzjoni parzjali tan-Nutar Dottor Sarah Pulis",
+                    "waqfet fid-data msemmija hawn fuq b'digriet tal-istess Qorti.",
+                    "L-avviż preċedenti jitqies bħala revokat.",
+                ],
+            }
+        ]
+        + _plain_pages(8105, 2)
+    ),
+    "checks": [
+        {
+            "event": {
+                "id": "summary-pulis",
+                "notary": "Dr Sarah Pulis",
+                "notice_numbers": [640],
+                "phrases": ["Sarah Pulis"],
+            },
+            "expect_printed": ["8104"],
+            "expect_pdf": [5],
+        }
+    ],
+}
+
+FIXTURE_CASES = [
+    _case_20497,
+    _case_21481,
+    _case_20855,
+    _case_21362,
+    _case_bare,
+    _case_summary_rival,
+]
