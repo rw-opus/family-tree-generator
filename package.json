@@ -22,20 +22,20 @@
   },
   "dependencies": {
     "@sentry/browser": "10.70.0",
-    "@supabase/supabase-js": "2.112.3",
+    "@supabase/supabase-js": "2.117.1",
     "lucide-react": "0.511.0",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
-    "@vitejs/plugin-react": "6.0.5",
-    "eslint": "10.8.1",
+    "@playwright/test": "1.63.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "eslint": "10.11.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "15.15.0",
     "jsdom": "25.0.1",
-    "prettier": "3.9.6",
-    "vite": "8.2.1",
+    "prettier": "3.9.9",
+    "vite": "8.3.1",
     "vitest": "4.1.10"
   }
 }
